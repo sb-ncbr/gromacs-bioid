@@ -1,0 +1,450 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "GROMACS Molecular Dynamics Metadata Schema",
+    "type": "object",
+    "properties": {
+      "dataset_metadata": {
+        "properties": {
+          "creator": {
+            "description": "ORCIDs are encouraged",
+            "title": "Creator of the dataset or data curator",
+            "type": "string"
+          },
+          "identifier": {
+            "description": "DOI or other identifier",
+            "title": "Identifier",
+            "type": "string"
+          },
+          "publication_year": {
+            "title": "Publication Year",
+            "type": "integer"
+          },
+          "publishing_institution": {
+            "description": "Institution that published the dataset. Use the ROR ID (https://ror.org/) if available",
+            "title": "Publishing Institution",
+            "type": "string"
+          },
+          "structure_coordinate_file": {
+            "type": "string"
+          },
+          "title": {
+            "title": "Title of the dataset",
+            "type": "string"
+          },
+          "topology_file": {
+            "type": "string"
+          },
+          "trajectory_file": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "simulated_object_metadata": {
+        "properties": {
+          "complex_id": {
+            "type": "string"
+          },
+          "ligand_id": {
+            "type": "string"
+          },
+          "protein_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "simulation_level_data": {
+        "properties": {
+          "AWH_adaptive_biasing": {
+            "title": "AWH Adaptive Biasing",
+            "type": "boolean"
+          },
+          "barostat": {
+            "properties": {
+              "compressibility": {
+                "description": "The compressibility (NOTE: this is now really in bar-1) For water at 1 atm and 300 K the compressibility is 4.5e-5 bar-1",
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "minLength": 3,
+                  "type": "array"
+                },
+                "title": "Compressibility [bar^-1]",
+                "type": "array"
+              },
+              "pcoupl": {
+                "enum": [
+                  "no",
+                  "berendsen",
+                  "c-rescale",
+                  "parrinello-rahman",
+                  "mttk"
+                ],
+                "title": "pcoupl",
+                "type": "string"
+              },
+              "pcoupltype": {
+                "enum": [
+                  "isotropic",
+                  "semiisotropic",
+                  "anisotropic",
+                  "surface-tension"
+                ],
+                "title": "pcoupltype",
+                "type": "string"
+              },
+              "refcoord_scaling": {
+                "enum": [
+                  "no",
+                  "all",
+                  "com"
+                ],
+                "title": "refcoord-scaling",
+                "type": "string"
+              },
+              "tau_p": {
+                "description": "The time constant for pressure coupling (one value for all directions).",
+                "title": "tau-p [ps]",
+                "type": "number"
+              }
+            },
+            "title": "Barostat",
+            "type": "object"
+          },
+          "comm_mode": {
+            "enum": [
+              "linear",
+              "angular",
+              "linear-acceleration-correction",
+              "none"
+            ],
+            "title": "comm-mode",
+            "type": "string"
+          },
+          "constraint_algorithm": {
+            "description": "Chooses which solver satisfies any non-SETTLE holonomic",
+            "enum": [
+              "lincs",
+              "shake"
+            ],
+            "title": "constraint-algorithm",
+            "type": "string"
+          },
+          "electrostatic_interactions": {
+            "properties": {
+              "coulomb_modifier": {
+                "enum": [
+                  "potential-shift",
+                  "none"
+                ],
+                "title": "coulomb-modifier",
+                "type": "string"
+              },
+              "coulombtype": {
+                "enum": [
+                  "cut-off",
+                  "ewald",
+                  "pme",
+                  "p3m-ad",
+                  "reaction-field",
+                  "user",
+                  "pme-shift",
+                  "pme-user",
+                  "pme-user-switch"
+                ],
+                "title": "coulombtype",
+                "type": "string"
+              },
+              "epsilon_r": {
+                "description": "The relative dielectric constant.",
+                "title": "epsilon-r",
+                "type": "number"
+              },
+              "epsilon_rf": {
+                "title": "epsilon-rf",
+                "type": "number"
+              },
+              "rcoulomb": {
+                "description": "The distance for the Coulomb cut-off",
+                "minimum": 0,
+                "title": "rcoulomb [nm]",
+                "type": "number"
+              }
+            },
+            "title": "Electrostatic Interactions",
+            "type": "object"
+          },
+          "force_field": {
+            "title": "Force Field",
+            "type": "string"
+          },
+          "fourierspacing": {
+            "description": "[nm]",
+            "minimum": 0,
+            "title": "fourierspacing",
+            "type": "number"
+          },
+          "free_energy_calculation": {
+            "enum": [
+              "yes",
+              "no"
+            ],
+            "title": "Free Energy Calculation",
+            "type": "string"
+          },
+          "lincs_iter": {
+            "minimum": 0,
+            "title": "lincs-iter",
+            "type": "integer"
+          },
+          "lincs_order": {
+            "minimum": 0,
+            "title": "lincs-order",
+            "type": "integer"
+          },
+          "neighbour_list": {
+            "properties": {
+              "cutoff_scheme": {
+                "enum": [
+                  "verlet",
+                  "group"
+                ],
+                "title": "cutoff-scheme",
+                "type": "string"
+              },
+              "nstlist": {
+                "title": "nstlist",
+                "type": "integer"
+              },
+              "pbc": {
+                "enum": [
+                  "xyz",
+                  "no",
+                  "xy"
+                ],
+                "title": "pbc",
+                "type": "string"
+              },
+              "rlist": {
+                "description": "Cut-off distance for the short-range neighbor list",
+                "minimum": 0,
+                "title": "rlist [nm]",
+                "type": "number"
+              }
+            },
+            "title": "neighbour list",
+            "type": "object"
+          },
+          "nstcomm": {
+            "description": "frequency for center of mass motion removal",
+            "title": "nstcomm [step]",
+            "type": "integer"
+          },
+          "reference_pressure": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "minItems": 3,
+              "type": "array"
+            },
+            "title": "Reference Pressure [bar]",
+            "type": "array"
+          },
+          "reference_temperature": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Reference Temperature [K]",
+            "type": "array"
+          },
+          "simulation_length": {
+            "minimum": 0,
+            "title": "Simulation length [ns]",
+            "type": "number"
+          },
+          "simulation_time_step": {
+            "minimum": 0,
+            "title": "Simulation Time Step [ps]",
+            "type": "number"
+          },
+          "simulation_type": {
+            "enum": [
+              "free energy simulation",
+              "molecular dynamics",
+              "energy minimization"
+            ],
+            "title": "Type of the simulation",
+            "type": "string"
+          },
+          "statistical_ensemble": {
+            "enum": [
+              "NVE (microcanonical)",
+              "NVT (canonical)",
+              "NpT (isothermal-isobaric)"
+            ],
+            "title": "Statistical Ensemble",
+            "type": "string"
+          },
+          "thermostat": {
+            "properties": {
+              "nsttcouple": {
+                "description": "The frequency for coupling the temperature.",
+                "title": "nsttcouple",
+                "type": "number"
+              },
+              "tau_t": {
+                "description": "time constant for coupling (one for each group in tc-grps), -1 means no temperature coupling",
+                "items": {
+                  "type": "number"
+                },
+                "title": "tau-t [ps]",
+                "type": "array"
+              },
+              "tc_grps": {
+                "properties": {
+                  "name": {
+                    "title": "name",
+                    "type": "string"
+                  },
+                  "nr": {
+                    "description": "groups to couple to separate temperature baths",
+                    "title": "nr",
+                    "type": "integer"
+                  }
+                },
+                "title": "tc-grps",
+                "type": "object"
+              },
+              "tcoupl": {
+                "enum": [
+                  "no",
+                  "berendsen",
+                  "nose-hoover",
+                  "andersen",
+                  "andersen-massive",
+                  "v-rescale"
+                ],
+                "title": "tcoupl",
+                "type": "string"
+              }
+            },
+            "title": "Thermostat",
+            "type": "object"
+          },
+          "umbrella_sampling": {
+            "title": "Umbrella Sampling",
+            "type": "boolean"
+          },
+          "van_der_Waals_interactions": {
+            "properties": {
+              "dispcorr": {
+                "enum": [
+                  "no",
+                  "enerpres",
+                  "eber"
+                ],
+                "title": "dispcorr",
+                "type": "string"
+              },
+              "rvdw": {
+                "description": "distance for the LJ or Buckingham cut-off",
+                "minimum": 0,
+                "title": "rvdw [nm]",
+                "type": "number"
+              },
+              "rvdw_switch": {
+                "description": "where to start switching the LJ force and possibly the potential, only relevant when force or potential switching is used",
+                "minimum": 0,
+                "title": "rvdw-switch [nm]",
+                "type": "number"
+              },
+              "vdw_modifier": {
+                "enum": [
+                  "potential-shift",
+                  "none",
+                  "force-switch",
+                  "potential-switch"
+                ],
+                "title": "vdw-modifier",
+                "type": "string"
+              },
+              "vdw_type": {
+                "enum": [
+                  "cut-off",
+                  "pme",
+                  "shift",
+                  "switch",
+                  "user"
+                ],
+                "title": "vdw-type",
+                "type": "string"
+              }
+            },
+            "title": "van der Waals interactions",
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "software_information": {
+        "properties": {
+          "software_name": {
+            "type": "string"
+          },
+          "software_version": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "system_level_data": {
+        "properties": {
+          "box_size_and_shape": {
+            "description": "last line of a coordinate file",
+            "title": "Size and Shape of simulation box [nm degree]",
+            "type": "number"
+          },
+          "molecules": {
+            "items": {
+              "properties": {
+                "count": {
+                  "minimum": 0,
+                  "title": "Molecule count",
+                  "type": "number"
+                },
+                "id": {
+                  "title": "Molecule ID",
+                  "type": "string"
+                },
+                "name": {
+                  "title": "Molecule name",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "title": "List of molecules",
+            "type": "array"
+          },
+          "type": "object",
+          "water_model": {
+            "properties": {
+              "density": {
+                "title": "Density [g/cm^3]",
+                "type": "number"
+              },
+              "name": {
+                "title": "Water Model Name",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    }
+  }

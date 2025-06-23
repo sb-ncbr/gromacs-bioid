@@ -1,0 +1,93 @@
+{
+    "type": "Categorization",
+    "elements": [
+        {
+            "type": "Category",
+            "label": "File identification",
+            "elements": [
+                {
+                    "type": "HorizontalLayout",
+                    "elements": [
+                        {
+                            "type": "Control",
+                            "scope": "#/properties/file_identification"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "Category",
+            "label": "Main information",
+            "elements": [
+                {
+                    "type": "HorizontalLayout",
+                    "elements": [
+                        {
+                            "type": "Control",
+                            "scope": "#/properties/main_information"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "Category",
+            "label": "Detailed information",
+            "elements": [
+                {
+                    "type": "HorizontalLayout",
+                    "elements": [
+                        {
+                            "type": "Control",
+                            "scope": "#/properties/detailed_information"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "Category",
+            "label": "Other",
+            "elements": [
+                {
+                    "type": "Control",
+                    "scope": "#/properties/_uniprot_id"
+                },
+                {
+                    "type": "Control",
+                    "scope": "#/properties/_record_url"
+                },
+                {
+                    "type": "Control",
+                    "scope": "#/properties/_record_file"
+                },
+                {
+                    "type": "Control",
+                    "scope": "#/properties/_metadump_version"
+                },
+                {
+                    "type": "Control",
+                    "scope": "#/properties/_gromacs_version"
+                },
+                {
+                    "type": "Control",
+                    "scope": "#/properties/_dump_sw_version"
+                },
+                {
+                    "type": "Control",
+                    "scope": "#/properties/_tpx_version"
+                },
+                {
+                    "type": "Control",
+                    "scope": "#/properties/_metadata_date",
+                    "options": {
+                        "format": "date-time",
+                        "dateTimeFormat": "DD/MM/YYYY HH:mm:ss",
+                        "dateTimeSaveFormat": "YYYY-MM-DDTHH:mm:ss.SSSSSS"
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,10 @@
+flask
+flask-cors
+celery
+apscheduler
+gunicorn
+redis
+requests
+Werkzeug
+flask_sqlalchemy
+psycopg2-binary

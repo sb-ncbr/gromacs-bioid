@@ -1,0 +1,3 @@
+[submodule "cli/BAT2"]
+	path = cli/BAT2
+	url = https://gitlab.fi.muni.cz/xpavlik8/bat2.git

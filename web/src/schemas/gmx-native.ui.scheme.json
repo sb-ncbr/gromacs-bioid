@@ -1,0 +1,95 @@
+{
+    "type": "Categorization",
+    "elements": [
+        {
+            "type": "Category",
+            "label": "Administrative",
+            "elements": [
+                {
+                    "type": "VerticalLayout",
+                    "elements": [
+                        {
+                            "type": "Group",
+                            "elements": [
+                                {
+                                    "type": "Control",
+                                    "scope": "#/properties/administrative/properties/title"
+                                },
+                                {
+                                    "type": "Control",
+                                    "scope": "#/properties/administrative/properties/creator"
+                                },
+                                {
+                                    "type": "Control",
+                                    "scope": "#/properties/administrative/properties/publishing_institution"
+                                },
+                                {
+                                    "type": "Control",
+                                    "scope": "#/properties/administrative/properties/publication_year"
+                                },
+                                {
+                                    "type": "Control",
+                                    "scope": "#/properties/administrative/properties/identifier"
+                                }
+                            ]
+                        },
+                        {
+                            "type": "VerticalLayout",
+                            "elements": [
+                                {
+                                    "type": "Control",
+                                    "scope": "#/properties/administrative/properties/software_information"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "Category",
+            "label": "Object",
+            "elements": [
+                {
+                    "type": "HorizontalLayout",
+                    "elements": [
+                        {
+                            "type": "Control",
+                            "scope": "#/properties/simulated_object/"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "Category",
+            "label": "Simulation",
+            "elements": [
+                {
+                    "type": "HorizontalLayout",
+                    "elements": [
+                        {
+                            "type": "Control",
+                            "scope": "#/properties/simulation/"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "Category",
+            "label": "System",
+            "elements": [
+                {
+                    "type": "HorizontalLayout",
+                    "elements": [
+                        {
+                            "type": "Control",
+                            "scope": "#/properties/system/"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
