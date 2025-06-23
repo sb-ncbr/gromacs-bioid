@@ -1,0 +1,24 @@
+FROM python:3.10-slim
+
+# Install system deps
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy app code and requirements
+ADD api /app/api
+ADD cli /app/cli
+
+RUN pip install --no-cache-dir -r ./api/requirements.txt -r ./cli/BAT2/requirements.txt && mkdir -p /data
+
+RUN chown -R 1000:1000 /app
+
+USER 1000
+
+# Expose Flask port
+EXPOSE 5000
+
+# Entrypoint: start Flask (API + scheduler)
+CMD ["gunicorn", "-b", "0.0.0.0:5000", "api.app:app", "--workers", "4", "--log-level", "debug"]

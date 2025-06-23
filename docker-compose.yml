@@ -1,0 +1,134 @@
+name: bioid
+
+services:
+  redis:
+    image: redis:6-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    # image: cerit.io/ceitec-biodata-pub/gromacs-metadump-api:latest
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DATA_FOLDER=/app/data
+      - CLEANUP_DAYS=30
+      - PREFERRED_URL_SCHEME="http"
+      - TZ=Europe/Prague
+      - DATABASE_URI=postgresql://postgres:postgres@postgres:5432/gmxmetadump
+    ports:
+      - "5000:5000"
+    volumes:
+      - annotation_data:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`localhost`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.api.entrypoints=web"
+    depends_on:
+      - traefik
+      - redis
+      - postgres
+      - worker
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    # image: cerit.io/ceitec-biodata-pub/gromacs-metadump-worker:latest
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DATA_FOLDER=/app/data
+      - CLEANUP_DAYS=30
+      - PREFERRED_URL_SCHEME="http"
+      - TZ=Europe/Prague
+      - DATABASE_URI=postgresql://postgres:postgres@postgres:5432/gmxmetadump
+    volumes:
+      - annotation_data:/app/data
+    labels:
+      - "traefik.enable=false"
+    depends_on:
+      - redis
+      - postgres
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      target: dev
+    restart: unless-stopped
+    command: npm run dev
+    working_dir: /usr/src/app
+    ports:
+      - "8081:8081"
+    depends_on:
+      - traefik
+      - api
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=Host(`localhost`)"
+      - "traefik.http.routers.web.entrypoints=web"
+      - "traefik.http.services.web.loadbalancer.server.port=8081"
+    develop:
+      watch:
+        - path: ./web
+          action: sync
+          target: /usr/src/app
+          ignore:
+            - node_modules
+            - .git
+            - .vscode
+            - .idea
+            - dist
+        - path: ./web/package.json
+          action: rebuild
+
+  traefik:
+    image: traefik:v2.10
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=gmxmetadump
+    volumes:
+      - database_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  adminer:
+    image: adminer:5.3.0
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - ADMINER_DEFAULT_SERVER=postgres
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`localhost`) && PathPrefix(`/adminer`)"
+      - "traefik.http.routers.traefik.entrypoints=web"
+    depends_on:
+      - postgres
+
+volumes:
+  annotation_data:
+  database_data:

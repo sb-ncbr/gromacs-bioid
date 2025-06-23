@@ -1,0 +1,21 @@
+# Development stage
+FROM node:24 AS dev
+
+WORKDIR /usr/src/app
+
+COPY web/package*.json ./
+RUN npm install --force
+
+COPY web .
+
+# Production build stage
+FROM dev AS builder
+RUN npm run build
+
+# Final image: only static content in nginx
+FROM nginxinc/nginx-unprivileged:1.27
+
+COPY --from=builder /usr/src/app/build /var/www/app
+COPY ./web/*.conf /etc/nginx/conf.d
+
+EXPOSE 8081

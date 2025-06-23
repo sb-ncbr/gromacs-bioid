@@ -1,0 +1,11 @@
+./web/node_modules
+.git
+.gitignore
+Dockerfile.*
+.dockerignore
+docker-compose.*
+.env
+.env.*
+*.log
+makefile
+LICENSE

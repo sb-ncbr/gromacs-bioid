@@ -1,4 +1,4 @@
-import {Alert, Box, Button, Grid, Paper, Skeleton, Stack, Typography} from "@mui/material"
+import {Alert, Box, Button, Grid, Paper, Skeleton, Stack, Typography, Link} from "@mui/material"
 import { useEffect, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import FilePreview from "../Components/FilePreview"
@@ -19,6 +19,8 @@ export interface AnnotationResultsStatusResponse {
     options: {
         [key: string]: any}
     error?: string
+    message?: string
+    trace?: string
 }
 
 const AnnotationResults = () => {
@@ -29,6 +31,7 @@ const AnnotationResults = () => {
     
     const [loading, setLoading] = useState(true)
     const [data, setData] = useState<Object>({})
+    const [waitingTime, setWaitingTime] = useState<number>(0)
     const [statedata, setStateData] = useState<AnnotationResultsStatusResponse>({
         uuid: '',
         processed_files: {},
@@ -61,8 +64,10 @@ const AnnotationResults = () => {
 
                 setStateData(data);
                 if (data.status === 'pending' || data.status === 'processing') {
+                    setWaitingTime((prev: number) => prev + 1);
                     setTimeout(fetchStatus, 5000);
                 }
+
             } catch (error) {
                 setError(error);
             }
@@ -70,7 +75,11 @@ const AnnotationResults = () => {
     }, [session])
 
     useEffect(() => {
-        if (statedata.status === 'completed') {
+        console.log(`Waiting time: ${waitingTime} seconds`)
+    }, [waitingTime])
+
+    useEffect(() => {
+        if (statedata.status === 'completed' || statedata.status === 'failed') {
             setLoading(false)
             fetch(`/api/annotate/${session}/results`)
             .then(response => {
@@ -88,11 +97,13 @@ const AnnotationResults = () => {
                 }
                 return response.json()
             })
-            .then(data => setData(data))
+            .then(data => {
+                if (data.error) {
+                    setError(new Error(data.error + (data.error_message ? `\nError Message: ${data.error_message}` : '')));
+                }
+                setData(data)
+            })
             .catch(error => setError(error))
-        } else if (statedata.status === 'failed') {
-            setLoading(false)
-            setError(new Error(`Session ${session} failed`))
         }
     }, [statedata])
 
@@ -101,9 +112,7 @@ const AnnotationResults = () => {
     console.log(error)
     return (
         <>
-            {error && <Alert sx={{mb: 3}} severity="error">
-                        {error.message}
-                      </Alert>}
+            
                         {/* <Paper sx={{ p: 2, display: "flex", mb: 3}}> */}
                             <Stack direction="column" sx={{width: "100%"}} spacing={5} alignItems="stretch" whiteSpace={"pre-line"}>
                                 <Stack direction="column" spacing={1}>
@@ -111,12 +120,23 @@ const AnnotationResults = () => {
                                     <Typography>Session ID: {session}</Typography>
                                     <Typography>Job status: <SessionStatus>{statedata?.status || ""}</SessionStatus></Typography>
                                     <Typography>Session Expiration: {(new Date(statedata?.expires)).toLocaleString()}</Typography>
+                                    {waitingTime >= 3 && statedata.status !== 'completed' && statedata.status !== 'failed' ? (
+                                        <Alert severity="info" sx={{mt: 2}}>
+                                            <Typography variant="h3" sx={{fontWeight: "bold"}}>This might take a while.</Typography>Sit back and relax or visit <Link href={window.location.toString()} sx={{fontWeight: "bold"}}>{window.location.toString()}</Link> again in a short moment.
+                                        </Alert>
+                                        ) : null}
                                 </Stack>
-                                {loading || error ? (
+                                {loading ? (
                                     skeleton
+                                ) : error ? (
+                                    <Alert severity="error" sx={{ mt: 2 }}>
+                                        <Typography variant="h3" sx={{ fontWeight: "bold" }}>No valid result was generated!</Typography>
+                                        <Typography variant="body1" sx={{color: "initial", mt:1, mb:1}}>{error.message}</Typography>
+                                        <Button variant="contained" onClick={() => navigate(-1)}>Go Back</Button>
+                                    </Alert>
                                 ) : (
                                     <>
-                                    <Typography variant="h2">Results</Typography>
+                                    <Typography variant="h1">Results</Typography>
                                     <Box sx={{ mt: 3 }}>
                                         <Typography variant="h3">Raw JSON Output</Typography>
                                         <pre
