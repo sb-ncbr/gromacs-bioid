@@ -1,0 +1,62 @@
+# templates/worker-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gmd.fullname" . }}-worker
+spec:
+  replicas: {{ .Values.replicaCount.worker }}
+  selector:
+    matchLabels:
+      app: {{ include "gmd.fullname" . }}-worker
+  template:
+    metadata:
+      labels:
+        app: {{ include "gmd.fullname" . }}-worker
+    spec:
+      securityContext:                       # Pod security context
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot:        true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: {{ .Values.image.worker.repository }}:{{ .Values.image.worker.tag }}
+          imagePullPolicy: {{ .Values.image.worker.pullPolicy }}
+          env:
+            - name: CELERY_BROKER_URL
+              value: redis://{{ include "gmd.fullname" . }}-redis:{{ .Values.redis.port }}/0
+            - name: CELERY_RESULT_BACKEND
+              value: redis://{{ include "gmd.fullname" . }}-redis:{{ .Values.redis.port }}/0
+            - name: DATABASE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ include "gmd.fullname" . }}-{{ .Values.postgresql.cluster.name }}-app"
+                  key: uri
+            - name: DATA_FOLDER
+              value: "{{ .Values.dataFolder }}"
+            - name: CLEANUP_DAYS
+              value: "{{ .Values.cleanupDays }}"
+            - name: PREFERRED_URL_SCHEME
+              value: "{{ .Values.preferredUrlScheme }}"
+            - name: TZ
+              value: "{{ .Values.timezone }}"
+          resources:
+            requests:
+              cpu: {{ .Values.resources.worker.requests.cpu }}
+              memory: {{ .Values.resources.worker.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.worker.limits.cpu }}
+              memory: {{ .Values.resources.worker.limits.memory }}
+          volumeMounts:
+            - name: annotation-data
+              mountPath: {{ .Values.dataFolder }}
+          securityContext:
+            runAsUser:                1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: annotation-data
+          persistentVolumeClaim:
+            claimName: {{ include "gmd.fullname" . }}-annotation-data

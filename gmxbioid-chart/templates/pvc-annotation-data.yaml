@@ -1,0 +1,13 @@
+# templates/pvc-annotation-data.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "gmd.fullname" . }}-annotation-data
+spec:
+  accessModes: [ "ReadWriteOnce" ]
+  resources:
+    requests:
+      storage: {{ .Values.storage.annotationData.size }}
+  {{- if .Values.storage.annotationData.storageClass }}
+  storageClassName: {{ .Values.storage.annotationData.storageClass }}
+  {{- end }}

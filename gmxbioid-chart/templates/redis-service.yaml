@@ -1,0 +1,11 @@
+# templates/redis-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gmd.fullname" . }}-redis
+spec:
+  selector:
+    app: {{ include "gmd.fullname" . }}-redis
+  ports:
+    - port:       {{ .Values.redis.port }}
+      targetPort: {{ .Values.redis.port }}

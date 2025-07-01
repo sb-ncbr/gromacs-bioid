@@ -1,0 +1,19 @@
+# templates/cloudnative-pg-cluster.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: "{{ include "gmd.fullname" . }}-{{ .Values.postgresql.cluster.name }}"
+spec:
+  instances: {{ .Values.postgresql.cluster.instances }}
+  imageName: '{{ .Values.postgresql.cluster.imageName }}'
+  primaryUpdateStrategy: unsupervised
+  env:
+    - name: TZ
+      value: {{ .Values.timezone | quote }}
+  bootstrap:
+    initdb:
+      database: {{ .Values.postgresql.cluster.bootstrap.initdb.database }}
+      owner:    {{ .Values.postgresql.cluster.bootstrap.initdb.owner }}
+  storage:
+    size:         {{ .Values.postgresql.cluster.storage.size }}
+    storageClass: {{ .Values.postgresql.cluster.storage.storageClass }}

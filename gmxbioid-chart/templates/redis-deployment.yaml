@@ -1,0 +1,46 @@
+# templates/redis-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gmd.fullname" . }}-redis
+spec:
+  replicas: {{ .Values.replicaCount.redis }}
+  selector:
+    matchLabels:
+      app: {{ include "gmd.fullname" . }}-redis
+  template:
+    metadata:
+      labels:
+        app: {{ include "gmd.fullname" . }}-redis
+    spec:
+      securityContext:                       # Pod security context
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot:        true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          image: "{{ .Values.image.redis.repository }}:{{ .Values.image.redis.tag }}"
+          imagePullPolicy: {{ .Values.image.redis.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.redis.port }}
+          resources:
+            requests:
+              cpu: {{ .Values.resources.redis.requests.cpu }}
+              memory: {{ .Values.resources.redis.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.redis.limits.cpu }}
+              memory: {{ .Values.resources.redis.limits.memory }}
+          volumeMounts:
+            - name: eph
+              mountPath: /data
+          securityContext:                   # Container security context
+            runAsUser:                1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:                                                                        
+      - name: eph                                                                     
+        emptyDir:                                                                     
+          sizeLimit: 15Gi 

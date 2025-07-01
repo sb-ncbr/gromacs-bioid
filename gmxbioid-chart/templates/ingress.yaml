@@ -1,0 +1,33 @@
+# templates/ingress.yaml
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "gmd.fullname" . }}-ingress
+  annotations:
+    kubernetes.io/tls-acme: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: {{ .Values.ingress.proxyBodySize | default "100M" }}
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ include "gmd.TlsName" . }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "gmd.fullname" . }}-web
+                port: { number: {{ .Values.service.web.port | default 8081 }} }
+          - path: {{ .Values.ingress.apiPath }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "gmd.fullname" . }}-api
+                port: { number: {{ .Values.service.api.port | default 5000 }} }
+{{- end }}

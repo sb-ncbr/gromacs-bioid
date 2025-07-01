@@ -1,0 +1,12 @@
+# templates/api-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gmd.fullname" . }}-api
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ include "gmd.fullname" . }}-api
+  ports:
+    - port:       {{ .Values.service.api.port | default 5000 }}
+      targetPort: {{ .Values.service.api.port | default 5000 }}

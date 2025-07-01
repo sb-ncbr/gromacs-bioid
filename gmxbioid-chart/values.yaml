@@ -1,0 +1,96 @@
+replicaCount:
+  api:   1
+  worker: 1
+  web:   1
+  redis: 1
+
+image:
+  api:
+    repository: cerit.io/ceitec-biodata-pub/gromacs-bioid-api
+    tag:        v1.0.0
+    pullPolicy: IfNotPresent
+  worker:
+    repository: cerit.io/ceitec-biodata-pub/gromacs-bioid-worker
+    tag:        v1.0.0
+    pullPolicy: IfNotPresent
+  web:
+    repository: cerit.io/ceitec-biodata-pub/gromacs-bioid-web
+    tag:        v1.0.0
+    pullPolicy: IfNotPresent
+  redis:
+    repository: redis
+    tag:        8-alpine
+    pullPolicy: IfNotPresent
+
+resources:
+  api:
+    requests:
+      cpu:    100m
+      memory: 128Mi
+    limits:
+      cpu:    1
+      memory: 512Mi
+  worker:
+    requests:
+      cpu:    100m
+      memory: 128Mi
+    limits:
+      cpu:    1
+      memory: 512Mi
+  web:
+    requests:
+      cpu:    100m
+      memory: 128Mi
+    limits:
+      cpu:    500m
+      memory: 512Mi
+  redis:
+    requests:
+      cpu:    100m
+      memory: 128Mi
+    limits:
+      cpu:    500m
+      memory: 1Gi
+
+service:
+  api:
+    port: 5000
+  web:
+    port: 8081
+  redis:
+    port: 6379
+
+redis:
+  replicaCount: 1
+  port:        6379
+
+dataFolder: /app/data
+cleanupDays: 30
+preferredUrlScheme: https
+timezone: Europe/Prague
+servername: bioid.biodata.ceitec.cz
+
+storage:
+  annotationData:
+    size:       100Gi
+    storageClass: "nfs-csi"   # omit or name your StorageClass
+
+postgresql:
+  # Used to generate the Cluster CRD below:
+  cluster:
+    name:         cluster
+    instances:    1
+    imageName:    cerit.io/cloudnative-pg/postgresql:15.0
+    bootstrap:
+      initdb:
+        database: gmxbioid
+        owner:    gmx-bioid-user
+    storage:
+      size:        100Gi
+      storageClass: nfs-csi  # your PV storageClass
+
+ingress:
+  enabled: true
+  host:    bioid.biodata.ceitec.cz
+  proxyBodySize: 128M
+  apiPath: /api
