@@ -104,6 +104,9 @@ const AnnotationResults = () => {
                 setData(data)
             })
             .catch(error => setError(error))
+        } else if (statedata.status === 'failed') {
+            setLoading(false)
+            setError(new Error(`Session ${session} failed`))
         }
     }, [statedata])
 
