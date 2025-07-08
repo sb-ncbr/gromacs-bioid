@@ -1,5 +1,5 @@
 VERSION      ?= latest
-REPO         ?= cerit.io/ceitec-biodata-pub
+REPO         ?= cerit.io/tomsko
 CONT_PREFIX  ?= gromacs-bioid-
 CONTAINERS   := api worker web
 
@@ -31,7 +31,7 @@ push-%:
 .PHONY: deploy
 deploy:
 	@echo "Deploying all containers with tags from values.yaml"
-	helm upgrade --install gmx-bioid ./gmxbioid-chart -f ./gmxbioid-chart/values.yaml -n gromacs-bioid-ns
+	helm upgrade --install gmx-bioid ./gmxbioid-chart -f ./gmxbioid-chart/values.yaml -n pavlik-ns
 
 # Retrieve last deployed version
 .PHONY: last-version

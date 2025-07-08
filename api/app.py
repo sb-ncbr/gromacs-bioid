@@ -7,7 +7,7 @@ import shutil
 import time
 from datetime import datetime, timedelta
 
-from flask import Flask, request, jsonify, url_for, abort
+from flask import Flask, request, jsonify, url_for, abort, send_file
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from celery import Celery
@@ -131,7 +131,7 @@ def process_annotation(self, job_id, keep_flag):
 
     try:
         logger.info(f"[Celery] Running BAT2 analysis for job {job_id}")
-        results_path: str | None = run_analyze(_upload_dir(job_id))
+        results_path: str | None = run_analyze(_upload_dir(job_id), job_id)
         if results_path is None:
             raise RuntimeError("BAT2 failed")
 
@@ -272,12 +272,134 @@ def get_status(uuid):
 
 @app.route("/api/annotate/<uuid>/results", methods=["GET"])
 def get_results(uuid):
-    logger.info(f"[API] Results for {uuid}")
+    logger.info(f"[API] Results for {uuid} -> whole results json")
     job = Job.query.get(uuid)
     if not job or not job.result_metadata:
         abort(404)
 
-    return jsonify(json.loads(job.result_metadata))
+    results_path: str = os.path.join(_upload_dir(uuid), "results.json")
+    if not os.path.isfile(results_path):
+        abort(404)
+
+    with open(results_path, 'r') as fd:
+        data = json.load(fd)
+
+    return jsonify(data)
+
+@app.route("/api/annotate/<uuid>/log", methods=["GET"])
+def get_logs(uuid):
+    logger.info(f"[API] Logs for {uuid}")
+    job = Job.query.get(uuid)
+    if not job:
+        abort(404)
+
+    logs_path: str = os.path.join(_upload_dir(uuid), "results.log")
+    if not os.path.isfile(logs_path):
+        abort(404)
+
+    with open(logs_path, 'r') as fd:
+        data = fd.read()
+
+    return jsonify(data)
+
+@app.route("/api/files/<uuid>/<filename>", methods=["GET"])
+def get_temporary_files(uuid, filename):
+    logger.info(f"[API] Fetch temporary file for {uuid} -> {filename}")
+    job = Job.query.get(uuid)
+    if not job:
+        abort(404)
+
+    requested_file_path: str = os.path.join(_upload_dir(uuid), filename)
+    if not os.path.exists(requested_file_path):
+        abort(404)
+
+    if not filename.endswith(".pdb"):
+        abort(404)
+
+    try:
+        return send_file(
+            requested_file_path,
+            mimetype="chemical/x-pdb",
+            as_attachment=True,
+            download_name=filename
+        )
+    except Exception:
+        logger.exception(f"Failed to send file {filename} for job {uuid}")
+        abort(500)
+
+def json_path_exists(path: list[str], data: dict) -> bool:
+    curr = data
+    for path_elem in path:
+        if path_elem not in curr:
+            return False
+        curr = curr[path_elem]
+    return True
+
+@app.route("/api/annotate/<uuid>/results/segments", methods=["GET"])
+def get_results__segments(uuid):
+    logger.info(f"[API] Results for {uuid} -> list of segments")
+    job = Job.query.get(uuid)
+    if not job or not job.result_metadata:
+        abort(404)
+
+    results_path: str = os.path.join(_upload_dir(uuid), "results.json")
+    if not os.path.isfile(results_path):
+        abort(404)
+
+    with open(results_path, 'r') as fd:
+        data = json.load(fd)
+
+    if not json_path_exists(["summary", "segment_list"], data):
+        abort(404)
+
+    return jsonify(data["summary"]["segment_list"])
+
+@app.route("/api/annotate/<uuid>/results/segment/<segname>/<what>", methods=["GET"])
+def get_results__segment_data(uuid, segname, what):
+    logger.info(f"[API] Results for {uuid} -> {what} of '{segname}'")
+    job = Job.query.get(uuid)
+    if not job or not job.result_metadata:
+        abort(404)
+
+    results_path: str = os.path.join(_upload_dir(uuid), "results.json")
+    if not os.path.isfile(results_path):
+        abort(404)
+
+    with open(results_path, 'r') as fd:
+        data = json.load(fd)
+
+    if what not in ['name', 'confidence', 'db_crosslink', 'identifier', 'ident']:
+        abort(404)
+
+    if not json_path_exists(["summary", "segments", segname, what], data):
+        abort(404)
+
+    return jsonify(data["summary"]["segments"][segname][what])
+
+@app.route("/api/annotate/<uuid>/results/system/<what>", methods=["GET"])
+def get_results__system(uuid, what):
+    logger.info(f"[API] Results for {uuid} -> mmcif system for '{what}'")
+    job = Job.query.get(uuid)
+    if not job or not job.result_metadata:
+        abort(404)
+
+    if what == "system":
+        what = "simulation"
+
+    mmcif_path: str = os.path.join(_upload_dir(uuid), f"{what}.mmcif")
+    if not os.path.isfile(mmcif_path):
+        abort(404)
+
+    try:
+        return send_file(
+            mmcif_path,
+            mimetype="chemical/x-mmcif",  # or "application/octet-stream"
+            as_attachment=True,
+            download_name=f"{what}.mmcif"
+        )
+    except Exception:
+        logger.exception(f"Failed to send mmcif file for job {uuid}, what={what}")
+        abort(500)
 
 if __name__ == "__main__":
     logger.info("Starting GROMACS MetaDump API...")

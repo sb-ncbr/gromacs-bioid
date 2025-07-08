@@ -54,6 +54,8 @@ spec:
           volumeMounts:
             - name: annotation-data
               mountPath: {{ .Values.dataFolder }}
+            - name: lts-databases-data
+              mountPath: {{ .Values.ltsDatabaseFolder }}
           securityContext:                   # Container security context
             runAsUser:                1000
             allowPrivilegeEscalation: false
@@ -64,3 +66,6 @@ spec:
         - name: annotation-data
           persistentVolumeClaim:
             claimName: {{ include "gmd.fullname" . }}-annotation-data
+        - name: lts-databases-data
+          persistentVolumeClaim:
+            claimName: {{ include "gmd.fullname" . }}-lts-databases-data

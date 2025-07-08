@@ -2,7 +2,7 @@ FROM python:3.10-slim
 
 # Install system deps
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential && \
+    apt-get install -y --no-install-recommends build-essential libvips && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -21,4 +21,4 @@ USER 1000
 EXPOSE 5000
 
 # Entrypoint: start Flask (API + scheduler)
-CMD ["gunicorn", "-b", "0.0.0.0:5000", "api.app:app", "--workers", "4", "--log-level", "debug"]
+CMD ["python3", "-m", "gunicorn", "-b", "0.0.0.0:5000", "api.app:app", "--workers", "4", "--log-level", "debug"]

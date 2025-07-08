@@ -6,17 +6,17 @@ replicaCount:
 
 image:
   api:
-    repository: cerit.io/ceitec-biodata-pub/gromacs-bioid-api
-    tag:        v1.0.0
-    pullPolicy: IfNotPresent
+    repository: cerit.io/tomsko/gromacs-bioid-api
+    tag:        latest
+    pullPolicy: Always
   worker:
-    repository: cerit.io/ceitec-biodata-pub/gromacs-bioid-worker
-    tag:        v1.0.0
-    pullPolicy: IfNotPresent
+    repository: cerit.io/tomsko/gromacs-bioid-worker
+    tag:        latest
+    pullPolicy: Always
   web:
-    repository: cerit.io/ceitec-biodata-pub/gromacs-bioid-web
-    tag:        v1.0.0
-    pullPolicy: IfNotPresent
+    repository: cerit.io/tomsko/gromacs-bioid-web
+    tag:        latest
+    pullPolicy: Always
   redis:
     repository: redis
     tag:        8-alpine
@@ -65,14 +65,18 @@ redis:
   port:        6379
 
 dataFolder: /app/data
+ltsDatabaseFolder: /app/databases
 cleanupDays: 30
 preferredUrlScheme: https
 timezone: Europe/Prague
-servername: bioid.biodata.ceitec.cz
+servername: bioid.dyn.cloud.e-infra.cz
 
 storage:
   annotationData:
     size:       100Gi
+    storageClass: "nfs-csi"   # omit or name your StorageClass
+  ltsDatabaseData:
+    size:       50Gi
     storageClass: "nfs-csi"   # omit or name your StorageClass
 
 postgresql:
@@ -91,6 +95,6 @@ postgresql:
 
 ingress:
   enabled: true
-  host:    bioid.biodata.ceitec.cz
+  host:    bioid.dyn.cloud.e-infra.cz
   proxyBodySize: 128M
   apiPath: /api

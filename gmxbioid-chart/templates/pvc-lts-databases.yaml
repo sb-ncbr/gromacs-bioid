@@ -1,0 +1,13 @@
+# templates/pvc-lts-databases.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "gmd.fullname" . }}-lts-databases-data
+spec:
+  accessModes: [ "ReadWriteOnce" ]
+  resources:
+    requests:
+      storage: {{ .Values.storage.ltsDatabaseData.size }}
+  {{- if .Values.storage.ltsDatabaseData.storageClass }}
+  storageClassName: {{ .Values.storage.ltsDatabaseData.storageClass }}
+  {{- end }}

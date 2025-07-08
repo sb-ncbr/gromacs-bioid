@@ -37,6 +37,7 @@ RUN apt-get update && \
     libblas-dev \
     python3 \
     python3-venv \
+    libvips \
     && rm -rf /var/lib/apt/lists/*
 
     

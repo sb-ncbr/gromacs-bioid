@@ -155,6 +155,10 @@ const Frontpage = () => {
                         </Typography>
                     </li>
                 </Box>
+                <Typography variant="body1">
+                    Please note: if your simulation topology file contains ".itp" includes, it is necessary that all includes are present for analysis. This could mean
+                    that you need to upload the force-field folder with all necessary files. You may upload everything as .zip archive.
+                </Typography>
 
                 <Grid container spacing={3} alignItems="stretch" sx={{ mt: 3 }}>
                     <Grid item xs={12} md={8}>
