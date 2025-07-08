@@ -26,17 +26,17 @@ resources:
   api:
     requests:
       cpu:    100m
-      memory: 128Mi
+      memory: 5Gi
     limits:
       cpu:    1
-      memory: 512Mi
+      memory: 1Gi
   worker:
     requests:
       cpu:    100m
-      memory: 128Mi
+      memory: 5Gi
     limits:
       cpu:    1
-      memory: 512Mi
+      memory: 1Gi
   web:
     requests:
       cpu:    100m
