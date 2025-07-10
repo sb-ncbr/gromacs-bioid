@@ -158,6 +158,7 @@ const AnnotationResults = () => {
                                         width={600}
                                         height={600}
                                         segment={selectedSegment == "SIMULATION" ? "system" : selectedSegment}
+                                        segments={segments}
                                     />
                                 </Box>
                             </Grid>
