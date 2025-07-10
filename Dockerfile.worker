@@ -38,6 +38,7 @@ RUN apt-get update && \
     python3 \
     python3-venv \
     libvips \
+    ncbi-blast+ \
     && rm -rf /var/lib/apt/lists/*
 
     
@@ -45,6 +46,7 @@ WORKDIR /app
 
 ADD api /app/api
 ADD cli /app/cli
+RUN mkdir -p /app/tmp
 
 RUN python3 -m venv /opt/venv \
     && ls -la \
