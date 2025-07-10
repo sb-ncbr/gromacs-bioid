@@ -368,6 +368,22 @@ def get_results__segment_data(uuid, segname, what):
     with open(results_path, 'r') as fd:
         data = json.load(fd)
 
+    if what == "type":
+        if not json_path_exists(["summary", "segments", segname, "macromolecule_type"], data):
+            abort(404)
+
+        if data["summary"]["segments"][segname]["macromolecule_type"]["protein"]:
+            return jsonify("protein")
+        if data["summary"]["segments"][segname]["macromolecule_type"]["nucleic"]:
+            return jsonify("nucleic")
+        if data["summary"]["segments"][segname]["macromolecule_type"]["lipid"]:
+            return jsonify("lipid")
+        if data["summary"]["segments"][segname]["macromolecule_type"]["carbohydrate"]:
+            return jsonify("carbohydrate")
+        if data["summary"]["segments"][segname]["macromolecule_type"]["atom"]:
+            return jsonify("atom")
+        return jsonify("unknown")
+
     if what not in ['name', 'confidence', 'db_crosslink', 'identifier', 'ident']:
         abort(404)
 
