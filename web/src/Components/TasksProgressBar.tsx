@@ -79,7 +79,7 @@ const TasksProgressBar: FC<TasksProgressBarProps> = ({ tasks }) => {
                             <Tooltip
                                 title={
                                     <Box>
-                                        <Typography variant="body2">{task.fullName}</Typography>
+                                        <Typography variant="body2" dangerouslySetInnerHTML={{ __html: task.fullName }} />
                                         <Typography variant="caption" color="text.secondary">
                                             {task.statusText || "Unknown status"}
                                         </Typography>

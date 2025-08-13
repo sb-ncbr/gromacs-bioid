@@ -48,7 +48,7 @@ interface ConfidenceBarProps {
 
 const ConfidenceBar: React.FC<ConfidenceBarProps> = ({ confidence }) => {
     if (confidence == null) { // catches both null and undefined
-        return <Typography color="text.secondary">Confidence: N/A</Typography>;
+        return <Typography color="text.secondary">Confidence of identification: N/A</Typography>;
     }
 
     const value = confidence; // number, safe
@@ -104,10 +104,10 @@ const AnnotationResults = () => {
 
     const TASK_TYPES_ORDER = [
         { key: "Load", prefix: "Load simulation" },
-        { key: "Signatures", prefix: "Generate fragment signatures" },
-        { key: "Identifiers", prefix: "Resolve signatures to identifiers" },
+        { key: "Resolve<br>Signatures", prefix: "Generate fragment signatures" },
+        { key: "Resolve<br>Identifiers", prefix: "Resolve signatures to identifiers" },
         { key: "Summarize", prefix: "Summarize results" },
-        { key: "Metadata", prefix: "Download metadata for results" },
+        { key: "Annotation<br>Complete", prefix: "Download metadata for results" },
     ];
 
     const [tasks, setTasks] = useState<Task[]>(TASK_TYPES_ORDER.map(t => ({
@@ -424,7 +424,7 @@ const AnnotationResults = () => {
                 >
                     {/* Left column */}
                     <Stack spacing={1} sx={{ flex: 1 }}>
-                        <Typography variant="h1">Annotation results</Typography>
+                        <Typography variant="h1">Annotation details</Typography>
                         <Typography>Session ID: {session}</Typography>
                         <Typography>
                             Job status: <SessionStatus>{statedata?.status || ""}</SessionStatus>
@@ -436,10 +436,11 @@ const AnnotationResults = () => {
 
                     {/* Right column */}
                     <Stack spacing={2} sx={{ flex: 1 }}>
-                        <Typography variant="h1"></Typography>
+                        <Typography variant="h3">Annotation process</Typography>
                         <Box sx={{ display: "flex", alignItems: "center", width: "100%", overflowX: "auto", pb: 2 }}>
                             <TasksProgressBar tasks={tasks} />
                         </Box>
+                        <Typography variant="h3">Files</Typography>
                         <ListFiles session={session} />
                     </Stack>
                 </Stack>
@@ -485,7 +486,6 @@ const AnnotationResults = () => {
                                                 </Typography>
                                                 <Typography>Number of atoms: {simAtoms !== null ? simAtoms : "N/A"}</Typography>
                                                 <Typography>Number of bonds: {simBonds !== null ? simBonds : "N/A"}</Typography>
-                                                <Typography>Number of molecules: {simMolecules !== null ? simMolecules : "N/A"}</Typography>
                                             </>
                                         ) : (
                                             <>
@@ -496,7 +496,7 @@ const AnnotationResults = () => {
 
                                                         {segmentInfo.db_crosslink && (
                                                             <Typography>
-                                                                DB Link: <Link href={segmentInfo.db_crosslink} target="_blank" rel="noopener">
+                                                                Database reference: <Link href={segmentInfo.db_crosslink} target="_blank" rel="noopener">
                                                                 {segmentInfo.db_crosslink}
                                                             </Link>
                                                             </Typography>
@@ -510,7 +510,7 @@ const AnnotationResults = () => {
                                                 <Box sx={{ minHeight: 8, width: "100%" }}>&nbsp;</Box>
                                                 <Accordion>
                                                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                                        <Typography variant="h6">Additional information</Typography>
+                                                        <Typography variant="h6">Identification details</Typography>
                                                     </AccordionSummary>
                                                     <AccordionDetails>
                                                         <Box sx={{ mt: 3 }}>
