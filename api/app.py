@@ -327,13 +327,90 @@ def get_temporary_files(uuid, filename):
         logger.exception(f"Failed to send file {filename} for job {uuid}")
         abort(500)
 
+
+@app.route("/api/annotate/<uuid>/results/tasks", methods=["GET"])
+def get_results_files(uuid):
+    logger.info(f"[API] Results for {uuid} -> tasks log")
+    job = Job.query.get(uuid)
+
+    results_path: str = os.path.join(_upload_dir(uuid), "tasks.log")
+    if not os.path.isfile(results_path):
+        abort(404)
+
+    with open(results_path, 'r') as fd:
+        data = json.load(fd)
+
+    return jsonify(data)
+
+@app.route("/api/annotate/<uuid>/results/errors", methods=["GET"])
+def get_results_errors(uuid):
+    logger.info(f"[API] Results for {uuid} -> errors log")
+    job = Job.query.get(uuid)
+
+    results_path: str = os.path.join(_upload_dir(uuid), "errors.log")
+    if not os.path.isfile(results_path):
+        abort(404)
+
+    with open(results_path, 'r') as fd:
+        data = fd.read()
+
+    return jsonify(data)
+
+@app.route("/api/annotate/<uuid>/results/files/<what>", methods=["GET"])
+def get_results_tasks(uuid, what):
+    logger.info(f"[API] Results for {uuid} -> files {what}")
+    job = Job.query.get(uuid)
+
+    if what not in ('provided', 'used'):
+        abort(404)
+
+    filename = ""
+    if what == 'provided':
+        filename = "all_files.txt"
+    elif what == 'used':
+        filename = "used_files.txt"
+
+    results_path: str = os.path.join(_upload_dir(uuid), filename)
+    if not os.path.isfile(results_path):
+        abort(404)
+
+    with open(results_path, 'r') as fd:
+        data = json.load(fd)
+
+    return jsonify(data)
+
+
+
 def json_path_exists(path: list[str], data: dict) -> bool:
     curr = data
     for path_elem in path:
         if path_elem not in curr:
+            print("PATH DOES NOT EXIST:", path)
             return False
         curr = curr[path_elem]
     return True
+
+@app.route("/api/annotate/<uuid>/results/sim/<what>", methods=["GET"])
+def get_results_simdata(uuid, what):
+    logger.info(f"[API] Results for {uuid} -> {what} (sim parameters)")
+    job = Job.query.get(uuid)
+    if not job or not job.result_metadata:
+        abort(404)
+
+    results_path: str = os.path.join(_upload_dir(uuid), "results.json")
+    if not os.path.isfile(results_path):
+        abort(404)
+
+    with open(results_path, 'r') as fd:
+        data = json.load(fd)
+
+    if what not in ('atoms', 'bonds', 'molecules'):
+        abort(404)
+
+    if not json_path_exists(["simulation", what], data):
+        abort(404)
+
+    return jsonify(data["simulation"][what])
 
 @app.route("/api/annotate/<uuid>/results/segments", methods=["GET"])
 def get_results__segments(uuid):
@@ -384,7 +461,18 @@ def get_results__segment_data(uuid, segname, what):
             return jsonify("atom")
         return jsonify("unknown")
 
-    if what not in ['name', 'confidence', 'db_crosslink', 'identifier', 'ident']:
+    if what == "flags":
+        if not json_path_exists(["simulation", "segment_flag", segname], data):
+            abort(404)
+        return jsonify(list(data["simulation"]["segment_flag"][segname].keys()))
+
+    if what.startswith("flag_"):
+        flag_kind = what.split('_', maxsplit=1)[1]
+        if not json_path_exists(["simulation", "segment_flag", segname, flag_kind], data):
+            abort(404)
+        return jsonify(data["simulation"]["segment_flag"][segname][flag_kind])
+
+    if what not in ['name', 'confidence', 'db_crosslink', 'identifier', 'ident', 'accession']:
         abort(404)
 
     if not json_path_exists(["summary", "segments", segname, what], data):
@@ -416,6 +504,195 @@ def get_results__system(uuid, what):
     except Exception:
         logger.exception(f"Failed to send mmcif file for job {uuid}, what={what}")
         abort(500)
+
+@app.route("/api/annotate/<uuid>/results/segment/<segname>/intermediate/signatures", methods=["GET"])
+def get_results_signatures(uuid, segname):
+    logger.info(f"[API] Results for {uuid} -> signatures list for {segname}")
+    job = Job.query.get(uuid)
+    if not job or not job.result_metadata:
+        abort(404)
+
+    results_path: str = os.path.join(_upload_dir(uuid), "results.json")
+    if not os.path.isfile(results_path):
+        abort(404)
+
+    with open(results_path, 'r') as fd:
+        data = json.load(fd)
+
+    if not json_path_exists(["signatures", segname, "generated"], data):
+        abort(404)
+
+    return jsonify(list(data["signatures"][segname]["generated"]))
+
+SIGNATURE_NAME_TO_TYPE = {
+    "FASTA_MAP": "FASTA",
+    "FASTA_RESNAME": "FASTA",
+    "ATOM": "ATOM",
+    "SMILES": "SMILES",
+    "SMILES_NOT_SANITIZED": "SMILES",
+    "PDB_SANITIZED": "PDB",
+    "PDB_BACKBONE_SANITIZED": "PDB",
+    "PDB_NOT_SANITIZED": "PDB",
+    "PDB_BACKBONE_NOT_SANITIZED": "PDB",
+    "NAME_CHAIN": "NAME",
+    "NAME_MOLECULE": "NAME",
+    "NAME_SEGMENT": "NAME",
+    "FINGERPRINT": "FINGERPRINT"
+}
+
+SIGNATURE_NAME_TO_DESCRIPTION = {
+    "FASTA_MAP": "FASTA representation of either nucleotide sequences or amino acid (protein) sequences",
+    "FASTA_RESNAME": "FASTA representation of either nucleotide sequences or amino acid (protein) sequences",
+    "ATOM": "Singular atom representation",
+    "SMILES": "Simplified Molecular Input Line Entry System representation of either carbohydrates or lipids",
+    "SMILES_NOT_SANITIZED": "Simplified Molecular Input Line Entry System representation of either carbohydrates or lipids",
+    "PDB_SANITIZED": "PDB representation of either nucleotide or amino acid (protein) structure",
+    "PDB_BACKBONE_SANITIZED": "PDB representation of either nucleotide or amino acid (protein) structure, alpha-carbons only",
+    "PDB_NOT_SANITIZED": "PDB representation of either nucleotide or amino acid (protein) structure",
+    "PDB_BACKBONE_NOT_SANITIZED": "PDB representation of either nucleotide or amino acid (protein) structure, alpha-carbons only",
+    "NAME_CHAIN": "Name of the segment's chain",
+    "NAME_MOLECULE": "Name of the segment's molecule",
+    "NAME_SEGMENT": "Name of the segment",
+    "FINGERPRINT": "SHA512 representation of atoms and bonds within the molecule"
+}
+
+SIGNATURE_NAME_TO_FILENAME = {
+    "FASTA_MAP": "export.fasta",
+    "FASTA_RESNAME": "export.fasta",
+    "ATOM": "export.txt",
+    "SMILES": "export.txt",
+    "SMILES_NOT_SANITIZED": "export.txt",
+    "PDB_SANITIZED": "export.pdb",
+    "PDB_BACKBONE_SANITIZED": "export.pdb",
+    "PDB_NOT_SANITIZED": "export.pdb",
+    "PDB_BACKBONE_NOT_SANITIZED": "export.pdb",
+    "NAME_CHAIN": "export.txt",
+    "NAME_MOLECULE": "export.txt",
+    "NAME_SEGMENT": "export.txt",
+    "FINGERPRINT": "export.txt"
+}
+
+def signature_shortify(signature_type, signature):
+    if signature_type in ('ATOM', 'NAME_CHAIN', 'NAME_MOLECULE', 'NAME_SEGMENT'):
+        return signature
+    if signature_type in ('FASTA_MAP', 'FASTA_RESNAME', 'SMILES', 'SMILES_NOT_SANITIZED', 'FINGERPRINT'):
+        return signature[:20] + "..." if len(signature) > 20 else ""
+    else:
+        return "Signature too long to visualize, please download it."
+
+@app.route("/api/annotate/<uuid>/results/segment/<segname>/intermediate/signature/<signame>/<what>", methods=["GET"])
+def get_results_signatures_meta(uuid, segname, signame, what):
+    logger.info(f"[API] Results for {uuid} -> signatures list for {segname} | {what}")
+    job = Job.query.get(uuid)
+    if not job or not job.result_metadata:
+        abort(404)
+
+    results_path: str = os.path.join(_upload_dir(uuid), "results.json")
+    if not os.path.isfile(results_path):
+        abort(404)
+
+    with open(results_path, 'r') as fd:
+        data = json.load(fd)
+
+    if what not in ('type', 'description', 'short', 'full', 'filename'):
+        abort(404)
+
+    if not json_path_exists(["signatures", segname, "generated", signame], data):
+        abort(404)
+
+    if what == "type":
+        return jsonify(SIGNATURE_NAME_TO_TYPE[signame])
+    if what == "description":
+        return jsonify(SIGNATURE_NAME_TO_DESCRIPTION[signame])
+    if what == "short":
+        return jsonify(signature_shortify(signame, data["signatures"][segname]["generated"][signame]))
+    if what == "full":
+        return jsonify(data["signatures"][segname]["generated"][signame])
+    if what == "filename":
+        return jsonify(SIGNATURE_NAME_TO_FILENAME[signame])
+
+    abort(404)
+
+
+IDENTIFIER_ID_TO_NAME = {
+    "BLAST_PDB_PROT": "BLAST search",
+    "BLAST_PDB_NT": "BLAST search",
+    "BLAST_UNIPROT": "BLAST search",
+    "PDB_STRUCT": "RCSB PDB search",
+    "ALPHAFIND_STRUCT": "AlphaFind search",
+    "CHEMBL_STRUCT": "CHEMBL search",
+    "PUBCHEM_STRUCT": "PubChem search",
+    "ATOM": "Translation of atomic information",
+    "NAME_CCD": "Chemical Compound Database search (using name)",
+    "NAME_MAPS": "Lipid MAPS search (using name)",
+    "NAME_MANUAL": "Internal database search (using name)"
+}
+
+IDENTIFIER_ID_TO_DESCRIPTION = {
+    "BLAST_PDB_PROT": "A sequential search using blastp on RCSB PDB database",
+    "BLAST_PDB_NT": "A sequential search using blastn on RCSB PDB database (of nucleotides)",
+    "BLAST_UNIPROT": "A sequential search using blastp on UNIPROT database",
+    "PDB_STRUCT": "A structural search using RCSB PDB similarity search engine",
+    "ALPHAFIND_STRUCT": "A structural search using AlphaFind similarity search engine",
+    "CHEMBL_STRUCT": "A structural search using CHEMBL similarity search engine",
+    "PUBCHEM_STRUCT": "A structural search using PubChem similarity search engine",
+    "ATOM": "Translation of atomic information",
+    "NAME_CCD": "Search of Chemical Compound Database (using name)",
+    "NAME_MAPS": "Search of Lipid MAPS (using name)",
+    "NAME_MANUAL": "Search of internal database (using name)"
+}
+
+IDENTIFIER_ID_TO_SIMILARITY_METRIC = {
+    "BLAST_PDB_PROT": "identity %",
+    "BLAST_PDB_NT": "identity %",
+    "BLAST_UNIPROT": "identity %",
+    "PDB_STRUCT": "similarity %",
+    "ALPHAFIND_STRUCT": "TM-score similarity %",
+    "CHEMBL_STRUCT": "similarity %",
+    "PUBCHEM_STRUCT": "similarity %",
+    "ATOM": "",
+    "NAME_CCD": "",
+    "NAME_MAPS": "",
+    "NAME_MANUAL": ""
+}
+
+@app.route("/api/annotate/<uuid>/results/segment/<segname>/intermediate/identifiers/<signame>/<what>", methods=["GET"])
+def get_results_identifiers(uuid, segname, signame, what):
+    logger.info(f"[API] Results for {uuid} -> identifiers list for {segname}")
+    job = Job.query.get(uuid)
+    if not job or not job.result_metadata:
+        abort(404)
+
+    results_path: str = os.path.join(_upload_dir(uuid), "results.json")
+    if not os.path.isfile(results_path):
+        abort(404)
+
+    with open(results_path, 'r') as fd:
+        data = json.load(fd)
+
+    if what not in ('exists', 'name', 'description', 'identity', 'similarity'):
+        abort(404)
+
+    if not json_path_exists(["identifiers", segname, signame], data):
+        abort(404)
+
+    if what == "exists":
+        return jsonify(data["identifiers"][segname][signame]["identifier_name"] is not None)
+    if what == "name":
+        return jsonify(IDENTIFIER_ID_TO_NAME[data["identifiers"][segname][signame]["identifier_name"]])
+    if what == "description":
+        return jsonify(IDENTIFIER_ID_TO_DESCRIPTION[data["identifiers"][segname][signame]["identifier_name"]])
+    if what == "identity":
+        return jsonify(data["identifiers"][segname][signame]["identity"])
+    if what == "similarity":
+        if data["identifiers"][segname][signame]["similarity"] is None:
+            return jsonify({})
+        res = {k:v for k, v in data["identifiers"][segname][signame]["similarity"]}
+        return jsonify(res)
+    if what == "similarity_kind":
+        jsonify(IDENTIFIER_ID_TO_SIMILARITY_METRIC[data["identifiers"][segname][signame]["identifier_name"]])
+
+    abort(404)
 
 if __name__ == "__main__":
     logger.info("Starting GROMACS MetaDump API...")

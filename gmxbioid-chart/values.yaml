@@ -32,11 +32,11 @@ resources:
       memory: 1Gi
   worker:
     requests:
-      cpu:    100m
-      memory: 1Gi
+      cpu:    2
+      memory: 2Gi
     limits:
-      cpu:    1
-      memory: 1Gi
+      cpu:    2
+      memory: 2Gi
   web:
     requests:
       cpu:    100m

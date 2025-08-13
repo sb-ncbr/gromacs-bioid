@@ -60,4 +60,4 @@ RUN chown -R 1000:1000 /app /opt/venv
 USER 1000
 
 # Entrypoint: start Celery worker
-CMD ["celery", "-A", "api.app.celery", "worker", "--loglevel=debug", "--concurrency=4"]
+CMD ["celery", "-A", "api.app.celery", "worker", "--loglevel=debug", "--pool=threads", "--concurrency=4"]
