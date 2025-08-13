@@ -38,7 +38,7 @@ const HeatmapProgress = styled(LinearProgress)(({ theme }) => ({
     height: 10,
     borderRadius: 5,
     [`& .MuiLinearProgress-bar`]: {
-        background: "linear-gradient(to right, white, #a8e6a1, #2e7d32)", // white to light green (#a8e6a1) to dark green (#2e7d32)
+        background: "linear-gradient(to right, #a8e6a1, #2e7d32)", // white to light green (#a8e6a1) to dark green (#2e7d32)
     },
 }));
 
@@ -51,7 +51,7 @@ const ConfidenceBar: React.FC<ConfidenceBarProps> = ({ confidence }) => {
         return <Typography color="text.secondary">Confidence: N/A</Typography>;
     }
 
-    const value = confidence * 100; // number, safe
+    const value = confidence; // number, safe
 
     return (
         <Box>
@@ -228,7 +228,7 @@ const AnnotationResults = () => {
                     fetch(`/api/annotate/${session}/results/segment/${selectedSegment}/confidence`).then(res => res.json()),
                     fetch(`/api/annotate/${session}/results/segment/${selectedSegment}/db_crosslink`).then(res => res.json()),
                     fetch(`/api/annotate/${session}/results/segment/${selectedSegment}/identifier`).then(res => res.json()),
-                    fetch(`/api/annotate/${session}/results/segment/${selectedSegment}/ident`).then(res => res.json())
+                    fetch(`/api/annotate/${session}/results/segment/${selectedSegment}/accession`).then(res => res.json())
                 ])
 
                 setSegmentInfo({
@@ -270,6 +270,7 @@ const AnnotationResults = () => {
                 description?: string
                 identity?: string[]
                 similarity?: Record<string, number>
+                sim_metric?: string[]
             }[]
         }[]
     >([])
@@ -361,11 +362,12 @@ const AnnotationResults = () => {
                         const existsRes = await fetch(`/api/annotate/${session}/results/segment/${selectedSegment}/intermediate/identifiers/${sigName}/exists`)
                         const exists = existsRes.ok ? await existsRes.json() : false
                         if (exists) {
-                            const [idName, idDesc, identity, similarity] = await Promise.all([
+                            const [idName, idDesc, identity, similarity, sim_metric] = await Promise.all([
                                 fetch(`/api/annotate/${session}/results/segment/${selectedSegment}/intermediate/identifiers/${sigName}/name`).then(r => r.ok ? r.json() : null),
                                 fetch(`/api/annotate/${session}/results/segment/${selectedSegment}/intermediate/identifiers/${sigName}/description`).then(r => r.ok ? r.json() : null),
                                 fetch(`/api/annotate/${session}/results/segment/${selectedSegment}/intermediate/identifiers/${sigName}/identity`).then(r => r.ok ? r.json() : []),
                                 fetch(`/api/annotate/${session}/results/segment/${selectedSegment}/intermediate/identifiers/${sigName}/similarity`).then(r => r.ok ? r.json() : {}),
+                                fetch(`/api/annotate/${session}/results/segment/${selectedSegment}/intermediate/identifiers/${sigName}/similarity_kind`).then(r => r.ok ? r.json() : null),
                             ])
                             identifiers.push({
                                 exists: true,
@@ -373,6 +375,7 @@ const AnnotationResults = () => {
                                 description: idDesc,
                                 identity,
                                 similarity,
+                                sim_metric,
                             })
                         }
 
@@ -488,9 +491,9 @@ const AnnotationResults = () => {
                                             <>
                                                 {segmentInfo.identifier ? (
                                                     <>
-                                                        <Typography variant="h4">Accession: {segmentInfo.ident}</Typography>
+                                                        <Typography variant="h4">{segmentInfo.ident}</Typography>
                                                         <Typography variant="h6" color="text.secondary">{segmentInfo.name}</Typography>
-                                                        <ConfidenceBar confidence={segmentInfo.confidence} />
+
                                                         {segmentInfo.db_crosslink && (
                                                             <Typography>
                                                                 DB Link: <Link href={segmentInfo.db_crosslink} target="_blank" rel="noopener">
@@ -498,11 +501,13 @@ const AnnotationResults = () => {
                                                             </Link>
                                                             </Typography>
                                                         )}
+                                                        <Box sx={{ minHeight: 4, width: "100%" }}>&nbsp;</Box>
+                                                        <ConfidenceBar confidence={segmentInfo.confidence} />
                                                     </>
                                                 ) : (
                                                     <Typography>No segment information available.</Typography>
                                                 )}
-
+                                                <Box sx={{ minHeight: 8, width: "100%" }}>&nbsp;</Box>
                                                 <Accordion>
                                                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                                                         <Typography variant="h6">Additional information</Typography>
@@ -587,16 +592,18 @@ const AnnotationResults = () => {
                                                                                                     <TableHead>
                                                                                                         <TableRow>
                                                                                                             <TableCell>Target</TableCell>
-                                                                                                            <TableCell>Value</TableCell>
+                                                                                                            <TableCell>{id.sim_metric || "Similarity"}</TableCell>
                                                                                                         </TableRow>
                                                                                                     </TableHead>
                                                                                                     <TableBody>
-                                                                                                        {Object.entries(id.similarity).map(([target, val]) => (
-                                                                                                            <TableRow key={target}>
-                                                                                                                <TableCell>{target}</TableCell>
-                                                                                                                <TableCell>{val}</TableCell>
-                                                                                                            </TableRow>
-                                                                                                        ))}
+                                                                                                        {Object.entries(id.similarity)
+                                                                                                            .sort(([, a], [, b]) => b - a) // sort by value descending
+                                                                                                            .map(([target, val]) => (
+                                                                                                                <TableRow key={target}>
+                                                                                                                    <TableCell>{target}</TableCell>
+                                                                                                                    <TableCell>{val} %</TableCell>
+                                                                                                                </TableRow>
+                                                                                                            ))}
                                                                                                     </TableBody>
                                                                                                 </Table>
                                                                                             </>
