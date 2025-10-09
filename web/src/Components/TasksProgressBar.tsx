@@ -1,6 +1,6 @@
 import { Box, Tooltip, Typography, CircularProgress } from "@mui/material";
 import { CheckCircle, Error as ErrorIcon, Help as HelpIcon } from "@mui/icons-material";
-import { FC, JSX } from "react";
+import React, { FC, JSX } from "react";
 
 export type TaskStatus = "unknown" | "ok" | "failed" | "inprogress";
 
@@ -13,6 +13,7 @@ export interface Task {
 
 interface TasksProgressBarProps {
     tasks: Task[];
+    onSelect?: (taskType: string) => void;
 }
 
 const statusColor: Record<TaskStatus, string> = {
@@ -23,13 +24,13 @@ const statusColor: Record<TaskStatus, string> = {
 };
 
 const statusIcon: Record<TaskStatus, JSX.Element> = {
-    unknown: <HelpIcon sx={{ color: statusColor.unknown }} />,
-    ok: <CheckCircle sx={{ color: statusColor.ok }} />,
-    failed: <ErrorIcon sx={{ color: statusColor.failed }} />,
-    inprogress: <CircularProgress size={20} sx={{ color: statusColor.inprogress }} />
+    unknown: <HelpIcon sx={{ color: statusColor.unknown, fontSize: "4rem" }} />,
+    ok: <CheckCircle sx={{ color: statusColor.ok, fontSize: "4rem" }} />,
+    failed: <ErrorIcon sx={{ color: statusColor.failed, fontSize: "4rem" }} />,
+    inprogress: <CircularProgress size={40} sx={{ color: statusColor.inprogress, fontSize: "4rem" }} />,
 };
 
-const TasksProgressBar: FC<TasksProgressBarProps> = ({ tasks }) => {
+const TasksProgressBar: FC<TasksProgressBarProps> = ({ tasks, onSelect }) => {
 
     const getDisplayStatus = (task: Task, index: number): TaskStatus => {
         const anyFailed = tasks.some(t => t.status === "failed");
@@ -52,6 +53,16 @@ const TasksProgressBar: FC<TasksProgressBarProps> = ({ tasks }) => {
         if (prevStatuses.every(s => s === "ok")) {
             return statusColor.ok;
         }
+
+        const currentStatus = prevStatuses[prevStatuses.length - 1];
+        if (currentStatus === "failed") {
+            return statusColor.failed; // red
+        }
+
+        if (currentStatus === "inprogress") {
+            return statusColor.inprogress; // red
+        }
+
         return statusColor.unknown;
     };
 
@@ -61,57 +72,82 @@ const TasksProgressBar: FC<TasksProgressBarProps> = ({ tasks }) => {
                 const displayStatus = getDisplayStatus(task, index);
                 return (
                     <Box
+                        onClick={() => {
+                            if (displayStatus === "ok" && onSelect) {
+                                onSelect(task.type);
+                            }
+                        }}
                         key={task.type}
                         sx={{
                             display: "flex",
+                            flexDirection: "column",
                             alignItems: "center",
-                            flexShrink: 0,
-                            minWidth: 80,
+                            flex: 1,
+                            minWidth: 0,
+                            px: 1,
+                            py: 2,
+                            borderRadius: 2,
+                            transition: "background-color 0.2s ease",
+                            cursor: displayStatus === "ok" ? "pointer" : "default", // clicky cursor only if ok
+                            "&:hover": {
+                                backgroundColor: displayStatus === "ok" ? "rgba(0,0,0,0.08)" : "transparent", // gray tint on hover
+                            },
                         }}
                     >
-                        <Box
+                        <Tooltip
+                            title={
+                                <Box>
+                                    <Typography variant="body1">{task.fullName}</Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        {task.statusText || "Unknown status"}
+                                    </Typography>
+                                </Box>
+                            }
+                            arrow
+                        >
+                            <Box
+                                sx={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    cursor: displayStatus === "ok" ? "pointer" : "default",
+                                    width: "100%",
+                                    py: 3,
+                                }}
+                            >
+                                {statusIcon[displayStatus]}
+                            </Box>
+                        </Tooltip>
+
+                        <Typography
+                            variant="h6" // bigger text (you can also use variant="h5" for even larger)
                             sx={{
-                                display: "flex",
-                                flexDirection: "column",
-                                alignItems: "center",
+                                mt: 1,
+                                whiteSpace: "pre-line",
+                                userSelect: "none",
+                                color: "text.primary",
+                                textAlign: "center",
+                                fontWeight: 500,
                             }}
                         >
-                            <Tooltip
-                                title={
-                                    <Box>
-                                        <Typography variant="body2" dangerouslySetInnerHTML={{ __html: task.fullName }} />
-                                        <Typography variant="caption" color="text.secondary">
-                                            {task.statusText || "Unknown status"}
-                                        </Typography>
-                                    </Box>
-                                }
-                                arrow
-                            >
-                                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                    {statusIcon[displayStatus]}
-                                </Box>
-                            </Tooltip>
+                            {task.fullName.replace(/\\n/g, "\n")}
+                        </Typography>
 
-                            <Typography
-                                variant="caption"
-                                sx={{ mt: 0.5, whiteSpace: "nowrap", userSelect: "none", color: "text.primary" }}
-                            >
-                                {task.type}
-                            </Typography>
-                        </Box>
-
-                        <Box
-                            sx={{
-                                height: "4px",
-                                width: "50px",
-                                backgroundColor: getLineColor(index),
-                                mx: 1,
-                                borderRadius: "2px",
-                                visibility: index === tasks.length - 1 ? "hidden" : "visible"
-                            }}
-                        />
+                        {/* line connecting tasks */}
+                        {index < tasks.length && (
+                            <Box
+                                sx={{
+                                    height: "8px",
+                                    width: "100%",
+                                    backgroundColor: getLineColor(index),
+                                    mt: 2,
+                                    borderRadius: "3px",
+                                }}
+                            />
+                        )}
                     </Box>
                 );
+
             })}
         </Box>
     );

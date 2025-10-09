@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"
+import React, {JSX, useEffect, useState} from "react"
 import {
     Alert,
     Box,
@@ -29,9 +29,28 @@ import DownloadIcon from '@mui/icons-material/Download'
 import { useParams } from "react-router-dom"
 import DownloadMetadataActions from "../Components/DownloadMetadata"
 import SessionStatus from "../Components/SessionStatus"
-import MDViewer from "../Components/MDViewer"
+import ShowLoad from "../Components/render/ShowLoad";
+import ShowSignatures from "../Components/render/ShowSignatures";
+import ShowIdentifiers from "../Components/render/ShowIdentifiers";
+import ShowVerification from "../Components/render/ShowVerification";
+import ShowComplete from "../Components/render/ShowComplete";
+import MDViewer from "../Components/MDComponents/MDViewer"
 import TasksProgressBar, { Task, TaskStatus } from "../Components/TasksProgressBar";
 import ListFiles from "../Components/ListFiles";
+
+
+interface CommonPageProps {
+    uuid: string;
+}
+
+const TASK_PAGES: Record<string, (props: CommonPageProps) => JSX.Element> = {
+    "Load Simulation": (props) => <ShowLoad {...props} />,
+    "Resolve Signatures": (props) => <ShowSignatures {...props} />,
+    "Resolve Identifiers": (props) => <ShowIdentifiers {...props} />,
+    "Summarize Results": (props) => <ShowVerification {...props} />,
+    "Annotation Complete": (props) => <ShowComplete {...props} />,
+};
+
 export type FileType = 'tpr' | 'gro' | 'top' | 'opt'
 
 const HeatmapProgress = styled(LinearProgress)(({ theme }) => ({
@@ -85,6 +104,8 @@ const AnnotationResults = () => {
         options: {}
     })
     const [error, setError] = useState<any>(null)
+    const [activePage, setActivePage] = useState<string | null>(null);
+
     const [segments, setSegments] = useState<string[]>([])
     const [selectedSegment, setSelectedSegment] = useState<string>("SIMULATION")
     const [segmentInfo, setSegmentInfo] = useState<{
@@ -103,11 +124,11 @@ const AnnotationResults = () => {
 
 
     const TASK_TYPES_ORDER = [
-        { key: "Load", prefix: "Load simulation" },
-        { key: "Resolve<br>Signatures", prefix: "Generate fragment signatures" },
-        { key: "Resolve<br>Identifiers", prefix: "Resolve signatures to identifiers" },
-        { key: "Summarize", prefix: "Summarize results" },
-        { key: "Annotation<br>Complete", prefix: "Download metadata for results" },
+        { key: "Load Simulation", prefix: "Load simulation" },
+        { key: "Resolve Signatures", prefix: "Generate fragment signatures" },
+        { key: "Resolve Identifiers", prefix: "Resolve signatures to identifiers" },
+        { key: "Summarize Results", prefix: "Summarize results" },
+        { key: "Annotation Complete", prefix: "Download metadata for results" },
     ];
 
     const [tasks, setTasks] = useState<Task[]>(TASK_TYPES_ORDER.map(t => ({
@@ -416,216 +437,43 @@ const AnnotationResults = () => {
         <>
             {error && <Alert sx={{ mb: 3 }} severity="error">{error.message}</Alert>}
 
-            <Stack direction="column" spacing={5} sx={{ width: "100%" }}>
-                <Stack
-                    direction="row"
-                    spacing={5}
-                    sx={{ width: "100%", alignItems: "flex-start" }}
-                >
-                    {/* Left column */}
-                    <Stack spacing={1} sx={{ flex: 1 }}>
-                        <Typography variant="h1">Annotation details</Typography>
-                        <Typography>Session ID: {session}</Typography>
-                        <Typography>
+                {/* Progress bar section */}
+                <Stack spacing={2} sx={{ width: "100%" }}>
+                    <Typography variant="h1">Annotation process</Typography>
+
+                    <Box sx={{ display: "flex", alignItems: "center", width: "100%", overflowX: "auto", pb: 2 }}>
+                        <TasksProgressBar tasks={tasks} onSelect={(taskType) => setActivePage(taskType)} />
+                    </Box>
+
+                    {/* Session details as small text below */}
+                    <Stack spacing={0.5} sx={{ color: "text.secondary", fontSize: "0.85rem" }}>
+                        <Typography variant="body2">Session ID: {session}</Typography>
+                        <Typography variant="body2">
                             Job status: <SessionStatus>{statedata?.status || ""}</SessionStatus>
                         </Typography>
-                        <Typography>
+                        <Typography variant="body2">
                             Session Expiration: {(new Date(statedata?.expires)).toLocaleString()}
                         </Typography>
                     </Stack>
 
-                    {/* Right column */}
-                    <Stack spacing={2} sx={{ flex: 1 }}>
-                        <Typography variant="h3">Annotation process</Typography>
-                        <Box sx={{ display: "flex", alignItems: "center", width: "100%", overflowX: "auto", pb: 2 }}>
-                            <TasksProgressBar tasks={tasks} />
-                        </Box>
-                        <Typography variant="h3">Files</Typography>
-                        <ListFiles session={session} />
-                    </Stack>
-                </Stack>
+                    <Box
+                        sx={{
+                            width: "100%",
+                            my: 2,          // vertical margin
+                            lineHeight: "0.8rem",
+                            fontSize: "0.8rem",
+                            color: "transparent", // text invisible
+                            userSelect: "none",
+                        }}
+                    >
+                        {"<br><br><br>"}
+                    </Box>
 
-                {loading ? skeleton : (
-                    <>
-                        <Typography variant="h2">Detected Biomolecules</Typography>
-                        <Grid container spacing={3}>
-                            <Grid item xs={12} md={6}>
-                                <Box sx={{
-                                    border: '1px solid #ddd',
-                                    borderRadius: '8px',
-                                    overflow: 'hidden'
-                                }}>
-                                    <MDViewer
-                                        session={session!}
-                                        width={600}
-                                        height={600}
-                                        segment={selectedSegment === "SIMULATION" ? "system" : selectedSegment}
-                                        segments={segments}
-                                    />
-                                </Box>
-                            </Grid>
-
-                            <Grid item xs={12} md={6}>
-                                <Paper elevation={2} sx={{ p: 2 }}>
-                                    <Tabs
-                                        value={selectedSegment}
-                                        onChange={handleTabChange}
-                                        variant="scrollable"
-                                        scrollButtons="auto"
-                                    >
-                                        {segments.map((seg) => (
-                                            <Tab key={seg} label={seg} value={seg} />
-                                        ))}
-                                    </Tabs>
-
-                                    <Box sx={{ mt: 2 }}>
-                                        {selectedSegment === "SIMULATION" ? (
-                                            <>
-                                                <Typography color="text.secondary" sx={{ mb: 1 }}>
-                                                    This view displays the complete simulation system.
-                                                </Typography>
-                                                <Typography>Number of atoms: {simAtoms !== null ? simAtoms : "N/A"}</Typography>
-                                                <Typography>Number of bonds: {simBonds !== null ? simBonds : "N/A"}</Typography>
-                                            </>
-                                        ) : (
-                                            <>
-                                                {segmentInfo.identifier ? (
-                                                    <>
-                                                        <Typography variant="h4">{segmentInfo.ident}</Typography>
-                                                        <Typography variant="h6" color="text.secondary">{segmentInfo.name}</Typography>
-
-                                                        {segmentInfo.db_crosslink && (
-                                                            <Typography>
-                                                                Database reference: <Link href={segmentInfo.db_crosslink} target="_blank" rel="noopener">
-                                                                {segmentInfo.db_crosslink}
-                                                            </Link>
-                                                            </Typography>
-                                                        )}
-                                                        <Box sx={{ minHeight: 4, width: "100%" }}>&nbsp;</Box>
-                                                        <ConfidenceBar confidence={segmentInfo.confidence} />
-                                                    </>
-                                                ) : (
-                                                    <Typography>No segment information available.</Typography>
-                                                )}
-                                                <Box sx={{ minHeight: 8, width: "100%" }}>&nbsp;</Box>
-                                                <Accordion>
-                                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                                        <Typography variant="h6">Identification details</Typography>
-                                                    </AccordionSummary>
-                                                    <AccordionDetails>
-                                                        <Box sx={{ mt: 3 }}>
-                                                            <Typography variant="h5">Available information for identification</Typography>
-                                                            {loadingFlags ? (
-                                                                <Skeleton width={200} />
-                                                            ) : Object.keys(segmentFlags).length === 0 ? (
-                                                                <Typography color="text.secondary">No flags available.</Typography>
-                                                            ) : (
-                                                                <Table size="small" sx={{ mt: 1 }}>
-                                                                    <TableHead>
-                                                                        <TableRow>
-                                                                            <TableCell>Flag</TableCell>
-                                                                            <TableCell>Value</TableCell>
-                                                                        </TableRow>
-                                                                    </TableHead>
-                                                                    <TableBody>
-                                                                        {Object.entries(segmentFlags).map(([flag, val]) => (
-                                                                            <TableRow key={flag}>
-                                                                                <TableCell>{flag}</TableCell>
-                                                                                <TableCell>{val ? "True" : "False"}</TableCell>
-                                                                            </TableRow>
-                                                                        ))}
-                                                                    </TableBody>
-                                                                </Table>
-                                                            )}
-                                                        </Box>
-
-                                                        <Box sx={{ mt: 4 }}>
-                                                            <Typography variant="h5">Signatures</Typography>
-                                                            {loadingSignatures ? (
-                                                                <Skeleton width={200} />
-                                                            ) : signatures.length === 0 ? (
-                                                                <Typography color="text.secondary">No signatures found.</Typography>
-                                                            ) : (
-                                                                signatures.map(sig => (
-                                                                    <Accordion key={sig.name} sx={{ mb: 1 }}>
-                                                                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                                                            <Typography sx={{ fontWeight: "bold" }}>
-                                                                                {sig.type ? `${sig.type}` : "UNKNOWN"} {`(${sig.name})`}
-                                                                            </Typography>
-                                                                        </AccordionSummary>
-                                                                        <AccordionDetails>
-                                                                            {sig.description && <Typography sx={{ mb: 1 }}>{sig.description}</Typography>}
-                                                                            <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", mb: 1 }}>
-                                                                                {sig.short || "No short info available."}
-                                                                            </Typography>
-                                                                            {sig.full && sig.filename && (
-                                                                                <Button
-                                                                                    startIcon={<DownloadIcon />}
-                                                                                    onClick={() => downloadTextFile(sig.filename!, sig.full!)}
-                                                                                    variant="outlined"
-                                                                                    sx={{ mb: 2 }}
-                                                                                >
-                                                                                    Download Full Signature
-                                                                                </Button>
-                                                                            )}
-
-                                                                            {/* Identifiers nested accordions */}
-                                                                            {sig.identifiers && sig.identifiers.length > 0 ? sig.identifiers.map((id, idx) => (
-                                                                                <Accordion key={idx} sx={{ ml: 2 }}>
-                                                                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                                                                        <Typography>Identifier: {id.name || "Unnamed"}</Typography>
-                                                                                    </AccordionSummary>
-                                                                                    <AccordionDetails>
-                                                                                        {id.description && <Typography sx={{ mb: 1 }}>{id.description}</Typography>}
-                                                                                        {id.identity && id.identity.length > 0 && (
-                                                                                            <>
-                                                                                                <Typography variant="subtitle2">Identity:</Typography>
-                                                                                                <ul>
-                                                                                                    {id.identity.map((val, i) => <li key={i}>{val}</li>)}
-                                                                                                </ul>
-                                                                                            </>
-                                                                                        )}
-                                                                                        {id.similarity && Object.keys(id.similarity).length > 0 && (
-                                                                                            <>
-                                                                                                <Typography variant="subtitle2">Similarity:</Typography>
-                                                                                                <Table size="small" sx={{ maxWidth: 300 }}>
-                                                                                                    <TableHead>
-                                                                                                        <TableRow>
-                                                                                                            <TableCell>Target</TableCell>
-                                                                                                            <TableCell>{id.sim_metric || "Similarity"}</TableCell>
-                                                                                                        </TableRow>
-                                                                                                    </TableHead>
-                                                                                                    <TableBody>
-                                                                                                        {Object.entries(id.similarity)
-                                                                                                            .sort(([, a], [, b]) => b - a) // sort by value descending
-                                                                                                            .map(([target, val]) => (
-                                                                                                                <TableRow key={target}>
-                                                                                                                    <TableCell>{target}</TableCell>
-                                                                                                                    <TableCell>{val} %</TableCell>
-                                                                                                                </TableRow>
-                                                                                                            ))}
-                                                                                                    </TableBody>
-                                                                                                </Table>
-                                                                                            </>
-                                                                                        )}
-                                                                                    </AccordionDetails>
-                                                                                </Accordion>
-                                                                            )) : <Typography>No identifiers available.</Typography>}
-                                                                        </AccordionDetails>
-                                                                    </Accordion>
-                                                                ))
-                                                            )}
-                                                        </Box>
-                                                    </AccordionDetails>
-                                                </Accordion>
-                                            </>
-                                        )}
-                                    </Box>
-                                </Paper>
-                            </Grid>
-                        </Grid>
-                    </>
-                )}
+                    {activePage ? (
+                        TASK_PAGES[activePage]({ uuid: statedata.uuid })
+                    ) : (
+                        <Typography variant="h3">Please select the step from progressbar</Typography>
+                    )}
             </Stack>
             <Box sx={{ mt: 3, display: "flex", gap: 2 }}>
                 <DownloadMetadataActions uuid={statedata.uuid} what="results" />

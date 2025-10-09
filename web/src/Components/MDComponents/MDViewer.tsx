@@ -65,11 +65,6 @@ const MDViewer = ({
             setLoading(true);
             viewerContainerRef.current.innerHTML = "";
 
-            // const index = segments.indexOf("SIMULATION");
-            // if (index > -1) {
-            //     segments.splice(index, 1);
-            // }
-
             const molstar = (window as any).molstar;
 
             try {
@@ -80,7 +75,7 @@ const MDViewer = ({
 
                 const builder = molstar.PluginExtensions.mvs.MVSData.createBuilder();
 
-                const structureUrl = `/api/annotate/${session}/results/system/system`;
+                const structureUrl = `/api/annotate/${session}/results/verification/${segment}/simulation`;
 
                 const structure = builder
                     .download({ url: structureUrl })
@@ -93,7 +88,7 @@ const MDViewer = ({
 
                         let isProtein = false;
                         try {
-                            const res = await fetch(`/api/annotate/${session}/results/segment/${seg}/type`);
+                            const res = await fetch(`/api/annotate/${session}/results/verification/${segment}/protein`);
                             const type = await res.text();
                             console.log(type);
                             isProtein = (type.trim().toLowerCase() === "\"protein\"");

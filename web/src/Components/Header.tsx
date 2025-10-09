@@ -11,7 +11,7 @@ const Header = () => {
             <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Stack direction={'column'} spacing={1} sx={{flexGrow: 1}}>
                     <Stack direction="row" alignItems="center" onClick={() => navigate("/")} sx={{color: "inherit", cursor: "pointer"}}>
-                        <Typography variant="h1">GROMACS <span style={{color: "rgb(46, 125, 50)"}}>Bio</span>ID</Typography>
+                        <Typography variant="h1">Molecular Dynamics <span style={{color: "rgb(46, 125, 50)"}}>Bio</span>ID</Typography>
                     </Stack>
                     <Typography variant="h3" sx={{mt: "0.5em"}}>Yet another tool to describe molecular dynamics simulations with powerful metadata</Typography>
                 </Stack>

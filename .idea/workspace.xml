@@ -7,6 +7,9 @@
     <list default="true" id="04b94dc3-9ead-48c3-842a-b68eab5f5c40" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/cli/BAT2" beforeDir="false" afterPath="$PROJECT_DIR$/cli/BAT2" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/src/Components/Footer.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web/src/Components/Footer.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/src/Components/Header.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web/src/Components/Header.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/src/Components/MDViewer.tsx" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/web/src/Components/TasksProgressBar.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web/src/Components/TasksProgressBar.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/web/src/Pages/AnnotationResults.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web/src/Pages/AnnotationResults.tsx" afterDir="false" />
     </list>
@@ -72,6 +75,7 @@
       <workItem from="1754813134280" duration="10651000" />
       <workItem from="1754996469049" duration="4377000" />
       <workItem from="1755086402586" duration="6865000" />
+      <workItem from="1760018758515" duration="95000" />
     </task>
     <servers />
   </component>
