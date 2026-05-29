@@ -1,4 +1,14 @@
+"""
+DEPRECATED: This module uses the old src.* implementation.
+
+Use instead:
+- api_endpoint_new.py for the new synchronous entry point
+- src_new.api.main:app for the FastAPI application
+
+This module is kept for backward compatibility and will be removed in a future release.
+"""
 import os
+import warnings
 from rich import print
 
 from src import core_config
@@ -7,10 +17,18 @@ from src.executor.task_creator import TaskType, parse_task_types, create_tasks_f
 from src.executor.task import Task
 from src.executor.core import ExecutorCore
 
+warnings.warn(
+    "api_endpoint.py is deprecated. Use api_endpoint_new.py or the FastAPI API (src_new.api.main:app).",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 
 def run_analyze(directory: str, task_uuid: str) -> str | None:
     """
-    Runs full BAT analysis (--run) mode
+    DEPRECATED: Use api_endpoint_new.run_analyze() instead.
+    
+    Runs full BAT analysis (--run) mode using the old src.* implementation.
     :param directory: of the files
     :param task_uuid: task uuid
     :return: path to the resulting .json file
@@ -45,5 +63,3 @@ def run_analyze(directory: str, task_uuid: str) -> str | None:
         return None
 
     return os.path.abspath(results_path)
-
-

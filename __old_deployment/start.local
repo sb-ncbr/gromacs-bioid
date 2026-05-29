@@ -1,0 +1,14 @@
+#!/bin/bash
+
+echo "Starting local instance of BIOID"
+
+# Define an array of script paths
+declare -a scripts=(
+    "/COMPUTE/BIOID/gromacs-bioid/api/start.celery"
+    "/COMPUTE/BIOID/gromacs-bioid/api/start.api"
+)
+
+# Launch each script in a new terminal window
+for script in "${scripts[@]}"; do
+    gnome-terminal -- bash -c "$script; exec bash"
+done

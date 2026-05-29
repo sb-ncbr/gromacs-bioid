@@ -1,0 +1,67 @@
+replicaCount:
+  api: 1
+  worker: 1
+  web: 1
+  redis: 1
+
+image:
+  api:
+    repository: cerit.io/tomsko/bat3-api
+    tag: latest
+    pullPolicy: Always
+  worker:
+    repository: cerit.io/tomsko/bat3-worker
+    tag: latest
+    pullPolicy: Always
+  web:
+    repository: cerit.io/tomsko/bat3-frontend
+    tag: latest
+    pullPolicy: Always
+  redis:
+    repository: redis
+    tag: 8-alpine
+    pullPolicy: IfNotPresent
+
+resources:
+  api:
+    requests: { cpu: 100m, memory: 1Gi }
+    limits:   { cpu: 1, memory: 1Gi }
+  worker:
+    requests: { cpu: 4, memory: 10000Mi }
+    limits:   { cpu: 4, memory: 10000Mi }
+  web:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  redis:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 1Gi }
+
+service:
+  api:   { port: 8000 }
+  web:   { port: 8081 }
+  redis: { port: 6379 }
+
+redis:
+  replicaCount: 1
+  port: 6379
+
+dataFolder: /app/runs
+databasesFolder: /app/databases
+cleanupDays: 30
+timezone: Europe/Prague
+servername: bioid.dyn.cloud.e-infra.cz
+
+storage:
+  runsData:
+    size: 100Gi
+    storageClass: "nfs-csi"
+    accessMode: "ReadWriteMany"
+  databasesData:
+    size: 50Gi
+    storageClass: "nfs-csi"
+    accessMode: "ReadWriteMany"
+
+ingress:
+  enabled: true
+  host: bioid.dyn.cloud.e-infra.cz
+  proxyBodySize: 128M

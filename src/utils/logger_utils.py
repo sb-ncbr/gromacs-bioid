@@ -97,6 +97,6 @@ def close_task_log_output(handler: logging.FileHandler) -> None:
 
     logging.getLogger("base").removeHandler(handler)
     logging.getLogger("signature").removeHandler(handler)
-    logging.getLogger("identification").removeHandler(handler)
+    logging.getLogger("identifier").removeHandler(handler)
     logging.getLogger("verification").removeHandler(handler)
     handler.close()

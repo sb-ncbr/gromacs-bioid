@@ -1,0 +1,6 @@
+apiVersion: v2
+name: bat3
+description: BAT3 Pipeline API, Worker, and Frontend
+type: application
+version: 0.1.0
+appVersion: "latest"

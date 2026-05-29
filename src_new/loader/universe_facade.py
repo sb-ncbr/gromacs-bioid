@@ -1,0 +1,350 @@
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
+import MDAnalysis
+from MDAnalysis import Universe, AtomGroup
+
+from ..config.loader import RunConfig
+from ..input.models import LoadDecision
+from ..loader.repair import RepairReport
+from ..molecules.instances import MoleculeInstance, MoleculeType
+from ..results.results_manager import ResultsManager
+
+logger = logging.getLogger("base")
+
+# Import residue/nucleic constants from src (read-only import, do not modify src)
+try:
+    from src.constants import KNOWN_RESIDUE_CODES, KNOWN_NUCLEIC_ACIDS_CODES
+except ImportError:
+    # Fallback minimal copies for isolated execution
+    KNOWN_RESIDUE_CODES = {
+        'ALA': 'A', 'ARG': 'R', 'ASN': 'N', 'ASP': 'D', 'CYS': 'C',
+        'GLU': 'E', 'GLN': 'Q', 'GLY': 'G', 'HIS': 'H', 'ILE': 'I',
+        'LEU': 'L', 'LYS': 'K', 'MET': 'M', 'PHE': 'F', 'PRO': 'P',
+        'SER': 'S', 'THR': 'T', 'TRP': 'W', 'TYR': 'Y', 'VAL': 'V',
+    }
+    KNOWN_NUCLEIC_ACIDS_CODES = {
+        'A': 'A', 'C': 'C', 'T': 'T', 'G': 'G', 'U': 'U',
+        'DA': 'A', 'DC': 'C', 'DT': 'T', 'DG': 'G', 'DU': 'U',
+        'RA': 'A', 'RC': 'C', 'RT': 'T', 'RG': 'G', 'RU': 'U',
+    }
+
+
+class SegmentProperty(str, Enum):
+    HAS_ELEMENTS = "has_elements"
+    HAS_MASSES = "has_masses"
+    HAS_POSITIONS = "has_positions"
+    HAS_NAMES = "has_names"
+    HAS_UNIQUE_NAMES = "has_unique_names"
+    IS_PROTEIN = "is_protein"
+    IS_NUCLEIC = "is_nucleic"
+    HAS_MULTI_ATOM_RESIDUES = "has_multi_atom_residues"
+
+
+class UniverseParameter(str, Enum):
+    ATOM_COUNT = "atom_count"
+    RESIDUE_COUNT = "residue_count"
+    SEGMENT_COUNT = "segment_count"
+    FRAGMENT_COUNT = "fragment_count"
+
+
+@dataclass
+class SegmentProperties:
+    atom_count_total: int = 0
+    atom_count_fragment: int = 0
+    bond_count_total: int = 0
+    bond_count_fragment: int = 0
+    molecule_count: int = 0
+    flags: dict[str, bool] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {
+            "atom_count_total": self.atom_count_total,
+            "atom_count_fragment": self.atom_count_fragment,
+            "bond_count_total": self.bond_count_total,
+            "bond_count_fragment": self.bond_count_fragment,
+            "molecule_count": self.molecule_count,
+            **self.flags,
+        }
+
+
+class LoadedUniverse:
+    """Facade wrapping a loaded+repaired MDAnalysis Universe.
+    
+    Analyzes segments, extracts fragments, records results, and produces
+    MoleculeInstance objects for downstream deduplication.
+    """
+    
+    def __init__(
+        self,
+        universe: Universe,
+        decision: LoadDecision,
+        repair_report: RepairReport,
+        results: ResultsManager | None = None,
+        filter_segments: set[str] | None = None,
+    ):
+        self.universe = universe
+        self.decision = decision
+        self.repair_report = repair_report
+        self.results = results
+        self.filter_segments = filter_segments or set()
+        self._segments: set[str] = set()
+        self._segment_properties: dict[str, SegmentProperties] = {}
+        self._analyze()
+        self._record_summary()
+    
+    def _is_polymer_segment(self, selected: AtomGroup) -> bool:
+        """Check if segment is a polymer (protein or nucleic acid).
+        
+        Args:
+            selected: AtomGroup for the segment.
+            
+        Returns:
+            True if all residues are known protein or nucleic acid residues.
+        """
+        if not hasattr(selected.atoms, 'resnames'):
+            return False
+        
+        resnames = selected.atoms.resnames
+        if len(resnames) == 0:
+            return False
+        
+        for rn in resnames:
+            rn_upper = rn.upper()
+            if rn_upper not in KNOWN_RESIDUE_CODES and rn_upper not in KNOWN_NUCLEIC_ACIDS_CODES:
+                return False
+        
+        return True
+    
+    def _analyze(self) -> None:
+        """Analyze all segments in the universe."""
+        all_segments = set(self.universe.segments.segids)
+        
+        if self.filter_segments:
+            self._segments = all_segments & self.filter_segments
+        else:
+            self._segments = all_segments
+        
+        for segment_name in self._segments:
+            selected = self.universe.select_atoms(f"segid {segment_name}")
+            props = SegmentProperties()
+            
+            props.atom_count_total = len(selected.atoms)
+            props.bond_count_total = len(selected.bonds) if hasattr(selected.atoms, 'bonds') else 0
+            
+            # Get representative fragment using same logic as get_fragment
+            fragment = self.get_fragment(segment_name)
+            
+            if fragment is selected:
+                # Fallback case: no bonds or full segment returned
+                props.atom_count_fragment = len(selected.atoms)
+                props.bond_count_fragment = 0
+                try:
+                    fragments = selected.fragments
+                except MDAnalysis.exceptions.NoDataError:
+                    fragments = []
+                props.molecule_count = len(fragments) if fragments else 1
+            else:
+                # Real connected sub-fragment
+                props.atom_count_fragment = len(fragment.atoms)
+                props.bond_count_fragment = len(fragment.bonds) if hasattr(fragment.atoms, 'bonds') else 0
+                try:
+                    fragments = selected.fragments
+                except MDAnalysis.exceptions.NoDataError:
+                    fragments = []
+                props.molecule_count = len(fragments)
+            
+            # Compute flags using the same representative fragment
+            props.flags = self._compute_flags(selected, fragment)
+            
+            self._segment_properties[segment_name] = props
+    
+    def _compute_flags(self, selected: AtomGroup, representative: AtomGroup | None) -> dict[str, bool]:
+        """Compute boolean flags for a segment."""
+        flags = {}
+        
+        # HAS_ELEMENTS: all non-empty
+        if hasattr(selected.atoms, 'elements'):
+            flags[SegmentProperty.HAS_ELEMENTS.value] = all(e for e in selected.atoms.elements)
+        else:
+            flags[SegmentProperty.HAS_ELEMENTS.value] = False
+        
+        # HAS_MASSES: all > 0
+        if hasattr(selected.atoms, 'masses'):
+            flags[SegmentProperty.HAS_MASSES.value] = all(m > 0 for m in selected.atoms.masses)
+        else:
+            flags[SegmentProperty.HAS_MASSES.value] = False
+        
+        # HAS_POSITIONS
+        flags[SegmentProperty.HAS_POSITIONS.value] = hasattr(selected.atoms, 'positions')
+        
+        # HAS_NAMES
+        if hasattr(selected.atoms, 'names'):
+            flags[SegmentProperty.HAS_NAMES.value] = any(n for n in selected.atoms.names)
+        else:
+            flags[SegmentProperty.HAS_NAMES.value] = False
+        
+        # HAS_UNIQUE_NAMES: within each residue of the representative fragment, names unique
+        if representative is not None and hasattr(representative.atoms, 'names'):
+            unique = True
+            for residue in representative.residues:
+                names = list(residue.atoms.names)
+                if len(names) != len(set(names)):
+                    unique = False
+                    break
+            flags[SegmentProperty.HAS_UNIQUE_NAMES.value] = unique
+        else:
+            flags[SegmentProperty.HAS_UNIQUE_NAMES.value] = False
+        
+        # IS_PROTEIN
+        if hasattr(selected.atoms, 'resnames'):
+            flags[SegmentProperty.IS_PROTEIN.value] = all(
+                rn.upper() in KNOWN_RESIDUE_CODES for rn in selected.atoms.resnames
+            )
+        else:
+            flags[SegmentProperty.IS_PROTEIN.value] = False
+        
+        # IS_NUCLEIC
+        if hasattr(selected.atoms, 'resnames'):
+            flags[SegmentProperty.IS_NUCLEIC.value] = all(
+                rn.upper() in KNOWN_NUCLEIC_ACIDS_CODES for rn in selected.atoms.resnames
+            )
+        else:
+            flags[SegmentProperty.IS_NUCLEIC.value] = False
+        
+        # HAS_MULTI_ATOM_RESIDUES
+        if representative is not None:
+            flags[SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value] = any(
+                len(res.atoms) > 1 for res in representative.residues
+            )
+        else:
+            flags[SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value] = False
+        
+        return flags
+    
+    def _record_summary(self) -> None:
+        """Record summary data to results manager."""
+        if self.results is None:
+            return
+        
+        for segment_name, props in self._segment_properties.items():
+            self.results.set_data(f"universe/segments/{segment_name}/properties", props.to_dict())
+        
+        self.results.set_data("universe/parameters/atom_count", self.get_parameter(UniverseParameter.ATOM_COUNT))
+        self.results.set_data("universe/parameters/residue_count", self.get_parameter(UniverseParameter.RESIDUE_COUNT))
+        self.results.set_data("universe/parameters/segment_count", self.get_parameter(UniverseParameter.SEGMENT_COUNT))
+        self.results.set_data("universe/parameters/fragment_count", self.get_parameter(UniverseParameter.FRAGMENT_COUNT))
+        self.results.set_data("universe/repair_report", self.repair_report.to_dict())
+        self.results.set_data("universe/decision", self.decision.to_dict())
+        self.results.set_data("universe/segment_list", sorted(self._segments))
+    
+    def get_segments(self) -> set[str]:
+        """Return set of segment IDs."""
+        return self._segments.copy()
+    
+    def get_fragment(self, segment_name: str) -> AtomGroup:
+        """Get the representative fragment for a segment.
+        
+        For polymer segments with broken bond topologies (e.g., partial CONECT records),
+        returns the full segment instead of a tiny fragment.
+        
+        Args:
+            segment_name: The segment ID.
+            
+        Returns:
+            The representative AtomGroup (largest fragment or full segment for polymers).
+        """
+        if segment_name not in self._segments:
+            raise KeyError(f"Segment '{segment_name}' not found")
+        
+        selected = self.universe.select_atoms(f"segid {segment_name}")
+        
+        try:
+            fragments = selected.fragments
+        except MDAnalysis.exceptions.NoDataError:
+            fragments = []
+        
+        if not fragments:
+            return selected  # fallback when no bonds
+        
+        # Get largest fragment
+        largest = max(fragments, key=lambda f: len(f.atoms))
+        
+        # If largest fragment is most of the segment, return it
+        if len(largest.atoms) >= len(selected.atoms) * 0.8:
+            return largest
+        
+        # If this is a polymer segment, return full segment (broken bonds case)
+        if self._is_polymer_segment(selected):
+            return selected
+        
+        # Otherwise return largest fragment (small molecule case)
+        return largest
+    
+    def get_segment_properties(self, segment_name: str) -> SegmentProperties:
+        """Get properties for a segment."""
+        if segment_name not in self._segment_properties:
+            raise KeyError(f"Segment '{segment_name}' not found")
+        return self._segment_properties[segment_name]
+    
+    def get_parameter(self, kind: UniverseParameter) -> int:
+        """Get a universe-level parameter."""
+        match kind:
+            case UniverseParameter.ATOM_COUNT:
+                return int(self.universe.atoms.n_atoms)
+            case UniverseParameter.RESIDUE_COUNT:
+                return int(self.universe.atoms.n_residues)
+            case UniverseParameter.SEGMENT_COUNT:
+                return int(self.universe.atoms.n_segments)
+            case UniverseParameter.FRAGMENT_COUNT:
+                try:
+                    return int(self.universe.atoms.n_fragments)
+                except Exception:
+                    return 0
+            case _:
+                raise ValueError(f"Unknown parameter: {kind}")
+    
+    def extract_molecule_instance(self, segment_name: str) -> MoleculeInstance:
+        """Extract a MoleculeInstance from a segment."""
+        fragment = self.get_fragment(segment_name)
+        props = self.get_segment_properties(segment_name)
+        
+        # Determine molecule type
+        mtype = MoleculeType.UNKNOWN
+        if props.flags.get(SegmentProperty.IS_PROTEIN.value):
+            mtype = MoleculeType.PROTEIN
+        elif props.flags.get(SegmentProperty.IS_NUCLEIC.value):
+            mtype = MoleculeType.NUCLEIC
+        elif props.atom_count_fragment == 1:
+            mtype = MoleculeType.ION
+        elif props.atom_count_fragment == 3 and any(rn in ("SOL", "HOH", "WAT") for rn in fragment.residues.resnames):
+            mtype = MoleculeType.WATER
+        
+        # Element composition
+        composition = {}
+        if hasattr(fragment.atoms, 'elements'):
+            for elem in fragment.atoms.elements:
+                if elem:
+                    composition[elem] = composition.get(elem, 0) + 1
+        
+        return MoleculeInstance(
+            instance_id=f"mol_{segment_name}",
+            atom_indices=list(fragment.atoms.indices),
+            residue_indices=list(range(len(fragment.residues))),
+            segment_ids=[segment_name],
+            chain_ids=list(set(fragment.atoms.segids)),
+            resids=list(fragment.residues.resids),
+            resnames=list(fragment.residues.resnames),
+            molecule_type=mtype,
+            copy_number=props.molecule_count,
+            atom_count=props.atom_count_fragment,
+            element_composition=composition,
+        )
+    
+    def extract_all_molecule_instances(self) -> list[MoleculeInstance]:
+        """Extract MoleculeInstance for all segments."""
+        return [self.extract_molecule_instance(seg) for seg in sorted(self._segments)]

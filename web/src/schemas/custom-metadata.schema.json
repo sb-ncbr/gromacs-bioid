@@ -1,0 +1,107 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "GROMACS Molecular Dynamics Metadata Schema",
+    "type": "object",
+    "properties": {
+      "dataset_metadata": {
+        "properties": {
+          "title": {
+            "title": "Title of the dataset",
+            "type": "string"
+          },
+          "creator": {
+            "description": "ORCIDs are encouraged",
+            "title": "Creator of the dataset or data curator",
+            "type": "string"
+          },
+          "publishing_institution": {
+            "description": "Institution that published the dataset. Use the ROR ID (https://ror.org/) if available",
+            "title": "Publishing Institution",
+            "type": "string"
+          },
+          "publication_year": {
+            "title": "Publication Year",
+            "type": "integer"
+          },
+          "identifier": {
+            "description": "DOI or other identifier",
+            "title": "Identifier",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "simulated_object_metadata": {
+        "properties": {
+          "protein_id": {
+            "title": "Protein Identification",
+            "description": "Enter either the PDB ID or the Uniprot ID, more than one protein can be entered",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "title": "Identifier Source",
+                  "type": "string",
+                  "enum": ["PDB ID", "Uniprot ID"]
+                },
+                "identifier": {
+                  "title": "Structure ID",
+                  "type": "string"
+                }
+              },
+              "required": ["type", "identifier"]
+            }
+          },
+          "ligand_id": {
+            "title": "Ligand Identification",
+            "description": "Enter a ligand identifier from a recognized database",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "title": "Identifier Source",
+                  "type": "string",
+                  "enum": [
+                    "PDB Ligand ID",
+                    "PubChem CID",
+                    "ChEMBL ID",
+                    "DrugBank ID",
+                    "ZINC ID",
+                    "HMDB ID",
+                    "KEGG Compound ID"
+                  ]
+                },
+                "identifier": {
+                  "title": "Ligand ID",
+                  "type": "string"
+                }
+              },
+              "required": ["type", "identifier"]
+            }
+          },
+          "solvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "title": "Solvent Type",
+                "type": "string",
+                "enum": ["Water", "Water and Ions", "Water and Organic Solvent", "Other"]
+              },
+              "name": {
+                "title": "Solvent Name",
+                "type": "string"
+              },
+              "concentration": {
+                "title": "Solvent Concentration",
+                "description": "Concentration of the solvent in the simulation box in mol/L",
+                "type": "number"
+              }
+            }
+          }
+        },
+        "type": "object"
+      }
+    }
+}

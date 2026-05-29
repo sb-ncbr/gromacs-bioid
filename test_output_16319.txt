@@ -1,0 +1,34 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /usr/bin/python
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: /home/tomsko/tmp/BAT3_new
+plugins: dash-3.4.0, pytest_freezer-0.4.9, sugar-1.1.1, mock-3.14.1, anyio-4.13.0, cov-7.1.0, hypothesis-6.153.0
+collecting ... collected 4 items
+
+tests/src_new/loader/test_universe_facade.py::TestFacade16319::test_counts PASSED [ 25%]
+tests/src_new/loader/test_universe_facade.py::TestFacade16319::test_segments PASSED [ 50%]
+tests/src_new/loader/test_universe_facade.py::TestFacade16319::test_segment_properties PASSED [ 75%]
+tests/src_new/loader/test_universe_facade.py::TestFacade16319::test_fragment PASSED [100%]
+
+=============================== warnings summary ===============================
+../../.local/lib/python3.14/site-packages/Bio/pairwise2.py:278
+  /home/tomsko/.local/lib/python3.14/site-packages/Bio/pairwise2.py:278: BiopythonDeprecationWarning: Bio.pairwise2 has been deprecated, and we intend to remove it in a future release of Biopython. As an alternative, please consider using Bio.Align.PairwiseAligner as a replacement, and contact the Biopython developers if you still need the Bio.pairwise2 module.
+    warnings.warn(
+
+tests/src_new/loader/test_universe_facade.py::TestFacade16319::test_counts
+tests/src_new/loader/test_universe_facade.py::TestFacade16319::test_segments
+tests/src_new/loader/test_universe_facade.py::TestFacade16319::test_segment_properties
+tests/src_new/loader/test_universe_facade.py::TestFacade16319::test_fragment
+  /home/tomsko/.local/lib/python3.14/site-packages/MDAnalysis/topology/ITPParser.py:646: DeprecationWarning: The elements attribute has been populated by guessing elements from atom types. This behaviour has been temporarily added to the ITPParser as we transition to the new guessing API. This behavior will be removed in release 3.0. Please see issue #4698 for more information. 
+    warnings.warn(
+
+tests/src_new/loader/test_universe_facade.py::TestFacade16319::test_counts
+tests/src_new/loader/test_universe_facade.py::TestFacade16319::test_segments
+tests/src_new/loader/test_universe_facade.py::TestFacade16319::test_segment_properties
+tests/src_new/loader/test_universe_facade.py::TestFacade16319::test_fragment
+  /home/tomsko/.local/lib/python3.14/site-packages/MDAnalysis/core/universe.py:939: UserWarning: Reader has no dt information, set to 1.0 ps
+    dt=self.trajectory.ts.dt * step,
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 4 passed, 9 warnings in 10.37s ========================

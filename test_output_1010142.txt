@@ -1,0 +1,19 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /usr/bin/python
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: /home/tomsko/tmp/BAT3_new
+plugins: dash-3.4.0, pytest_freezer-0.4.9, sugar-1.1.1, mock-3.14.1, anyio-4.13.0, cov-7.1.0, hypothesis-6.153.0
+collecting ... collected 3 items
+
+tests/src_new/loader/test_universe_facade.py::TestFacade1010142::test_counts SKIPPED [ 33%]
+tests/src_new/loader/test_universe_facade.py::TestFacade1010142::test_segments SKIPPED [ 66%]
+tests/src_new/loader/test_universe_facade.py::TestFacade1010142::test_protein_flags SKIPPED [100%]
+
+=============================== warnings summary ===============================
+../../.local/lib/python3.14/site-packages/Bio/pairwise2.py:278
+  /home/tomsko/.local/lib/python3.14/site-packages/Bio/pairwise2.py:278: BiopythonDeprecationWarning: Bio.pairwise2 has been deprecated, and we intend to remove it in a future release of Biopython. As an alternative, please consider using Bio.Align.PairwiseAligner as a replacement, and contact the Biopython developers if you still need the Bio.pairwise2 module.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 3 skipped, 1 warning in 0.93s =========================

@@ -1,0 +1,37 @@
+{
+    "type": "Categorization",
+    "elements": [
+        {
+            "type": "Category",
+            "label": "General",
+            "description": "General metadata for the dataset",
+            "elements": [
+                {
+                    "type": "HorizontalLayout",
+                    "elements": [
+                        {
+                            "type": "Control",
+                            "scope": "#/properties/dataset_metadata/"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "Category",
+            "label": "Object",
+            "description": "Metadata for the object being simulated",
+            "elements": [
+                {
+                    "type": "HorizontalLayout",
+                    "elements": [
+                        {
+                            "type": "Control",
+                            "scope": "#/properties/simulated_object_metadata/"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

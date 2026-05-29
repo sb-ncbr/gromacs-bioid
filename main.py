@@ -1,18 +1,5 @@
 import argparse
-import logging
-import os
 from rich import print
-
-from src.utils.logger_utils import init_loggers
-from src.utils.string_utils import print_motd
-from src.utils.file_utils import list_folders_in_directory
-
-from src.executor.task_creator import TaskType, parse_task_types, create_tasks_for_simulations
-from src.executor.task import Task
-from src.executor.core import ExecutorCore
-
-from src.stats.stats_aggregator import StatsAggregatorManager, parse_stats_types
-from src.utils.sync_databases import sync
 
 parser = argparse.ArgumentParser(
                     prog='BAT v2',
@@ -39,6 +26,10 @@ parser.add_argument('-vv', '--very_verbose', action='store_true',
 
 args = parser.parse_args()
 
+from src.utils.logger_utils import init_loggers
+from src.utils.string_utils import print_motd
+from src.utils.file_utils import list_folders_in_directory
+from src.utils.sync_databases import sync
 
 print_motd()
 init_loggers(args.verbose, args.very_verbose)
@@ -46,6 +37,10 @@ init_loggers(args.verbose, args.very_verbose)
 sync()
 
 if args.run:
+    from src.executor.task_creator import TaskType, parse_task_types, create_tasks_for_simulations
+    from src.executor.task import Task
+    from src.executor.core import ExecutorCore
+
     print("[cyan][b]-> Entering run mode[/b][/cyan]")
 
     if args.input is None:
@@ -73,6 +68,8 @@ if args.run:
     #executor.shutdown()
 
 elif args.stats is not None:
+    from src.stats.stats_aggregator import StatsAggregatorManager
+
     print("[cyan][b]-> Entering stats mode[/b][/cyan]")
 
     if args.input is None:

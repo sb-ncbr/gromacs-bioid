@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bat3.fullname" . }}-api
+spec:
+  replicas: {{ .Values.replicaCount.api }}
+  strategy:
+    type: Recreate
+    rollingUpdate: null
+  selector:
+    matchLabels:
+      app: {{ include "bat3.fullname" . }}-api
+  template:
+    metadata:
+      labels:
+        app: {{ include "bat3.fullname" . }}-api
+    spec:
+      securityContext:
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: "{{ .Values.image.api.repository }}:{{ .Values.image.api.tag }}"
+          imagePullPolicy: {{ .Values.image.api.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.api.port | default 8000 }}
+          env:
+            - name: CELERY_BROKER_URL
+              value: redis://{{ include "bat3.fullname" . }}-redis:{{ .Values.redis.port | default 6379 }}/0
+            - name: CELERY_RESULT_BACKEND
+              value: redis://{{ include "bat3.fullname" . }}-redis:{{ .Values.redis.port | default 6379 }}/0
+            - name: BAT3_RUNS_DIR
+              value: "{{ .Values.dataFolder }}"
+            - name: CLEANUP_DAYS
+              value: "{{ .Values.cleanupDays }}"
+            - name: TZ
+              value: "{{ .Values.timezone }}"
+            - name: SERVER_NAME
+              value: "{{ .Values.servername }}"
+          resources:
+            requests:
+              cpu: {{ .Values.resources.api.requests.cpu }}
+              memory: {{ .Values.resources.api.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.api.limits.cpu }}
+              memory: {{ .Values.resources.api.limits.memory }}
+          volumeMounts:
+            - name: runs-data
+              mountPath: {{ .Values.dataFolder }}
+            - name: databases-data
+              mountPath: {{ .Values.databasesFolder }}
+          securityContext:
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: runs-data
+          persistentVolumeClaim:
+            claimName: {{ include "bat3.fullname" . }}-runs-data
+        - name: databases-data
+          persistentVolumeClaim:
+            claimName: {{ include "bat3.fullname" . }}-databases-data

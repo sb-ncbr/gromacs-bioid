@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "bat3.fullname" . }}-runs-data
+spec:
+  accessModes:
+    - {{ .Values.storage.runsData.accessMode | default "ReadWriteMany" }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.runsData.size }}
+  {{- if .Values.storage.runsData.storageClass }}
+  storageClassName: {{ .Values.storage.runsData.storageClass }}
+  {{- end }}

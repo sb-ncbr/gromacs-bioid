@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bat3.fullname" . }}-web
+spec:
+  replicas: {{ .Values.replicaCount.web }}
+  strategy:
+    type: Recreate
+    rollingUpdate: null
+  selector:
+    matchLabels:
+      app: {{ include "bat3.fullname" . }}-web
+  template:
+    metadata:
+      labels:
+        app: {{ include "bat3.fullname" . }}-web
+    spec:
+      securityContext:
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: "{{ .Values.image.web.repository }}:{{ .Values.image.web.tag }}"
+          imagePullPolicy: {{ .Values.image.web.pullPolicy }}
+          ports:
+            - name: frontend-web
+              containerPort: {{ .Values.service.web.port | default 8081 }}
+              protocol: TCP
+          resources:
+            requests:
+              cpu: {{ .Values.resources.web.requests.cpu }}
+              memory: {{ .Values.resources.web.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.web.limits.cpu }}
+              memory: {{ .Values.resources.web.limits.memory }}
+          securityContext:
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL

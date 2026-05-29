@@ -1,0 +1,14 @@
+opencode_qwen_three_agent_workflow/
+├── opencode.json
+├── AGENTS.md
+├── README_OPENCODE_QWEN_WORKFLOW.md
+└── .opencode/
+    ├── agents/
+    │   ├── planner.md
+    │   ├── researcher.md
+    │   └── programmer.md
+    └── commands/
+        ├── work.md
+        ├── code.md
+        ├── research.md
+        └── plan.md

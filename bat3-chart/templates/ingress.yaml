@@ -1,0 +1,56 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "bat3.fullname" . }}-ingress
+  annotations:
+    kubernetes.io/tls-acme: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: {{ .Values.ingress.proxyBodySize | default "100M" }}
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ include "bat3.TlsName" . }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /runs
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "bat3.fullname" . }}-api
+                port: { number: {{ .Values.service.api.port | default 8000 }} }
+          - path: /files
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "bat3.fullname" . }}-api
+                port: { number: {{ .Values.service.api.port | default 8000 }} }
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "bat3.fullname" . }}-api
+                port: { number: {{ .Values.service.api.port | default 8000 }} }
+          - path: /docs
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "bat3.fullname" . }}-api
+                port: { number: {{ .Values.service.api.port | default 8000 }} }
+          - path: /openapi.json
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "bat3.fullname" . }}-api
+                port: { number: {{ .Values.service.api.port | default 8000 }} }
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "bat3.fullname" . }}-web
+                port: { number: {{ .Values.service.web.port | default 8081 }} }
+{{- end }}

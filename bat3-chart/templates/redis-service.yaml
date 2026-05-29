@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bat3.fullname" . }}-redis
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ include "bat3.fullname" . }}-redis
+  ports:
+    - port: {{ .Values.redis.port }}
+      targetPort: {{ .Values.redis.port }}

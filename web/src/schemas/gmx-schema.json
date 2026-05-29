@@ -1,0 +1,470 @@
+{
+    "type": "object",
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "properties": {
+        "file_identification": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "title": "File name",
+                    "description": "User specified name of file",
+                    "type": "string"
+                },
+                "description": {
+                    "title": "File description",
+                    "description": "User specified description of file",
+                    "type": "string"
+                },
+                "authors": {
+                    "title": "Authors",
+                    "description": "ORCIDs",
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "pattern": "\\d{4}-\\d{4}-\\d{4}-\\d{4}"
+                    }
+                },
+                "simulation_year": {
+                    "title": "Simulation year",
+                    "description": "Year of creation of simulation",
+                    "type": "string"
+                },
+                "doi": {
+                    "title": "DOI",
+                    "description": "DOI of the dataset",
+                    "type": "string"
+                },
+                "related_files": {
+                    "title": "Related files [gro, pdb, trr, xtc]",
+                    "description": "Related configuration/trajectory files",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "name",
+                "description",
+                "authors",
+                "simulation_year",
+                "doi",
+                "related_files"
+            ]
+        },
+        "main_information": {
+            "title": "Main information about dataset",
+            "type": "object",
+            "properties": {
+                "simulation_type": {
+                    "title": "Type of the simulation",
+                    "type": "string",
+                    "enum": [
+                        "free energy simulation",
+                        "molecular dynamics",
+                        "energy minimization"
+                    ]
+                },
+                "force_field": {
+                    "title": "Force Field",
+                    "type": "string"
+                },
+                "simulation_length": {
+                    "title": "Simulation length [ns]",
+                    "type": "number",
+                    "minimum": 0
+                },
+                "simulation_time_step": {
+                    "title": "Simulation Time Step [ps]",
+                    "type": "number",
+                    "minimum": 0
+                },
+                "statistical_ensamble": {
+                    "title": "Statistical Ensemble",
+                    "type": "string",
+                    "enum": [
+                        "NVE (microcanonical)",
+                        "NVT (canonical)",
+                        "NpT (isothermal-isobaric)"
+                    ]
+                },
+                "reference_temperature": {
+                    "title": "Reference Temperature [K]",
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "reference_pressure": {
+                    "title": "Reference Pressure [bar]",
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "minLength": 3,
+                        "minItems": 3,
+                        "items": {
+                            "type": "number"
+                        }
+                    }
+                },
+                "box_size_and_shape": {
+                    "title": "Size and Shape of simulation box [nm degree]",
+                    "description": "last line of a coordinate file ",
+                    "type": "number"
+                },
+                "molecules": {
+                    "title": "List of molecules",
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "title": "Molecule ID",
+                                "type": "string"
+                            },
+                            "name": {
+                                "title": "Molecule name",
+                                "type": "string"
+                            },
+                            "count": {
+                                "title": "Molecule count",
+                                "type": "number",
+                                "minimum": 0
+                            }
+                        }
+                    }
+                },
+                "free_energy_calculation": {
+                    "title": "Free Energy Calculation",
+                    "type": "string",
+                    "enum": ["yes", "no"]
+                },
+                "umbrella_sampling": {
+                    "title": "Umbrella Sampling",
+                    "type": "boolean"
+                },
+                "AWH_adaptive_biasing": {
+                    "title": "AWH Adaptive Biasing",
+                    "type": "boolean"
+                }
+            }
+        },
+        "detailed_information": {
+            "title": "Detailed information",
+            "type": "object",
+            "properties": {
+                "nstcomm": {
+                    "title": "nstcomm [step]",
+                    "description": "frequency for center of mass motion removal",
+                    "type": "integer"
+                },
+                "comm_mode": {
+                    "title": "comm-mode",
+                    "type": "string",
+                    "enum": [
+                        "linear",
+                        "angular",
+                        "linear-acceleration-correction",
+                        "none"
+                    ]
+                },
+                "lincs_iter": {
+                    "title": "lincs-iter",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "lincs_order": {
+                    "title": "lincs-order",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "fourierspacing": {
+                    "title": "fourierspacing",
+                    "description": "[nm]",
+                    "type": "number",
+                    "minimum": 0
+                },
+                "constraint_algorithm": {
+                    "title": "constraint-algorithm",
+                    "description": "Chooses which solver satisfies any non-SETTLE holonomic",
+                    "type": "string",
+                    "enum": [
+                        "lincs",
+                        "shake"
+                    ]
+                },
+                "van_der_Waals_interactions": {
+                    "type": "object",
+                    "title": "van der Waals interactions",
+                    "properties": {
+                        "rvdw": {
+                            "title": "rvdw [nm]",
+                            "description": "distance for the LJ or Buckingham cut-off",
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "vdw_type": {
+                            "title": "vdw-type",
+                            "type": "string",
+                            "enum": [
+                                "cut-off",
+                                "pme",
+                                "shift",
+                                "switch",
+                                "user"
+                            ]
+                        },
+                        "dispcorr": {
+                            "title": "dispcorr",
+                            "type": "string",
+                            "enum": [
+                                "no",
+                                "enerpres",
+                                "eber"
+                            ]
+                        },
+                        "rvdw_switch": {
+                            "title": "rvdw-switch [nm]",
+                            "description": "where to start switching the LJ force and possibly the potential, only relevant when force or potential switching is used",
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "vdw_modifier": {
+                            "title": "vdw-modifier",
+                            "type": "string",
+                            "enum": [
+                                "potential-shift",
+                                "none",
+                                "force-switch",
+                                "potential-switch"
+                            ]
+                        }
+                    }
+                },
+                "barostat": {
+                    "title": "Barostat",
+                    "type": "object",
+                    "properties": {
+                        "pcoupl": {
+                            "title": "pcoupl",
+                            "type": "string",
+                            "enum": [
+                                "no",
+                                "berendsen",
+                                "c-rescale",
+                                "parrinello-rahman",
+                                "mttk"
+                            ]
+                        },
+                        "pcoupltype": {
+                            "title": "pcoupltype",
+                            "type": "string",
+                            "enum": [
+                                "isotropic",
+                                "semiisotropic",
+                                "anisotropic",
+                                "surface-tension"
+                            ]
+                        },
+                        "tau_p": {
+                            "title": "tau-p [ps]",
+                            "description": "The time constant for pressure coupling (one value for all directions).",
+                            "type": "number"
+                        },
+                        "compressibility": {
+                            "title": "Compressibility [bar^-1]",
+                            "description": "The compressibility (NOTE: this is now really in bar-1) For water at 1 atm and 300 K the compressibility is 4.5e-5 bar-1",
+                            "type": "array",
+                            "items": {
+                                "type": "array",
+                                "minLength": 3,
+                                "minItems": 3,
+                                "items": {
+                                    "type": "number"
+                                }
+                            }
+                        },
+                        "refcoord_scaling": {
+                            "title": "refcoord-scaling",
+                            "type": "string",
+                            "enum": [
+                                "no",
+                                "all",
+                                "com"
+                            ]
+                        }
+                    }
+                },
+                "thermostat": {
+                    "title": "Thermostat",
+                    "type": "object",
+                    "properties": {
+                        "tcoupl": {
+                            "title": "tcoupl",
+                            "type": "string",
+                            "enum": [
+                                "no",
+                                "berendsen",
+                                "nose-hoover",
+                                "andersen",
+                                "andersen-massive",
+                                "v-rescale"
+                            ]
+                        },
+                        "tau_t": {
+                            "title": "tau-t [ps]",
+                            "description": "time constant for coupling (one for each group in tc-grps), -1 means no temperature coupling",
+                            "type": "array",
+                            "items": {
+                                "type": "number"
+                            }
+                        },
+                        "tc_grps": {
+                            "type": "object",
+                            "title": "tc-grps",
+                            "properties": {
+                                "nr": {
+                                    "title": "nr",
+                                    "description": "groups to couple to separate temperature baths",
+                                    "type": "integer"
+                                },
+                                "name": {
+                                    "title": "name",
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "nsttcouple": {
+                            "title": "nsttcouple",
+                            "description": "The frequency for coupling the temperature.",
+                            "type": "number"
+                        }
+                    }
+                },
+                "neighbour_list": {
+                    "title": "neighbour list",
+                    "type": "object",
+                    "properties": {
+                        "pbc": {
+                            "title": "pbc",
+                            "type": "string",
+                            "enum": [
+                                "xyz",
+                                "no",
+                                "xy"
+                            ]
+                        },
+                        "rlist": {
+                            "title": "rlist [nm]",
+                            "description": "Cut-off distance for the short-range neighbor list",
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "nstlist": {
+                            "title": "nstlist",
+                            "type": "integer"
+                        },
+                        "cutoff_scheme": {
+                            "title": "cutoff-scheme",
+                            "type": "string",
+                            "enum": [
+                                "verlet",
+                                "group"
+                            ]
+                        }
+                    }
+                },
+                "electrostatic_interactions": {
+                    "title": "Electrostatic Interactions",
+                    "type": "object",
+                    "properties": {
+                        "coulombtype": {
+                            "title": "coulombtype",
+                            "type": "string",
+                            "enum": [
+                                "cut-off",
+                                "ewald",
+                                "pme",
+                                "p3m-ad",
+                                "reaction-field",
+                                "user",
+                                "pme-shift",
+                                "pme-user",
+                                "pme-user-switch"
+                            ]
+                        },
+                        "rcoulomb": {
+                            "title": "rcoulomb [nm]",
+                            "description": "The distance for the Coulomb cut-off",
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "epsilon_r": {
+                            "title": "epsilon-r",
+                            "description": "The relative dielectric constant.",
+                            "type": "number"
+                        },
+                        "epsilon_rf": {
+                            "title": "epsilon-rf",
+                            "type": "number"
+                        },
+                        "coulomb_modifier": {
+                            "title": "coulomb-modifier",
+                            "type": "string",
+                            "enum": [
+                                "potential-shift",
+                                "none"
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "_protein_sequences": {
+            "title": "Protein sequences",
+            "description": "Protein sequences of the proteins in the simulation",
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "_uniprot_id": {
+            "title": "Uniprot ID",
+            "description": "Uniprot ID of the protein",
+            "type": "string"
+        },
+        "_record_url": {
+            "title": "Dataset URL",
+            "description": "URL to file if uploaded to data repository",
+            "type": "string"
+        },
+        "_record_file": {
+            "title": "Dataset Record File",
+            "description": "ID of TPR file (if has ID e.g. from Zenodo or other data repository)",
+            "type": "string"
+        },
+        "_metadump_version": {
+            "title": "Metadump version",
+            "description": "Version of the extraction script at the time of processing metadata",
+            "type": "string"
+        },
+        "_gromacs_version": {
+            "title": "GROMACS software version",
+            "description": "Version of GROMACS (dump) used to extract metadata",
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d+)*$"
+        },
+        "_dump_sw_version": {
+            "title": "Metadata description creation software version",
+            "description": "Version of the extraction script at the time of processing metadata",
+            "type": "string"
+        },
+        "_tpx_version": {
+            "title": "TPX file version",
+            "description": "Version of TPR file",
+            "type": "string"
+        },
+        "_metadata_date": {
+            "title": "Metadata creation date",
+            "description": "Timestamp of when metadata were extracted",
+            "type": "string"
+        }
+    }
+}
