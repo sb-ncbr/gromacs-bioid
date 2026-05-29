@@ -1,6 +1,6 @@
 import React, {JSX, useEffect, useState} from "react"
 import {
-    Alert,
+    Alert, AlertTitle,
     Box,
     Grid,
     Skeleton,
@@ -217,7 +217,15 @@ const AnnotationResults = () => {
 
     return (
         <>
-            {error && <Alert sx={{ mb: 3 }} severity="error">{error.message}</Alert>}
+            {error && (
+                <Alert sx={{ mb: 3 }} severity="error">
+                    <AlertTitle>Oh no — something went terribly wrong!</AlertTitle>
+                    {error.message || "An unexpected error occurred."}
+                    <Typography variant="body2" sx={{ mt: 1 }}>
+                        Don't worry — you can still download the log and results files below to investigate.
+                    </Typography>
+                </Alert>
+            )}
 
                 {/* Progress bar section */}
                 <Stack spacing={2} sx={{ width: "100%" }}>
@@ -234,7 +242,10 @@ const AnnotationResults = () => {
                             Job status: <SessionStatus>{statedata?.status || ""}</SessionStatus>
                         </Typography>
                         <Typography variant="body2">
-                            Session Expiration: {(new Date(statedata?.expires)).toLocaleString()}
+                            Session Expiration: {(() => {
+                            const d = new Date(statedata?.expires || "");
+                            return isNaN(d.getTime()) ? "—" : d.toLocaleString();
+                        })()}
                         </Typography>
                     </Stack>
 
@@ -312,8 +323,8 @@ const AnnotationResults = () => {
 
             </Stack>
             <Box sx={{ mt: 3, display: "flex", gap: 2 }}>
-                <DownloadMetadataActions uuid={statedata.uuid} what="results" />
-                <DownloadMetadataActions uuid={statedata.uuid} what="log" />
+                <DownloadMetadataActions uuid={session!} what="results" />
+                <DownloadMetadataActions uuid={session!} what="log" />
             </Box>
         </>
     )

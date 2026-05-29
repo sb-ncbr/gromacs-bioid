@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import json
 import os
 import uuid
@@ -208,6 +209,19 @@ async def list_runs() -> RunListResponse:
     
     return RunListResponse(runs=runs)
 
+
+
+@router.delete("/{run_id}")
+async def delete_run(run_id: str) -> dict:
+    """Delete a run and its associated directory."""
+    runs_dir = get_runs_dir()
+    run_dir = runs_dir / run_id
+    
+    if not run_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    
+    shutil.rmtree(run_dir)
+    return {"message": f"Run '{run_id}' deleted successfully"}
 
 @router.get("/{run_id}", response_model=RunSummaryResponse)
 async def get_run_summary(run_id: str) -> RunSummaryResponse:

@@ -18,17 +18,17 @@ const Frontpage = () => {
     const [uploadedFiles, setUploadedFiles] = useState<FileWithPath[]>([])
     const [analyzing, setAnalyzing] = useState(false)
 
-    const [error, setError] = useState<boolean>(false)
+    const [error, setError] = useState<string | null>(null)
 
     const clearFiles = () => {
         setUploaded(false)
         setAnalyzing(false)
-        setError(false)
+        setError(null)
     }
 
     const clearFile = (file: FileWithPath) => {
         setUploadedFiles(uploadedFiles.filter(f => f !== file))
-        setError(false)
+        setError(null)
     }
 
     const editFile = async () => {
@@ -39,32 +39,37 @@ const Frontpage = () => {
             data.append(`file-${index}`, value)
         }
 
-        const request_id = await fetch('/api/annotate', { body: data, method: 'POST' })
-            .then(response => response.text())
-            .then(text => JSON.parse(text))
-            .then(data => data.uuid)
-            .catch(error => setError(true))
-
-
-        setAnalyzing(false)
-
-        if (request_id) {
-            const storedRequests = JSON.parse(localStorage.getItem('request_ids') || '[]');
-            var record: AnnotationSessionRecord = {
-                id: request_id,
-                title: customMetadata?.dataset_metadata?.title || uploadedFiles.filter(file => file.name.endsWith('.tpr') || file.name.endsWith('.zip') || file.name.endsWith('.tar') || file.name.endsWith('.gz'))[0]?.name || "Untitled",
-                uploadedFiles: uploadedFiles.map(file => file.name),
-                date: new Date().toISOString()
+        let request_id = null;
+        try {
+            const response = await fetch('/api/annotate', { body: data, method: 'POST' });
+            const text = await response.text();
+            let parsed;
+            try {
+                parsed = JSON.parse(text);
+            } catch (parseErr) {
+                console.error("Server returned non-JSON response:", text.substring(0, 500));
+                throw new Error("The server responded with something unexpected. Maybe it's having a bad day? Try again in a moment.");
             }
-            storedRequests.push(record);
-            localStorage.setItem('request_ids', JSON.stringify(storedRequests));
-            navigate(`/results/${request_id}`)
+            if (!response.ok) {
+                throw new Error(parsed.message || `Server error: ${response.status}`);
+            }
+            request_id = parsed.uuid;
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "A mysterious error occurred while starting the annotation. Please try again.");
+            setAnalyzing(false);
+            return;
         }
-        
-        if (error) {
-            console.error("Error has occured while analyzing file", error)
-            return
+
+        const storedRequests = JSON.parse(localStorage.getItem('request_ids') || '[]');
+        var record: AnnotationSessionRecord = {
+            id: request_id,
+            title: customMetadata?.dataset_metadata?.title || uploadedFiles.filter(file => file.name.endsWith('.tpr') || file.name.endsWith('.zip') || file.name.endsWith('.tar') || file.name.endsWith('.gz'))[0]?.name || "Untitled",
+            uploadedFiles: uploadedFiles.map(file => file.name),
+            date: new Date().toISOString()
         }
+        storedRequests.push(record);
+        localStorage.setItem('request_ids', JSON.stringify(storedRequests));
+        navigate(`/results/${request_id}`)
     }
 
     const [customMetadataModalState, setCustomMetadataModalState] = useState(false)
@@ -222,8 +227,8 @@ const Frontpage = () => {
 
                         {error && (
                             <Alert severity="error" sx={{ mt: 2 }}>
-                                <AlertTitle>Error</AlertTitle>
-                                An error occurred during processing. Please try again. {error}
+                                <AlertTitle>Oh no — something went wrong!</AlertTitle>
+                                {error}
                             </Alert>
                         )}
                     </Grid>

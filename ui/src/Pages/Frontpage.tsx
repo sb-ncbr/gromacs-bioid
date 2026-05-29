@@ -16,6 +16,27 @@ interface RunListItem {
 const Frontpage = () => {
     const navigate = useNavigate()
 
+    const formatDate = (dateStr: string | undefined | null): string => {
+        if (!dateStr) return "—";
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return "—";
+        return d.toLocaleDateString();
+    };
+
+    const handleDeleteRun = async (runId: string) => {
+        if (!window.confirm("Are you sure you want to delete this run?")) return;
+        try {
+            const res = await fetch(`/runs/${runId}`, { method: 'DELETE' });
+            if (res.ok) {
+                await fetchRuns();
+            } else {
+                console.error("Failed to delete run:", await res.text());
+            }
+        } catch (err) {
+            console.error("Error deleting run:", err);
+        }
+    };
+
     const [uploadedFiles, setUploadedFiles] = useState<FileWithPath[]>([])
     const [analyzing, setAnalyzing] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -262,7 +283,7 @@ const Frontpage = () => {
                                                 {run.status}
                                             </Typography>
                                             <Typography variant="caption" color="text.secondary">
-                                                {new Date(run.created_at).toLocaleDateString()}
+                                                {formatDate(run.created_at)}
                                             </Typography>
                                         </TableCell>
                                         <TableCell align="right">
@@ -272,6 +293,16 @@ const Frontpage = () => {
                                                 onClick={() => navigate(`/runs/${run.run_id}`)}
                                             >
                                                 View
+                                            </Button>
+                                        </TableCell>
+                                        <TableCell align="right">
+                                            <Button
+                                                size="small"
+                                                variant="outlined"
+                                                color="error"
+                                                onClick={() => handleDeleteRun(run.run_id)}
+                                            >
+                                                Delete
                                             </Button>
                                         </TableCell>
                                     </TableRow>

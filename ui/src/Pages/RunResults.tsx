@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import {
-    Alert,
+    Alert, AlertTitle,
     Box,
     Grid,
     Stack,
@@ -244,7 +244,7 @@ const RunResults = () => {
         };
     }, [runId, fetchMolecules, fetchLoadingInfo]);
 
-    // Fetch step detail data when selectedStep changes
+    // Fetch step detail data when selectedStep or selectedSegment changes
     useEffect(() => {
         if (!selectedStep || !runId) {
             return;
@@ -253,20 +253,27 @@ const RunResults = () => {
         const fetchStepData = async () => {
             setStepLoading(true);
             try {
+                // Build URL with optional segment filter
+                const buildUrl = (endpoint: string) => {
+                    return selectedSegment === "SYSTEM"
+                        ? `/runs/${runId}/${endpoint}`
+                        : `/runs/${runId}/${endpoint}?segment=${selectedSegment}`;
+                };
+
                 if (selectedStep === "Resolve Signatures") {
-                    const res = await fetch(`/runs/${runId}/signatures`);
+                    const res = await fetch(buildUrl("signatures"));
                     if (res.ok) {
                         const data: SignaturesResponse = await res.json();
                         setSignaturesData(data);
                     }
                 } else if (selectedStep === "Resolve Identifiers") {
-                    const res = await fetch(`/runs/${runId}/identifiers`);
+                    const res = await fetch(buildUrl("identifiers"));
                     if (res.ok) {
                         const data: IdentifiersResponse = await res.json();
                         setIdentifiersData(data);
                     }
                 } else if (selectedStep === "Annotation Complete") {
-                    const res = await fetch(`/runs/${runId}/verification`);
+                    const res = await fetch(buildUrl("verification"));
                     if (res.ok) {
                         const data: VerificationResponse = await res.json();
                         setVerificationData(data);
@@ -281,7 +288,7 @@ const RunResults = () => {
         };
 
         fetchStepData();
-    }, [selectedStep, runId]);
+    }, [selectedStep, runId, selectedSegment]);
 
     if (initialLoading) {
         return (
@@ -291,23 +298,9 @@ const RunResults = () => {
         );
     }
 
-    if (error) {
-        return (
-            <Alert severity="error">
-                {error}
-            </Alert>
-        );
-    }
 
-    if (!statusData) {
-        return (
-            <Alert severity="warning">
-                No status data available
-            </Alert>
-        );
-    }
 
-    const isFailed = statusData.pipeline.status === 'failed';
+    const isFailed = statusData?.pipeline.status === 'failed';
 
     const renderStepDetail = () => {
         if (!selectedStep) return null;
@@ -332,7 +325,7 @@ const RunResults = () => {
                         {selectedStep === "Load Simulation" && (
                             <>
                                 <Typography variant="body2">
-                                    <strong>Input Kind:</strong> {loadingInfo?.input_kind || statusData.pipeline.input_kind || "N/A"}
+                                    <strong>Input Kind:</strong> {loadingInfo?.input_kind || statusData?.pipeline.input_kind || "N/A"}
                                 </Typography>
                                 <Typography variant="body2">
                                     <strong>Selected Strategy:</strong> {loadingInfo?.selected_strategy || loadingInfo?.final_strategy || "N/A"}
@@ -354,9 +347,9 @@ const RunResults = () => {
                                         </ul>
                                     </Box>
                                 )}
-                                {statusData.pipeline.input_files && (
+                                {statusData?.pipeline.input_files && (
                                     <Typography variant="body2">
-                                        <strong>Input Files:</strong> {Object.keys(statusData.pipeline.input_files).join(", ")}
+                                        <strong>Input Files:</strong> {Object.keys(statusData?.pipeline.input_files || {}).join(", ")}
                                     </Typography>
                                 )}
                             </>
@@ -418,7 +411,7 @@ const RunResults = () => {
                         {selectedStep === "Summarize Results" && (
                             <>
                                 <Typography variant="body2">
-                                    <strong>Total Fragments:</strong> {statusData.tasks.find(t => t.name.toLowerCase().includes('summarize'))?.summary?.total_fragment_count ?? "N/A"}
+                                    <strong>Total Fragments:</strong> {statusData?.tasks.find(t => t.name.toLowerCase().includes('summarize'))?.summary?.total_fragment_count ?? "N/A"}
                                 </Typography>
                                 {segments.length > 0 && (
                                     <Typography variant="body2">
@@ -464,8 +457,19 @@ const RunResults = () => {
                 {/* Title */}
                 <Typography variant="h1">Annotation process</Typography>
 
+                {error && (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                        <AlertTitle>Oh no — something went wrong!</AlertTitle>
+                        {error}
+                        <Typography variant="body2" sx={{ mt: 1 }}>
+                            Don't worry — you can still inspect run files and logs below.
+                        </Typography>
+                    </Alert>
+                )}
                 {/* Progress bar with logs button */}
-                <Box sx={{ display: "flex", alignItems: "center", width: "100%", overflowX: "auto", pb: 2 }}>
+                {statusData && (
+                    <>
+                    <Box sx={{ display: "flex", alignItems: "center", width: "100%", overflowX: "auto", pb: 2 }}>
                     <TasksProgressBar 
                         tasks={statusData.tasks || []} 
                         onStepClick={setSelectedStep}
@@ -491,9 +495,9 @@ const RunResults = () => {
                             Input Kind: <strong>{statusData.pipeline.input_kind}</strong>
                         </Typography>
                     )}
-                    {statusData.pipeline.input_files && (
+                    {statusData?.pipeline.input_files && (
                         <Typography variant="body2">
-                            Input Files: <strong>{Object.keys(statusData.pipeline.input_files).join(", ")}</strong>
+                            Input Files: <strong>{Object.keys(statusData?.pipeline.input_files || {}).join(", ")}</strong>
                         </Typography>
                     )}
                     {statusData.pipeline.started_at && (
@@ -672,6 +676,12 @@ const RunResults = () => {
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
                         Segments not yet available.
                     </Typography>
+                )}
+                </>
+                )}
+
+                {!statusData && !error && (
+                    <Alert severity="info">Loading run data...</Alert>
                 )}
 
                 {/* Run file browser */}

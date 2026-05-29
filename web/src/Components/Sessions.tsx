@@ -1,5 +1,5 @@
 import { RemoveCircle, Visibility } from "@mui/icons-material";
-import { Table, TableHead, TableRow, TableCell, TableBody, IconButton, Typography } from "@mui/material";
+import { Table, TableHead, TableRow, TableCell, TableBody, IconButton, Typography, Tooltip } from "@mui/material";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -45,14 +45,16 @@ const Sessions = () => {
                         {requestIds.map((record, index) => (
                             <TableRow key={index}>
                                 <TableCell>{record.title}</TableCell>
-                                <TableCell>{(new Date(record.date)).toLocaleString()}</TableCell>
+                                <TableCell>{record.date ? (() => { const d = new Date(record.date); return isNaN(d.getTime()) ? "—" : d.toLocaleString(); })() : "—"}</TableCell>
                                 <TableCell>
                                     <IconButton onClick={() => navigate(`/results/${record.id}`)}>
                                         <Visibility />
                                     </IconButton>
-                                    <IconButton onClick={() => handleRemoveSession(record.id)}>
-                                        <RemoveCircle />
-                                    </IconButton>
+                                    <Tooltip title="Delete session" arrow>
+                                        <IconButton onClick={() => handleRemoveSession(record.id)}>
+                                            <RemoveCircle />
+                                        </IconButton>
+                                    </Tooltip>
                                 </TableCell>
                             </TableRow>
                         ))}

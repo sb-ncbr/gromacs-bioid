@@ -36,8 +36,8 @@ const statusIcon: Record<TaskStatus, JSX.Element> = {
 const TASK_STEPS = [
     { key: "Load Simulation", keywords: ["load", "simulation"] },
     { key: "Resolve Signatures", keywords: ["signature", "fragment"] },
-    { key: "Resolve Identifiers", keywords: ["identifier", "resolve"] },
-    { key: "Summarize Results", keywords: ["summarize", "result"] },
+    { key: "Resolve Identifiers", keywords: ["identify", "identifier", "resolve"] },
+    { key: "Summarize Results", keywords: ["summarize", "verify"] },
     { key: "Annotation Complete", keywords: ["complete", "export", "annotation"] },
 ];
 
@@ -59,8 +59,14 @@ function deriveStepStatus(tasks: TaskInfo[], stepKey: string): TaskStatus {
     const matchingTasks = tasks.filter(t => getStepForTask(t.name) === stepKey);
     
     if (matchingTasks.length === 0) {
-        // Check if there are no failed tasks anywhere
         const hasFailedTasks = tasks.some(t => t.status === "failed");
+        const allTasksFinished = tasks.every(t => t.status !== "pending" && t.status !== "running");
+        
+        if (!hasFailedTasks && tasks.length > 0 && allTasksFinished) {
+            return "ok";
+        }
+        
+        // Check if there are no failed tasks anywhere
         const hasActiveTasks = tasks.some(t => t.status === "success" || t.status === "running");
         
         if (!hasFailedTasks && hasActiveTasks) {

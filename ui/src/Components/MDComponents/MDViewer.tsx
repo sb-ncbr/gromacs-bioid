@@ -36,8 +36,6 @@ const MDViewer = ({
     const [molstarReady, setMolstarReady] = useState(false);
     const [renderData, setRenderData] = useState<RenderPathsResponse | null>(null);
     
-    // Track initial load for focus
-    const initialLoadRef = useRef(true);
     
     // Debounce refs
     const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -157,50 +155,31 @@ const MDViewer = ({
                 );
 
                 if (segment === "SYSTEM") {
-                    // Show all chains at opacity 1.0 with default coloring
-                    for (const { name, isProtein } of segmentData) {
-                        if (isProtein) {
-                            structure
-                                .component({selector: {auth_asym_id: name}})
-                                .representation({ type: 'cartoon'})
-                                .color({ custom: { molstar_use_default_coloring: true } })
-                                .opacity({ opacity: 1.0 });
-                        } else {
-                            structure
-                                .component({selector: {auth_asym_id: name}})
-                                .representation({ type: 'ball_and_stick'})
-                                .color({ custom: { molstar_use_default_coloring: true } })
-                                .opacity({ opacity: 1.0 });
-                        }
-                    }
+                    // Show all segments at opacity 1.0 with default coloring
+                    structure
+                        .component({ selector: 'all' })
+                        .representation({ type: 'cartoon' })
+                        .color({ custom: { molstar_use_default_coloring: true } })
+                        .opacity({ opacity: 1.0 });
                 } else {
-                    // Highlight/dim mode
-                    const otherSegments = safeSegments.filter(s => s !== segment);
+                    // Highlight/dim mode: background all segments at 0.15, foreground selected at 1.0
                     const selectedSegData = segmentData.find(sd => sd.name === segment);
                     const isProtein = selectedSegData?.isProtein ?? false;
 
-                    // Background layer: all other chains at opacity 0.15
-                    if (otherSegments.length > 0) {
-                        const otherSelectors = otherSegments.map(s => ({ auth_asym_id: s }));
-                        structure
-                            .component({selector: otherSelectors})
-                            .representation({ type: 'cartoon'})
-                            .color({ custom: { molstar_use_default_coloring: true } })
-                            .opacity({ opacity: 0.15 });
-                    }
+                    // Background layer: ALL segments at opacity 0.15
+                    structure
+                        .component({ selector: 'all' })
+                        .representation({ type: 'cartoon' })
+                        .color({ custom: { molstar_use_default_coloring: true } })
+                        .opacity({ opacity: 0.15 });
 
-                    // Foreground layer: selected chain at opacity 1.0 with highlight
-                    const foregroundComponent = structure
-                        .component({selector: {auth_asym_id: segment}})
-                        .representation({ type: isProtein ? 'cartoon' : 'ball_and_stick'})
-                        .color({ color: '#E65100'})
-                        .opacity({ opacity: 1.0 });
-                    
-                    // Focus only on initial load
-                    if (initialLoadRef.current) {
-                        foregroundComponent.focus({});
-                        initialLoadRef.current = false;
-                    }
+                    // Foreground layer: selected segment at opacity 1.0 with focus
+                    structure
+                        .component({ selector: { auth_asym_id: segment } })
+                        .representation({ type: isProtein ? 'cartoon' : 'ball_and_stick' })
+                        .color({ color: '#E65100' })
+                        .opacity({ opacity: 1.0 })
+                        .focus({});
                 }
 
                 const mvsData = builder.getState();
@@ -208,8 +187,7 @@ const MDViewer = ({
                 await molstar.PluginExtensions.mvs.loadMVS(viewer.plugin, mvsData, {
                     sourceUrl: undefined,
                     sanityChecks: true,
-                    replaceExisting: true,
-                    keepCamera: true,
+                                    keepCamera: segment === "SYSTEM",
                 });
             } catch (e) {
                 console.error("Mol* viewer error", e);
