@@ -56,7 +56,12 @@ class CompoundSignatureFetcher(SignatureFetcher):
     
     def _fetch_chembl(self, chembl_id: str) -> str | None:
         """Fetch SMILES from ChEMBL."""
-        url = f"https://www.ebi.ac.uk/chembl/api/data/molecule/CHEMBL{chembl_id}.json"
+        # Canonicalize: strip CHEMBL prefix if present, then prepend it back
+        chembl_id = chembl_id.upper()
+        if chembl_id.startswith("CHEMBL"):
+            chembl_id = chembl_id[6:]  # Strip prefix
+        chembl_id = f"CHEMBL{chembl_id}"
+        url = f"https://www.ebi.ac.uk/chembl/api/data/molecule/{chembl_id}.json"
         try:
             r = requests.get(url, timeout=10)
             r.raise_for_status()
@@ -68,16 +73,17 @@ class CompoundSignatureFetcher(SignatureFetcher):
     
     def _fetch_chebi(self, chebi_id: str) -> str | None:
         """Fetch SMILES from ChEBI."""
-        chebi_num = chebi_id.replace("CHEBI:", "")
-        url = f"https://www.ebi.ac.uk/chebi/ws/rest/chemicalStructure/{chebi_num}"
+        # Strip CHEBI: prefix if present
+        chebi_num = chebi_id.upper()
+        if chebi_num.startswith("CHEBI:"):
+            chebi_num = chebi_num[6:]  # Strip prefix
+        url = f"https://www.ebi.ac.uk/chebi/backend/api/public/compound/{chebi_num}/"
         try:
             r = requests.get(url, timeout=10)
             r.raise_for_status()
-            data = r.text
-            if "<smiles>" in data:
-                smiles = data.split("<smiles>")[1].split("</smiles>")[0]
-                return smiles.strip()
-            return None
+            data = r.json()
+            smiles = data.get("default_structure", {}).get("smiles")
+            return smiles.strip() if smiles else None
         except Exception as e:
             logger.warning(f"ChEBI {chebi_id} fetch SMILES failed: {e}")
             return None

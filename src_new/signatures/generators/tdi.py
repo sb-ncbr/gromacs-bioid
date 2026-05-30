@@ -106,6 +106,10 @@ class ThreeDiGenerator(SignatureGenerator):
         encoder = mini3di.Encoder()
         try:
             result = encoder.encode_atoms(n_coords, ca_coords, c_coords, cb_coords)
+            if isinstance(result, np.ma.MaskedArray):
+                result = "".join(result.filled(""))
+            elif isinstance(result, np.ndarray):
+                result = "".join(result)
             return result.lower()
         except Exception as exc:
             logger.warning(f"mini3di encoding failed: {exc}")

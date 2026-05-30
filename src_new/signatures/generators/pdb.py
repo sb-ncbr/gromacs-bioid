@@ -176,6 +176,7 @@ def verify_pdb(pdb: str, temp_directory: str) -> bool:
     """Verify PDB can be parsed.
     
     Bug fix: Ensure temp file is unlinked even if parsing raises.
+    Do not turn warnings into errors - only fail on actual exceptions.
     """
     fd, path = tempfile.mkstemp(suffix=".pdb", dir=temp_directory)
     try:
@@ -185,10 +186,8 @@ def verify_pdb(pdb: str, temp_directory: str) -> bool:
         
         success = True
         try:
-            warnings.filterwarnings("error", category=PDBConstructionWarning)
             parser = PDBParser(QUIET=True)
             parser.get_structure("export", path)
-            warnings.resetwarnings()
         except Exception:
             success = False
         
@@ -203,10 +202,8 @@ def verify_pdb(pdb: str, temp_directory: str) -> bool:
 def fragment_to_pdb_biopython(fragment: AtomGroup, only_backbone: bool) -> str:
     """Generate PDB string using Biopython.
     
-    Bug fix: Use per-atom ID (atoms.ids[i]) instead of atoms.ids[0] for every atom.
+    Bug fix: Use 1-based sequential serial numbers instead of mapping original IDs.
     """
-    atom_ids_to_indices = {indice: i for i, indice in enumerate(fragment.atoms.indices)}
-    
     structure = Structure.Structure("export")
     model = Model.Model(0)
     chain = Chain.Chain("A")
@@ -217,6 +214,7 @@ def fragment_to_pdb_biopython(fragment: AtomGroup, only_backbone: bool) -> str:
         
         if only_backbone:
             mean_position = np.array(atoms.atoms.positions, dtype=float)
+            # Use 1-based serial number
             atom = Atom.Atom(
                 atoms.atoms.names[0],
                 np.array(mean_position.mean(axis=0)),
@@ -224,13 +222,13 @@ def fragment_to_pdb_biopython(fragment: AtomGroup, only_backbone: bool) -> str:
                 1.0,
                 " ",
                 "CA",
-                atom_ids_to_indices[atoms.atoms.ids[0]],
+                resid + 1,
                 "C"
             )
             residue.add(atom)
         else:
             for i in range(len(atoms)):
-                # Bug fix: Use atoms.ids[i] instead of atoms.ids[0]
+                # Use 1-based sequential serial number
                 atom = Atom.Atom(
                     atoms.names[i],
                     np.array(atoms.positions[i]),
@@ -238,7 +236,7 @@ def fragment_to_pdb_biopython(fragment: AtomGroup, only_backbone: bool) -> str:
                     1.0,
                     " ",
                     atoms.names[i],
-                    atom_ids_to_indices[atoms.ids[i]],
+                    i + 1,
                     str(atoms.elements[i]).upper()
                 )
                 residue.add(atom)

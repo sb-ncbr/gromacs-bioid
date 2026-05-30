@@ -184,6 +184,7 @@ class VerifiedHitItem(BaseModel):
     is_verified: bool = Field(..., description="Whether the hit passed verification")
     rejection_reason: Optional[str] = Field(None, description="Reason for rejection if not verified")
     supporting_evidence_count: int = Field(default=0, description="Number of supporting evidence")
+    database_url: Optional[str] = Field(None, description="URL to the database entry")
 
 
 class VerificationResponse(BaseModel):
@@ -210,6 +211,7 @@ class RunListItem(BaseModel):
     status: str = Field(..., description="Pipeline status")
     created_at: str = Field(..., description="ISO 8601 timestamp when run was created")
     input_kind: Optional[str] = Field(None, description="Type of input data")
+    run_name: Optional[str] = Field(None, description="Custom run name")
 
 
 class RunListResponse(BaseModel):

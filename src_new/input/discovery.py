@@ -83,7 +83,17 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
         exts.add(f.path.suffix.lower())
     
     # Check files by extension in this priority:
-    # 1. Any .tpr -> "TPR_ONLY", GROMACS
+    # 1. .tpr + .gro -> "TPR_GRO", GROMACS (prefer GRO for coordinates)
+    if ".tpr" in exts and ".gro" in exts:
+        tpr_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".tpr"]
+        gro_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".gro"]
+        return LoadDecision(
+            input_kind=InputKind.GROMACS,
+            selected_strategy="TPR_GRO",
+            topology_files=[tpr_files[0]] if tpr_files else [],
+        )
+    
+    # 2. Any .tpr alone -> "TPR_ONLY", GROMACS
     if ".tpr" in exts:
         tpr_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".tpr"]
         return LoadDecision(
@@ -92,7 +102,7 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             topology_files=tpr_files[:1],  # Take first tpr
         )
     
-    # 2. .top + .gro -> "TOP_GRO", GROMACS
+    # 3. .top + .gro -> "TOP_GRO", GROMACS
     if ".top" in exts and ".gro" in exts:
         top_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".top"]
         gro_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".gro"]
@@ -102,7 +112,7 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             topology_files=[top_files[0]] if top_files else [],
         )
     
-    # 3. .itp + .gro -> "ITP_GRO", GROMACS
+    # 4. .itp + .gro -> "ITP_GRO", GROMACS
     if ".itp" in exts and ".gro" in exts:
         itp_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".itp"]
         gro_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".gro"]
@@ -112,7 +122,7 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             topology_files=[itp_files[0]] if itp_files else [],
         )
     
-    # 4. .prmtop + .nc or .parm7 + .nc -> "PRMTOP_NC", AMBER
+    # 5. .prmtop + .nc or .parm7 + .nc -> "PRMTOP_NC", AMBER
     if (".prmtop" in exts or ".parm7" in exts) and ".nc" in exts:
         prmtop_files = [f.path for f in bundle.files if f.path.suffix.lower() in (".prmtop", ".parm7")]
         nc_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".nc"]
@@ -122,7 +132,7 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             topology_files=[prmtop_files[0]] if prmtop_files else [],
         )
     
-    # 5. .pdb -> "PDB_SINGLE", PDB
+    # 6. .pdb -> "PDB_SINGLE", PDB
     if ".pdb" in exts:
         pdb_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".pdb"]
         return LoadDecision(
@@ -131,7 +141,7 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             topology_files=pdb_files[:1],
         )
     
-    # 6. .cif -> "MMCIF_SINGLE", MMCIF
+    # 7. .cif -> "MMCIF_SINGLE", MMCIF
     if ".cif" in exts:
         cif_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".cif"]
         return LoadDecision(

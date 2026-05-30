@@ -56,6 +56,7 @@ class UniverseParameter(str, Enum):
 class SegmentProperties:
     atom_count_total: int = 0
     atom_count_fragment: int = 0
+    residue_count: int = 0
     bond_count_total: int = 0
     bond_count_fragment: int = 0
     molecule_count: int = 0
@@ -65,6 +66,7 @@ class SegmentProperties:
         return {
             "atom_count_total": self.atom_count_total,
             "atom_count_fragment": self.atom_count_fragment,
+            "residue_count": self.residue_count,
             "bond_count_total": self.bond_count_total,
             "bond_count_fragment": self.bond_count_fragment,
             "molecule_count": self.molecule_count,
@@ -148,6 +150,7 @@ class LoadedUniverse:
                 except MDAnalysis.exceptions.NoDataError:
                     fragments = []
                 props.molecule_count = len(fragments) if fragments else 1
+                props.residue_count = len(selected.residues)
             else:
                 # Real connected sub-fragment
                 props.atom_count_fragment = len(fragment.atoms)
@@ -157,6 +160,7 @@ class LoadedUniverse:
                 except MDAnalysis.exceptions.NoDataError:
                     fragments = []
                 props.molecule_count = len(fragments)
+                props.residue_count = len(fragment.residues)
             
             # Compute flags using the same representative fragment
             props.flags = self._compute_flags(selected, fragment)
@@ -323,13 +327,33 @@ class LoadedUniverse:
             mtype = MoleculeType.ION
         elif props.atom_count_fragment == 3 and any(rn in ("SOL", "HOH", "WAT") for rn in fragment.residues.resnames):
             mtype = MoleculeType.WATER
-        
         # Element composition
         composition = {}
         if hasattr(fragment.atoms, 'elements'):
             for elem in fragment.atoms.elements:
                 if elem:
                     composition[elem] = composition.get(elem, 0) + 1
+        
+        # Non-protein/nucleic classification using element composition
+        # Count C and O atoms from element_composition
+        atom_c_cnt = composition.get("C", 0)
+        atom_o_cnt = composition.get("O", 0)
+        
+        # Lipid detection: >10 C, >4 O, C/O ratio between 1 and 3
+        if atom_c_cnt > 10 and atom_o_cnt > 4:
+            c_o_ratio = atom_c_cnt / atom_o_cnt if atom_o_cnt > 0 else float('inf')
+            if 1.0 < c_o_ratio < 3.0:
+                mtype = MoleculeType.LIPID
+        
+        # Carbohydrate detection: >5 C, >4 O, C/O ratio > 2
+        elif atom_c_cnt > 5 and atom_o_cnt > 4:
+            c_o_ratio = atom_c_cnt / atom_o_cnt if atom_o_cnt > 0 else float('inf')
+            if c_o_ratio > 2.0:
+                mtype = MoleculeType.CARBOHYDRATE
+        
+        # Small molecule detection: not any of the above, atom_count > 1
+        elif props.atom_count_fragment > 1:
+            mtype = MoleculeType.SMALL_MOLECULE
         
         return MoleculeInstance(
             instance_id=f"mol_{segment_name}",

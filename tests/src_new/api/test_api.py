@@ -441,22 +441,21 @@ class TestIdentifiersEndpoint:
         run_dir = tmp_path / run_id
         run_dir.mkdir(parents=True)
         
+        # Use nested structure: identifiers.{segment}.{generator}.{resolver}
         results_data = {
             "pipeline": {"name": "BAT3", "status": "success"},
             "data": {
                 "identifiers": {
                     "PROA": {
-                        "resolutions": {
-                            "PDB_ID": [
-                                {
-                                    "identifier": "1ABC",
-                                    "hit_type": "exact",
-                                    "resolver": "pdb_struct",
-                                    "score": 100.0,
-                                }
-                            ]
-                        },
-                        "attempted_resolvers": ["pdb_struct"],
+                        "smiles": {
+                            "pubchem_struct": {
+                                "signature": "CCO",
+                                "hit_type": "identity",
+                                "hits": ["1234"],
+                                "ident_type": "PUBCHEM_CID",
+                            },
+                            "attempted": ["pubchem_struct"],
+                        }
                     }
                 }
             },
@@ -476,9 +475,12 @@ class TestIdentifiersEndpoint:
         assert validated.run_id == run_id
         assert validated.segment == "PROA"
         assert len(validated.hits) == 1
-        assert validated.hits[0].identifier == "1ABC"
-        assert validated.hits[0].database_url == "https://www.rcsb.org/structure/1ABC"
-        assert validated.attempted_resolvers == ["pdb_struct"]
+        assert validated.hits[0].identifier == "1234"
+        assert validated.hits[0].ident_type == "PUBCHEM_CID"
+        assert validated.hits[0].hit_type == "identity"
+        assert validated.hits[0].resolver_name == "pubchem_struct"
+        assert validated.hits[0].database_url == "https://pubchem.ncbi.nlm.nih.gov/compound/1234"
+        assert "pubchem_struct" in validated.attempted_resolvers
 
 
 class TestVerificationEndpoint:
@@ -704,26 +706,32 @@ class TestSegmentFiltering:
         run_dir = tmp_path / run_id
         run_dir.mkdir(parents=True)
         
-        # Create results with multiple segments
+        # Create results with multiple segments using nested structure
         results_data = {
             "pipeline": {"name": "BAT3", "status": "success"},
             "data": {
                 "identifiers": {
                     "PROA": {
-                        "resolutions": {
-                            "PDB_ID": [
-                                {"identifier": "1ABC", "hit_type": "exact", "resolver": "pdb_struct", "score": 100.0}
-                            ]
-                        },
-                        "attempted_resolvers": ["pdb_struct"],
+                        "smiles": {
+                            "pubchem_struct": {
+                                "signature": "CCO",
+                                "hit_type": "identity",
+                                "hits": ["1234"],
+                                "ident_type": "PUBCHEM_CID",
+                            },
+                            "attempted": ["pubchem_struct"],
+                        }
                     },
                     "PRUB": {
-                        "resolutions": {
-                            "PDB_ID": [
-                                {"identifier": "2XYZ", "hit_type": "exact", "resolver": "pdb_struct", "score": 95.0}
-                            ]
-                        },
-                        "attempted_resolvers": ["pdb_struct"],
+                        "fasta": {
+                            "pdb_seqres": {
+                                "signature": "MKTVRQ",
+                                "hit_type": "similarity",
+                                "hits": [["5XYZ", 0.95]],
+                                "ident_type": "PDB_ID",
+                            },
+                            "attempted": ["pdb_seqres"],
+                        }
                     }
                 }
             },
@@ -741,7 +749,8 @@ class TestSegmentFiltering:
         # Should only have PROA identifiers
         assert json_response["segment"] == "PROA"
         assert len(json_response["hits"]) == 1
-        assert json_response["hits"][0]["identifier"] == "1ABC"
+        assert json_response["hits"][0]["identifier"] == "1234"
+        assert json_response["hits"][0]["ident_type"] == "PUBCHEM_CID"
     
     def test_verification_with_segment_filter(self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test verification endpoint with segment filter returns only requested segment."""

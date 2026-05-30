@@ -6,6 +6,7 @@ import shutil
 import json
 import os
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -94,6 +95,7 @@ async def create_run(
     config_file: Optional[UploadFile] = None,
     config_json: Optional[str] = Form(None),
     run_id: Optional[str] = None,
+    run_name: Optional[str] = Form(None),
 ) -> RunCreateResponse:
     """
     Create a new run by uploading input files and optionally a config file.
@@ -135,7 +137,7 @@ async def create_run(
         overrides_dict = json_module.loads(config_json)
         from src_new.config.loader import RunConfig
         config = RunConfig.from_default_ini()
-        config.apply_overrides(overrides_dict)
+        config.apply_nested_overrides(overrides_dict)
         config_path = run_dir / "config.ini"
         config.to_ini_path(config_path)
     else:
@@ -148,12 +150,15 @@ async def create_run(
     # Create results manager and write initial "queued" status
     results_path = run_dir / "results.json"
     initial_results = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "pipeline": {
             "name": "BAT3",
             "status": "queued",
             "run_id": run_id,
         },
     }
+    if run_name:
+        initial_results["pipeline"]["run_name"] = run_name
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(initial_results, f, indent=2)
     
@@ -202,6 +207,7 @@ async def list_runs() -> RunListResponse:
                 status=pipeline_data.get("status", "unknown"),
                 created_at=created_at,
                 input_kind=pipeline_data.get("input_kind"),
+                run_name=pipeline_data.get("run_name"),
             ))
         except (json.JSONDecodeError, IOError):
             # Skip malformed results files
@@ -418,34 +424,48 @@ async def get_molecules(run_id: str) -> MoleculeSummaryResponse:
     # Get total fragment count
     total_fragment_count = fragments_data.get("total_count", 0)
     
-    # Get segments list
-    segments = list(fragments_data.get("by_segment", {}).keys())
+    # Get segments list — try fragments/segments list first, then universe/segment_list
+    segments = []
+    fragments_segments = fragments_data.get("segments", [])
+    if fragments_segments:
+        segments = [s.get("segment") for s in fragments_segments if s.get("segment")]
+    if not segments:
+        segments = list(universe_data.get("segment_list", []))
     
     # Build segment metadata from universe.segments.{segment}.properties
+    # Use fragments/segments data as primary source for molecule type
     segment_meta = {}
     for seg_name in segments:
         seg_props = {}
+        # Look up segment in fragments/segments first for type
+        seg_from_fragments = next(
+            (s for s in fragments_segments if s.get("segment") == seg_name), {}
+        )
+        mol_type_fragments = seg_from_fragments.get("type", "")
+        
         if seg_name in segments_universe:
             props = segments_universe[seg_name].get("properties", {})
-            # Determine type from flags
-            if props.get("is_protein", False):
+            # Determine type: fragments data is primary source
+            if mol_type_fragments:
+                seg_props["type"] = mol_type_fragments
+            elif props.get("is_protein", False):
                 seg_props["type"] = "protein"
             elif props.get("is_nucleic", False):
                 seg_props["type"] = "nucleic"
-            elif props.get("is_water", False):
-                seg_props["type"] = "water"
-            elif props.get("is_lipid", False):
-                seg_props["type"] = "lipid"
             else:
-                seg_props["type"] = "other"
-            seg_props["atom_count"] = props.get("atom_count", 0)
+                seg_props["type"] = "unknown"
+            seg_props["atom_count"] = props.get("atom_count_fragment", props.get("atom_count_total", 0))
             seg_props["residue_count"] = props.get("residue_count", 0)
         else:
-            # Fallback: try to get from fragments.by_segment
-            by_seg = fragments_data.get("by_segment", {}).get(seg_name, {})
-            seg_props["type"] = by_seg.get("molecule_type", "unknown")
-            seg_props["atom_count"] = by_seg.get("atom_count", 0)
-            seg_props["residue_count"] = by_seg.get("residue_count", 0)
+            # Fallback: use fragments.segments data
+            if seg_from_fragments:
+                seg_props["type"] = mol_type_fragments if mol_type_fragments else "unknown"
+                seg_props["atom_count"] = seg_from_fragments.get("atoms_per_copy", 0)
+                seg_props["residue_count"] = seg_from_fragments.get("residue_count", 0)
+            else:
+                seg_props["type"] = "unknown"
+                seg_props["atom_count"] = 0
+                seg_props["residue_count"] = 0
         segment_meta[seg_name] = seg_props
     
     return MoleculeSummaryResponse(
@@ -474,7 +494,9 @@ async def get_molecule_info(run_id: str, segment: str) -> MoleculeInfoResponse:
     fragments_data = data.get("data", {}).get("fragments", {})
     
     # Check if segment exists
-    if segment not in segments_universe and segment not in fragments_data.get("by_segment", {}):
+    fragments_segments = fragments_data.get("segments", [])
+    fragment_segment_names = [s.get("segment") for s in fragments_segments if s.get("segment")]
+    if segment not in segments_universe and segment not in fragment_segment_names:
         raise HTTPException(status_code=404, detail=f"Segment '{segment}' not found")
     
     # Get segment properties
@@ -482,24 +504,32 @@ async def get_molecule_info(run_id: str, segment: str) -> MoleculeInfoResponse:
     if segment in segments_universe:
         props = segments_universe[segment].get("properties", {})
     else:
-        props = fragments_data.get("by_segment", {}).get(segment, {})
+        seg_from_fragments = next(
+            (s for s in fragments_segments if s.get("segment") == segment), {}
+        )
+        props = seg_from_fragments
     
-    # Determine type from flags
-    seg_type = "unknown"
-    if props.get("is_protein", False):
+    # Determine type from fragments/segments data as primary source
+    seg_from_fragments = next(
+        (s for s in fragments_segments if s.get("segment") == segment), {}
+    )
+    mol_type_fragments = seg_from_fragments.get("type", "")
+    
+    if mol_type_fragments:
+        seg_type = mol_type_fragments
+    elif props.get("is_protein", False):
         seg_type = "protein"
     elif props.get("is_nucleic", False):
         seg_type = "nucleic"
-    elif props.get("is_water", False):
-        seg_type = "water"
-    elif props.get("is_lipid", False):
-        seg_type = "lipid"
     else:
-        # Fallback to molecule_type if available
-        seg_type = props.get("molecule_type", "unknown")
+        seg_type = "unknown"
     
-    atom_count = props.get("atom_count", 0)
-    residue_count = props.get("residue_count", 0)
+    if segment in segments_universe:
+        atom_count = props.get("atom_count_fragment", props.get("atom_count_total", 0))
+        residue_count = props.get("residue_count", 0)
+    else:
+        atom_count = props.get("atoms_per_copy", 0)
+        residue_count = props.get("residue_count", 0)
     
     # Calculate confidence from verification data
     confidence = None
@@ -534,6 +564,14 @@ async def get_render_paths(run_id: str) -> RenderPathsResponse:
     
     system_mmcif = render_data.get("system_mmcif")
     
+    # Relativize system_mmcif if it's an absolute path under runs_dir
+    if system_mmcif:
+        runs_dir = get_runs_dir()
+        run_dir = runs_dir / run_id
+        if Path(system_mmcif).is_absolute() and str(system_mmcif).startswith(str(runs_dir)):
+            # Make path relative to run directory
+            system_mmcif = str(Path(system_mmcif).relative_to(run_dir))
+    
     # Get segment paths
     segments_data = render_data.get("segments", {})
     segments = {}
@@ -543,6 +581,11 @@ async def get_render_paths(run_id: str) -> RenderPathsResponse:
         else:
             mmcif_path = segment_info
         if mmcif_path:
+            # Relativize segment mmcif_path if it's an absolute path under runs_dir
+            runs_dir = get_runs_dir()
+            run_dir = runs_dir / run_id
+            if Path(mmcif_path).is_absolute() and str(mmcif_path).startswith(str(runs_dir)):
+                mmcif_path = str(Path(mmcif_path).relative_to(run_dir))
             segments[segment_name] = mmcif_path
     
     return RenderPathsResponse(
@@ -602,37 +645,76 @@ async def get_identifiers(run_id: str, segment: Optional[str] = None) -> Identif
     if segment is not None:
         identifiers_data = {segment: identifiers_data.get(segment, {})} if segment in identifiers_data else {}
     
-    # For now, return data for the first segment or aggregate all
-    # The actual structure may vary, so we'll flatten
+    # Traverse nested structure: data.identifiers.{segment}.{generator}.{resolver}
     all_hits = []
     all_attempted_resolvers = set()
     primary_segment = ""
+    seen_keys = set()  # For deduplication by (identifier, ident_type, resolver_name)
     
     for seg_name, seg_data in identifiers_data.items():
         if not primary_segment:
             primary_segment = seg_name
         
-        # Get attempted resolvers
-        attempted = seg_data.get("attempted_resolvers", [])
-        all_attempted_resolvers.update(attempted)
+        # Collect attempted resolvers from all generators
+        seg_attempted = set()
+        for generator_name, generator_data in seg_data.items():
+            if generator_name == "attempted":
+                continue  # Skip top-level "attempted" if present
+            if isinstance(generator_data, dict):
+                gen_attempted = generator_data.get("attempted", [])
+                if isinstance(gen_attempted, list):
+                    seg_attempted.update(gen_attempted)
+        all_attempted_resolvers.update(seg_attempted)
         
-        # Get hits/resolutions
-        resolutions = seg_data.get("resolutions", {})
-        for ident_type, hits_list in resolutions.items():
-            if isinstance(hits_list, list):
-                for hit in hits_list:
-                    identifier = hit.get("identifier", hit.get("value", ""))
-                    hit_type = hit.get("hit_type", hit.get("type", "exact"))
-                    score = hit.get("score")
+        # Walk generators and resolvers
+        for generator_name, generator_data in seg_data.items():
+            if generator_name == "attempted":
+                continue  # Skip top-level "attempted"
+            if not isinstance(generator_data, dict):
+                continue
+            
+            # Walk resolvers within this generator
+            for resolver_name, resolver_data in generator_data.items():
+                if resolver_name == "attempted":
+                    continue  # Skip "attempted" keys
+                if not isinstance(resolver_data, dict):
+                    continue
+                
+                hits_raw = resolver_data.get("hits", [])
+                ident_type = resolver_data.get("ident_type", "")
+                hit_type_label = resolver_data.get("hit_type", "exact")
+                
+                if not isinstance(hits_raw, list):
+                    continue
+                
+                for hit in hits_raw:
+                    # Handle both string and tuple/list formats
+                    if isinstance(hit, str):
+                        identifier = hit
+                        score = None
+                    elif isinstance(hit, (list, tuple)) and len(hit) >= 2:
+                        identifier = str(hit[0])
+                        try:
+                            score = float(hit[1])
+                        except (TypeError, ValueError):
+                            score = None
+                    else:
+                        continue
                     
                     # Build database URL
                     db_url = build_database_url(identifier, ident_type)
                     
+                    # Deduplicate by (identifier, ident_type, resolver_name)
+                    dedup_key = (identifier, ident_type, resolver_name)
+                    if dedup_key in seen_keys:
+                        continue
+                    seen_keys.add(dedup_key)
+                    
                     all_hits.append(IdentifierHit(
                         identifier=identifier,
                         ident_type=ident_type,
-                        hit_type=hit_type,
-                        resolver_name=hit.get("resolver", ""),
+                        hit_type=hit_type_label,
+                        resolver_name=resolver_name,
                         score=score,
                         database_url=db_url,
                     ))
@@ -671,9 +753,12 @@ async def get_verification(run_id: str, segment: Optional[str] = None) -> Verifi
         # Get verified hits
         verified_hits = seg_data.get("verified_hits", [])
         for hit in verified_hits:
+            identifier = hit.get("identifier", "")
+            ident_type = hit.get("ident_type", "")
+            db_url = build_database_url(identifier, ident_type)
             all_hits.append(VerifiedHitItem(
-                identifier=hit.get("identifier", ""),
-                ident_type=hit.get("ident_type", ""),
+                identifier=identifier,
+                ident_type=ident_type,
                 database=hit.get("database", ""),
                 resolver_score=hit.get("resolver_score"),
                 similarity_score=hit.get("similarity_score"),
@@ -682,6 +767,7 @@ async def get_verification(run_id: str, segment: Optional[str] = None) -> Verifi
                 is_verified=hit.get("is_verified", False),
                 rejection_reason=hit.get("rejection_reason"),
                 supporting_evidence_count=hit.get("supporting_evidence_count", 0),
+                database_url=db_url,
             ))
     
     # Use first segment name or "unknown"

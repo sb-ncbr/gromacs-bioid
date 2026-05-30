@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import math
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -157,11 +158,21 @@ class VerificationManager:
                 )
                 annotation_component = annotation_score if annotation_score else 0.0
                 
+                # Sanitize NaN/Inf in components
+                if similarity_component is not None and (math.isnan(similarity_component) or math.isinf(similarity_component)):
+                    similarity_component = 0.0
+                if annotation_component is not None and (math.isnan(annotation_component) or math.isinf(annotation_component)):
+                    annotation_component = 0.0
+                
                 final_confidence = (
                     w_resolver * resolver_component +
                     w_similarity * similarity_component +
                     w_annotation * annotation_component
                 )
+                
+                # Sanitize NaN/Inf in final_confidence
+                if math.isnan(final_confidence) or math.isinf(final_confidence):
+                    final_confidence = 0.0
                 
                 # Determine if verified
                 min_confidence = self._verification_config.min_final_confidence
@@ -173,10 +184,10 @@ class VerificationManager:
                         identifier=normalized_id,
                         ident_type=ident_type,
                         database=ident_type.replace("_ID", "").lower(),
-                        resolver_score=consensus_score,
+                        resolver_score=min(consensus_score, 100.0),
                         similarity_score=similarity_score.normalized_score if similarity_score else None,
                         annotation_quality_score=annotation_score,
-                        final_confidence=final_confidence,
+                        final_confidence=min(final_confidence, 100.0),
                         supporting_evidence_count=len(source_resolvers),
                         is_verified=True,
                     )
@@ -189,7 +200,7 @@ class VerificationManager:
                         identifier=normalized_id,
                         ident_type=ident_type,
                         database=ident_type.replace("_ID", "").lower(),
-                        resolver_score=consensus_score,
+                        resolver_score=min(consensus_score, 100.0),
                         supporting_evidence_count=len(source_resolvers),
                         rejection_reason=rejection_reason,
                     )

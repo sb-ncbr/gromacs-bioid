@@ -16,7 +16,6 @@ export interface TaskInfo {
 
 interface TasksProgressBarProps {
     tasks: TaskInfo[];
-    onStepClick?: (stepKey: string) => void;
 }
 
 const statusColor: Record<TaskStatus, string> = {
@@ -27,10 +26,10 @@ const statusColor: Record<TaskStatus, string> = {
 };
 
 const statusIcon: Record<TaskStatus, JSX.Element> = {
-    unknown: <HelpIcon sx={{ color: statusColor.unknown, fontSize: "4rem" }} />,
-    ok: <CheckCircle sx={{ color: statusColor.ok, fontSize: "4rem" }} />,
-    failed: <ErrorIcon sx={{ color: statusColor.failed, fontSize: "4rem" }} />,
-    inprogress: <CircularProgress size={40} sx={{ color: statusColor.inprogress, fontSize: "4rem" }} />,
+    unknown: <HelpIcon sx={{ color: statusColor.unknown, fontSize: "2.5rem" }} />,
+    ok: <CheckCircle sx={{ color: statusColor.ok, fontSize: "2.5rem" }} />,
+    failed: <ErrorIcon sx={{ color: statusColor.failed, fontSize: "2.5rem" }} />,
+    inprogress: <CircularProgress size={32} sx={{ color: statusColor.inprogress }} />,
 };
 
 const TASK_STEPS = [
@@ -103,7 +102,7 @@ function deriveStepStatus(tasks: TaskInfo[], stepKey: string): TaskStatus {
     return "unknown";
 }
 
-const TasksProgressBar: FC<TasksProgressBarProps> = ({ tasks, onStepClick }) => {
+const TasksProgressBar: FC<TasksProgressBarProps> = ({ tasks }) => {
     const steps = TASK_STEPS.map(step => ({
         key: step.key,
         status: deriveStepStatus(tasks, step.key),
@@ -118,11 +117,9 @@ const TasksProgressBar: FC<TasksProgressBarProps> = ({ tasks, onStepClick }) => 
     return (
         <Box sx={{ display: "flex", alignItems: "center", width: "100%", overflowX: "auto", pb: 2 }}>
             {steps.map((step, index) => {
-                const isClickable = !!onStepClick;
                 return (
                     <Box
                         key={step.key}
-                        onClick={() => isClickable && onStepClick(step.key)}
                         sx={{
                             display: "flex",
                             flexDirection: "column",
@@ -132,11 +129,6 @@ const TasksProgressBar: FC<TasksProgressBarProps> = ({ tasks, onStepClick }) => 
                             px: 1,
                             py: 2,
                             borderRadius: 2,
-                            transition: "background-color 0.2s ease",
-                            cursor: isClickable ? "pointer" : "default",
-                            "&:hover": {
-                                backgroundColor: isClickable ? "rgba(0,0,0,0.08)" : "transparent",
-                            },
                         }}
                     >
                         <Tooltip
@@ -180,7 +172,7 @@ const TasksProgressBar: FC<TasksProgressBarProps> = ({ tasks, onStepClick }) => 
                         {index < steps.length - 1 && (
                             <Box
                                 sx={{
-                                    height: "8px",
+                                    height: "4px",
                                     width: "100%",
                                     backgroundColor: getLineColor(index),
                                     mt: 2,

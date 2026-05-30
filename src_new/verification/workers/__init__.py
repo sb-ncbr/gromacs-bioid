@@ -3,9 +3,11 @@
 from .compound_worker import CompoundVerificationWorker
 from .sequence_worker import SequenceVerificationWorker
 from .structure_worker import StructureVerificationWorker
+from .element_worker import ElementVerificationWorker
 
 __all__ = [
     "CompoundVerificationWorker",
     "SequenceVerificationWorker",
     "StructureVerificationWorker",
+    "ElementVerificationWorker",
 ]

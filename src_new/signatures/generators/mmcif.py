@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from io import StringIO
+import os
+import tempfile
 
 from MDAnalysis import AtomGroup
 
@@ -42,6 +43,11 @@ class MmCifGenerator(SignatureGenerator):
         fragment: AtomGroup,
         facade: LoadedUniverse,
     ) -> str:
-        stringio = StringIO()
-        fragment.write(stringio, format="mmCIF")
-        return stringio.getvalue()
+        fd, tmp_path = tempfile.mkstemp(suffix=".cif")
+        os.close(fd)
+        try:
+            fragment.write(tmp_path, format="mmCIF")
+            with open(tmp_path, "r", encoding="utf-8") as f:
+                return f.read()
+        finally:
+            os.unlink(tmp_path)

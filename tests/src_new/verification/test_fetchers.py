@@ -46,12 +46,11 @@ class TestCompoundFetcher:
     
     @patch("src_new.verification.fetchers.compound_fetcher.requests.get")
     def test_compound_fetcher_chebi(self, mock_get) -> None:
-        """Mock XML with <smiles>CCO</smiles>, assert result == 'CCO'."""
+        """Mock JSON with {'default_structure': {'smiles': 'CCO'}}, assert result == 'CCO'."""
         mock_response = Mock()
-        mock_response.text = """<?xml version="1.0"?>
-<compound>
-    <smiles>CCO</smiles>
-</compound>"""
+        mock_response.json.return_value = {
+            "default_structure": {"smiles": "CCO"}
+        }
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
         

@@ -6,16 +6,12 @@ import {
     Stack,
     Typography,
     CircularProgress,
-    Collapse,
+    
     Paper,
     IconButton,
     Tooltip,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
+    Tabs,
+    Tab,
 } from "@mui/material";
 import { useParams } from "react-router-dom";
 import TasksProgressBar, { TaskInfo } from "../Components/TasksProgressBar";
@@ -25,7 +21,7 @@ import MoleculeSummaryPanel from "../Components/MDComponents/MoleculeSummaryPane
 import DownloadActions from "../Components/DownloadActions";
 import LogViewer from "../Components/LogViewer";
 import RunFileBrowser from "../Components/RunFileBrowser";
-import { ExpandMore, ExpandLess, Article, Close } from "@mui/icons-material";
+import { Article } from "@mui/icons-material";
 
 interface PipelineStatus {
     run_id: string;
@@ -97,52 +93,7 @@ interface MoleculeSummaryResponse {
     segment_meta?: Record<string, any>;
 }
 
-interface SignatureInfo {
-    segment: string;
-    generator: string;
-    signature: any;
-}
-
-interface SignaturesResponse {
-    run_id: string;
-    signatures: SignatureInfo[];
-    attempted_generators: Record<string, string[]>;
-}
-
-interface IdentifierHit {
-    identifier: string;
-    ident_type: string;
-    hit_type: string;
-    resolver_name: string;
-    score?: number | null;
-    database_url?: string | null;
-}
-
-interface IdentifiersResponse {
-    run_id: string;
-    segment: string;
-    hits: IdentifierHit[];
-    attempted_resolvers: string[];
-}
-
-interface VerifiedHitItem {
-    identifier: string;
-    ident_type: string;
-    database: string;
-    resolver_score?: number | null;
-    similarity_score?: number | null;
-    annotation_quality_score?: number | null;
-    final_confidence: number;
-    is_verified: boolean;
-    rejection_reason?: string | null;
-    supporting_evidence_count: number;
-}
-
-interface VerificationResponse {
-    run_id: string;
-    segment: string;
-    hits: VerifiedHitItem[];
-}
+type ActiveTab = 'overview' | 'loading' | 'warnings' | 'files';
 
 const RunResults = () => {
     const { runId } = useParams<{ runId: string }>();
@@ -152,34 +103,66 @@ const RunResults = () => {
     const [segments, setSegments] = useState<string[]>([]);
     const [selectedSegment, setSelectedSegment] = useState<string>("SYSTEM");
     const [loadingInfo, setLoadingInfo] = useState<LoadingInfoResponse | null>(null);
-    const [showLoadingDetails, setShowLoadingDetails] = useState(false);
     const [logOpen, setLogOpen] = useState(false);
-    const [selectedStep, setSelectedStep] = useState<string | null>(null);
-    const [showEvents, setShowEvents] = useState(false);
+    const [moleculeFetchError, setMoleculeFetchError] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
+    const [noCoordinates, setNoCoordinates] = useState(false);
     
-    // Step detail data
-    const [signaturesData, setSignaturesData] = useState<SignaturesResponse | null>(null);
-    const [identifiersData, setIdentifiersData] = useState<IdentifiersResponse | null>(null);
-    const [verificationData, setVerificationData] = useState<VerificationResponse | null>(null);
-    const [stepLoading, setStepLoading] = useState(false);
-
     // Ref to track latest status for polling decisions
     const latestStatusRef = useRef<RunStatusResponse | null>(null);
 
     const [segmentMeta, setSegmentMeta] = useState<Record<string, any> | null>(null);
+    const [totalFragmentCount, setTotalFragmentCount] = useState<number | undefined>(undefined);
+    const [typeCounts, setTypeCounts] = useState<Record<string, number>>({});
+
+    // Refs to track last-known values to prevent unnecessary re-renders
+    const segmentsRef = useRef<string[]>([]);
+    const segmentMetaRef = useRef<Record<string, any> | null>(null);
+    const typeCountsRef = useRef<Record<string, number>>({});
+    const totalFragmentCountRef = useRef<number | undefined>(undefined);
 
     const fetchMolecules = useCallback(async (id: string) => {
         try {
             const res = await fetch(`/runs/${id}/molecules`);
             if (res.ok) {
                 const data: MoleculeSummaryResponse = await res.json();
-                setSegments(data.segments || []);
-                setSegmentMeta(data.segment_meta || null);
+                
+                // Only update segments if changed
+                const newSegments = data.segments || [];
+                if (JSON.stringify(newSegments) !== JSON.stringify(segmentsRef.current)) {
+                    setSegments(newSegments);
+                    segmentsRef.current = newSegments;
+                }
+                
+                // Only update segmentMeta if changed
+                const newSegmentMeta = data.segment_meta || null;
+                if (JSON.stringify(newSegmentMeta) !== JSON.stringify(segmentMetaRef.current)) {
+                    setSegmentMeta(newSegmentMeta);
+                    segmentMetaRef.current = newSegmentMeta;
+                }
+                
+                // Only update totalFragmentCount if changed
+                if (data.total_fragment_count !== totalFragmentCountRef.current) {
+                    setTotalFragmentCount(data.total_fragment_count);
+                    totalFragmentCountRef.current = data.total_fragment_count;
+                }
+                
+                // Only update typeCounts if changed
+                const newTypeCounts = data.type_counts || {};
+                if (JSON.stringify(newTypeCounts) !== JSON.stringify(typeCountsRef.current)) {
+                    setTypeCounts(newTypeCounts);
+                    typeCountsRef.current = newTypeCounts;
+                }
+                
                 // Default to SYSTEM instead of first segment
                 setSelectedSegment("SYSTEM");
+            } else {
+                console.error("Failed to fetch molecules:", res.status);
+                setMoleculeFetchError(`Failed to load molecule data (HTTP ${res.status}).`);
             }
         } catch (err) {
             console.error("Failed to fetch molecules:", err);
+            setMoleculeFetchError("Failed to load molecule data.");
         }
     }, []);
 
@@ -189,6 +172,13 @@ const RunResults = () => {
             if (res.ok) {
                 const data: LoadingInfoResponse = await res.json();
                 setLoadingInfo(data);
+                if (data.selected_strategy === "TPR_ONLY") {
+                    setNoCoordinates(true);
+                } else {
+                    setNoCoordinates(false);
+                }
+            } else {
+                console.error("Failed to fetch loading info:", res.status);
             }
         } catch (err) {
             console.error("Failed to fetch loading info:", err);
@@ -244,52 +234,6 @@ const RunResults = () => {
         };
     }, [runId, fetchMolecules, fetchLoadingInfo]);
 
-    // Fetch step detail data when selectedStep or selectedSegment changes
-    useEffect(() => {
-        if (!selectedStep || !runId) {
-            return;
-        }
-
-        const fetchStepData = async () => {
-            setStepLoading(true);
-            try {
-                // Build URL with optional segment filter
-                const buildUrl = (endpoint: string) => {
-                    return selectedSegment === "SYSTEM"
-                        ? `/runs/${runId}/${endpoint}`
-                        : `/runs/${runId}/${endpoint}?segment=${selectedSegment}`;
-                };
-
-                if (selectedStep === "Resolve Signatures") {
-                    const res = await fetch(buildUrl("signatures"));
-                    if (res.ok) {
-                        const data: SignaturesResponse = await res.json();
-                        setSignaturesData(data);
-                    }
-                } else if (selectedStep === "Resolve Identifiers") {
-                    const res = await fetch(buildUrl("identifiers"));
-                    if (res.ok) {
-                        const data: IdentifiersResponse = await res.json();
-                        setIdentifiersData(data);
-                    }
-                } else if (selectedStep === "Annotation Complete") {
-                    const res = await fetch(buildUrl("verification"));
-                    if (res.ok) {
-                        const data: VerificationResponse = await res.json();
-                        setVerificationData(data);
-                    }
-                }
-                // Load Simulation and Summarize Results use already-fetched data
-            } catch (err) {
-                console.error("Failed to fetch step data:", err);
-            } finally {
-                setStepLoading(false);
-            }
-        };
-
-        fetchStepData();
-    }, [selectedStep, runId, selectedSegment]);
-
     if (initialLoading) {
         return (
             <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "400px" }}>
@@ -298,157 +242,10 @@ const RunResults = () => {
         );
     }
 
-
-
     const isFailed = statusData?.pipeline.status === 'failed';
 
-    const renderStepDetail = () => {
-        if (!selectedStep) return null;
-
-        return (
-            <Paper variant="outlined" sx={{ p: 2, mt: 2 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Typography variant="h3">{selectedStep}</Typography>
-                    <IconButton onClick={() => setSelectedStep(null)} size="small">
-                        <Close />
-                    </IconButton>
-                </Stack>
-                
-                {stepLoading && (
-                    <Box sx={{ display: "flex", justifyContent: "center", p: 2 }}>
-                        <CircularProgress size={24} />
-                    </Box>
-                )}
-
-                {!stepLoading && (
-                    <Stack spacing={2} sx={{ mt: 1 }}>
-                        {selectedStep === "Load Simulation" && (
-                            <>
-                                <Typography variant="body2">
-                                    <strong>Input Kind:</strong> {loadingInfo?.input_kind || statusData?.pipeline.input_kind || "N/A"}
-                                </Typography>
-                                <Typography variant="body2">
-                                    <strong>Selected Strategy:</strong> {loadingInfo?.selected_strategy || loadingInfo?.final_strategy || "N/A"}
-                                </Typography>
-                                {loadingInfo?.topology_files && loadingInfo.topology_files.length > 0 && (
-                                    <Typography variant="body2">
-                                        <strong>Topology Files:</strong> {loadingInfo.topology_files.join(", ")}
-                                    </Typography>
-                                )}
-                                {loadingInfo?.attempts && loadingInfo.attempts.length > 0 && (
-                                    <Box>
-                                        <Typography variant="body2"><strong>Attempts:</strong></Typography>
-                                        <ul>
-                                            {loadingInfo.attempts.map((attempt, idx) => (
-                                                <li key={idx}>
-                                                    {attempt.strategy}: {attempt.success ? "Success" : `Failed - ${attempt.error}`}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </Box>
-                                )}
-                                {statusData?.pipeline.input_files && (
-                                    <Typography variant="body2">
-                                        <strong>Input Files:</strong> {Object.keys(statusData?.pipeline.input_files || {}).join(", ")}
-                                    </Typography>
-                                )}
-                            </>
-                        )}
-
-                        {selectedStep === "Resolve Signatures" && signaturesData && (
-                            <TableContainer>
-                                <Table size="small">
-                                    <TableHead>
-                                        <TableRow>
-                                            <TableCell>Segment</TableCell>
-                                            <TableCell>Generator</TableCell>
-                                            <TableCell>Signature</TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {signaturesData.signatures.map((sig, idx) => (
-                                            <TableRow key={idx}>
-                                                <TableCell>{sig.segment}</TableCell>
-                                                <TableCell>{sig.generator}</TableCell>
-                                                <TableCell>
-                                                    {typeof sig.signature === 'string' 
-                                                        ? sig.signature.substring(0, 50) + (sig.signature.length > 50 ? "..." : "")
-                                                        : JSON.stringify(sig.signature).substring(0, 50)
-                                                    }
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
-                        )}
-
-                        {selectedStep === "Resolve Identifiers" && identifiersData && (
-                            <TableContainer>
-                                <Table size="small">
-                                    <TableHead>
-                                        <TableRow>
-                                            <TableCell>Identifier</TableCell>
-                                            <TableCell>Type</TableCell>
-                                            <TableCell>Resolver</TableCell>
-                                            <TableCell>Score</TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {identifiersData.hits.map((hit, idx) => (
-                                            <TableRow key={idx}>
-                                                <TableCell>{hit.identifier}</TableCell>
-                                                <TableCell>{hit.ident_type}</TableCell>
-                                                <TableCell>{hit.resolver_name}</TableCell>
-                                                <TableCell>{hit.score ?? "N/A"}</TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
-                        )}
-
-                        {selectedStep === "Summarize Results" && (
-                            <>
-                                <Typography variant="body2">
-                                    <strong>Total Fragments:</strong> {statusData?.tasks.find(t => t.name.toLowerCase().includes('summarize'))?.summary?.total_fragment_count ?? "N/A"}
-                                </Typography>
-                                {segments.length > 0 && (
-                                    <Typography variant="body2">
-                                        <strong>Segments:</strong> {segments.join(", ")}
-                                    </Typography>
-                                )}
-                            </>
-                        )}
-
-                        {selectedStep === "Annotation Complete" && verificationData && (
-                            <TableContainer>
-                                <Table size="small">
-                                    <TableHead>
-                                        <TableRow>
-                                            <TableCell>Identifier</TableCell>
-                                            <TableCell>Type</TableCell>
-                                            <TableCell>Confidence</TableCell>
-                                            <TableCell>Verified</TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {verificationData.hits.map((hit, idx) => (
-                                            <TableRow key={idx}>
-                                                <TableCell>{hit.identifier}</TableCell>
-                                                <TableCell>{hit.ident_type}</TableCell>
-                                                <TableCell>{hit.final_confidence.toFixed(2)}</TableCell>
-                                                <TableCell>{hit.is_verified ? "Yes" : "No"}</TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
-                        )}
-                    </Stack>
-                )}
-            </Paper>
-        );
+    const handleTabChange = (_event: React.SyntheticEvent, newValue: ActiveTab) => {
+        setActiveTab(newValue);
     };
 
     return (
@@ -466,234 +263,251 @@ const RunResults = () => {
                         </Typography>
                     </Alert>
                 )}
+
                 {/* Progress bar with logs button */}
                 {statusData && (
                     <>
-                    <Box sx={{ display: "flex", alignItems: "center", width: "100%", overflowX: "auto", pb: 2 }}>
-                    <TasksProgressBar 
-                        tasks={statusData.tasks || []} 
-                        onStepClick={setSelectedStep}
-                    />
-                    <Tooltip title="View Logs">
-                        <IconButton onClick={() => setLogOpen(true)} sx={{ ml: 2 }}>
-                            <Article />
-                        </IconButton>
-                    </Tooltip>
-                </Box>
+                        <Box sx={{ display: "flex", alignItems: "center", width: "100%", overflowX: "auto", pb: 2 }}>
+                            <TasksProgressBar 
+                                tasks={statusData.tasks || []} 
+                            />
+                            <Tooltip title="View Logs">
+                                <IconButton onClick={() => setLogOpen(true)} sx={{ ml: 2 }}>
+                                    <Article />
+                                </IconButton>
+                            </Tooltip>
+                        </Box>
 
-                {/* Step detail panel */}
-                {renderStepDetail()}
-
-                {/* Session info */}
-                <Stack spacing={0.5} sx={{ color: "text.secondary", fontSize: "0.85rem" }}>
-                    <Typography variant="body2">Run ID: {statusData.run_id}</Typography>
-                    <Typography variant="body2">
-                        Status: <strong style={{ textTransform: 'capitalize' }}>{statusData.pipeline.status}</strong>
-                    </Typography>
-                    {statusData.pipeline.input_kind && (
-                        <Typography variant="body2">
-                            Input Kind: <strong>{statusData.pipeline.input_kind}</strong>
-                        </Typography>
-                    )}
-                    {statusData?.pipeline.input_files && (
-                        <Typography variant="body2">
-                            Input Files: <strong>{Object.keys(statusData?.pipeline.input_files || {}).join(", ")}</strong>
-                        </Typography>
-                    )}
-                    {statusData.pipeline.started_at && (
-                        <Typography variant="body2">
-                            Started: {new Date(statusData.pipeline.started_at).toLocaleString()}
-                        </Typography>
-                    )}
-                    {statusData.pipeline.finished_at && (
-                        <Typography variant="body2">
-                            Finished: {new Date(statusData.pipeline.finished_at).toLocaleString()}
-                        </Typography>
-                    )}
-                </Stack>
-
-                {/* Failed banner */}
-                {isFailed && (
-                    <Alert severity="error">
-                        Annotation process failed. Check critical errors below.
-                    </Alert>
-                )}
-
-                {/* Warnings */}
-                {statusData.warnings && statusData.warnings.length > 0 && (
-                    <Stack spacing={1}>
-                        <Typography variant="h3">Warnings</Typography>
-                        {statusData.warnings.map((warning, idx) => (
-                            <Alert key={idx} severity="warning">
-                                <strong>{warning.code}:</strong> {warning.message}
+                        {/* Failed banner */}
+                        {isFailed && (
+                            <Alert severity="error">
+                                Annotation process failed. Check critical errors below.
                             </Alert>
-                        ))}
-                    </Stack>
-                )}
+                        )}
 
-                {/* Critical errors */}
-                {statusData.critical_errors && statusData.critical_errors.length > 0 && (
-                    <Stack spacing={1}>
-                        <Typography variant="h3">Critical Errors</Typography>
-                        {statusData.critical_errors.map((err, idx) => (
-                            <Alert key={idx} severity="error">
-                                <strong>{err.code}:</strong> {err.message}
-                                {err.exception_type && (
-                                    <Typography variant="caption" display="block">
-                                        ({err.exception_type})
-                                    </Typography>
-                                )}
+                        {/* Molecule fetch error warning */}
+                        {moleculeFetchError && (
+                            <Alert severity="warning" sx={{ mb: 2 }}>
+                                {moleculeFetchError}
                             </Alert>
-                        ))}
-                    </Stack>
-                )}
+                        )}
 
-                {/* Loading details collapsible - show whenever loadingInfo exists */}
-                {loadingInfo && (
-                    <Paper variant="outlined" sx={{ p: 2 }}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="h3">Loading Details</Typography>
-                            <IconButton onClick={() => setShowLoadingDetails(!showLoadingDetails)}>
-                                {showLoadingDetails ? <ExpandLess /> : <ExpandMore />}
-                            </IconButton>
-                        </Stack>
-                        <Collapse in={showLoadingDetails}>
-                            <Stack spacing={1} sx={{ mt: 2 }}>
-                                <Typography variant="body2">
-                                    <strong>Strategy:</strong> {loadingInfo.selected_strategy || loadingInfo.final_strategy || "N/A"}
-                                </Typography>
-                                <Typography variant="body2">
-                                    <strong>Input Kind:</strong> {loadingInfo.input_kind || "N/A"}
-                                </Typography>
-                                <Typography variant="body2">
-                                    <strong>Success:</strong> {loadingInfo.success ? "Yes" : "No"}
-                                </Typography>
-                                {loadingInfo.topology_files && loadingInfo.topology_files.length > 0 && (
-                                    <Typography variant="body2">
-                                        <strong>Topology Files:</strong> {loadingInfo.topology_files.join(", ")}
-                                    </Typography>
-                                )}
-                                {loadingInfo.attempts && loadingInfo.attempts.length > 0 && (
-                                    <Typography variant="body2">
-                                        <strong>Attempts:</strong>
-                                        <ul>
-                                            {loadingInfo.attempts.map((attempt, idx) => (
-                                                <li key={idx}>
-                                                    {attempt.strategy}: {attempt.success ? "Success" : `Failed - ${attempt.error}`}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </Typography>
-                                )}
-                            </Stack>
-                        </Collapse>
-                    </Paper>
-                )}
+                        {/* Results grid - combined viewer + selector panel */}
+                        <Grid container spacing={2} sx={{ width: "100%", mt: 2 }}>
+                            {/* Combined Viewer + Selector panel (8 columns) */}
+                            <Grid item xs={12} md={8}>
+                                <Box
+                                    sx={{
+                                        border: "1px solid",
+                                        borderColor: "divider",
+                                        borderRadius: 2,
+                                        p: 2,
+                                        height: "100%",
+                                        display: "flex",
+                                        flexDirection: "column",
+                                    }}
+                                >
+                                    <SegmentSelector
+                                        segments={segments}
+                                        selectedSegment={selectedSegment}
+                                        onSelect={setSelectedSegment}
+                                        segmentMeta={segmentMeta || undefined}
+                                    />
+                                    <Box sx={{ flexGrow: 1, minHeight: 400, mt: 2 }}>
+                                        {noCoordinates ? (
+                                            <Alert severity="warning" sx={{ flexGrow: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                                This run was loaded without structure coordinates (TPR-only). Molecular visualization is unavailable.
+                                            </Alert>
+                                        ) : (
+                                            <MDViewer
+                                                key={`${runId}-${selectedSegment}`}
+                                                runId={runId!}
+                                                segment={selectedSegment}
+                                                segments={segments}
+                                            />
+                                        )}
+                                    </Box>
+                                </Box>
+                            </Grid>
 
-                {/* Events collapsible */}
-                {statusData.events && statusData.events.length > 0 && (
-                    <Paper variant="outlined" sx={{ p: 2 }}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="h3">Events</Typography>
-                            <IconButton onClick={() => setShowEvents(!showEvents)}>
-                                {showEvents ? <ExpandLess /> : <ExpandMore />}
-                            </IconButton>
-                        </Stack>
-                        <Collapse in={showEvents}>
-                            <Stack spacing={1} sx={{ mt: 2, maxHeight: 300, overflow: "auto" }}>
-                                {statusData.events.slice(-20).reverse().map((event, idx) => (
-                                    <Typography key={idx} variant="body2">
-                                        <strong>[{event.kind}]</strong> {new Date(event.timestamp).toLocaleTimeString()} - {event.message || "No message"}
-                                    </Typography>
-                                ))}
-                            </Stack>
-                        </Collapse>
-                    </Paper>
-                )}
-
-                {/* Results grid - show whenever segments exist, regardless of pipeline status */}
-                {segments.length > 0 ? (
-                    <Grid container spacing={2} sx={{ width: "100%", mt: 2 }}>
-                        {/* Segment selector (2 columns) */}
-                        <Grid item xs={12} md={2}>
-                            <Box
-                                sx={{
-                                    border: "1px solid",
-                                    borderColor: "divider",
-                                    borderRadius: 2,
-                                    p: 0,
-                                    height: "100%",
-                                }}
-                            >
-                                <SegmentSelector
-                                    segments={segments}
-                                    selectedSegment={selectedSegment}
-                                    onSelect={setSelectedSegment}
-                                    segmentMeta={segmentMeta || undefined}
-                                />
-                            </Box>
+                            {/* Molecule Summary Panel (4 columns) */}
+                            <Grid item xs={12} md={4}>
+                                <Box
+                                    sx={{
+                                        border: "1px solid",
+                                        borderColor: "divider",
+                                        borderRadius: 2,
+                                        p: 2,
+                                        height: "100%",
+                                    }}
+                                >
+                                    <MoleculeSummaryPanel
+                                        runId={runId!}
+                                        segment={selectedSegment}
+                                        systemSummary={{
+                                            total_segments: segments.length,
+                                            total_fragment_count: totalFragmentCount ?? 0,
+                                            type_counts: typeCounts,
+                                        }}
+                                    />
+                                </Box>
+                            </Grid>
                         </Grid>
 
-                        {/* MD Viewer (5 columns) */}
-                        <Grid item xs={12} md={5}>
-                            <Box
-                                sx={{
-                                    border: "1px solid",
-                                    borderColor: "divider",
-                                    borderRadius: 2,
-                                    p: 0,
-                                    height: 600,
-                                }}
-                            >
-                                <MDViewer
-                                    key={`${runId}-${selectedSegment}`}
-                                    runId={runId!}
-                                    segment={selectedSegment}
-                                    segments={segments}
-                                />
-                            </Box>
-                        </Grid>
+                        {/* Global tabs below viewer grid */}
+                        <Paper variant="outlined" sx={{ mt: 3 }}>
+                            <Tabs value={activeTab} onChange={handleTabChange} sx={{ borderBottom: 1, borderColor: "divider" }}>
+                                <Tab label="Overview" value="overview" />
+                                <Tab label="Loading" value="loading" />
+                                <Tab label="Warnings" value="warnings" />
+                                <Tab label="Files" value="files" />
+                            </Tabs>
 
-                        {/* Molecule Summary Panel (5 columns) */}
-                        <Grid item xs={12} md={5}>
-                            <Box
-                                sx={{
-                                    border: "1px solid",
-                                    borderColor: "divider",
-                                    borderRadius: 2,
-                                    p: 2,
-                                    height: "100%",
-                                }}
-                            >
-                                <MoleculeSummaryPanel
-                                    runId={runId!}
-                                    segment={selectedSegment}
-                                />
-                            </Box>
-                        </Grid>
-                    </Grid>
-                ) : (
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                        Segments not yet available.
-                    </Typography>
-                )}
-                </>
+                            {/* Overview Tab */}
+                            {activeTab === 'overview' && (
+                                <Box sx={{ p: 3 }}>
+                                    <Stack spacing={2}>
+                                        <Typography variant="body2">Run ID: {statusData.run_id}</Typography>
+                                        <Typography variant="body2">
+                                            Status: <strong style={{ textTransform: 'capitalize' }}>{statusData.pipeline.status}</strong>
+                                        </Typography>
+                                        {statusData.pipeline.input_kind && (
+                                            <Typography variant="body2">
+                                                Input Kind: <strong>{statusData.pipeline.input_kind}</strong>
+                                            </Typography>
+                                        )}
+                                        {statusData?.pipeline.input_files && (
+                                            <Typography variant="body2">
+                                                Input Files: <strong>{Object.keys(statusData?.pipeline.input_files || {}).join(", ")}</strong>
+                                            </Typography>
+                                        )}
+                                        {statusData.pipeline.started_at && (
+                                            <Typography variant="body2">
+                                                Started: {new Date(statusData.pipeline.started_at).toLocaleString()}
+                                            </Typography>
+                                        )}
+                                        {statusData.pipeline.finished_at && (
+                                            <Typography variant="body2">
+                                                Finished: {new Date(statusData.pipeline.finished_at).toLocaleString()}
+                                            </Typography>
+                                        )}
+
+                                        {/* Events */}
+                                        {statusData.events && statusData.events.length > 0 && (
+                                            <Box sx={{ mt: 2 }}>
+                                                <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1 }}>Events</Typography>
+                                                <Box sx={{ maxHeight: 200, overflow: 'auto', border: 1, borderColor: 'divider', borderRadius: 1, p: 1 }}>
+                                                    {statusData.events.slice(-20).reverse().map((event, idx) => (
+                                                        <Typography key={idx} variant="body2" sx={{ py: 0.5 }}>
+                                                            <strong>[{event.kind}]</strong> {new Date(event.timestamp).toLocaleTimeString()} - {event.message || "No message"}
+                                                        </Typography>
+                                                    ))}
+                                                </Box>
+                                            </Box>
+                                        )}
+
+                                        {/* Download actions */}
+                                        <Box sx={{ mt: 2 }}>
+                                            <DownloadActions runId={runId!} />
+                                        </Box>
+                                    </Stack>
+                                </Box>
+                            )}
+
+                            {/* Loading Tab */}
+                            {activeTab === 'loading' && (
+                                <Box sx={{ p: 3 }}>
+                                    {loadingInfo ? (
+                                        <Stack spacing={1}>
+                                            <Typography variant="body2">
+                                                <strong>Strategy:</strong> {loadingInfo.selected_strategy || loadingInfo.final_strategy || "N/A"}
+                                            </Typography>
+                                            <Typography variant="body2">
+                                                <strong>Input Kind:</strong> {loadingInfo.input_kind || "N/A"}
+                                            </Typography>
+                                            <Typography variant="body2">
+                                                <strong>Success:</strong> {loadingInfo.success ? "Yes" : "No"}
+                                            </Typography>
+                                            {loadingInfo.topology_files && loadingInfo.topology_files.length > 0 && (
+                                                <Typography variant="body2">
+                                                    <strong>Topology Files:</strong> {loadingInfo.topology_files.join(", ")}
+                                                </Typography>
+                                            )}
+                                            {loadingInfo.attempts && loadingInfo.attempts.length > 0 && (
+                                                <Typography variant="body2">
+                                                    <strong>Attempts:</strong>
+                                                    <ul>
+                                                        {loadingInfo.attempts.map((attempt, idx) => (
+                                                            <li key={idx}>
+                                                                {attempt.strategy}: {attempt.success ? "Success" : `Failed - ${attempt.error}`}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </Typography>
+                                            )}
+                                        </Stack>
+                                    ) : (
+                                        <Typography variant="body2" color="text.secondary">No loading information available.</Typography>
+                                    )}
+                                </Box>
+                            )}
+
+                            {/* Warnings Tab */}
+                            {activeTab === 'warnings' && (
+                                <Box sx={{ p: 3 }}>
+                                    {(!statusData?.warnings || statusData.warnings.length === 0) && 
+                                     (!statusData?.critical_errors || statusData.critical_errors.length === 0) ? (
+                                        <Alert severity="info">No warnings.</Alert>
+                                    ) : (
+                                        <Stack spacing={2}>
+                                            {statusData.warnings && statusData.warnings.length > 0 && (
+                                                <Stack spacing={1}>
+                                                    <Typography variant="subtitle2" fontWeight="bold">Warnings</Typography>
+                                                    {statusData.warnings.map((warning, idx) => (
+                                                        <Alert key={idx} severity="warning">
+                                                            <strong>{warning.code}:</strong> {warning.message}
+                                                        </Alert>
+                                                    ))}
+                                                </Stack>
+                                            )}
+                                            {statusData.critical_errors && statusData.critical_errors.length > 0 && (
+                                                <Stack spacing={1}>
+                                                    <Typography variant="subtitle2" fontWeight="bold">Critical Errors</Typography>
+                                                    {statusData.critical_errors.map((err, idx) => (
+                                                        <Alert key={idx} severity="error">
+                                                            <strong>{err.code}:</strong> {err.message}
+                                                            {err.exception_type && (
+                                                                <Typography variant="caption" display="block">
+                                                                    ({err.exception_type})
+                                                                </Typography>
+                                                            )}
+                                                        </Alert>
+                                                    ))}
+                                                </Stack>
+                                            )}
+                                        </Stack>
+                                    )}
+                                </Box>
+                            )}
+
+                            {/* Files Tab */}
+                            {activeTab === 'files' && (
+                                <Box sx={{ p: 3 }}>
+                                    <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 2 }}>Run Files</Typography>
+                                    <RunFileBrowser runId={runId!} />
+                                    <Box sx={{ mt: 3 }}>
+                                        <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 2 }}>Downloads</Typography>
+                                        <DownloadActions runId={runId!} />
+                                    </Box>
+                                </Box>
+                            )}
+                        </Paper>
+                    </>
                 )}
 
                 {!statusData && !error && (
                     <Alert severity="info">Loading run data...</Alert>
                 )}
-
-                {/* Run file browser */}
-                <Paper variant="outlined" sx={{ p: 2 }}>
-                    <Typography variant="h3" sx={{ mb: 1 }}>Run Files</Typography>
-                    <RunFileBrowser runId={runId!} />
-                </Paper>
-
-                {/* Download actions */}
-                <Box sx={{ mt: 3, display: "flex", gap: 2 }}>
-                    <DownloadActions runId={runId!} />
-                </Box>
             </Stack>
 
             {/* Log Viewer Dialog */}

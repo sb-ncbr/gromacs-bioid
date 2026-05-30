@@ -121,6 +121,19 @@ class TestSelectBestFileCombination:
         assert decision.input_kind == InputKind.GROMACS
         assert decision.selected_strategy == "TPR_ONLY"
 
+    def test_select_tpr_gro_when_both_present(self, tmp_path: Path):
+        """TPR+GRO strategy selected when both TPR and GRO present."""
+        tpr_file = tmp_path / "simulation.tpr"
+        gro_file = tmp_path / "structure.gro"
+        tpr_file.touch()
+        gro_file.touch()
+
+        bundle = inspect_directory(tmp_path)
+        decision = select_best_file_combination(bundle)
+
+        assert decision.input_kind == InputKind.GROMACS
+        assert decision.selected_strategy == "TPR_GRO"
+
     def test_select_top_gro(self, tmp_path: Path):
         """TOP+GRO strategy selected when both present."""
         (tmp_path / "topol.top").touch()

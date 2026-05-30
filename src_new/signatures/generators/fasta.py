@@ -263,6 +263,7 @@ def _fragment_extract_residues(
     residue_indices_to_index = {}
     res_i = 0
     for res_name, res_indice in zip(fragment.resnames, fragment.resindices):
+        res_indice = int(res_indice)
         res_name = resname_to_one_letter(res_name)
         if res_indice not in residue_indices_to_code:
             residue_indices_to_code[res_indice] = res_name
@@ -285,10 +286,12 @@ def _populate_adjacency_matrix_inplace(
 ) -> None:
     """Populate adjacency matrix with bonds."""
     for atom_idx1, atom_idx2 in fragment.bonds.indices:
+        atom_idx1 = int(atom_idx1)
+        atom_idx2 = int(atom_idx2)
         atom_i1 = atom_indices_to_index[atom_idx1]
         atom_i2 = atom_indices_to_index[atom_idx2]
-        atom_resid_i1 = residue_indices_to_index[fragment.atoms.resindices[atom_i1]]
-        atom_resid_i2 = residue_indices_to_index[fragment.atoms.resindices[atom_i2]]
+        atom_resid_i1 = residue_indices_to_index[int(fragment.atoms.resindices[atom_i1])]
+        atom_resid_i2 = residue_indices_to_index[int(fragment.atoms.resindices[atom_i2])]
         
         node_i1, node_i2 = (
             (atom_resid_i1, atom_resid_i2)
@@ -487,7 +490,7 @@ def cant_determine_err(strict: bool, partial: bool) -> None:
 def _fragment_to_protein_mk_adjacency_matrices(fragment: AtomGroup) -> tuple:
     """Create indices and adjacency matrices."""
     atom_indices_to_index = {
-        indice: index for index, indice in enumerate(fragment.atoms.indices)
+        int(indice): index for index, indice in enumerate(fragment.atoms.indices)
     }
     
     residue_indices_to_code, residue_indices_to_index = _fragment_extract_residues(fragment)

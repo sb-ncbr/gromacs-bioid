@@ -363,9 +363,29 @@ class RunConfig:
             return json.load(f)
 
     def apply_overrides(self, overrides: dict[str, Any]) -> None:
-        """Apply a dictionary of overrides."""
+        """Apply a dictionary of overrides with flat dot-path keys."""
         for path, value in overrides.items():
             self.override(path, value)
+
+    def apply_nested_overrides(self, nested: dict[str, Any]) -> None:
+        """Apply a nested dictionary of overrides, walking dicts and building dot-paths.
+        
+        Traverses nested dicts and calls self.override(path, value) for each leaf,
+        building dot-paths like "signatures.smiles". Skips keys starting with "_".
+        """
+        def walk(obj: Any, prefix: str = "") -> None:
+            if not isinstance(obj, dict):
+                return
+            for key, value in obj.items():
+                if key.startswith("_"):
+                    continue
+                path = f"{prefix}.{key}" if prefix else key
+                if isinstance(value, dict):
+                    walk(value, path)
+                else:
+                    self.override(path, value)
+        
+        walk(nested)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert config to a JSON-serializable dictionary."""

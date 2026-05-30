@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Typography, CircularProgress } from "@mui/material";
+import { Box, CircularProgress, Alert } from "@mui/material";
+import 'molstar/build/viewer/molstar.css';
+import { Viewer } from 'molstar/lib/apps/viewer/app';
+import { PluginExtensions } from 'molstar/lib/apps/viewer/app';
 
 interface RenderPathsResponse {
     run_id: string;
@@ -7,8 +10,6 @@ interface RenderPathsResponse {
     segments?: Record<string, string>;
 }
 
-const MOLSTAR_URL = "https://cdn.jsdelivr.net/npm/molstar";
-const MOLSTAR_VERSION = "4.18.0";
 
 interface MDViewerProps {
     runId: string;
@@ -16,11 +17,6 @@ interface MDViewerProps {
     segments: string[];
     width?: number | string;
     height?: number | string;
-}
-
-interface SegmentData {
-    name: string;
-    isProtein: boolean;
 }
 
 const MDViewer = ({
@@ -32,67 +28,63 @@ const MDViewer = ({
 }: MDViewerProps) => {
 
     const viewerContainerRef = useRef<HTMLDivElement | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [molstarReady, setMolstarReady] = useState(false);
-    const [renderData, setRenderData] = useState<RenderPathsResponse | null>(null);
     
+    const [loading, setLoading] = useState(false);
+    const [renderData, setRenderData] = useState<RenderPathsResponse | null>(null);
+    const [structureError, setStructureError] = useState<string | null>(null);
     
     // Debounce refs
     const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const prevSegmentRef = useRef<string>(segment);
 
+    // Fetch render paths with polling when mmCIF unavailable
     useEffect(() => {
-        const loadMolstar = async () => {
-            if ((window as any).molstar) {
-                setMolstarReady(true);
-                return;
-            }
-            try {
-                const script = document.createElement("script");
-                script.src = `${MOLSTAR_URL}@${MOLSTAR_VERSION}/build/viewer/molstar.js`;
-                script.async = true;
-
-                const link = document.createElement("link");
-                link.rel = "stylesheet";
-                link.href = `${MOLSTAR_URL}@${MOLSTAR_VERSION}/build/viewer/molstar.css`;
-
-                await Promise.all([
-                    new Promise((res, rej) => {
-                        script.onload = res;
-                        script.onerror = rej;
-                        document.head.appendChild(script);
-                    }),
-                    new Promise((res, rej) => {
-                        link.onload = res;
-                        link.onerror = rej;
-                        document.head.appendChild(link);
-                    }),
-                ]);
-                setMolstarReady(true);
-            } catch (err) {
-                console.error("Failed to load Mol*", err);
-            }
-        };
-        loadMolstar();
-    }, []);
-
-    // Fetch render paths when molstar is ready
-    useEffect(() => {
-        if (!molstarReady || !runId) return;
+        if (!runId) return;
+        let interval: ReturnType<typeof setInterval> | null = null;
+        
         const fetchRenderPaths = async () => {
             try {
                 const res = await fetch(`/runs/${runId}/render`);
-                if (res.ok) {
-                    const data: RenderPathsResponse = await res.json();
-                    setRenderData(data);
+                if (!res.ok) {
+                    setStructureError("Simulation structure data could not be loaded.");
+                    return;
+                }
+                const data: RenderPathsResponse = await res.json();
+                if (!data.system_mmcif) {
+                    setStructureError("No mmCIF structure file is available for this run.");
+                    return;
+                }
+                setRenderData(data);
+                setStructureError(null);
+                // Stop polling once we have valid mmCIF
+                if (interval) {
+                    clearInterval(interval);
+                    interval = null;
                 }
             } catch (e) {
                 console.error("Failed to fetch render paths", e);
+                setStructureError("Simulation structure data could not be loaded.");
             }
         };
+        
+        // Initial immediate fetch
         fetchRenderPaths();
-    }, [molstarReady, runId]);
+        
+        // Start polling every 10 seconds if mmCIF is still missing
+        interval = setInterval(() => {
+            if (!renderData?.system_mmcif) {
+                fetchRenderPaths();
+            }
+        }, 10000);
+        
+        return () => {
+            if (interval) {
+                clearInterval(interval);
+            }
+        };
+    }, [runId]);
 
+    // Main render effect - creates new viewer on each render
     useEffect(() => {
         // Cleanup previous debounce timer
         if (debounceTimerRef.current) {
@@ -104,23 +96,32 @@ const MDViewer = ({
         prevSegmentRef.current = segment;
 
         const render = async () => {
-            if (!molstarReady || !viewerContainerRef.current) return;
+            if (!viewerContainerRef.current) return;
+            if (structureError) {
+                setLoading(false);
+                return;
+            }
+            
             setLoading(true);
-            viewerContainerRef.current.innerHTML = "";
-
-            const molstar = (window as any).molstar;
 
             try {
-                const viewer = await molstar.Viewer.create(viewerContainerRef.current, {
+                // Dispose old viewer if exists to avoid leaking plugin
+                if (viewerContainerRef.current) {
+                    viewerContainerRef.current.innerHTML = "";
+                }
+
+                const viewer = await Viewer.create(viewerContainerRef.current, {
                     layoutIsExpanded: false,
                     layoutShowControls: false,
                 });
 
-                const builder = molstar.PluginExtensions.mvs.MVSData.createBuilder();
+                const builder = PluginExtensions.mvs.MVSData.createBuilder();
 
                 // Use dynamic render path from API, fallback to hardcoded path
                 const systemPath = renderData?.system_mmcif || "render/system.cif";
-                const structureUrl = `/files/${runId}/${systemPath}`;
+                // Strip leading slashes to avoid double slashes in URL
+                const cleanPath = systemPath.replace(/^\/+/, '');
+                const structureUrl = `/files/${runId}/${cleanPath}`;
 
                 const structure = builder
                     .download({ url: structureUrl })
@@ -129,16 +130,15 @@ const MDViewer = ({
 
                 const safeSegments = Array.isArray(segments) ? segments : [];
 
-                // Fetch segment type info
-                const segmentData: SegmentData[] = await Promise.all(
+                // Fetch protein types inline for each segment
+                const segmentData = await Promise.all(
                     safeSegments.map(async (seg) => {
                         let isProtein = false;
                         try {
                             const res = await fetch(`/runs/${runId}/verification?segment=${seg}`);
                             if (res.ok) {
-                                const data = await res.json();
-                                // Check if any hit is a protein type
-                                isProtein = data.hits?.some((h: any) => 
+                                const d = await res.json();
+                                isProtein = d.hits?.some((h: any) =>
                                     h.ident_type?.toLowerCase().includes('protein') ||
                                     h.ident_type?.toLowerCase().includes('uniprot')
                                 ) || false;
@@ -146,49 +146,45 @@ const MDViewer = ({
                         } catch (e) {
                             console.error(`Failed to fetch type for ${seg}`, e);
                         }
-
-                        return {
-                            name: seg,
-                            isProtein,
-                        };
+                        const opacity_val = segment === "SYSTEM" || segment === seg ? 1.0 : 0.15;
+                        return { name: seg, isProtein, opacity_val };
                     })
                 );
 
-                if (segment === "SYSTEM") {
-                    // Show all segments at opacity 1.0 with default coloring
+                // Fallback: no segment info available - show whole structure as generic cartoon
+                if (safeSegments.length === 0) {
                     structure
                         .component({ selector: 'all' })
                         .representation({ type: 'cartoon' })
                         .color({ custom: { molstar_use_default_coloring: true } })
                         .opacity({ opacity: 1.0 });
                 } else {
-                    // Highlight/dim mode: background all segments at 0.15, foreground selected at 1.0
-                    const selectedSegData = segmentData.find(sd => sd.name === segment);
-                    const isProtein = selectedSegData?.isProtein ?? false;
-
-                    // Background layer: ALL segments at opacity 0.15
-                    structure
-                        .component({ selector: 'all' })
-                        .representation({ type: 'cartoon' })
-                        .color({ custom: { molstar_use_default_coloring: true } })
-                        .opacity({ opacity: 0.15 });
-
-                    // Foreground layer: selected segment at opacity 1.0 with focus
-                    structure
-                        .component({ selector: { auth_asym_id: segment } })
-                        .representation({ type: isProtein ? 'cartoon' : 'ball_and_stick' })
-                        .color({ color: '#E65100' })
-                        .opacity({ opacity: 1.0 })
-                        .focus({});
+                    // Single loop: apply component + representation + color + opacity for each segment
+                    for (const { name, isProtein, opacity_val } of segmentData) {
+                        if (isProtein) {
+                            structure
+                                .component({ selector: { auth_asym_id: name } })
+                                .representation({ type: 'cartoon' })
+                                .color({ custom: { molstar_use_default_coloring: true } })
+                                .opacity({ opacity: opacity_val });
+                        } else {
+                            structure
+                                .component({ selector: { auth_asym_id: name } })
+                                .representation({ type: 'ball_and_stick' })
+                                .color({ custom: { molstar_use_default_coloring: true } })
+                                .opacity({ opacity: opacity_val });
+                        }
+                    }
                 }
 
                 const mvsData = builder.getState();
 
-                await molstar.PluginExtensions.mvs.loadMVS(viewer.plugin, mvsData, {
+                await PluginExtensions.mvs.loadMVS(viewer.plugin, mvsData, {
                     sourceUrl: undefined,
                     sanityChecks: true,
-                                    keepCamera: segment === "SYSTEM",
-                });
+                    replaceExisting: true,
+                    keepCamera: segment === "SYSTEM",
+                } as any);
             } catch (e) {
                 console.error("Mol* viewer error", e);
             } finally {
@@ -211,23 +207,27 @@ const MDViewer = ({
                 clearTimeout(debounceTimerRef.current);
             }
         };
-    }, [runId, segment, segments, molstarReady]);
+    }, [runId, segment, segments, renderData, structureError]);
 
     return (
-        <Box sx={{ m: 2, position: "relative", width: "100%", height: "100%" }}>
-            <Typography variant="h2" sx={{ mb: 2 }}>
-                Simulation Viewer
-            </Typography>
-            <div
-                ref={viewerContainerRef}
-                style={{
-                    width: typeof width === 'number' ? `${width}px` : width,
-                    height: typeof height === 'number' ? `${height}px` : height,
-                    borderRadius: "8px",
-                    overflow: "hidden",
-                    position: "relative",
-                }}
-            />
+        <Box sx={{ position: "relative", width: "100%", height: "100%" }}>
+            {structureError && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                    {structureError}
+                </Alert>
+            )}
+            {!structureError && (
+                <div
+                    ref={viewerContainerRef}
+                    style={{
+                        width: typeof width === 'number' ? `${width}px` : width,
+                        height: typeof height === 'number' ? `${height}px` : height,
+                        borderRadius: "8px",
+                        overflow: "hidden",
+                        position: "relative",
+                    }}
+                />
+            )}
             {loading && (
                 <Box
                     sx={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}

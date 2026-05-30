@@ -1,4 +1,4 @@
-import { Stack, Grid, Typography, Button, IconButton, Table, TableCell, TableRow, TableBody, Box, Alert, Tooltip, Paper, Switch, FormControlLabel } from "@mui/material"
+import { Stack, Grid, Typography, Button, IconButton, Table, TableCell, TableRow, TableBody, Box, Alert, Tooltip, Switch, FormControlLabel, Dialog, DialogTitle, DialogContent, DialogActions, TextField } from "@mui/material"
 import Dropzone from "../Components/Dropzone"
 import ConfigEditor from "../Components/ConfigEditor"
 import { useNavigate } from "react-router-dom"
@@ -11,6 +11,7 @@ interface RunListItem {
     status: string;
     created_at: string;
     input_kind?: string | null;
+    run_name?: string | null;
 }
 
 const Frontpage = () => {
@@ -44,6 +45,8 @@ const Frontpage = () => {
     const [defaultConfig, setDefaultConfig] = useState<Record<string, any> | null>(null)
     const [customConfigEnabled, setCustomConfigEnabled] = useState(false)
     const [editedConfig, setEditedConfig] = useState<Record<string, any>>({})
+    const [runName, setRunName] = useState<string>("")
+    const [configDialogOpen, setConfigDialogOpen] = useState(false)
 
     useEffect(() => {
         fetchRuns()
@@ -64,7 +67,7 @@ const Frontpage = () => {
 
     const fetchDefaultConfig = async () => {
         try {
-            const res = await fetch('/config/default')
+            const res = await fetch('/runs/config/default')
             if (res.ok) {
                 const data = await res.json()
                 setDefaultConfig(data)
@@ -89,7 +92,12 @@ const Frontpage = () => {
             data.append('files', file)
         }
         
-        // Send customized config if enabled
+        // Send run_name if provided
+        if (runName) {
+            data.append('run_name', runName)
+        }
+        
+        // Send customized config only if enabled
         if (customConfigEnabled && editedConfig) {
             data.append('config_json', JSON.stringify(editedConfig))
         }
@@ -125,7 +133,10 @@ const Frontpage = () => {
     }
 
     const getRunTitle = (run: RunListItem): string => {
-        // Try to get title from input_kind or use run_id
+        // Try to get title from run_name, then input_kind, then fallback to run_id
+        if (run.run_name) {
+            return run.run_name
+        }
         if (run.input_kind) {
             return run.input_kind
         }
@@ -220,23 +231,62 @@ const Frontpage = () => {
                         {/* Run Configuration Section */}
                         <Stack spacing={2} sx={{ p: 2, mt: 2 }}>
                             <Typography variant="h4">Run Configuration</Typography>
-                            <FormControlLabel
-                                control={
-                                    <Switch
-                                        checked={customConfigEnabled}
-                                        onChange={(e) => setCustomConfigEnabled(e.target.checked)}
-                                    />
-                                }
-                                label="Customize configuration"
-                            />
-                            {customConfigEnabled && defaultConfig && (
-                                <Paper elevation={0} sx={{ p: 2, border: "1px solid #ccc" }}>
-                                    <ConfigEditor config={defaultConfig} onChange={setEditedConfig} />
-                                </Paper>
-                            )}
+                            <Stack direction="row" spacing={2} alignItems="center">
+                                <FormControlLabel
+                                    control={
+                                        <Switch
+                                            checked={customConfigEnabled}
+                                            onChange={(e) => {
+                                                const checked = e.target.checked
+                                                setCustomConfigEnabled(checked)
+                                                if (!checked) {
+                                                    // Reset to default config when toggled off
+                                                    setEditedConfig(defaultConfig || {})
+                                                }
+                                                setConfigDialogOpen(checked)
+                                            }}
+                                        />
+                                    }
+                                    label="Customize configuration"
+                                />
+                                {customConfigEnabled && (
+                                    <Button variant="outlined" size="small" onClick={() => setConfigDialogOpen(true)}>
+                                        Edit Config
+                                    </Button>
+                                )}
+                            </Stack>
                         </Stack>
 
-                        <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ mt: 3 }}>
+                        {/* Config Editor Dialog */}
+                        <Dialog
+                            open={configDialogOpen}
+                            onClose={() => setConfigDialogOpen(false)}
+                            maxWidth="md"
+                            fullWidth
+                        >
+                            <DialogTitle>Customize Configuration</DialogTitle>
+                            <DialogContent>
+                                {defaultConfig && (
+                                    <ConfigEditor config={defaultConfig} onChange={setEditedConfig} />
+                                )}
+                            </DialogContent>
+                            <DialogActions>
+                                <Button onClick={() => setConfigDialogOpen(false)} variant="contained">
+                                    Done
+                                </Button>
+                            </DialogActions>
+                        </Dialog>
+
+                        {/* Run name input */}
+                        <TextField
+                            label="Run name (optional)"
+                            value={runName}
+                            onChange={(e) => setRunName(e.target.value)}
+                            fullWidth
+                            sx={{ mt: 2 }}
+                        />
+
+                        <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ mt: 2 }}>
                             <Tooltip title="Begin annotation process" arrow>
                                 <Button
                                     variant="contained"

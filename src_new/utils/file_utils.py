@@ -1,7 +1,22 @@
 import json
+import math
 import os
 import tempfile
 from pathlib import Path
+
+
+def _sanitize_for_json(obj):
+    """Recursively replace NaN/Inf with None for JSON serialization."""
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    elif isinstance(obj, dict):
+        return {key: _sanitize_for_json(value) for key, value in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(item) for item in obj]
+    else:
+        return obj
 
 
 def atomic_write_json(path: Path, data: dict) -> None:
@@ -18,7 +33,7 @@ def atomic_write_json(path: Path, data: dict) -> None:
     fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+            json.dump(_sanitize_for_json(data), f, indent=4, allow_nan=False)
         os.replace(tmp_path, path)
     except Exception:
         # Clean up temp file on failure

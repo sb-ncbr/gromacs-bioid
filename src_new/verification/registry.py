@@ -78,11 +78,11 @@ class VerificationRegistry:
 
 
 def get_default_registry() -> VerificationRegistry:
-    """Get a default registry with compound, sequence, and structure workers/fetchers/scorers.
+    """Get a default registry with compound, sequence, structure, and element workers/fetchers/scorers.
     
     Returns:
         VerificationRegistry with:
-        - workers: [CompoundVerificationWorker(), SequenceVerificationWorker(), StructureVerificationWorker()]
+        - workers: [ElementVerificationWorker(), CompoundVerificationWorker(), SequenceVerificationWorker(), StructureVerificationWorker()]
         - fetchers: [CompoundSignatureFetcher(), SequenceSignatureFetcher(), StructureSignatureFetcher()]
         - scorers: [PDBAnnotationScorer(), UniProtAnnotationScorer(), 
                      PubChemAnnotationScorer(), ChemblAnnotationScorer(), 
@@ -96,10 +96,11 @@ def get_default_registry() -> VerificationRegistry:
         ChemblAnnotationScorer,
         ChebiAnnotationScorer,
     )
-    from .workers import CompoundVerificationWorker, SequenceVerificationWorker, StructureVerificationWorker
+    from .workers import CompoundVerificationWorker, SequenceVerificationWorker, StructureVerificationWorker, ElementVerificationWorker
     
+    # Element worker goes first to handle ELEMENT ident_type before other workers
     return VerificationRegistry(
-        workers=[CompoundVerificationWorker(), SequenceVerificationWorker(), StructureVerificationWorker()],
+        workers=[ElementVerificationWorker(), CompoundVerificationWorker(), SequenceVerificationWorker(), StructureVerificationWorker()],
         fetchers=[CompoundSignatureFetcher(), SequenceSignatureFetcher(), StructureSignatureFetcher()],
         scorers=[
             PDBAnnotationScorer(),

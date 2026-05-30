@@ -180,12 +180,23 @@ def deduplicate_and_score(
         # base_score = max resolver_score in the group
         base_score = max(hit.resolver_score for hit in group_hits)
         
+        # Sanitize NaN/Inf in base_score
+        if math.isnan(base_score) or math.isinf(base_score):
+            base_score = 0.0
+        
         # diversity = number of distinct resolver_names
         distinct_resolvers = set(hit.resolver_name for hit in group_hits)
         diversity = len(distinct_resolvers)
         
         # consensus_score = base_score * log2(1 + diversity)
         consensus_score = base_score * math.log2(1 + diversity)
+        
+        # Sanitize NaN/Inf in consensus_score
+        if math.isnan(consensus_score) or math.isinf(consensus_score):
+            consensus_score = 0.0
+        
+        # Cap consensus_score at 100
+        consensus_score = min(consensus_score, 100.0)
         
         # Collect source_resolvers list
         source_resolvers = sorted(distinct_resolvers)

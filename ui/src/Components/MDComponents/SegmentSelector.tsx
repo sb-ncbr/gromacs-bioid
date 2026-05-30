@@ -1,4 +1,4 @@
-import { FormControl, InputLabel, Select, MenuItem, Box, SelectChangeEvent } from "@mui/material";
+import { FormControl, InputLabel, Select, MenuItem, Box, SelectChangeEvent, Typography } from "@mui/material";
 
 interface SegmentMeta {
     type?: string;
@@ -40,6 +40,7 @@ const SegmentSelector: React.FC<SegmentSelectorProps> = ({
                     value={selectedSegment}
                     label="Molecule"
                     onChange={handleChange}
+                    disabled={segments.length === 0}
                     sx={{
                         "& .MuiSelect-select": {
                             fontSize: "1rem",
@@ -56,6 +57,11 @@ const SegmentSelector: React.FC<SegmentSelectorProps> = ({
                     ))}
                 </Select>
             </FormControl>
+            {segments.length === 0 && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                    No molecule segments detected.
+                </Typography>
+            )}
         </Box>
     );
 };

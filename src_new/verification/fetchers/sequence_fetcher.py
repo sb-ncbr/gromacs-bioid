@@ -80,7 +80,11 @@ class SequenceSignatureFetcher(SignatureFetcher):
         """Fetch sequence from AlphaFold (via UniProt)."""
         try:
             # Extract UniProt ID from AlphaFold ID (format: AF-UNIPROTID-F1-model_vX)
-            uniprot_id = alphafold_id.split('-')[1]
+            parts = alphafold_id.split('-')
+            if len(parts) < 3 or not alphafold_id.startswith("AF-"):
+                logger.warning(f"AlphaFold ID '{alphafold_id}' does not match expected format AF-UNIPROT-F1-model_vX")
+                return None
+            uniprot_id = parts[1]
             return self._fetch_uniprot(uniprot_id)
         except Exception as e:
             logger.warning(f"AlphaFold {alphafold_id} fetch FASTA failed: {e}")
