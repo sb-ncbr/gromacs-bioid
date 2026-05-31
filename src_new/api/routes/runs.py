@@ -47,8 +47,22 @@ router = APIRouter()
 @router.get("/config/default", response_model=dict)
 async def get_default_config():
     """Get the default configuration as a JSON dict."""
+    try:
+        from src_new.config.loader import RunConfig
+        return RunConfig.from_default_ini().to_dict()
+    except Exception as e:
+        return {"error": str(e), "config": RunConfig().to_dict()}
+
+
+@router.get("/config/parallel-default", response_model=dict)
+async def get_parallel_default_config():
+    """Get the default configuration with parallelism enabled."""
     from src_new.config.loader import RunConfig
-    return RunConfig.from_default_ini().to_dict()
+    config = RunConfig.from_default_ini()
+    config.executor.signatures_parallel = True
+    config.executor.identifiers_parallel = True
+    config.executor.verification_parallel = True
+    return config.to_dict()
 
 
 def get_runs_dir() -> Path:

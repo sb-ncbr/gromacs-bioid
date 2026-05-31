@@ -1,0 +1,382 @@
+"""Worker functions for parallel pipeline execution."""
+
+from __future__ import annotations
+
+import logging
+import types
+from typing import Any
+
+logger = logging.getLogger("base")
+
+
+class MockResidues:
+    """Mock residues container that supports iteration."""
+    
+    def __init__(self, resnames, resids, residue_list):
+        self.resnames = resnames
+        self.resids = resids
+        self._residue_list = residue_list
+    
+    def __iter__(self):
+        return iter(self._residue_list)
+
+
+class MockAtomGroup:
+    """Mock AtomGroup for signature generation in worker processes."""
+    
+    def __init__(self, snapshot):
+        import numpy as np
+        
+        self.snapshot = snapshot
+        self._atoms = types.SimpleNamespace(
+            indices=snapshot.atom_indices,
+            elements=snapshot.elements,
+            names=snapshot.names,
+            positions=np.array(snapshot.positions, dtype=np.float32),
+            masses=np.array(snapshot.masses, dtype=np.float64),
+            segids=snapshot.segids,
+            resids=snapshot.resids,
+            resnames=snapshot.resnames,
+            n_atoms=snapshot.atom_count,
+        )
+        
+        # Build residue list
+        resid_to_data = {}
+        for i, (resid, resname) in enumerate(zip(snapshot.resids, snapshot.resnames)):
+            if resid not in resid_to_data:
+                resid_to_data[resid] = {'resname': resname, 'atom_indices': []}
+            resid_to_data[resid]['atom_indices'].append(i)
+        
+        residue_list = []
+        for resid, data in sorted(resid_to_data.items()):
+            residue_list.append(types.SimpleNamespace(
+                resid=resid,
+                resname=data['resname'],
+                atoms=types.SimpleNamespace(
+                    indices=data['atom_indices'],
+                    names=[snapshot.names[i] for i in data['atom_indices']],
+                )
+            ))
+        
+        self._residues = MockResidues(
+            resnames=snapshot.resnames,
+            resids=snapshot.resids,
+            residue_list=residue_list
+        )
+        
+        # Build bonds
+        if snapshot.bonds:
+            bond_array = np.array(snapshot.bonds, dtype=np.int64).T
+            self._bonds = types.SimpleNamespace(indices=bond_array)
+        else:
+            self._bonds = types.SimpleNamespace(indices=np.array([[], []], dtype=np.int64))
+        
+        self.n_atoms = snapshot.atom_count
+    
+    @property
+    def atoms(self):
+        return self._atoms
+    
+    @property
+    def residues(self):
+        return self._residues
+    
+    @property
+    def bonds(self):
+        return self._bonds
+
+
+def _generate_signatures_worker(item: tuple) -> dict[str, Any] | None:
+    """Worker function for parallel signature generation.
+    
+    Args:
+        item: Tuple of (snapshot_dict, config_dict) where snapshot_dict is
+              a dict representation of SegmentSignatureSnapshot.
+              
+    Returns:
+        Dict with segment_name, generated signatures, and attempted generators.
+        Returns None on error.
+    """
+    try:
+        from ..config.loader import RunConfig
+        from ..signatures.registry import get_default_generators
+        from ..signatures.snapshot import SegmentSignatureSnapshot
+        
+        snapshot_dict, config_dict = item
+        snapshot = SegmentSignatureSnapshot(**snapshot_dict)
+        config = RunConfig.from_dict(config_dict)
+        
+        # Reconstruct mock AtomGroup from snapshot
+        mock_fragment = MockAtomGroup(snapshot)
+        
+        # Reconstruct mock facade
+        mock_facade = _build_mock_facade(snapshot)
+        
+        # Reconstruct mock instance
+        mock_instance = _build_mock_instance(snapshot)
+        
+        # Get generators
+        generators = get_default_generators(config.signatures)
+        
+        generated = {}
+        attempted = []
+        
+        for generator in generators:
+            try:
+                if generator.is_applicable(mock_instance, mock_fragment, mock_facade):
+                    attempted.append(generator.name)
+                    sig = generator.generate(mock_instance, mock_fragment, mock_facade)
+                    if sig is not None:
+                        generated[generator.name] = sig
+            except Exception as e:
+                logger.debug(f"Generator {generator.name} failed for {snapshot.segment_name}: {e}")
+                continue
+        
+        return {
+            "segment_name": snapshot.segment_name,
+            "generated": generated,
+            "attempted": attempted,
+        }
+    except Exception as e:
+        logger.error(f"Signature worker failed: {e}")
+        return None
+
+
+def _build_mock_facade(snapshot: Any) -> types.SimpleNamespace:
+    """Build a mock LoadedUniverse facade from snapshot.
+    
+    Args:
+        snapshot: SegmentSignatureSnapshot.
+        
+    Returns:
+        SimpleNamespace mimicking LoadedUniverse.
+    """
+    from ..loader.universe_facade import SegmentProperties
+    
+    props = SegmentProperties(
+        atom_count_total=snapshot.atom_count,
+        atom_count_fragment=snapshot.atom_count,
+        residue_count=snapshot.residue_count,
+        bond_count_total=len(snapshot.bonds),
+        bond_count_fragment=len(snapshot.bonds),
+        molecule_count=snapshot.copy_number,
+        flags=snapshot.flags,
+    )
+    
+    def get_segment_properties(segment_name: str) -> SegmentProperties:
+        if segment_name == snapshot.segment_name:
+            return props
+        raise KeyError(f"Segment {segment_name} not found")
+    
+    return types.SimpleNamespace(
+        get_segment_properties=get_segment_properties,
+    )
+
+
+def _build_mock_instance(snapshot: Any) -> Any:
+    """Build a mock MoleculeInstance from snapshot.
+    
+    Args:
+        snapshot: SegmentSignatureSnapshot.
+        
+    Returns:
+        SimpleNamespace mimicking MoleculeInstance.
+    """
+    from ..molecules.instances import MoleculeType
+    
+    mol_type = MoleculeType(snapshot.molecule_type)
+    
+    return types.SimpleNamespace(
+        instance_id=snapshot.instance_id,
+        atom_indices=snapshot.atom_indices,
+        residue_indices=list(range(snapshot.residue_count)),
+        segment_ids=[snapshot.segment_name],
+        chain_ids=snapshot.chain_ids,
+        resids=snapshot.resids,
+        resnames=snapshot.resnames,
+        molecule_type=mol_type,
+        copy_number=snapshot.copy_number,
+        atom_count=snapshot.atom_count,
+        element_composition=snapshot.element_composition,
+    )
+
+
+def _identify_molecules_worker(item: tuple) -> dict[str, Any] | None:
+    """Worker function for parallel identification.
+    
+    Args:
+        item: Tuple of (fragment_name, signatures_dict, config_dict, signature_type_map).
+              signatures_dict maps generator_name -> signature string.
+              
+    Returns:
+        Flat dict mapping result paths to values, plus attempted lists.
+        Returns None on error.
+    """
+    try:
+        from ..config.loader import RunConfig
+        from ..identification.registry import get_default_resolvers, IdentifierRegistry
+        from ..identification.cache_manager import ResolverCache
+        from ..identification.resolution_manager import IdentifierResolutionManager
+        
+        fragment_name, signatures_dict, config_dict, sig_type_map = item
+        config = RunConfig.from_dict(config_dict)
+        
+        # Create local instances
+        resolvers = get_default_resolvers(config)
+        registry = IdentifierRegistry(resolvers)
+        cache = ResolverCache(config)
+        manager = IdentifierResolutionManager(registry, config, signature_type_map=sig_type_map)
+        
+        results = {}
+        
+        for generator_name, signature in signatures_dict.items():
+            if not signature:
+                continue
+            
+            # Call resolve directly with local cache
+            attempted_path = f"identifiers/{fragment_name}/{generator_name}/attempted"
+            
+            try:
+                # We need to call resolve for each signature
+                # But the manager.resolve method expects ResultsManager
+                # So let's use a minimal approach - call the internal logic
+                
+                from ..identification.base import IdentifierResolver
+                
+                # Determine signature type
+                signature_type = sig_type_map.get(generator_name) if sig_type_map else None
+                if signature_type is None:
+                    signature_type = generator_name.lower().replace("_", "")
+                
+                attempted_resolvers = []
+                
+                # Phase 1: Identity resolution
+                identity_resolvers = registry.get_applicable_resolvers(signature_type, as_similarity=False)
+                
+                for resolver in identity_resolvers:
+                    if not resolver.is_applicable(signature, signature_type, as_similarity=False):
+                        continue
+                    
+                    attempted_resolvers.append(resolver.name)
+                    
+                    try:
+                        result = resolver.resolve(
+                            signature=signature,
+                            as_similarity=False,
+                            working_directory="",
+                            cache=cache
+                        )
+                        
+                        if result:
+                            results[f"identifiers/{fragment_name}/{generator_name}/{resolver.name}"] = {
+                                "signature": signature,
+                                "hit_type": "identity",
+                                "hits": result,
+                                "ident_type": resolver.identifier_type
+                            }
+                    except Exception as e:
+                        logger.debug(f"Resolver {resolver.name} failed: {e}")
+                        continue
+                
+                # Phase 2: Similarity resolution
+                similarity_resolvers = registry.get_applicable_resolvers(signature_type, as_similarity=True)
+                
+                for resolver in similarity_resolvers:
+                    if not resolver.is_applicable(signature, signature_type, as_similarity=True):
+                        continue
+                    
+                    attempted_resolvers.append(resolver.name)
+                    
+                    try:
+                        result = resolver.resolve(
+                            signature=signature,
+                            as_similarity=True,
+                            working_directory="",
+                            cache=cache
+                        )
+                        
+                        if result:
+                            results[f"identifiers/{fragment_name}/{generator_name}/{resolver.name}"] = {
+                                "signature": signature,
+                                "hit_type": "similarity",
+                                "hits": result,
+                                "ident_type": resolver.identifier_type
+                            }
+                    except Exception as e:
+                        logger.debug(f"Resolver {resolver.name} failed: {e}")
+                        continue
+                
+                # Record attempted
+                if attempted_resolvers:
+                    results[attempted_path] = attempted_resolvers
+                    
+            except Exception as e:
+                logger.error(f"Identification failed for {generator_name} in {fragment_name}: {e}")
+                continue
+        
+        return {"fragment_name": fragment_name, "results": results}
+        
+    except Exception as e:
+        logger.error(f"Identification worker failed: {e}")
+        return None
+
+
+def _verify_results_worker(item: tuple) -> dict[str, Any] | None:
+    """Worker function for parallel verification.
+    
+    Args:
+        item: Tuple of (segment, segment_identifiers_data, config_dict).
+              segment_identifiers_data is the data under identifiers/{segment}/.
+              
+    Returns:
+        Dict with segment name and verified_hits list.
+        Returns None on error.
+    """
+    try:
+        from ..config.loader import RunConfig
+        from ..verification.manager import VerificationManager
+        from ..results.results_manager import ResultsManager
+        import tempfile
+        import os
+        
+        segment, segment_identifiers_data, config_dict = item
+        config = RunConfig.from_dict(config_dict)
+        
+        # Create a temporary ResultsManager for this worker
+        # This is needed because VerificationManager expects ResultsManager
+        with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+            temp_path = f.name
+        
+        try:
+            # Create minimal results manager with just this segment's identifiers
+            temp_manager = ResultsManager(temp_path, pipeline_name="verification_worker")
+            
+            # Set up the identifiers data for this segment
+            if segment_identifiers_data:
+                for key, value in segment_identifiers_data.items():
+                    temp_manager.set_data(f"identifiers/{segment}/{key}", value)
+            
+            # Create VerificationManager and run verification
+            manager = VerificationManager(config)
+            manager.verify_all(temp_manager)
+            
+            # Extract verified hits
+            verified_hits = temp_manager.get_data(f"verification/{segment}/verified_hits", [])
+            
+            return {
+                "segment": segment,
+                "verified_hits": verified_hits,
+            }
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            # Also clean up WAL/SHM files if they exist
+            for suffix in ['-wal', '-shm']:
+                wal_path = temp_path + suffix
+                if os.path.exists(wal_path):
+                    os.unlink(wal_path)
+                    
+    except Exception as e:
+        logger.error(f"Verification worker failed for {segment}: {e}")
+        return None

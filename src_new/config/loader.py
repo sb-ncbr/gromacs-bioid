@@ -23,6 +23,10 @@ class ExecutorConfig:
     n_threads: int = 10
     tps: int = 100
     emit_queue_stats: bool = True
+    # Parallelism feature toggles (default False for backward compatibility)
+    signatures_parallel: bool = False
+    identifiers_parallel: bool = False
+    verification_parallel: bool = False
 
 
 @dataclass
@@ -386,6 +390,29 @@ class RunConfig:
                     self.override(path, value)
         
         walk(nested)
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> RunConfig:
+        """Reconstruct RunConfig from a dictionary (e.g., from JSON).
+        
+        Args:
+            d: Dictionary with config structure from to_dict().
+            
+        Returns:
+            New RunConfig instance with values from the dictionary.
+        """
+        config = cls()
+        for section_name, section_data in d.items():
+            if section_name.startswith("_"):
+                continue
+            if not hasattr(config, section_name):
+                continue
+            section_obj = getattr(config, section_name)
+            if hasattr(section_obj, "__dataclass_fields__"):
+                for field_name, field_value in section_data.items():
+                    if hasattr(section_obj, field_name):
+                        setattr(section_obj, field_name, field_value)
+        return config
 
     def to_dict(self) -> dict[str, Any]:
         """Convert config to a JSON-serializable dictionary."""

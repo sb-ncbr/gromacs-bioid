@@ -849,3 +849,57 @@ class TestSegmentFiltering:
         # Should have no signatures
         assert len(json_response["signatures"]) == 0
         assert json_response["attempted_generators"] == {}
+
+class TestConfigEndpoints:
+    """Tests for the GET /runs/config/default and /runs/config/parallel-default endpoints."""
+    
+    def test_get_config_default_returns_json(self, client: TestClient) -> None:
+        """Test that /runs/config/default returns valid JSON with status 200."""
+        response = client.get("/runs/config/default")
+        assert response.status_code == 200
+        
+        # Verify it's valid JSON
+        json_response = response.json()
+        assert isinstance(json_response, dict)
+        
+        # Verify expected sections exist
+        assert "executor" in json_response
+        assert "loader" in json_response
+        assert "signatures" in json_response
+        assert "identifiers" in json_response
+        assert "verification" in json_response
+        assert "timeouts" in json_response
+    
+    def test_get_config_parallel_default(self, client: TestClient) -> None:
+        """Test that /runs/config/parallel-default returns config with parallelism enabled."""
+        response = client.get("/runs/config/parallel-default")
+        assert response.status_code == 200
+        
+        json_response = response.json()
+        assert isinstance(json_response, dict)
+        
+        # Verify parallelism flags are enabled
+        assert json_response.get("executor", {}).get("signatures_parallel") is True
+        assert json_response.get("executor", {}).get("identifiers_parallel") is True
+        assert json_response.get("executor", {}).get("verification_parallel") is True
+    
+    def test_get_config_default_structure(self, client: TestClient) -> None:
+        """Test that /runs/config/default returns expected structure."""
+        response = client.get("/runs/config/default")
+        assert response.status_code == 200
+        
+        json_response = response.json()
+        
+        # Verify executor section has expected fields
+        executor = json_response.get("executor", {})
+        assert "n_threads" in executor
+        assert "tps" in executor
+        assert "emit_queue_stats" in executor
+        assert "signatures_parallel" in executor
+        assert "identifiers_parallel" in executor
+        assert "verification_parallel" in executor
+        
+        # Verify default parallelism is False
+        assert executor.get("signatures_parallel") is False
+        assert executor.get("identifiers_parallel") is False
+        assert executor.get("verification_parallel") is False

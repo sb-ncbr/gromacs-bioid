@@ -14,6 +14,114 @@ interface RunListItem {
     run_name?: string | null;
 }
 
+const MINIMAL_DEFAULT_CONFIG = {
+    executor: {
+        n_threads: 10,
+        tps: 100,
+        emit_queue_stats: true,
+        signatures_parallel: false,
+        identifiers_parallel: false,
+        verification_parallel: false,
+    },
+    loader: {
+        tpr_resid_from_one: true,
+        guess_missing_elements: true,
+        guess_missing_masses: true,
+        guess_missing_names: true,
+        guess_missing_bonds: false,
+        element_mass_tolerance: 0.01,
+        bond_guess_vdw_factor: 0.55,
+    },
+    signatures: {
+        overwrite_existing: false,
+        generation_attempts: 10,
+        smiles_maximum_number_of_atoms: 250,
+        fasta_map_determine_sequence_partial_mode: false,
+        fasta_map_determine_sequence_strict_mode: false,
+        name_minimum_length: 1,
+        smiles: true,
+        smiles_not_sanitized: true,
+        atom: true,
+        fasta_map_protein: true,
+        fasta_map_nucleic: true,
+        fasta_resname_protein: true,
+        fasta_resname_nucleic: true,
+        pdb_protein: true,
+        pdb_nucleic: true,
+        pdb_not_sanitized_protein: true,
+        pdb_not_sanitized_nucleic: true,
+        pdb_backbone_protein: true,
+        pdb_backbone_nucleic: true,
+        pdb_backbone_not_sanitized_protein: true,
+        pdb_backbone_not_sanitized_nucleic: true,
+        name_chain: true,
+        name_molecule: true,
+        name_segment: true,
+        fingerprint: true,
+        inchi_key: true,
+        morgan_fingerprint: true,
+        selfies: true,
+        molecular_formula: true,
+        tdi: true,
+        lipid_shorthand: true,
+        glycan_composition: true,
+        mmcif: true,
+    },
+    identifiers: {
+        overwrite_existing: false,
+        blast_pdb_protein: true,
+        blast_pdb_protein_similarity: true,
+        blast_uniprot: true,
+        blast_uniprot_similarity: true,
+        blast_pdb_nucleic: true,
+        blast_pdb_nucleic_similarity: true,
+        pdb_struct_protein: true,
+        pdb_struct_protein_similarity: true,
+        pdb_struct_nucleotide: true,
+        pdb_struct_nucleotide_similarity: true,
+        alphafind_struct: true,
+        alphafind_struct_similarity: true,
+        chembl_struct: true,
+        chembl_struct_similarity: true,
+        pubchem_struct: true,
+        pubchem_struct_similarity: true,
+        atom: true,
+        atom_similarity: false,
+        idsm_pubchem: true,
+        idsm_pubchem_similarity: true,
+        idsm_chembl: true,
+        idsm_chembl_similarity: true,
+        idsm_chebi: true,
+        idsm_chebi_similarity: true,
+        name_ccd: true,
+        name_ccd_similarity: false,
+        name_maps: true,
+        name_maps_similarity: false,
+        name_manual: true,
+        name_manual_similarity: false,
+    },
+    verification: {
+        verify_top_n: 100,
+        similarity_top_n: 10,
+        enable_annotation_quality: true,
+        resolver_weight: 0.4,
+        similarity_weight: 0.4,
+        annotation_weight: 0.2,
+        tm_score_threshold: 0.5,
+        min_final_confidence: 0.0,
+    },
+    timeouts: {
+        global_timeout_s: 600,
+        input_timeout_s: 5,
+        create_timeout_s: 5,
+        load_timeout_s: 300,
+        signatures_timeout_s: 2400,
+        identifiers_timeout_s: 1200,
+        summarize_timeout_s: 1200,
+        metadata_timeout_s: 1200,
+    },
+}
+
 const Frontpage = () => {
     const navigate = useNavigate()
 
@@ -47,6 +155,7 @@ const Frontpage = () => {
     const [editedConfig, setEditedConfig] = useState<Record<string, any>>({})
     const [runName, setRunName] = useState<string>("")
     const [configDialogOpen, setConfigDialogOpen] = useState(false)
+    const [fastModeEnabled, setFastModeEnabled] = useState(false)
 
     useEffect(() => {
         fetchRuns()
@@ -72,10 +181,28 @@ const Frontpage = () => {
                 const data = await res.json()
                 setDefaultConfig(data)
                 setEditedConfig(data)
+            } else {
+                console.error("Failed to fetch default config: status", res.status)
+                const body = await res.text()
+                console.error("Response body:", body)
+                setDefaultConfig(MINIMAL_DEFAULT_CONFIG)
+                setEditedConfig(MINIMAL_DEFAULT_CONFIG)
             }
         } catch (err) {
             console.error("Failed to fetch default config:", err)
+            setDefaultConfig(MINIMAL_DEFAULT_CONFIG)
+            setEditedConfig(MINIMAL_DEFAULT_CONFIG)
         }
+    }
+
+    const setParallelFlags = (config: Record<string, any>, enabled: boolean) => {
+        const updated = { ...config }
+        if (!updated.executor) updated.executor = {}
+        updated.executor = { ...updated.executor }
+        updated.executor.signatures_parallel = enabled
+        updated.executor.identifiers_parallel = enabled
+        updated.executor.verification_parallel = enabled
+        return updated
     }
 
     const clearFile = (file: FileWithPath) => {
@@ -97,8 +224,8 @@ const Frontpage = () => {
             data.append('run_name', runName)
         }
         
-        // Send customized config only if enabled
-        if (customConfigEnabled && editedConfig) {
+        // Send customized config if custom config or fast mode is enabled
+        if ((customConfigEnabled || fastModeEnabled) && editedConfig) {
             data.append('config_json', JSON.stringify(editedConfig))
         }
 
@@ -240,8 +367,8 @@ const Frontpage = () => {
                                                 const checked = e.target.checked
                                                 setCustomConfigEnabled(checked)
                                                 if (!checked) {
-                                                    // Reset to default config when toggled off
-                                                    setEditedConfig(defaultConfig || {})
+                                                    setEditedConfig(defaultConfig || MINIMAL_DEFAULT_CONFIG)
+                                                    setFastModeEnabled(false)
                                                 }
                                                 setConfigDialogOpen(checked)
                                             }}
@@ -254,6 +381,24 @@ const Frontpage = () => {
                                         Edit Config
                                     </Button>
                                 )}
+                                <FormControlLabel
+                                    control={
+                                        <Switch
+                                            checked={fastModeEnabled}
+                                            onChange={(e) => {
+                                                const checked = e.target.checked
+                                                setFastModeEnabled(checked)
+                                                if (checked) {
+                                                    setCustomConfigEnabled(true)
+                                                    setEditedConfig(prev => setParallelFlags(prev, true))
+                                                } else {
+                                                    setEditedConfig(prev => setParallelFlags(prev, false))
+                                                }
+                                            }}
+                                        />
+                                    }
+                                    label="Run in Fast Mode (parallel)"
+                                />
                             </Stack>
                         </Stack>
 
@@ -266,8 +411,12 @@ const Frontpage = () => {
                         >
                             <DialogTitle>Customize Configuration</DialogTitle>
                             <DialogContent>
-                                {defaultConfig && (
-                                    <ConfigEditor config={defaultConfig} onChange={setEditedConfig} />
+                                {editedConfig && Object.keys(editedConfig).length > 0 ? (
+                                    <ConfigEditor config={editedConfig} onChange={setEditedConfig} />
+                                ) : (
+                                    <Typography variant="body2" color="text.secondary">
+                                        Failed to load configuration. Using fallback defaults.
+                                    </Typography>
                                 )}
                             </DialogContent>
                             <DialogActions>

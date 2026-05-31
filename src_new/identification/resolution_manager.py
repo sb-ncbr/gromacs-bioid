@@ -12,6 +12,36 @@ from .registry import IdentifierRegistry
 
 logger = logging.getLogger("identifier")
 
+_CANONICAL_SIGNATURE_TYPES: dict[str, str] = {
+    "smiles": "smiles",
+    "smiles_not_sanitized": "smiles",
+    "inchi_key": "inchikey",
+    "morgan_fingerprint": "morgan_fingerprint",
+    "selfies": "selfies",
+    "molecular_formula": "formula",
+    "fasta_map_protein": "residue_sequence_protein",
+    "fasta_map_nucleic": "residue_sequence_nucleotide",
+    "fasta_resname_protein": "residue_sequence_protein",
+    "fasta_resname_nucleic": "residue_sequence_nucleotide",
+    "pdb_protein": "pdb_protein",
+    "pdb_not_sanitized_protein": "pdb_protein",
+    "pdb_backbone_protein": "pdb_protein",
+    "pdb_backbone_not_sanitized_protein": "pdb_protein",
+    "pdb_nucleic": "pdb_nucleic",
+    "pdb_not_sanitized_nucleic": "pdb_nucleic",
+    "pdb_backbone_nucleic": "pdb_nucleic",
+    "pdb_backbone_not_sanitized_nucleic": "pdb_nucleic",
+    "tdi": "3di_sequence",
+    "lipid_shorthand": "lipid_shorthand",
+    "glycan_composition": "glycan_composition",
+    "mmcif": "mmcif",
+    "name_chain": "name",
+    "name_molecule": "name",
+    "name_segment": "name",
+    "atom": "element",
+    "fingerprint": "hash",
+}
+
 
 class IdentifierResolutionManager:
     """Manager for resolving identifiers from signatures in results.
@@ -72,8 +102,11 @@ class IdentifierResolutionManager:
             signature_type = None
         
         if signature_type is None:
-            # Fallback: old heuristic
-            signature_type = signature_generator_name.lower().replace("_", "")
+            # Fallback: use canonical mapping
+            signature_type = _CANONICAL_SIGNATURE_TYPES.get(signature_generator_name)
+        if signature_type is None:
+            logger.warning(f"Unknown signature generator '{signature_generator_name}', cannot determine signature type. Skipping.")
+            return False
         
         # Use provided cache or lazy-initialized one
         if cache is None:

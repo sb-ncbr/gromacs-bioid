@@ -20,6 +20,8 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ config, onChange }) => {
     const [localConfig, setLocalConfig] = useState<Record<string, any>>({})
 
     useEffect(() => {
+        // Early return if config is null/undefined
+        if (!config) return
         // Initialize local state from prop, filtering out private keys
         const filtered: Record<string, any> = {}
         for (const [key, value] of Object.entries(config)) {

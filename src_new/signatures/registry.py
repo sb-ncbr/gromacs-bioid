@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from .base import SignatureGenerator
 from ..config.loader import SignaturesConfig
+
+logger = logging.getLogger("base")
 
 
 class SignatureRegistry:
@@ -44,6 +47,17 @@ def get_signature_type_map(config: SignaturesConfig) -> dict[str, str]:
     return {gen.name: gen.signature_type for gen in generators}
 
 
+def _try_import(module_name: str, class_name: str):
+    """Try to import a class, returning None if the module is not available."""
+    try:
+        import importlib
+        module = importlib.import_module(module_name)
+        return getattr(module, class_name)
+    except ImportError as e:
+        logger.debug(f"Optional generator not available: {module_name}.{class_name}: {e}")
+        return None
+
+
 def get_default_generators(config: SignaturesConfig) -> list[SignatureGenerator]:
     """Get the default list of signature generators in a sensible order.
     
@@ -77,12 +91,14 @@ def get_default_generators(config: SignaturesConfig) -> list[SignatureGenerator]
     from .generators.fingerprint import FingerprintGenerator
     from .generators.inchi import InchiKeyGenerator
     from .generators.morgan import MorganFingerprintGenerator
-    from .generators.selfies import SelfiesGenerator
     from .generators.formula import MolecularFormulaGenerator
     from .generators.tdi import ThreeDiGenerator
     from .generators.lipid import LipidShorthandGenerator
     from .generators.glycan import GlycanCompositionGenerator
     from .generators.mmcif import MmCifGenerator
+    
+    # Optional generators - imported lazily with full module path
+    SelfiesGenerator = _try_import("src_new.signatures.generators.selfies", "SelfiesGenerator")
     
     generators: list[SignatureGenerator] = []
     
@@ -91,7 +107,8 @@ def get_default_generators(config: SignaturesConfig) -> list[SignatureGenerator]
     generators.append(SimpleSmilesGeneratorNoSanitize(config))
     generators.append(InchiKeyGenerator(config))
     generators.append(MorganFingerprintGenerator(config))
-    generators.append(SelfiesGenerator(config))
+    if SelfiesGenerator:
+        generators.append(SelfiesGenerator(config))
     generators.append(MolecularFormulaGenerator(config))
     
     generators.append(MapFastaGeneratorProtein(config))

@@ -27,7 +27,7 @@ def create_empty_cache_if_not_exists(cache_path: str) -> None:
     if directory_path and not os.path.exists(directory_path):
         os.makedirs(directory_path)
 
-    with sqlite3.connect(cache_path) as conn:
+    with sqlite3.connect(cache_path, timeout=30.0) as conn:
         conn.execute(
             """CREATE TABLE "CACHE_IDENTITY" (
                         "RESOLVER_NAME"	TEXT NOT NULL,
@@ -76,7 +76,9 @@ class ResolverCache:
             self._cache_path = os.path.join(cache_directory, cache_file)
             
             create_empty_cache_if_not_exists(self._cache_path)
-            self._conn = sqlite3.connect(self._cache_path)
+            self._conn = sqlite3.connect(self._cache_path, timeout=30.0)
+            # Enable WAL mode for better concurrent access
+            self._conn.execute("PRAGMA journal_mode=WAL")
         
         return self._conn
     

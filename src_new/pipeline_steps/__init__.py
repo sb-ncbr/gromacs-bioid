@@ -111,17 +111,17 @@ def _analyze_universe(context):
 
 
 def _generate_signatures(context):
-    """Generate signatures for all segments."""
+    """Generate signatures for all segments with optional parallelism."""
     from ..signatures.registry import get_default_generators
+    from ..signatures.snapshot import build_signature_snapshot, SegmentSignatureSnapshot
+    from ..executor.parallel import run_with_process_pool
+    from .workers import _generate_signatures_worker
     
     facade = context.get_value("facade")
     store = context.get_value("fragment_store")
     
     if not facade or not store:
         context.fail("missing_facade", "No facade available for signature generation")
-    
-    # Build the registry with config
-    generators = get_default_generators(context.config.signatures)
     
     # Get all instances from store
     all_instances = store.get_all_instances()
@@ -132,8 +132,8 @@ def _generate_signatures(context):
         if inst.segment_ids:
             segment_to_instance[inst.segment_ids[0]] = inst
     
-    generated_count = 0
-    
+    # Build snapshots for all segments
+    snapshots = []
     for segment_name in sorted(facade.get_segments()):
         fragment = facade.get_fragment(segment_name)
         instance = segment_to_instance.get(segment_name)
@@ -142,65 +142,257 @@ def _generate_signatures(context):
             logger.warning(f"No MoleculeInstance found for segment {segment_name}, skipping signatures")
             continue
         
-        attempted_generators = []
+        try:
+            snapshot = build_signature_snapshot(segment_name, fragment, instance, facade)
+            snapshots.append(snapshot)
+        except Exception as e:
+            logger.warning(f"Failed to build snapshot for {segment_name}: {e}")
+            continue
+    
+    if not snapshots:
+        return StepResult(summary={"generated": True, "segments": 0, "signatures": 0})
+    
+    # Convert config to dict for workers
+    config_dict = context.config.to_dict()
+    
+    # Decide whether to use parallel execution
+    use_parallel = (
+        context.config.executor.signatures_parallel and 
+        len(snapshots) > 1
+    )
+    
+    max_workers = context.config.executor.n_threads
+    
+    if use_parallel:
+        # Run in process pool
+        items = [(s.__dict__, config_dict) for s in snapshots]
+        results = run_with_process_pool(max_workers, _generate_signatures_worker, items)
+    else:
+        # Direct serial execution: use real objects, skip snapshot reconstruction
+        from ..signatures.registry import get_default_generators
+        generators = get_default_generators(context.config.signatures)
+        results = []
+        for segment_name in sorted(facade.get_segments()):
+            instance = segment_to_instance.get(segment_name)
+            fragment = facade.get_fragment(segment_name)
+            if instance is None:
+                continue
+            generated = {}
+            attempted = []
+            errors = []
+            for generator in generators:
+                try:
+                    if generator.is_applicable(instance, fragment, facade):
+                        attempted.append(generator.name)
+                        sig = generator.generate(instance, fragment, facade)
+                        if sig is not None:
+                            generated[generator.name] = sig
+                except Exception as exc:
+                    errors.append({"generator": generator.name, "error": str(exc)})
+                    continue
+            results.append({
+                "segment_name": segment_name,
+                "generated": generated,
+                "attempted": attempted,
+                "errors": errors,
+            })
+    
+    # Merge results into context.results in main thread
+    generated_count = 0
+    for result in results:
+        if result is None:
+            continue
         
-        for generator in generators:
-            if generator.is_applicable(instance, fragment, facade):
-                attempted_generators.append(generator.name)
-                sig = generator.generate(instance, fragment, facade)
-                if sig is not None:
-                    context.results.set_data(f"signatures/{segment_name}/generated/{generator.name}", sig)
-                    generated_count += 1
+        segment_name = result["segment_name"]
         
-        # Record which generators were attempted
-        if attempted_generators:
-            context.results.set_data(f"signatures/{segment_name}/attempted", attempted_generators)
+        # Record warnings from errors
+        for error in result.get("errors", []):
+            gen_name = error.get("generator", "unknown")
+            error_msg = error.get("error", "unknown error")
+            context.add_warning("signature_generator_failed", f"{gen_name}: {error_msg}")
+        
+        for gen_name, sig in result["generated"].items():
+            context.results.set_data(f"signatures/{segment_name}/generated/{gen_name}", sig)
+            generated_count += 1
+        
+        if result.get("attempted"):
+            context.results.set_data(f"signatures/{segment_name}/attempted", result["attempted"])
     
     return StepResult(
-        summary={"generated": True, "segments": len(facade.get_segments()), "signatures": generated_count}
+        summary={"generated": True, "segments": len(snapshots), "signatures": generated_count}
     )
 
 
 def _identify_molecules(context):
-    """Identify molecules from generated signatures."""
-    from ..identification.registry import get_default_resolvers, IdentifierRegistry
-    from ..identification.resolution_manager import IdentifierResolutionManager
+    """Identify molecules from generated signatures with optional parallelism."""
     from ..signatures.registry import get_signature_type_map
+    from ..executor.parallel import run_with_thread_pool
+    from .workers import _identify_molecules_worker
     
     facade = context.get_value("facade")
     if not facade:
         context.fail("missing_facade", "No facade available for identification")
     
-    # Build registry and manager
-    resolvers = get_default_resolvers(context.config)
-    registry = IdentifierRegistry(resolvers)
-    
+    # Get signature type map
     sig_type_map = get_signature_type_map(context.config.signatures)
-    manager = IdentifierResolutionManager(
-        registry, context.config, signature_type_map=sig_type_map
+    
+    # Get all segments from signatures data
+    signatures_data = context.results.get_data("signatures")
+    if not signatures_data or not isinstance(signatures_data, dict):
+        logger.warning("No signatures data found in results")
+        return StepResult(summary={"identified": True})
+    
+    # Defensive: log warnings for missing generator entries
+    for fragment_name in signatures_data.keys():
+        fragment_data = signatures_data[fragment_name]
+        if isinstance(fragment_data, dict):
+            generated = fragment_data.get('generated', {})
+            if isinstance(generated, dict):
+                for gen_name in generated.keys():
+                    if gen_name not in sig_type_map:
+                        logger.warning(f"Signature type map missing entry for '{gen_name}'")
+    
+    # Build work items: (fragment_name, valid_sigs, config_dict, sig_type_map) for parallel,
+    # or just (fragment_name, valid_sigs) for serial
+    items_parallel = []
+    items_serial = []
+    for fragment_name in sorted(signatures_data.keys()):
+        generated = signatures_data[fragment_name].get("generated", {})
+        if not generated:
+            continue
+        
+        # Filter out empty signatures
+        valid_sigs = {k: v for k, v in generated.items() if v}
+        if not valid_sigs:
+            continue
+        
+        items_parallel.append((fragment_name, valid_sigs, context.config.to_dict(), sig_type_map))
+        items_serial.append((fragment_name, valid_sigs))
+    
+    if not items_parallel:
+        return StepResult(summary={"identified": True})
+    
+    # Decide whether to use parallel execution
+    use_parallel = (
+        context.config.executor.identifiers_parallel and 
+        len(items_parallel) > 1
     )
     
-    # Run resolution
-    manager.resolve_all(context.results, working_directory=str(context.working_directory))
+    max_workers = context.config.executor.n_threads
+    
+    if use_parallel:
+        # Run in thread pool
+        results = run_with_thread_pool(max_workers, _identify_molecules_worker, items_parallel)
+    else:
+        # Direct serial execution: use real manager (writes directly to context.results)
+        from ..identification.registry import get_default_resolvers, IdentifierRegistry
+        from ..identification.cache_manager import ResolverCache
+        from ..identification.resolution_manager import IdentifierResolutionManager
+        from ..signatures.registry import get_signature_type_map
+
+        sig_type_map = get_signature_type_map(context.config.signatures)
+        resolvers = get_default_resolvers(context.config)
+        registry = IdentifierRegistry(resolvers)
+        cache = ResolverCache(context.config)
+        manager = IdentifierResolutionManager(registry, context.config, signature_type_map=sig_type_map)
+
+        results = []
+        for fragment_name, valid_sigs in items_serial:
+            fragment_result = {"fragment_name": fragment_name, "results": {}, "errors": []}
+            for generator_name, signature in valid_sigs.items():
+                try:
+                    hits_found = manager.resolve(
+                        results=context.results,
+                        segment=fragment_name,
+                        signature_generator_name=generator_name,
+                        signature=signature,
+                        cache=cache,
+                        working_directory=str(context.working_directory),
+                    )
+                except Exception as exc:
+                    fragment_result["errors"].append({"generator": generator_name, "error": str(exc)})
+                    continue
+            # In serial mode, manager.resolve() writes directly to context.results
+            # so we just return an empty results dict and errors
+            results.append(fragment_result)
+    
+    # Merge results into context.results in main thread
+    for result in results:
+        if result is None:
+            continue
+        
+        fragment_name = result["fragment_name"]
+        
+        # Record warnings from errors
+        for error in result.get("errors", []):
+            resolver_name = error.get("resolver", "unknown")
+            gen_name = error.get("generator", "unknown")
+            error_msg = error.get("error", "unknown error")
+            context.add_warning("identifier_resolver_failed", f"{resolver_name} ({gen_name}): {error_msg}")
+        
+        for path, value in result["results"].items():
+            context.results.set_data(path, value)
     
     return StepResult(
         summary={"identified": True}
     )
 
 
-
-
 def _verify_results(context):
-    """Verify identification results using canonical signatures."""
-    from ..verification.manager import VerificationManager
+    """Verify identification results with optional parallelism."""
+    from ..executor.parallel import run_with_thread_pool
+    from .workers import _verify_results_worker
     
     facade = context.get_value("facade")
     if not facade:
         context.fail("missing_facade", "No facade available for verification")
     
-    # Create VerificationManager and run verification
-    manager = VerificationManager(context.config)
-    manager.verify_all(context.results)
+    # Get all segments from identifiers data
+    identifiers_data = context.results.get_data("identifiers")
+    if not identifiers_data or not isinstance(identifiers_data, dict):
+        return StepResult(summary={"verified": True})
+    
+    # Build work items: (segment, segment_identifiers_data, config_dict)
+    items = []
+    for segment in sorted(identifiers_data.keys()):
+        segment_data = identifiers_data[segment]
+        items.append((segment, segment_data, context.config.to_dict()))
+    
+    if not items:
+        return StepResult(summary={"verified": True})
+    
+    # Decide whether to use parallel execution
+    use_parallel = (
+        context.config.executor.verification_parallel and 
+        len(items) > 1
+    )
+    
+    max_workers = context.config.executor.n_threads
+    
+    if use_parallel:
+        # Run in thread pool
+        results = run_with_thread_pool(max_workers, _verify_results_worker, items)
+    else:
+        # Run serially using same worker function
+        results = []
+        for item in items:
+            result = _verify_results_worker(item)
+            results.append(result)
+    
+    # Merge results into context.results in main thread
+    for result in results:
+        if result is None:
+            continue
+        
+        segment = result["segment"]
+        verified_hits = result["verified_hits"]
+        
+        # Record warnings from errors
+        for error in result.get("errors", []):
+            error_msg = error.get("error", "unknown error")
+            context.add_warning("verification_failed", f"{segment}: {error_msg}")
+        
+        context.results.set_data(f"verification/{segment}/verified_hits", verified_hits)
     
     return StepResult(summary={"verified": True})
 

@@ -34,10 +34,18 @@ class MapFastaGeneratorProtein(SignatureGenerator):
         segment_name = fragment.segids[0] if len(fragment.segids) > 0 else ""
         props = facade.get_segment_properties(segment_name)
         
-        return (
-            props.flags.get(SegmentProperty.IS_PROTEIN.value, False)
-            and props.flags.get(SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value, False)
-        )
+        if not props.flags.get(SegmentProperty.IS_PROTEIN.value, False):
+            return False
+        if not props.flags.get(SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value, False):
+            return False
+        
+        # Map-based approach requires bond data to build adjacency matrix
+        # Without bonds, fasta_resname_protein can still produce a sequence
+        has_bonds = hasattr(fragment, 'bonds') and hasattr(fragment.bonds, 'indices') and len(fragment.bonds.indices) > 0
+        if not has_bonds:
+            return False
+        
+        return True
     
     def _generate(
         self,
@@ -66,10 +74,18 @@ class MapFastaGeneratorNucleotide(SignatureGenerator):
         segment_name = fragment.segids[0] if len(fragment.segids) > 0 else ""
         props = facade.get_segment_properties(segment_name)
         
-        return (
-            props.flags.get(SegmentProperty.IS_NUCLEIC.value, False)
-            and not props.flags.get(SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value, False)
-        )
+        if not props.flags.get(SegmentProperty.IS_NUCLEIC.value, False):
+            return False
+        if not props.flags.get(SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value, False):
+            return False
+        
+        # Map-based approach requires bond data to build adjacency matrix
+        # Without bonds, fasta_resname_nucleic can still produce a sequence
+        has_bonds = hasattr(fragment, 'bonds') and hasattr(fragment.bonds, 'indices') and len(fragment.bonds.indices) > 0
+        if not has_bonds:
+            return False
+        
+        return True
     
     def _generate(
         self,
