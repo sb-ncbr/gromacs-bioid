@@ -106,7 +106,7 @@ class LoadedUniverse:
             selected: AtomGroup for the segment.
             
         Returns:
-            True if all residues are known protein or nucleic acid residues.
+            True if >= 80% of residues are known protein or nucleic acid residues.
         """
         if not hasattr(selected.atoms, 'resnames'):
             return False
@@ -115,12 +115,14 @@ class LoadedUniverse:
         if len(resnames) == 0:
             return False
         
-        for rn in resnames:
-            rn_upper = rn.upper()
-            if rn_upper not in KNOWN_RESIDUE_CODES and rn_upper not in KNOWN_NUCLEIC_ACIDS_CODES:
-                return False
+        # Count how many residues are known protein/nucleic acid
+        known_count = sum(
+            1 for rn in resnames
+            if rn.upper() in KNOWN_RESIDUE_CODES or rn.upper() in KNOWN_NUCLEIC_ACIDS_CODES
+        )
         
-        return True
+        # Return True if >= 80% are known
+        return known_count / len(resnames) >= 0.8
     
     def _analyze(self) -> None:
         """Analyze all segments in the universe."""
@@ -144,7 +146,7 @@ class LoadedUniverse:
             if fragment is selected:
                 # Fallback case: no bonds or full segment returned
                 props.atom_count_fragment = len(selected.atoms)
-                props.bond_count_fragment = 0
+                props.bond_count_fragment = len(selected.bonds) if hasattr(selected.atoms, "bonds") else 0
                 try:
                     fragments = selected.fragments
                 except MDAnalysis.exceptions.NoDataError:
@@ -204,18 +206,26 @@ class LoadedUniverse:
         else:
             flags[SegmentProperty.HAS_UNIQUE_NAMES.value] = False
         
-        # IS_PROTEIN
+        # IS_PROTEIN (use 80% threshold like _is_polymer_segment)
         if hasattr(selected.atoms, 'resnames'):
-            flags[SegmentProperty.IS_PROTEIN.value] = all(
-                rn.upper() in KNOWN_RESIDUE_CODES for rn in selected.atoms.resnames
+            resnames = selected.atoms.resnames
+            known_count = sum(
+                1 for rn in resnames if rn.upper() in KNOWN_RESIDUE_CODES
+            )
+            flags[SegmentProperty.IS_PROTEIN.value] = (
+                len(resnames) > 0 and known_count / len(resnames) >= 0.8
             )
         else:
             flags[SegmentProperty.IS_PROTEIN.value] = False
         
-        # IS_NUCLEIC
+        # IS_NUCLEIC (use 80% threshold like _is_polymer_segment)
         if hasattr(selected.atoms, 'resnames'):
-            flags[SegmentProperty.IS_NUCLEIC.value] = all(
-                rn.upper() in KNOWN_NUCLEIC_ACIDS_CODES for rn in selected.atoms.resnames
+            resnames = selected.atoms.resnames
+            known_count = sum(
+                1 for rn in resnames if rn.upper() in KNOWN_NUCLEIC_ACIDS_CODES
+            )
+            flags[SegmentProperty.IS_NUCLEIC.value] = (
+                len(resnames) > 0 and known_count / len(resnames) >= 0.8
             )
         else:
             flags[SegmentProperty.IS_NUCLEIC.value] = False
@@ -271,6 +281,13 @@ class LoadedUniverse:
             fragments = selected.fragments
         except MDAnalysis.exceptions.NoDataError:
             fragments = []
+        
+        # Filter out fragments that span multiple segments (e.g., cross-segment disulfide bonds)
+        if fragments:
+            fragments = [
+                f for f in fragments
+                if len(set(f.atoms.segids)) == 1 and f.atoms.segids[0] == segment_name
+            ]
         
         if not fragments:
             return selected  # fallback when no bonds

@@ -48,6 +48,10 @@ class TopologyRepair:
             self.fix_names()
         if self.config.loader.guess_missing_bonds:
             self.guess_bonds()
+        
+        # Deduplicate segids to prevent protein and water chains from merging
+        self._deduplicate_segids()
+        
         return self.report
 
     def _has_elements(self) -> bool:
@@ -324,3 +328,37 @@ class TopologyRepair:
         self.report.bonds_guessed = count
         logger.info(f"Guessed {count} bonds")
         return count
+
+    def _deduplicate_segids(self) -> None:
+        """Rename duplicate segids so each segment has a unique identifier.
+        
+        PDB files sometimes assign the same chain ID to both a protein chain
+        and its associated water/ions. This merges them in MDAnalysis and
+        corrupts downstream analysis. We rename duplicates by appending an
+        index (e.g., 'A' -> 'A_1', 'A' -> 'A_2').
+        """
+        if not hasattr(self.u, 'segments') or len(self.u.segments) == 0:
+            return
+        
+        segid_list = [seg.segid for seg in self.u.segments]
+        segid_counts = {}
+        for sid in segid_list:
+            segid_counts[sid] = segid_counts.get(sid, 0) + 1
+        
+        # If no duplicates, nothing to do
+        if all(c == 1 for c in segid_counts.values()):
+            return
+        
+        # Build new segids: for duplicates, append occurrence index
+        occurrence = {sid: 0 for sid in segid_list}
+        new_segids_per_segment = []
+        for sid in segid_list:
+            occurrence[sid] += 1
+            if segid_counts[sid] > 1:
+                new_segids_per_segment.append(f"{sid}_{occurrence[sid]}")
+            else:
+                new_segids_per_segment.append(sid)
+        
+        # Assign segids to segments using the segments.segids setter
+        # MDAnalysis will automatically update atom-level segids
+        self.u.segments.segids = new_segids_per_segment

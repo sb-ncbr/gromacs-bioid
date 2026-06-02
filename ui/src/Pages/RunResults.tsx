@@ -278,6 +278,16 @@ const RunResults = () => {
                             </Tooltip>
                         </Box>
 
+                        {/* Low bond topology warning banner */}
+                        {statusData?.warnings?.some(w => w.code === 'insufficient_bonds') && (
+                            <Alert severity="warning" sx={{ mb: 2 }}>
+                                <AlertTitle>Low bond topology detected</AlertTitle>
+                                The input structure has very few chemical bonds defined. This usually happens with PDB files that lack CONECT records.{" "}
+                                <strong>Enable "guess_missing_bonds" in the loader configuration</strong>{" "}
+                                (Upload &rarr; Customize Config &rarr; Loader &rarr; Guess Missing Bonds) and re-run for proper molecule detection.
+                            </Alert>
+                        )}
+
                         {/* Failed banner */}
                         {isFailed && (
                             <Alert severity="error">

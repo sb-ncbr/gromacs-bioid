@@ -225,3 +225,78 @@ class TestFilterSegments:
         
         assert facade.get_segments() == {"seg_0_POPC"}
         assert "seg_1_SOL" not in facade.get_segments()
+
+
+
+
+class TestComputeFlagsThreshold:
+    """Tests for _compute_flags 80% threshold behavior."""
+    
+    def test_is_protein_with_90_percent_standard_residues(self):
+        """Test that a segment with 90% standard AA residues reports is_protein: true."""
+        from MDAnalysis import Universe
+        import numpy as np
+        
+        # Create universe with segment having 9 ALA + 1 HOH (90% protein)
+        # Each residue has 1 atom for simplicity, so we can control resnames per residue
+        n_residues = 10
+        n_atoms = n_residues  # 1 atom per residue
+        u = Universe.empty(n_atoms, n_residues=n_residues, n_segments=1,
+                           atom_resindex=list(range(n_residues)),
+                           trajectory=True)
+        u.add_TopologyAttr('names', [f"AT{i}" for i in range(n_atoms)])
+        u.add_TopologyAttr('resids', list(range(1, n_residues + 1)))
+        # 9 ALA + 1 HOH = 90% protein
+        resnames = ["ALA"] * 9 + ["HOH"]
+        u.add_TopologyAttr('resnames', resnames)
+        u.add_TopologyAttr('segids', ["A"])
+        u.add_TopologyAttr('elements', ["C"] * n_atoms)
+        
+        positions = np.array([[i, 0, 0] for i in range(n_atoms)], dtype=np.float32)
+        u.load_new(positions, format='memory')
+        
+        selected = u.select_atoms("segid A")
+        
+        from src_new.loader.universe_facade import KNOWN_RESIDUE_CODES
+        
+        resnames = selected.atoms.resnames
+        known_count = sum(
+            1 for rn in resnames if rn.upper() in KNOWN_RESIDUE_CODES
+        )
+        is_protein = len(resnames) > 0 and known_count / len(resnames) >= 0.8
+        
+        assert is_protein, f"Expected is_protein=True for 90% protein (got {known_count}/{len(resnames)} = {known_count/len(resnames):.2%})"
+    
+    def test_is_protein_with_70_percent_standard_residues(self):
+        """Test that a segment with 70% standard AA residues reports is_protein: false."""
+        from MDAnalysis import Universe
+        import numpy as np
+        
+        # Create universe with segment having 7 ALA + 3 HOH (70% protein)
+        n_residues = 10
+        n_atoms = n_residues  # 1 atom per residue
+        u = Universe.empty(n_atoms, n_residues=n_residues, n_segments=1,
+                           atom_resindex=list(range(n_residues)),
+                           trajectory=True)
+        u.add_TopologyAttr('names', [f"AT{i}" for i in range(n_atoms)])
+        u.add_TopologyAttr('resids', list(range(1, n_residues + 1)))
+        # 7 ALA + 3 HOH = 70% protein (below 80% threshold)
+        resnames = ["ALA"] * 7 + ["HOH"] * 3
+        u.add_TopologyAttr('resnames', resnames)
+        u.add_TopologyAttr('segids', ["A"])
+        u.add_TopologyAttr('elements', ["C"] * n_atoms)
+        
+        positions = np.array([[i, 0, 0] for i in range(n_atoms)], dtype=np.float32)
+        u.load_new(positions, format='memory')
+        
+        selected = u.select_atoms("segid A")
+        
+        from src_new.loader.universe_facade import KNOWN_RESIDUE_CODES
+        
+        resnames = selected.atoms.resnames
+        known_count = sum(
+            1 for rn in resnames if rn.upper() in KNOWN_RESIDUE_CODES
+        )
+        is_protein = len(resnames) > 0 and known_count / len(resnames) >= 0.8
+        
+        assert not is_protein, f"Expected is_protein=False for 70% protein (got {known_count}/{len(resnames)} = {known_count/len(resnames):.2%})"

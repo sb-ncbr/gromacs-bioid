@@ -16,11 +16,13 @@ AGENTS.md
     planner.md
     researcher.md
     programmer.md
+    debugger.md
   commands/
     work.md
     code.md
     research.md
     plan.md
+    debug.md
 ```
 
 ## Install
@@ -83,6 +85,7 @@ Expected agents:
 planner
 researcher
 programmer
+debugger
 ```
 
 ### 2. Planner should not edit
@@ -122,6 +125,14 @@ Expected: Programmer directly creates the file and reports verification.
 ```
 
 Expected: Researcher uses web tools and does not inspect repo files.
+
+### 6. Debugger test
+
+```text
+/debug Check if /app/runs exists in the bat3 worker pod
+```
+
+Expected: Debugger uses kubectl exec with ls and reports findings. No files are modified.
 
 ## If the programmer appears frozen
 

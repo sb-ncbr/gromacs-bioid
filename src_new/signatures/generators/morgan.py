@@ -80,6 +80,9 @@ class MorganFingerprintGenerator(SignatureGenerator):
         
         molecule = molecule_build.GetMol()
         
+        # Sanitize to initialize RingInfo and other properties
+        Chem.SanitizeMol(molecule)
+        
         # Try to determine bond orders
         try:
             charge = sum(atom.GetFormalCharge() for atom in molecule.GetAtoms())

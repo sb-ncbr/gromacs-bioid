@@ -66,6 +66,18 @@ def _repair_topology(context):
     repair = TopologyRepair(universe, context.config)
     report = repair.run()
 
+    # Check for insufficient bonds and warn if guessing was disabled
+    bond_count = len(universe.atoms.bonds) if hasattr(universe.atoms, 'bonds') else 0
+    atom_count = universe.atoms.n_atoms
+    if not repair._has_sufficient_bonds() and not context.config.loader.guess_missing_bonds:
+        context.add_warning(
+            "insufficient_bonds",
+            f"Bond topology appears insufficient ({bond_count} bonds for {atom_count} atoms). "
+            "Molecule detection and signature generation will likely fail. "
+            "Consider enabling 'guess_missing_bonds' in the loader configuration.",
+            details={"bond_count": bond_count, "atom_count": atom_count}
+        )
+
     context.record_data("repair/report", report.to_dict())
     return StepResult(
         summary={"repaired": True, **report.to_dict()},
@@ -187,6 +199,8 @@ def _generate_signatures(context):
                         sig = generator.generate(instance, fragment, facade)
                         if sig is not None:
                             generated[generator.name] = sig
+                        else:
+                            errors.append({"generator": generator.name, "error": "Generation returned None"})
                 except Exception as exc:
                     errors.append({"generator": generator.name, "error": str(exc)})
                     continue

@@ -49,8 +49,9 @@ class MmCifGenerator(SignatureGenerator):
             fragment.write(tmp_path, format="mmCIF")
             with open(tmp_path, "r", encoding="utf-8") as f:
                 return f.read()
-        except AttributeError:
+        except Exception:
             # Real AtomGroup missing write(), or MockAtomGroup without write() in stale deployment
+            # Also catches ValueError/RuntimeError when MDAnalysis writer is not found
             return self._generate_mmcif_fallback(fragment, tmp_path)
         finally:
             if os.path.exists(tmp_path):

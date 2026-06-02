@@ -252,3 +252,77 @@ class TestInvalidElementStrings:
         assert not repair._is_valid_element('')
         assert not repair._is_valid_element(' ')
         assert not repair._is_valid_element(None)
+
+
+
+
+
+
+
+class TestDeduplicateSegids:
+    """Tests for _deduplicate_segids method."""
+    
+    def _make_two_segment_universe(self, segids):
+        """Helper to create a universe with 2 segments and proper atom-segment mapping."""
+        from MDAnalysis import Universe
+        import numpy as np
+        
+        # Create empty universe with 6 atoms, 2 residues, 2 segments
+        u = Universe.empty(6, n_residues=2, n_segments=2,
+                           atom_resindex=[0, 0, 0, 1, 1, 1],  # atoms 0-2 in residue 0, atoms 3-5 in residue 1
+                           residue_segindex=[0, 1],  # residue 0 in segment 0, residue 1 in segment 1
+                           trajectory=True)
+        u.add_TopologyAttr('names', ['N', 'CA', 'C', 'OW', 'HW1', 'HW2'])
+        u.add_TopologyAttr('resids', [1, 2])
+        u.add_TopologyAttr('resnames', ['ALA', 'HOH'])
+        u.add_TopologyAttr('segids', segids)  # One segid per segment
+        
+        positions = np.array([[i, 0, 0] for i in range(6)], dtype=np.float32)
+        u.load_new(positions, format='memory')
+        return u
+    
+    def test_deduplicate_segids_renames_duplicates(self):
+        """Test that duplicate segids are renamed to unique values."""
+        from src_new.config.loader import RunConfig
+        
+        # Create universe with 2 segments sharing segid 'A'
+        u = self._make_two_segment_universe(['A', 'A'])
+        
+        repair = TopologyRepair(u, RunConfig())
+        repair._deduplicate_segids()
+        
+        segids = list(u.atoms.segids)
+        # First 3 atoms should be one unique segid, last 3 another
+        assert segids[0] != segids[3], f"Expected different segids, got {segids[0]} == {segids[3]}"
+        assert set(segids[:3]) == set([segids[0]]), f"Expected first 3 atoms to have same segid"
+        assert set(segids[3:]) == set([segids[3]]), f"Expected last 3 atoms to have same segid"
+    
+    def test_deduplicate_segids_no_duplicates(self):
+        """Test that segids are unchanged when there are no duplicates."""
+        from src_new.config.loader import RunConfig
+        
+        # Create universe with 2 segments with unique segids
+        u = self._make_two_segment_universe(['A', 'B'])
+        
+        repair = TopologyRepair(u, RunConfig())
+        repair._deduplicate_segids()
+        
+        segids = list(u.atoms.segids)
+        # Should remain unchanged
+        assert set(segids[:3]) == {"A"}
+        assert set(segids[3:]) == {"B"}
+    
+    def test_deduplicate_segids_in_run(self):
+        """Test that _deduplicate_segids is called during run()."""
+        from src_new.config.loader import RunConfig
+        
+        # Create universe with 2 segments sharing segid 'A'
+        u = self._make_two_segment_universe(['A', 'A'])
+        
+        config = RunConfig()
+        repair = TopologyRepair(u, config)
+        repair.run()
+        
+        segids = list(u.atoms.segids)
+        # Should have been deduplicated
+        assert segids[0] != segids[3], f"Expected different segids after run(), got {segids[0]} == {segids[3]}"
