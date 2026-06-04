@@ -26,6 +26,7 @@ permission:
     "*": deny
     researcher: allow
     programmer: allow
+    debugger: allow
 ---
 
 # Planner Agent

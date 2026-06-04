@@ -259,6 +259,31 @@ class TestInvalidElementStrings:
 
 
 
+class TestHasSufficientBonds:
+    """Tests for _has_sufficient_bonds method."""
+    
+    def test_no_bonds_returns_false(self):
+        """Test that _has_sufficient_bonds returns False when no bonds exist."""
+        u = _make_minimal_universe(4)
+        # No bonds in this universe
+        
+        repair = TopologyRepair(u, RunConfig())
+        assert not repair._has_sufficient_bonds()
+    
+    def test_sufficient_bonds_returns_true(self):
+        """Test that _has_sufficient_bonds returns True when bonds exist."""
+        u = _make_minimal_universe(4, with_elements=True)
+        
+        config = RunConfig()
+        config.loader.guess_missing_bonds = True
+        config.loader.bond_guess_vdw_factor = 0.55
+        
+        repair = TopologyRepair(u, config)
+        repair.guess_bonds()
+        
+        assert repair._has_sufficient_bonds()
+
+
 class TestDeduplicateSegids:
     """Tests for _deduplicate_segids method."""
     

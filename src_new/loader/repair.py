@@ -79,6 +79,15 @@ class TopologyRepair:
     def _has_bonds(self) -> bool:
         return hasattr(self.u.atoms, 'bonds') and len(self.u.atoms.bonds) > 0
 
+    def _has_sufficient_bonds(self) -> bool:
+        """Return True if the universe has enough bonds for molecule detection."""
+        if not self._has_bonds():
+            return False
+        bond_count = len(self.u.atoms.bonds)
+        atom_count = self.u.atoms.n_atoms
+        # Loose heuristic: fully bonded systems typically exceed 0.25 bonds/atom.
+        return bond_count >= atom_count * 0.25
+
     def guess_elements(self) -> int:
         """Guess missing elements. Returns count of atoms guessed."""
         if self._has_elements():
