@@ -1,6 +1,8 @@
 """Router for run-related endpoints."""
 
 from __future__ import annotations
+import errno
+import time
 
 import shutil
 import json
@@ -78,9 +80,27 @@ def load_results_json(run_id: str) -> Dict[str, Any]:
     if not results_path.exists():
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
     
-    with open(results_path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
+    # Retry on ESTALE (stale NFS file handle) up to 3 times
+    max_retries = 3
+    last_exception: Optional[Exception] = None
+    for attempt in range(max_retries):
+        try:
+            content = results_path.read_text(encoding="utf-8")
+            return json.loads(content)
+        except OSError as e:
+            last_exception = e
+            if e.errno == errno.ESTALE:
+                if attempt < max_retries - 1:
+                    time.sleep(0.1 * (attempt + 1))
+                    continue
+            raise
+        except json.JSONDecodeError as e:
+            raise HTTPException(status_code=500, detail=f"Invalid JSON in results file: {e}")
+    
+    # All retries exhausted (should not reach here)
+    if isinstance(last_exception, json.JSONDecodeError):
+        raise HTTPException(status_code=500, detail=f"Invalid JSON in results file: {last_exception}")
+    raise last_exception
 
 def resolve_artifact_paths(artifacts_dict: Dict[str, Any], run_id: str) -> Dict[str, Any]:
     """Resolve artifact paths to full paths with descriptions."""
@@ -210,8 +230,18 @@ async def list_runs() -> RunListResponse:
             continue
         
         try:
-            with open(results_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            # Retry once on ESTALE
+            data = None
+            for retry_attempt in range(2):
+                try:
+                    file_content = results_path.read_text(encoding="utf-8")
+                    data = json.loads(file_content)
+                    break
+                except OSError as e:
+                    if e.errno == errno.ESTALE and retry_attempt == 0:
+                        time.sleep(0.1)
+                        continue
+                    raise
             
             pipeline_data = data.get("pipeline", {})
             created_at = data.get("created_at", "")
@@ -228,8 +258,6 @@ async def list_runs() -> RunListResponse:
             continue
     
     return RunListResponse(runs=runs)
-
-
 
 @router.delete("/{run_id}")
 async def delete_run(run_id: str) -> dict:
