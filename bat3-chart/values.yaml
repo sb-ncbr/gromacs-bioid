@@ -57,7 +57,7 @@ storage:
     storageClass: "nfs-csi"
     accessMode: "ReadWriteMany"
   databasesData:
-    size: 50Gi
+    size: 2Ti
     storageClass: "nfs-csi"
     accessMode: "ReadWriteMany"
 

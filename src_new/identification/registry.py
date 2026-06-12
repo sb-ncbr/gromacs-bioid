@@ -9,7 +9,10 @@ from .resolvers.chembl import ChemblResolver
 from .resolvers.idsm import IDSMResolverPubchem, IDSMResolverChembl, IDSMResolverChebi
 from .resolvers.inchikey import InchiKeyResolver
 from .resolvers.formula import FormulaResolver
-from .resolvers.blast import BLASTResolverPDBAA, BLASTResolverPDBNT, BLASTResolverUNIPROT
+from .resolvers.blast import (
+    BLASTResolverPDBAA, BLASTResolverPDBNT, BLASTResolverUNIPROT,
+    BLASTResolverNR, BLASTResolverSWISSPROT
+)
 from .resolvers.pdb_struct import PDBStructResolverProtein, PDBStructResolverNucleotide
 from .resolvers.alphafind import AlphaFindStructResolver
 from .resolvers.foldseek import Foldseek3DiResolver
@@ -94,6 +97,8 @@ def get_default_resolvers(config: RunConfig) -> list[IdentifierResolver]:
     resolvers.append(BLASTResolverPDBAA(config))
     resolvers.append(BLASTResolverPDBNT(config))
     resolvers.append(BLASTResolverUNIPROT(config))
+    resolvers.append(BLASTResolverNR(config))
+    resolvers.append(BLASTResolverSWISSPROT(config))
     resolvers.append(PDBStructResolverProtein(config))
     resolvers.append(PDBStructResolverNucleotide(config))
     resolvers.append(AlphaFindStructResolver(config))

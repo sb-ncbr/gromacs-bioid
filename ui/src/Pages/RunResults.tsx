@@ -12,6 +12,7 @@ import {
     Tooltip,
     Tabs,
     Tab,
+    Button,
 } from "@mui/material";
 import { useParams } from "react-router-dom";
 import TasksProgressBar, { TaskInfo } from "../Components/TasksProgressBar";
@@ -93,7 +94,18 @@ interface MoleculeSummaryResponse {
     segment_meta?: Record<string, any>;
 }
 
-type ActiveTab = 'overview' | 'loading' | 'warnings' | 'files';
+interface SignatureItem {
+    segment: string;
+    generator: string;
+    signature?: string | null;
+}
+
+interface SignaturesResponse {
+    run_id: string;
+    signatures: SignatureItem[];
+}
+
+type ActiveTab = 'overview' | 'loading' | 'warnings' | 'files' | 'signatures';
 
 const RunResults = () => {
     const { runId } = useParams<{ runId: string }>();
@@ -112,6 +124,7 @@ const RunResults = () => {
     const latestStatusRef = useRef<RunStatusResponse | null>(null);
 
     const [segmentMeta, setSegmentMeta] = useState<Record<string, any> | null>(null);
+    const [signatures, setSignatures] = useState<SignaturesResponse | null>(null);
     const [totalFragmentCount, setTotalFragmentCount] = useState<number | undefined>(undefined);
     const [typeCounts, setTypeCounts] = useState<Record<string, number>>({});
 
@@ -185,6 +198,20 @@ const RunResults = () => {
         }
     }, []);
 
+    const fetchSignatures = useCallback(async (id: string) => {
+        try {
+            const res = await fetch(`/runs/${id}/signatures`);
+            if (res.ok) {
+                const data: SignaturesResponse = await res.json();
+                setSignatures(data);
+            } else {
+                console.error("Failed to fetch signatures:", res.status);
+            }
+        } catch (err) {
+            console.error("Failed to fetch signatures:", err);
+        }
+    }, []);
+
     // Poll for status
     useEffect(() => {
         if (!runId) return;
@@ -203,6 +230,7 @@ const RunResults = () => {
 
                 // Always fetch molecules and loading info when status succeeds
                 fetchMolecules(data.run_id);
+                fetchSignatures(data.run_id);
                 fetchLoadingInfo(data.run_id);
 
                 // Stop polling if success or failed
@@ -232,7 +260,7 @@ const RunResults = () => {
                 clearInterval(interval);
             }
         };
-    }, [runId, fetchMolecules, fetchLoadingInfo]);
+    }, [runId, fetchMolecules, fetchLoadingInfo, fetchSignatures]);
 
     if (initialLoading) {
         return (
@@ -371,12 +399,20 @@ const RunResults = () => {
                                 <Tab label="Loading" value="loading" />
                                 <Tab label="Warnings" value="warnings" />
                                 <Tab label="Files" value="files" />
+                                <Tab label="Signatures" value="signatures" />
                             </Tabs>
 
                             {/* Overview Tab */}
                             {activeTab === 'overview' && (
                                 <Box sx={{ p: 3 }}>
                                     <Stack spacing={2}>
+                                        {/* Topology-less search indicator */}
+                                        {signatures && signatures.signatures && 
+                                         signatures.signatures.some(s => s.generator === 'topology_less_pdb' || s.generator === 'ca_only_pdb') && (
+                                            <Alert severity="info" sx={{ mb: 1 }}>
+                                                This run used Quick Structure Search (topology-less).
+                                            </Alert>
+                                        )}
                                         <Typography variant="body2">Run ID: {statusData.run_id}</Typography>
                                         <Typography variant="body2">
                                             Status: <strong style={{ textTransform: 'capitalize' }}>{statusData.pipeline.status}</strong>
@@ -509,6 +545,60 @@ const RunResults = () => {
                                         <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 2 }}>Downloads</Typography>
                                         <DownloadActions runId={runId!} />
                                     </Box>
+                                </Box>
+                            )}
+                            {/* Signatures Tab */}
+                            {activeTab === 'signatures' && (
+                                <Box sx={{ p: 3 }}>
+                                    {signatures && signatures.signatures && signatures.signatures.length > 0 ? (
+                                        <Stack spacing={2}>
+                                            {signatures.signatures.map((sig, idx) => (
+                                                <Box key={idx} sx={{ p: 2, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                                                    <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">
+                                                        <Stack spacing={0.5}>
+                                                            <Typography variant="subtitle2" fontWeight="bold">
+                                                                Segment: {sig.segment}
+                                                            </Typography>
+                                                            <Typography variant="body2" color="text.secondary">
+                                                                Generator: {sig.generator}
+                                                            </Typography>
+                                                            {sig.signature && (
+                                                                <Typography variant="body2" sx={{ mt: 1, fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                                                                    {sig.signature.length > 100 ? sig.signature.substring(0, 100) + '...' : sig.signature}
+                                                                </Typography>
+                                                            )}
+                                                        </Stack>
+                                                        <Stack direction="row" spacing={1}>
+                                                            {sig.generator === 'topology_less_pdb' && (
+                                                                <Button
+                                                                    variant="outlined"
+                                                                    size="small"
+                                                                    href={`/runs/${runId}/download/topology-less-pdb?segment=${sig.segment}`}
+                                                                    download
+                                                                >
+                                                                    Download Topology-less PDB
+                                                                </Button>
+                                                            )}
+                                                            {sig.generator === 'ca_only_pdb' && (
+                                                                <Button
+                                                                    variant="outlined"
+                                                                    size="small"
+                                                                    href={`/runs/${runId}/download/ca-only-pdb?segment=${sig.segment}`}
+                                                                    download
+                                                                >
+                                                                    Download CA-only PDB
+                                                                </Button>
+                                                            )}
+                                                        </Stack>
+                                                    </Stack>
+                                                </Box>
+                                            ))}
+                                        </Stack>
+                                    ) : (
+                                        <Typography variant="body2" color="text.secondary">
+                                            No signatures available for this run.
+                                        </Typography>
+                                    )}
                                 </Box>
                             )}
                         </Paper>

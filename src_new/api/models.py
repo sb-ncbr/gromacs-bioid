@@ -250,3 +250,19 @@ class MoleculeInfoResponse(BaseModel):
     residue_count: int = Field(..., description="Number of residues")
     confidence: Optional[float] = Field(None, description="Highest confidence from verification")
 
+
+
+class RerunRunItem(BaseModel):
+    """Item in the re-run all response representing a single re-queued run."""
+
+    new_run_id: str = Field(..., description="New run identifier created for the re-run")
+    old_run_id: str = Field(..., description="Original run identifier that was re-queued")
+    status: str = Field(..., description="Status of the newly queued run")
+
+
+class RerunAllResponse(BaseModel):
+    """Response model for the re-run all endpoint."""
+
+    new_runs: List[RerunRunItem] = Field(default_factory=list, description="List of successfully re-queued runs")
+    skipped: List[str] = Field(default_factory=list, description="List of old run_ids that were skipped (missing input)")
+    count: int = Field(..., description="Number of new runs queued")

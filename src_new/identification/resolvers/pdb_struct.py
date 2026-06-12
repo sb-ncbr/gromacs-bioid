@@ -40,7 +40,7 @@ class PDBStructResolver(IdentifierResolver):
         # Set resolver metadata
         self.name = "pdb_struct_protein" if as_protein else "pdb_struct_nucleotide"
         self.identifier_type = "PDB_ID"
-        self.accepted_signatures = ["pdb_protein" if as_protein else "pdb_nucleic"]
+        self.accepted_signatures = ["pdb_protein" if as_protein else "pdb_nucleic", "topology_less_pdb"]
         
         self.config = config
 

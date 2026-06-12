@@ -393,3 +393,9 @@ class TestDefaultValues:
         assert config.alphafind.retry_count == 2
         assert config.alphafind.retry_delay_s == 5
         assert config.alphafind.request_timeout_s == 30
+
+        assert config.alphafind.poll_interval_s == 5
+        assert config.alphafind.max_poll_attempts == 20
+        assert "limit=50" in config.alphafind.url
+        assert "offset=0" in config.alphafind.url
+        assert "superposition=true" in config.alphafind.url

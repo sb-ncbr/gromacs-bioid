@@ -6,6 +6,15 @@ export default defineConfig({
   optimizeDeps: {
     include: ['molstar/lib/apps/viewer/app'],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-molstar': ['molstar/lib/apps/viewer/app'],
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       '/runs': 'http://localhost:8000',

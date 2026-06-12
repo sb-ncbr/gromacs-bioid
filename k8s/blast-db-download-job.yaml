@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bat3-blast-db-download
+  labels:
+    app: bat3-blast-db-download
+spec:
+  ttlSecondsAfterFinished: 86400
+  activeDeadlineSeconds: 86400
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: bat3-blast-db-download
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: blast-db-download
+          image: "cerit.io/tomsko/bat3-worker:latest"
+          imagePullPolicy: Always
+          command:
+            - python
+            - /app/scripts/populate_blast_databases.py
+            - --target-dir
+            - /app/databases
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+          volumeMounts:
+            - name: databases-data
+              mountPath: /app/databases
+          securityContext:
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: databases-data
+          persistentVolumeClaim:
+            claimName: bat3-bat3-databases-data

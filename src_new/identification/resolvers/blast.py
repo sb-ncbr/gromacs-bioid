@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -31,6 +32,9 @@ class BLASTResolver(IdentifierResolver):
     BLASTResolver identifies residue sequences (amino acids or nucleotides) using BLAST.
     """
 
+    # Common BLAST database file extensions
+    _DB_FILE_EXTENSIONS = [".pal", ".pin", ".nin", ".phr", ".psq", ".nsq"]
+
     def __init__(self, config: RunConfig, db_path: str, is_protein: bool, 
                  resolver_name: str, identifier_type: str) -> None:
         """
@@ -56,6 +60,24 @@ class BLASTResolver(IdentifierResolver):
         # Store config references
         self.config = config
         self.blast_config = config.blast
+
+    def _preflight_check(self) -> None:
+        """
+        Check if BLAST database is available before running.
+        
+        Raises:
+            IdentifierResolutionError: If database is not available.
+        """
+        if not self.db_path:
+            raise IdentifierResolutionError(f"BLAST database path not configured for {self.name}")
+        
+        # Check if at least one expected database file exists
+        for ext in self._DB_FILE_EXTENSIONS:
+            db_file = Path(self.db_path + ext)
+            if db_file.exists():
+                return
+        
+        raise IdentifierResolutionError(f"BLAST database not found at {self.db_path} for {self.name}")
 
     def _is_applicable(self, signature: str) -> bool:
         """
@@ -93,6 +115,9 @@ class BLASTResolver(IdentifierResolver):
         Raises:
             IdentifierResolutionError: If resolution fails.
         """
+        # Preflight check - raises IdentifierResolutionError if database not available
+        self._preflight_check()
+        
         return self._run_blast_identity(signature, working_directory)
 
     def _resolve_similarity(self, signature: str, working_directory: str) -> list[tuple[str, float]]:
@@ -109,6 +134,9 @@ class BLASTResolver(IdentifierResolver):
         Raises:
             IdentifierResolutionError: If resolution fails.
         """
+        # Preflight check - raises IdentifierResolutionError if database not available
+        self._preflight_check()
+        
         return self._run_blast_similarity(signature, working_directory)
 
     def _run_blast_local(self, sequence: str, working_directory: str) -> list[dict] | None:
@@ -141,23 +169,19 @@ class BLASTResolver(IdentifierResolver):
                 short_search = ['-task', 'blastp-short'] if self.is_protein else ['-task', 'blastn-short']
 
             result = subprocess.run(
-                [
-                    executable_path,
-                    "-outfmt",
-                    "15",
-                    "-db",
-                    self.db_path,
-                    "-out",
-                    output_path,
-                ] + short_search,
+                [executable_path, "-outfmt", "15", "-db", self.db_path, "-out", output_path] + short_search,
                 input=sequence,
                 text=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                capture_output=True,
             )
-            
             if result.returncode != 0:
-                raise IdentifierResolutionError(f"BLAST failed with return code {result.returncode}")
+                stderr_msg = result.stderr.strip() if result.stderr else "(no stderr)"
+                raise IdentifierResolutionError(
+                    f"BLAST failed with return code {result.returncode}. "
+                    f"Database: {self.db_path}. "
+                    f"Executable: {executable_path}. "
+                    f"Stderr: {stderr_msg}"
+                )
             
             with open(output_path, "r") as f:
                 json_files = [json.load(f)]
@@ -222,12 +246,9 @@ class BLASTResolver(IdentifierResolver):
 
     def _run_blast_identity(self, sequence: str, working_directory: str) -> list[str]:
         """Execute identity search with BLAST."""
-        try:
-            hits = self._process_blast_results(
-                self._run_blast_local(sequence, working_directory)
-            )
-        except IdentifierResolutionError:
-            return []
+        hits = self._process_blast_results(
+            self._run_blast_local(sequence, working_directory)
+        )
 
         # Apply filters for exact matches
         hits = self._filter_blast_results(
@@ -251,12 +272,9 @@ class BLASTResolver(IdentifierResolver):
 
     def _run_blast_similarity(self, sequence: str, working_directory: str) -> list[tuple[str, float]]:
         """Execute similarity search with BLAST."""
-        try:
-            hits = self._process_blast_results(
-                self._run_blast_local(sequence, working_directory)
-            )
-        except IdentifierResolutionError:
-            return []
+        hits = self._process_blast_results(
+            self._run_blast_local(sequence, working_directory)
+        )
 
         # Apply filters for similarity matches
         hits = self._filter_blast_results(
@@ -317,11 +335,43 @@ class BLASTResolverUNIPROT(BLASTResolver):
     
     def __init__(self, config: RunConfig) -> None:
         """Initialize BLAST resolver for UniProt sequences."""
+        # Use uniprot_aa_db, or fall back to swissprot_aa_db if not set
         db_path = getattr(config.blast, 'uniprot_aa_db', '')
+        if not db_path:
+            db_path = getattr(config.blast, 'swissprot_aa_db', '')
         super().__init__(
             config=config,
             db_path=db_path,
             is_protein=True,
             resolver_name="blast_uniprot",
             identifier_type="UNIPROT_ID"
+        )
+
+class BLASTResolverNR(BLASTResolver):
+    """BLAST resolver for NR (non-redundant protein) database."""
+    
+    def __init__(self, config: RunConfig) -> None:
+        """Initialize BLAST resolver for NR protein sequences."""
+        db_path = getattr(config.blast, 'nr_aa_db', '')
+        super().__init__(
+            config=config,
+            db_path=db_path,
+            is_protein=True,
+            resolver_name="blast_nr_protein",
+            identifier_type="NR_ID"
+        )
+
+
+class BLASTResolverSWISSPROT(BLASTResolver):
+    """BLAST resolver for Swiss-Prot (curated protein) database."""
+    
+    def __init__(self, config: RunConfig) -> None:
+        """Initialize BLAST resolver for Swiss-Prot protein sequences."""
+        db_path = getattr(config.blast, 'swissprot_aa_db', '')
+        super().__init__(
+            config=config,
+            db_path=db_path,
+            is_protein=True,
+            resolver_name="blast_swissprot_protein",
+            identifier_type="SWISSPROT_ID"
         )

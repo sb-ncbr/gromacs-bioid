@@ -31,6 +31,7 @@ _CANONICAL_SIGNATURE_TYPES: dict[str, str] = {
     "pdb_not_sanitized_nucleic": "pdb_nucleic",
     "pdb_backbone_nucleic": "pdb_nucleic",
     "pdb_backbone_not_sanitized_nucleic": "pdb_nucleic",
+    "ca_only_pdb": "ca_only_pdb",
     "tdi": "3di_sequence",
     "lipid_shorthand": "lipid_shorthand",
     "glycan_composition": "glycan_composition",

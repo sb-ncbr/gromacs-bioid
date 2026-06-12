@@ -14,6 +14,7 @@ class LoaderConfig:
     guess_missing_masses: bool = True
     guess_missing_names: bool = True
     guess_missing_bonds: bool = False
+    quick_structure_search: bool = True
     element_mass_tolerance: float = 0.01
     bond_guess_vdw_factor: float = 0.55
 
@@ -65,6 +66,8 @@ class SignaturesConfig:
     pdb_backbone_nucleic: bool = True
     pdb_backbone_not_sanitized_protein: bool = True
     pdb_backbone_not_sanitized_nucleic: bool = True
+    topology_less_pdb: bool = True
+    ca_only_pdb: bool = True
     name_chain: bool = True
     name_molecule: bool = True
     name_segment: bool = True
@@ -87,6 +90,10 @@ class IdentifiersConfig:
     blast_pdb_protein_similarity: bool = True
     blast_uniprot: bool = True
     blast_uniprot_similarity: bool = True
+    blast_nr_protein: bool = True
+    blast_nr_protein_similarity: bool = True
+    blast_swissprot_protein: bool = True
+    blast_swissprot_protein_similarity: bool = True
     blast_pdb_nucleic: bool = True
     blast_pdb_nucleic_similarity: bool = True
     pdb_struct_protein: bool = True
@@ -119,6 +126,12 @@ class IdentifiersConfig:
 class BlastConfig:
     blastp_exec: str = "/usr/bin/blastp"
     blastn_exec: str = "/usr/bin/blastn"
+    nr_aa_db: str = "/app/databases/nr"           # non-redundant protein
+    swissprot_aa_db: str = "/app/databases/swissprot"  # curated protein
+    pdb_aa_db: str = "/app/databases/pdbaa"       # PDB protein sequences
+    pdb_nt_db: str = "/app/databases/pdbnt"       # PDB nucleotide sequences
+    core_nt_db: str = "/app/databases/core_nt"    # core nucleotide
+    nt_db: str = "/app/databases/nt"              # full nucleotide
     local_instance_run_short_search_if_under_X_residues: int = 30
     exact_match_max_evalue: float = 1e-50
     exact_match_min_bits: int = 51
@@ -149,10 +162,12 @@ class PubchemConfig:
 
 @dataclass
 class AlphafindConfig:
-    url: str = "https://api.stage.alphafind.dyn.cloud.e-infra.cz/search?limit=10"
+    url: str = "https://api.stage.alphafind.dyn.cloud.e-infra.cz/search?limit=50&offset=0&superposition=true"
     retry_count: int = 2
     retry_delay_s: int = 5
     request_timeout_s: int = 30
+    poll_interval_s: int = 5
+    max_poll_attempts: int = 20
 
 
 

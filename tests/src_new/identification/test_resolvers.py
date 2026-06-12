@@ -13,6 +13,14 @@ from src_new.identification.resolvers.atom import AtomResolver
 from src_new.identification.resolvers.name import NameResolverCCD
 from src_new.identification.resolvers.inchikey import InchiKeyResolver
 from src_new.identification.resolvers.formula import FormulaResolver
+from src_new.identification.resolvers.blast import (
+    BLASTResolverPDBAA,
+    BLASTResolverPDBNT,
+    BLASTResolverUNIPROT,
+    BLASTResolverNR,
+    BLASTResolverSWISSPROT,
+)
+from src_new.identification.base import IdentifierResolutionError
 
 
 @pytest.fixture
@@ -122,3 +130,97 @@ def test_formula_resolver_not_applicable_for_smiles(config: RunConfig) -> None:
     result = resolver.is_applicable("CCO", "smiles")
     
     assert result is False
+
+def test_blast_resolver_with_nonexistent_db_returns_none(config: RunConfig) -> None:
+    """Test that BLASTResolver returns None (not []) when database is missing.
+    
+    This is a regression test for the silent-failure bug where missing databases
+    or blastp failures were completely hidden, making it appear as if BLAST
+    simply found no hits.
+    """
+    # Create resolver with non-existent database path
+    config.blast.pdb_aa_db = "/nonexistent/db"
+    resolver = BLASTResolverPDBAA(config)
+    
+    # Use a valid protein sequence
+    sequence = "MKWVTFISLLFLFSSAYSRGVFRRDAHKSEVAHRFKDLGEENFKALVLIAFAQYLQQCPFEDHVKLVNEVTEFAKTCVADESAENCDKSLHTLFGDKLCTVATLRETYGEMADCCAKQEPERNECFLQHKDDNPNLPRLVRPEVDVMCTAFHDNEETFLKKYLYEIARRHPYFYAPELLYYANKYNGVFQECCQAEDKGACLLPKIETMREKVLASSARQRLRCASIQKFGERALKAWSVARLSQKFPKAEFVEVTKLVTDLTKVHKECCHGDLLECADDRADLAKYICENQDSISSKLKECCEKPLLEKSHCIAEVENDEMPADLPSLAADFVESKDVCKNYAEAKDVFLGMFLYEYARRHPDYSVVLLLRLAKTYETTLEKCCAAADPHECYAKVFDEFKPLVEEPQNLIKQNCELFEQLGEYKFQNALLVRYTKKVPQVSTPTLVEVSRNLGKVGSKCCKHPEAKRMPCAEDYLSVVLNQLCVLHEKTPVSDRVTKCCTESLVNRRPCFSALTPDETYVPKAFDEKLFTFHADICTLPDTEKQIKKQTALVELVKHKPKATKEQLKAVMDDFAAFVEKCCKADDKETCFAEEGKKLVAASQAALGL"
+    
+    # Should return None (error propagated), not [] (silently swallowed)
+    result = resolver.resolve(sequence, as_similarity=False)
+    
+    assert result is None, f"Expected None for failed BLAST, got {result!r}"
+
+
+
+def test_blast_preflight_missing_db_path(config: RunConfig) -> None:
+    """Test that BLAST fails fast when db_path is empty."""
+    from src_new.identification.resolvers.blast import (
+    BLASTResolverPDBAA,
+    BLASTResolverPDBNT,
+    BLASTResolverUNIPROT,
+    BLASTResolverNR,
+    BLASTResolverSWISSPROT,
+)
+    
+    config.blast.pdb_aa_db = ""
+    resolver = BLASTResolverPDBAA(config)
+    
+    # Should return None when database path is not configured
+    result = resolver.resolve("MKWVTFISLLFLFSSAYS", as_similarity=False)
+    assert result is None
+
+
+def test_blast_preflight_nonexistent_db(config: RunConfig) -> None:
+    """Test that BLAST fails fast when database files don't exist."""
+    from src_new.identification.resolvers.blast import (
+    BLASTResolverPDBAA,
+    BLASTResolverPDBNT,
+    BLASTResolverUNIPROT,
+    BLASTResolverNR,
+    BLASTResolverSWISSPROT,
+)
+    
+    config.blast.pdb_aa_db = "/nonexistent/db"
+    resolver = BLASTResolverPDBAA(config)
+    
+    # Should return None when database files are not found
+    result = resolver.resolve("MKWVTFISLLFLFSSAYS", as_similarity=False)
+    assert result is None
+
+
+def test_blast_resolver_nr_initialization(config: RunConfig) -> None:
+    """Test that BLASTResolverNR initializes with correct db_path."""
+    from src_new.identification.resolvers.blast import BLASTResolverNR
+    
+    config.blast.nr_aa_db = "/app/databases/nr"
+    resolver = BLASTResolverNR(config)
+    
+    assert resolver.db_path == "/app/databases/nr"
+    assert resolver.is_protein is True
+    assert resolver.name == "blast_nr_protein"
+    assert resolver.identifier_type == "NR_ID"
+
+
+def test_blast_resolver_swissprot_initialization(config: RunConfig) -> None:
+    """Test that BLASTResolverSWISSPROT initializes with correct db_path."""
+    from src_new.identification.resolvers.blast import BLASTResolverSWISSPROT
+    
+    config.blast.swissprot_aa_db = "/app/databases/swissprot"
+    resolver = BLASTResolverSWISSPROT(config)
+    
+    assert resolver.db_path == "/app/databases/swissprot"
+    assert resolver.is_protein is True
+    assert resolver.name == "blast_swissprot_protein"
+    assert resolver.identifier_type == "SWISSPROT_ID"
+
+
+def test_blast_resolver_uniprot_uses_swissprot_fallback(config: RunConfig) -> None:
+    """Test that BLASTResolverUNIPROT falls back to swissprot_aa_db."""
+    from src_new.identification.resolvers.blast import BLASTResolverUNIPROT
+    
+    # When uniprot_aa_db is not set, should use swissprot_aa_db
+    config.blast.uniprot_aa_db = ""
+    config.blast.swissprot_aa_db = "/app/databases/swissprot"
+    resolver = BLASTResolverUNIPROT(config)
+    
+    assert resolver.db_path == "/app/databases/swissprot"

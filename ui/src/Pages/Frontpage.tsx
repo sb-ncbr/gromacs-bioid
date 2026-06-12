@@ -29,6 +29,7 @@ const MINIMAL_DEFAULT_CONFIG = {
         guess_missing_masses: true,
         guess_missing_names: true,
         guess_missing_bonds: false,
+        quick_structure_search: true,
         element_mass_tolerance: 0.01,
         bond_guess_vdw_factor: 0.55,
     },
@@ -66,6 +67,8 @@ const MINIMAL_DEFAULT_CONFIG = {
         lipid_shorthand: true,
         glycan_composition: true,
         mmcif: true,
+        topology_less_pdb: true,
+        ca_only_pdb: true,
     },
     identifiers: {
         overwrite_existing: false,
@@ -145,6 +148,26 @@ const Frontpage = () => {
             console.error("Error deleting run:", err);
         }
     };
+    const handleRerunAll = async () => {
+        setRerunLoading(true);
+        setRerunError(null);
+        setRerunSuccessCount(null);
+        try {
+            const res = await fetch('/runs/rerun-all', { method: 'POST' });
+            if (res.ok) {
+                const data = await res.json();
+                setRerunSuccessCount(data.count);
+                await fetchRuns();
+            } else {
+                const errorText = await res.text();
+                setRerunError(errorText || "Failed to re-run all");
+            }
+        } catch (err) {
+            setRerunError(err instanceof Error ? err.message : "An error occurred");
+        } finally {
+            setRerunLoading(false);
+        }
+    };
 
     const [uploadedFiles, setUploadedFiles] = useState<FileWithPath[]>([])
     const [analyzing, setAnalyzing] = useState(false)
@@ -156,6 +179,10 @@ const Frontpage = () => {
     const [runName, setRunName] = useState<string>("")
     const [configDialogOpen, setConfigDialogOpen] = useState(false)
     const [fastModeEnabled, setFastModeEnabled] = useState(false)
+    const [rerunDialogOpen, setRerunDialogOpen] = useState(false);
+    const [rerunLoading, setRerunLoading] = useState(false);
+    const [rerunError, setRerunError] = useState<string | null>(null);
+    const [rerunSuccessCount, setRerunSuccessCount] = useState<number | null>(null);
 
     useEffect(() => {
         fetchRuns()
@@ -224,11 +251,10 @@ const Frontpage = () => {
             data.append('run_name', runName)
         }
         
-        // Send customized config if custom config or fast mode is enabled
+        // Append config_json if custom config or fast mode is enabled
         if ((customConfigEnabled || fastModeEnabled) && editedConfig) {
             data.append('config_json', JSON.stringify(editedConfig))
         }
-
         try {
             const response = await fetch('/runs', {
                 method: 'POST',
@@ -399,9 +425,11 @@ const Frontpage = () => {
                                     }
                                     label="Run in Fast Mode (parallel)"
                                 />
-                            </Stack>
-                        </Stack>
 
+                            </Stack>
+
+
+                        </Stack>
                         {/* Config Editor Dialog */}
                         <Dialog
                             open={configDialogOpen}
@@ -463,7 +491,32 @@ const Frontpage = () => {
 
                 {/* Run History */}
                 <Stack spacing={3} sx={{ mt: 6 }}>
-                    <Typography variant="h2">Recent Annotations</Typography>
+                    <Stack direction="row" spacing={2} alignItems="center">
+                        <Typography variant="h2">Recent Annotations</Typography>
+                        {runs.length > 0 && (
+                            <Tooltip title="Re-queue all existing runs with their original input files and config">
+                                <Button
+                                    variant="outlined"
+                                    color="secondary"
+                                    size="small"
+                                    onClick={() => setRerunDialogOpen(true)}
+                                    disabled={rerunLoading}
+                                >
+                                    Re-run All
+                                </Button>
+                            </Tooltip>
+                        )}
+                    </Stack>
+                    {rerunSuccessCount !== null && (
+                        <Alert severity="success" sx={{ mt: 1 }}>
+                            Re-queued {rerunSuccessCount} runs.
+                        </Alert>
+                    )}
+                    {rerunError && (
+                        <Alert severity="error" sx={{ mt: 1 }}>
+                            {rerunError}
+                        </Alert>
+                    )}
                     {runs.length > 0 ? (
                         <Table size="small">
                             <TableBody>
@@ -515,6 +568,34 @@ const Frontpage = () => {
                     )}
                 </Stack>
             </Stack>
+
+            {/* Re-run All Confirmation Dialog */}
+            <Dialog
+                open={rerunDialogOpen}
+                onClose={() => !rerunLoading && setRerunDialogOpen(false)}
+            >
+                <DialogTitle>Re-run all annotations?</DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2">
+                        This will create new runs for all {runs.length} existing annotations using their original input files and config. Old runs will not be deleted.
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => setRerunDialogOpen(false)}
+                        disabled={rerunLoading}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleRerunAll}
+                        variant="contained"
+                        disabled={rerunLoading}
+                    >
+                        {rerunLoading ? "Re-running..." : "Re-run All"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </>
     )
 }

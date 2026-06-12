@@ -1,8 +1,8 @@
 import { Box, Tooltip, Typography, CircularProgress } from "@mui/material";
-import { CheckCircle, Error as ErrorIcon, Help as HelpIcon } from "@mui/icons-material";
+import { CheckCircle, Error as ErrorIcon, Help as HelpIcon, Warning } from "@mui/icons-material";
 import { FC, JSX } from "react";
 
-export type TaskStatus = "unknown" | "ok" | "failed" | "inprogress";
+export type TaskStatus = "unknown" | "ok" | "failed" | "inprogress" | "warning";
 
 export interface TaskInfo {
     task_id: string;
@@ -22,7 +22,8 @@ const statusColor: Record<TaskStatus, string> = {
     unknown: "#9e9e9e",
     ok: "#4caf50",
     failed: "#f44336",
-    inprogress: "#2196f3"
+    inprogress: "#2196f3",
+    warning: "#ff9800"
 };
 
 const statusIcon: Record<TaskStatus, JSX.Element> = {
@@ -30,6 +31,7 @@ const statusIcon: Record<TaskStatus, JSX.Element> = {
     ok: <CheckCircle sx={{ color: statusColor.ok, fontSize: "2.5rem" }} />,
     failed: <ErrorIcon sx={{ color: statusColor.failed, fontSize: "2.5rem" }} />,
     inprogress: <CircularProgress size={32} sx={{ color: statusColor.inprogress }} />,
+    warning: <Warning sx={{ color: statusColor.warning, fontSize: "2.5rem" }} />,
 };
 
 const TASK_STEPS = [
@@ -66,12 +68,12 @@ function deriveStepStatus(tasks: TaskInfo[], stepKey: string): TaskStatus {
         }
         
         // Check if there are no failed tasks anywhere
-        const hasActiveTasks = tasks.some(t => t.status === "success" || t.status === "running");
+        const hasActiveTasks = tasks.some(t => t.status === "success" || t.status === "running" || t.status === "warning");
         
         if (!hasFailedTasks && hasActiveTasks) {
             // Determine "latest active step index"
             const latestActiveStepIndex = tasks
-                .filter(t => t.status === "success" || t.status === "running")
+                .filter(t => t.status === "success" || t.status === "running" || t.status === "warning")
                 .reduce((maxIdx, t) => {
                     const idx = getStepIndex(getStepForTask(t.name));
                     return idx > maxIdx ? idx : maxIdx;
@@ -95,7 +97,11 @@ function deriveStepStatus(tasks: TaskInfo[], stepKey: string): TaskStatus {
         return "inprogress";
     }
     
-    if (matchingTasks.some(t => t.status === "success")) {
+    if (matchingTasks.some(t => t.status === "warning")) {
+        return "warning";
+    }
+    
+    if (matchingTasks.some(t => t.status === "success" || t.status === "skipped")) {
         return "ok";
     }
     

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
@@ -231,6 +232,10 @@ class PipelineExecutor:
                     raise
                 
                 except Exception as e:
+                    # Log full traceback for debugging
+                    logger = logging.getLogger("base")
+                    logger.error("Unhandled exception in step %s:\\n%s", step_id, traceback.format_exc())
+
                     # Record critical error with code "unhandled_exception"
                     self.results_manager.record_error(
                         code="unhandled_exception",

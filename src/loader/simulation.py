@@ -146,11 +146,11 @@ class Simulation:
                                        len(self.get_fragment(segment_name).bonds))
 
             self.results_file.set_item(f"simulation/segments/{segment_name}/atoms",
-                                       len(self._active_simulation.select_atoms(f'segid {segment_name}').atoms))
+                                       len(self._active_simulation.atoms[self._active_simulation.atoms.segids == segment_name].atoms))
             self.results_file.set_item(f"simulation/segments/{segment_name}/bonds",
-                                       len(self._active_simulation.select_atoms(f'segid {segment_name}').bonds))
+                                       len(self._active_simulation.atoms[self._active_simulation.atoms.segids == segment_name].bonds))
             self.results_file.set_item(f"simulation/segments/{segment_name}/molecules",
-                                       len(self._active_simulation.select_atoms(f'segid {segment_name}').fragments))
+                                       len(self._active_simulation.atoms[self._active_simulation.atoms.segids == segment_name].fragments))
 
     def unload_simulation(self) -> None:
         """
@@ -191,7 +191,8 @@ class Simulation:
         assert self._active_simulation is not None, ERROR_SIM_NOT_LOADED
         assert segment_name in self._segments, ERROR_SEGMENT_NOT_PRESENT
 
-        fragments: list[MDAnalysis.AtomGroup] = self._active_simulation.select_atoms(f"segid {segment_name}").fragments
+        segment_atoms = self._active_simulation.atoms[self._active_simulation.atoms.segids == segment_name]
+        fragments: list[MDAnalysis.AtomGroup] = segment_atoms.fragments
         assert fragments, "Fragment could not be retrieved, possibly whitespace in the name"
         return fragments[0]
 

@@ -300,3 +300,79 @@ class TestComputeFlagsThreshold:
         is_protein = len(resnames) > 0 and known_count / len(resnames) >= 0.8
         
         assert not is_protein, f"Expected is_protein=False for 70% protein (got {known_count}/{len(resnames)} = {known_count/len(resnames):.2%})"
+
+
+class TestSegmentNamesWithSpaces:
+    """Regression test for segment names containing spaces.
+    
+    This tests the fix for MDAnalysis select_atoms failing to match segment
+    names containing spaces (e.g., "Protein in water t= 80000.00000").
+    """
+    
+    def test_segment_with_spaces_in_name(self):
+        """Test that segments with spaces in their names are handled correctly."""
+        from MDAnalysis import Universe
+        import numpy as np
+        
+        # Create a universe with a segment name containing spaces
+        n_atoms = 10
+        n_residues = 2
+        u = Universe.empty(n_atoms, n_residues=n_residues, n_segments=1,
+                           atom_resindex=[0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+                           trajectory=True)
+        u.add_TopologyAttr('names', [f"AT{i}" for i in range(n_atoms)])
+        u.add_TopologyAttr('resids', [1, 2])  # One resid per residue
+        u.add_TopologyAttr('resnames', ["ALA"] * n_residues)
+        # Segment name with spaces - this is the bug scenario
+        segment_name = "Protein in water"
+        u.add_TopologyAttr('segids', [segment_name])
+        u.add_TopologyAttr('elements', ["C"] * n_atoms)
+        u.add_TopologyAttr('masses', [12.0] * n_atoms)
+        
+        positions = np.array([[i, 0, 0] for i in range(n_atoms)], dtype=np.float32)
+        u.load_new(positions, format='memory')
+        
+        # Create minimal dependencies for LoadedUniverse
+        from src_new.input.models import LoadDecision
+        from src_new.loader.repair import RepairReport
+        from src_new.results.results_manager import ResultsManager
+        from pathlib import Path
+        import tempfile
+        
+        from src_new.input.models import InputKind
+        
+        decision = LoadDecision(
+            input_kind=InputKind.GROMACS,
+            selected_strategy="tpr_only",
+            topology_files=[Path("dummy.tpr")],
+        )
+        
+        repair_report = RepairReport()
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            results_path = Path(tmpdir) / "results.json"
+            results = ResultsManager(results_path)
+            
+            facade = LoadedUniverse(
+                universe=u,
+                decision=decision,
+                repair_report=repair_report,
+                results=results,
+            )
+            
+            # Assert get_segments returns the spaced name
+            segments = facade.get_segments()
+            assert segment_name in segments, f"Expected '{segment_name}' in segments, got {segments}"
+            
+            # Assert get_segment_properties returns positive atom count
+            props = facade.get_segment_properties(segment_name)
+            assert props.atom_count_total > 0, f"Expected atom_count_total > 0, got {props.atom_count_total}"
+            assert props.atom_count_total == n_atoms, f"Expected {n_atoms} atoms, got {props.atom_count_total}"
+            
+            # Assert get_fragment returns an AtomGroup with atoms
+            fragment = facade.get_fragment(segment_name)
+            assert len(fragment.atoms) > 0, f"Expected fragment with atoms > 0, got {len(fragment.atoms)}"
+            
+            # Assert extract_molecule_instance works
+            instance = facade.extract_molecule_instance(segment_name)
+            assert instance.atom_count > 0, f"Expected molecule instance with atom_count > 0, got {instance.atom_count}"

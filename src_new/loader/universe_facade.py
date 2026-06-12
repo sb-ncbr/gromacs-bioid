@@ -134,7 +134,7 @@ class LoadedUniverse:
             self._segments = all_segments
         
         for segment_name in self._segments:
-            selected = self.universe.select_atoms(f"segid {segment_name}")
+            selected = self.universe.atoms[self.universe.atoms.segids == segment_name]
             props = SegmentProperties()
             
             props.atom_count_total = len(selected.atoms)
@@ -275,7 +275,7 @@ class LoadedUniverse:
         if segment_name not in self._segments:
             raise KeyError(f"Segment '{segment_name}' not found")
         
-        selected = self.universe.select_atoms(f"segid {segment_name}")
+        selected = self.universe.atoms[self.universe.atoms.segids == segment_name]
         
         try:
             fragments = selected.fragments

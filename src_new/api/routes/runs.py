@@ -16,6 +16,8 @@ from fastapi import APIRouter, Form, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
 
 from ..models import (
+    RerunAllResponse,
+    RerunRunItem,
     RunFilesResponse,
     PipelineStatusResponse,
     RunStatusResponse,
@@ -165,6 +167,14 @@ async def create_run(
         content_bytes = await config_file.read()
         with open(config_path, "wb") as f:
             f.write(content_bytes)
+        # Apply quick structure search overrides if enabled
+        from src_new.config.loader import RunConfig
+        config = RunConfig.from_ini_path(config_path)
+        if config.loader.quick_structure_search:
+            config.override("loader.guess_missing_bonds", False)
+            config.override("signatures.topology_less_pdb", True)
+            config.override("signatures.ca_only_pdb", True)
+            config.to_ini_path(config_path)
     elif config_json:
         # Parse JSON overrides and write customized config
         import json as json_module
@@ -172,12 +182,22 @@ async def create_run(
         from src_new.config.loader import RunConfig
         config = RunConfig.from_default_ini()
         config.apply_nested_overrides(overrides_dict)
+        # Apply quick structure search overrides if enabled
+        if config.loader.quick_structure_search:
+            config.override("loader.guess_missing_bonds", False)
+            config.override("signatures.topology_less_pdb", True)
+            config.override("signatures.ca_only_pdb", True)
         config_path = run_dir / "config.ini"
         config.to_ini_path(config_path)
     else:
         # Copy default config
         from src_new.config.loader import RunConfig
         config = RunConfig.from_default_ini()
+        # Apply quick structure search overrides if enabled
+        if config.loader.quick_structure_search:
+            config.override("loader.guess_missing_bonds", False)
+            config.override("signatures.topology_less_pdb", True)
+            config.override("signatures.ca_only_pdb", True)
         config_path = run_dir / "config.ini"
         config.to_ini_path(config_path)
     
@@ -864,3 +884,217 @@ async def get_run_files(run_id: str) -> RunFilesResponse:
             files.append(str(f.relative_to(run_dir)))
     
     return RunFilesResponse(run_id=run_id, files=sorted(files))
+
+
+def _extract_pdb_signature(
+    data: Dict[str, Any],
+    signature_key: str,
+    segment: Optional[str] = None,
+) -> str:
+    """
+    Extract a PDB signature from results data.
+    
+    Args:
+        data: Results JSON data
+        signature_key: Key for the signature type (e.g., 'topology_less_pdb', 'ca_only_pdb')
+        segment: Optional segment name to filter by
+    
+    Returns:
+        The PDB signature string
+    
+    Raises:
+        HTTPException: 404 if no signatures found, 400 if multiple segments and no segment specified
+    """
+    signatures_data = data.get("data", {}).get("signatures", {})
+    
+    # Find segments with the requested signature type
+    matching_segments = {}
+    for seg_name, seg_data in signatures_data.items():
+        generated = seg_data.get("generated", {})
+        if signature_key in generated:
+            matching_segments[seg_name] = generated[signature_key]
+    
+    if not matching_segments:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No {signature_key.replace('_', '-')} signatures found for this run"
+        )
+    
+    # If segment is specified, return that one
+    if segment is not None:
+        if segment not in matching_segments:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Segment '{segment}' not found or has no {signature_key.replace('_', '-')} signature"
+            )
+        return matching_segments[segment]
+    
+    # If only one segment, return it
+    if len(matching_segments) == 1:
+        return next(iter(matching_segments.values()))
+    
+    # Multiple segments and no segment specified
+    raise HTTPException(
+        status_code=400,
+        detail=f"Multiple segments found ({', '.join(sorted(matching_segments.keys()))}), specify segment parameter"
+    )
+
+
+@router.get("/{run_id}/download/topology-less-pdb")
+async def download_topology_less_pdb(
+    run_id: str,
+    segment: Optional[str] = None,
+) -> PlainTextResponse:
+    """
+    Download topology-less PDB signature(s) for a run.
+    
+    Args:
+        run_id: The run identifier
+        segment: Optional segment name. Required if multiple segments exist.
+    
+    Returns:
+        Plain text PDB content with media_type='chemical/x-pdb'
+    
+    Raises:
+        404: If run not found or no topology-less PDB signatures exist
+        400: If multiple segments exist and segment parameter not specified
+    """
+    data = load_results_json(run_id)
+    
+    pdb_content = _extract_pdb_signature(data, "topology_less_pdb", segment)
+    
+    return PlainTextResponse(pdb_content, media_type="chemical/x-pdb")
+
+
+@router.get("/{run_id}/download/ca-only-pdb")
+async def download_ca_only_pdb(
+    run_id: str,
+    segment: Optional[str] = None,
+) -> PlainTextResponse:
+    """
+    Download CA-only PDB signature(s) for a run.
+    
+    Args:
+        run_id: The run identifier
+        segment: Optional segment name. Required if multiple segments exist.
+    
+    Returns:
+        Plain text PDB content with media_type='chemical/x-pdb'
+    
+    Raises:
+        404: If run not found or no CA-only PDB signatures exist
+        400: If multiple segments exist and segment parameter not specified
+    """
+    data = load_results_json(run_id)
+    
+    pdb_content = _extract_pdb_signature(data, "ca_only_pdb", segment)
+    
+    return PlainTextResponse(pdb_content, media_type="chemical/x-pdb")
+
+
+@router.post("/rerun-all", response_model=RerunAllResponse)
+async def rerun_all() -> RerunAllResponse:
+    """
+    Re-run all existing runs by copying their input files and config into new run directories.
+    
+    For each existing run:
+    - Copies input files from old run to new run directory
+    - Copies config.ini if it exists, otherwise uses default config
+    - Creates a new results.json with queued status
+    - Enqueues a new Celery pipeline task
+    
+    Old runs are not modified or deleted.
+    
+    Returns:
+        RerunAllResponse with list of new runs, skipped runs, and count
+    """
+    from src_new.config.loader import RunConfig
+    
+    runs_dir = get_runs_dir()
+    new_runs: List[RerunRunItem] = []
+    skipped: List[str] = []
+    
+    if not runs_dir.exists():
+        return RerunAllResponse(new_runs=[], skipped=[], count=0)
+    
+    for entry in runs_dir.iterdir():
+        if not entry.is_dir():
+            continue
+        
+        old_run_id = entry.name
+        old_results_path = entry / "results.json"
+        old_input_dir = entry / "input"
+        old_config_path = entry / "config.ini"
+        
+        # Skip if results.json doesn't exist
+        if not old_results_path.exists():
+            skipped.append(old_run_id)
+            continue
+        
+        # Skip if input directory doesn't exist or is empty
+        if not old_input_dir.exists() or not any(old_input_dir.iterdir()):
+            skipped.append(old_run_id)
+            continue
+        
+        # Read old results to get run_name
+        try:
+            with open(old_results_path, "r", encoding="utf-8") as f:
+                old_data = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            skipped.append(old_run_id)
+            continue
+        
+        old_run_name = old_data.get("pipeline", {}).get("run_name")
+        
+        # Generate new run ID
+        new_run_id = str(uuid.uuid4())
+        new_run_dir = runs_dir / new_run_id
+        new_input_dir = new_run_dir / "input"
+        
+        # Create new run directory structure
+        new_input_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Copy input files
+        for file in old_input_dir.iterdir():
+            if file.is_file():
+                shutil.copy2(str(file), str(new_input_dir / file.name))
+        
+        # Handle config: copy old or write default
+        new_config_path = new_run_dir / "config.ini"
+        if old_config_path.exists():
+            shutil.copy2(str(old_config_path), str(new_config_path))
+        else:
+            config = RunConfig.from_default_ini()
+            config.to_ini_path(new_config_path)
+        
+        # Write new results.json
+        new_results_path = new_run_dir / "results.json"
+        initial_results = {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "pipeline": {
+                "name": "BAT3",
+                "status": "queued",
+                "run_id": new_run_id,
+            },
+        }
+        if old_run_name:
+            initial_results["pipeline"]["run_name"] = f"{old_run_name} (re-run)"
+        
+        with open(new_results_path, "w", encoding="utf-8") as f:
+            json.dump(initial_results, f, indent=2)
+        
+        # Enqueue Celery task
+        run_pipeline_task.delay(
+            run_id=new_run_id,
+            input_dir=str(new_input_dir),
+            results_path=str(new_results_path),
+            config_path=str(new_config_path),
+        )
+        
+        new_runs.append(RerunRunItem(
+            new_run_id=new_run_id,
+            old_run_id=old_run_id,
+            status="queued",
+        ))
+    
+    return RerunAllResponse(new_runs=new_runs, skipped=skipped, count=len(new_runs))

@@ -12,6 +12,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . /app
 
+# Purge stale __pycache__ and .pyc/.pyo files to prevent AttributeError from stale bytecode
+RUN find /app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && find /app -type f -name "*.pyc" -delete && find /app -type f -name "*.pyo" -delete
+
 RUN mkdir -p /app/runs /app/databases && chown -R 1000:1000 /app
 
 USER 1000

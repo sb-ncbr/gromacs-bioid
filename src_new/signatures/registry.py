@@ -86,6 +86,7 @@ def get_default_generators(config: SignaturesConfig) -> list[SignatureGenerator]
         PDBBackboneGeneratorSanitizeNucleic,
         PDBBackboneGeneratorNoSanitizeNucleic,
     )
+    from .generators.topology_less_pdb import TopologyLessPDBGenerator, CAOnlyPDBGenerator
     from .generators.atom import AtomGenerator
     from .generators.name import ChainNameGenerator, MoleculeNameGenerator, SegmentNameGenerator
     from .generators.fingerprint import FingerprintGenerator
@@ -124,6 +125,9 @@ def get_default_generators(config: SignaturesConfig) -> list[SignatureGenerator]
     generators.append(PDBGeneratorNoSanitizeNucleic(config))
     generators.append(PDBBackboneGeneratorSanitizeNucleic(config))
     generators.append(PDBBackboneGeneratorNoSanitizeNucleic(config))
+    
+    generators.append(TopologyLessPDBGenerator(config))
+    generators.append(CAOnlyPDBGenerator(config))
     
     generators.append(ThreeDiGenerator(config))
     generators.append(LipidShorthandGenerator(config))

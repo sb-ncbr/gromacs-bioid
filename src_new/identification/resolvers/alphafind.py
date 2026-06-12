@@ -1,4 +1,4 @@
-"""AlphaFind structure identifier resolver."""
+"""AlphaFind structure search resolver."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ class AlphaFindStructResolver(IdentifierResolver):
         # Set resolver metadata
         self.name = "alphafind_struct"
         self.identifier_type = "ALPHAFOLD_ID"
-        self.accepted_signatures = ["pdb_protein"]
+        self.accepted_signatures = ["ca_only_pdb"]
         
         self.config = config
         self.alphafind_config = config.alphafind
@@ -47,7 +47,7 @@ class AlphaFindStructResolver(IdentifierResolver):
         """Create a requests session with retry configuration."""
         session = requests.Session()
         
-        # Configure retry strategy
+        # Configure retry strategy for POST requests
         retry_strategy = Retry(
             total=self.alphafind_config.retry_count,
             backoff_factor=self.alphafind_config.retry_delay_s,
@@ -130,7 +130,7 @@ class AlphaFindStructResolver(IdentifierResolver):
 
     def _alphafind_post(self, pdb_path: str) -> dict | None:
         """
-        Execute AlphaFind API request using requests library.
+        Execute AlphaFind API POST request to submit a PDB file for search.
         
         Args:
             pdb_path: Path to PDB file.
@@ -164,37 +164,108 @@ class AlphaFindStructResolver(IdentifierResolver):
             logger.error(f"AlphaFind response parsing failed: {exc}")
             return None
 
+    def _alphafind_poll(self, digest: str) -> dict | None:
+        """
+        Poll AlphaFind API for search results using a digest.
+        
+        Args:
+            digest: The search digest returned from the initial POST.
+            
+        Returns:
+            JSON response as dict, or None on failure.
+        """
+        # Build polling URL with query=digest parameter
+        base_url = self.alphafind_config.url
+        poll_url = f"{base_url}&query={digest}"
+        timeout = self.alphafind_config.request_timeout_s
+        
+        logger.debug(f"AlphaFind POLL GET to {poll_url}")
+        
+        try:
+            response = self._session.get(
+                poll_url,
+                timeout=timeout,
+                headers={'accept': 'application/json'}
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.Timeout:
+            logger.warning(f"AlphaFind poll timed out after {timeout}s")
+            return None
+        except requests.exceptions.RequestException as exc:
+            logger.error(f"AlphaFind poll failed: {exc}")
+            return None
+        except json.JSONDecodeError as exc:
+            logger.error(f"AlphaFind poll response parsing failed: {exc}")
+            return None
+
     def _alphafind_fetch_response(self, pdb_path: str) -> dict | None:
         """
-        Execute AlphaFind similarity search with retry logic.
+        Execute AlphaFind similarity search with digest-based polling.
         
         Args:
             pdb_path: Path to PDB file.
             
         Returns:
-            JSON response dict if successful, None on failure.
+            JSON response dict with 'results' if successful, None on failure.
         """
         logger.debug(f"AlphaFind resolving similarity search for '{pdb_path}'")
         
-        # Initial request
+        # Initial POST request
         response = self._alphafind_post(pdb_path)
         
-        if response and 'results' in response:
+        if response is None:
+            return None
+        
+        # Case 1: Search completed immediately - has 'results'
+        if 'results' in response:
             return response
         
-        # Retry loop (the session already has retries, but we keep the polling behavior)
-        retry_count = self.alphafind_config.retry_count
-        retry_delay = self.alphafind_config.retry_delay_s
+        # Case 2: Error response - has 'code' and 'message'
+        if 'code' in response and 'message' in response:
+            logger.error(f"AlphaFind API error: {response['code']} - {response['message']}")
+            return None
         
-        for attempt in range(retry_count):
-            time.sleep(retry_delay)
-            logger.debug(f"AlphaFind retry attempt {attempt + 1}/{retry_count}")
+        # Case 3: Queued - has 'queue_position' and 'digest'
+        if 'queue_position' in response and 'digest' in response:
+            digest = response['digest']
+            queue_pos = response['queue_position']
+            logger.debug(f"AlphaFind search queued at position {queue_pos}, digest={digest}")
             
-            response = self._alphafind_post(pdb_path)
+            # Enter polling loop
+            poll_interval = self.alphafind_config.poll_interval_s
+            max_polls = self.alphafind_config.max_poll_attempts
             
-            if response and 'results' in response:
-                return response
+            for attempt in range(max_polls):
+                time.sleep(poll_interval)
+                logger.debug(f"AlphaFind poll attempt {attempt + 1}/{max_polls}")
+                
+                poll_response = self._alphafind_poll(digest)
+                
+                if poll_response is None:
+                    continue
+                
+                # Check if search completed
+                if 'results' in poll_response:
+                    logger.debug(f"AlphaFind search completed after {attempt + 1} polls")
+                    return poll_response
+                
+                # Check for error
+                if 'code' in poll_response and 'message' in poll_response:
+                    logger.error(f"AlphaFind poll error: {poll_response['code']} - {poll_response['message']}")
+                    return None
+                
+                # Still queued
+                if 'queue_position' in poll_response:
+                    logger.debug(f"AlphaFind still queued at position {poll_response['queue_position']}")
+                    continue
+            
+            # Max polls exceeded
+            logger.warning(f"AlphaFind search did not complete after {max_polls} poll attempts")
+            return None
         
+        # Unknown response format
+        logger.warning(f"AlphaFind unknown response format: {response}")
         return None
 
     def _alphafind_similarity(self, pdb_path: str) -> list[tuple[str, float]]:
