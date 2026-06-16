@@ -96,6 +96,10 @@ class IdentifiersConfig:
     blast_swissprot_protein_similarity: bool = True
     blast_pdb_nucleic: bool = True
     blast_pdb_nucleic_similarity: bool = True
+    blast_core_nt: bool = True
+    blast_core_nt_similarity: bool = True
+    blast_nt: bool = True
+    blast_nt_similarity: bool = True
     pdb_struct_protein: bool = True
     pdb_struct_protein_similarity: bool = True
     pdb_struct_nucleotide: bool = True
@@ -132,6 +136,10 @@ class BlastConfig:
     pdb_nt_db: str = "/app/databases/pdbnt"       # PDB nucleotide sequences
     core_nt_db: str = "/app/databases/core_nt"    # core nucleotide
     nt_db: str = "/app/databases/nt"              # full nucleotide
+    blastp_num_threads: int = 1
+    blastn_num_threads: int = 1
+    max_target_seqs: int = 500
+    timeout_s: int = 300
     local_instance_run_short_search_if_under_X_residues: int = 30
     exact_match_max_evalue: float = 1e-50
     exact_match_min_bits: int = 51
@@ -186,8 +194,8 @@ class FoldseekConfig:
 
 @dataclass
 class IdentifiersCacheConfig:
-    directory: str = "."
-    file: str = "./cli/BAT2/cache.sqlite3"
+    directory: str = "/app/runs"
+    file: str = "resolver_cache.sqlite3"
 
 
 @dataclass

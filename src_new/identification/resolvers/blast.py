@@ -14,6 +14,23 @@ from typing import Callable
 from ...config.loader import RunConfig
 from ..base import IdentifierResolver, IdentifierResolutionError
 
+# Import residue/nucleic codes for alphabet validation
+try:
+    from ...src.constants import KNOWN_RESIDUE_CODES, KNOWN_NUCLEIC_ACIDS_CODES
+except ImportError:
+    # Fallback for isolated execution
+    KNOWN_RESIDUE_CODES = {
+        'ALA': 'A', 'ARG': 'R', 'ASN': 'N', 'ASP': 'D', 'CYS': 'C',
+        'GLU': 'E', 'GLN': 'Q', 'GLY': 'G', 'HIS': 'H', 'ILE': 'I',
+        'LEU': 'L', 'LYS': 'K', 'MET': 'M', 'PHE': 'F', 'PRO': 'P',
+        'SER': 'S', 'THR': 'T', 'TRP': 'W', 'TYR': 'Y', 'VAL': 'V',
+    }
+    KNOWN_NUCLEIC_ACIDS_CODES = {
+        'A': 'A', 'C': 'C', 'T': 'T', 'G': 'G', 'U': 'U',
+        'DA': 'A', 'DC': 'C', 'DT': 'T', 'DG': 'G', 'DU': 'U',
+        'RA': 'A', 'RC': 'C', 'RT': 'T', 'RG': 'G', 'RU': 'U',
+    }
+
 logger = logging.getLogger("identifier")
 
 
@@ -32,8 +49,8 @@ class BLASTResolver(IdentifierResolver):
     BLASTResolver identifies residue sequences (amino acids or nucleotides) using BLAST.
     """
 
-    # Common BLAST database file extensions
-    _DB_FILE_EXTENSIONS = [".pal", ".pin", ".nin", ".phr", ".psq", ".nsq"]
+    # Common BLAST database file extensions (including nucleotide alias and multi-volume)
+    _DB_FILE_EXTENSIONS = [".pal", ".nal", ".pin", ".nin", ".phr", ".psq", ".nhr", ".nsq", ".p00", ".n00"]
 
     def __init__(self, config: RunConfig, db_path: str, is_protein: bool, 
                  resolver_name: str, identifier_type: str) -> None:
@@ -65,23 +82,64 @@ class BLASTResolver(IdentifierResolver):
         """
         Check if BLAST database is available before running.
         
+        Accepts DB presence if any of these exist:
+        - db_path + ".pal" (protein alias)
+        - db_path + ".nal" (nucleotide alias)
+        - db_path + ".pin" + any of .phr, .psq (protein single volume)
+        - db_path + ".nin" + any of .nhr, .nsq (nucleotide single volume)
+        - Multi-volume patterns (.p00, .n00, etc.)
+        
         Raises:
             IdentifierResolutionError: If database is not available.
         """
         if not self.db_path:
-            raise IdentifierResolutionError(f"BLAST database path not configured for {self.name}")
+            raise IdentifierResolutionError(
+                f"BLAST database path not configured for {self.name}. "
+                f"Expected files: {self.db_path}.pal/.nal (alias), or "
+                f"{self.db_path}.pin/.phr/.psq (protein), or "
+                f"{self.db_path}.nin/.nhr/.nsq (nucleotide)."
+            )
         
-        # Check if at least one expected database file exists
-        for ext in self._DB_FILE_EXTENSIONS:
-            db_file = Path(self.db_path + ext)
-            if db_file.exists():
+        db_path = Path(self.db_path)
+        
+        # Check for alias files first (simplest case)
+        if (db_path.with_suffix(db_path.suffix + ".pal")).exists():
+            return
+        if (db_path.with_suffix(db_path.suffix + ".nal")).exists():
+            return
+        
+        # Check for single-volume protein DB (.pin + .phr or .psq)
+        if (db_path.with_suffix(db_path.suffix + ".pin")).exists():
+            if (db_path.with_suffix(db_path.suffix + ".phr")).exists() or                (db_path.with_suffix(db_path.suffix + ".psq")).exists():
                 return
         
-        raise IdentifierResolutionError(f"BLAST database not found at {self.db_path} for {self.name}")
+        # Check for single-volume nucleotide DB (.nin + .nhr or .nsq)
+        if (db_path.with_suffix(db_path.suffix + ".nin")).exists():
+            if (db_path.with_suffix(db_path.suffix + ".nhr")).exists() or                (db_path.with_suffix(db_path.suffix + ".nsq")).exists():
+                return
+        
+        # Check for multi-volume DBs (.p00/.n00 pattern - first volume)
+        if (db_path.with_suffix(db_path.suffix + ".p00")).exists() or            (db_path.with_suffix(db_path.suffix + ".n00")).exists():
+            return
+        
+        # Check legacy extensions directly appended
+        for ext in self._DB_FILE_EXTENSIONS:
+            if (db_path.with_suffix(db_path.suffix + ext)).exists():
+                return
+        
+        raise IdentifierResolutionError(
+            f"BLAST database not found at {self.db_path} for {self.name}. "
+            f"Expected files: {self.db_path}.pal/.nal (alias), or "
+            f"{self.db_path}.pin/.phr/.psq (protein), or "
+            f"{self.db_path}.nin/.nhr/.nsq (nucleotide), or "
+            f"{self.db_path}.p00/.n00 (multi-volume)."
+        )
 
     def _is_applicable(self, signature: str) -> bool:
         """
         Check if signature is applicable for BLAST.
+        
+        Validates that the sequence contains only valid residue/nucleic acid codes.
         
         Args:
             signature: The signature string to check.
@@ -92,6 +150,25 @@ class BLASTResolver(IdentifierResolver):
         # Basic check: non-empty sequence
         if not signature or len(signature.strip()) == 0:
             return False
+        
+        # Validate alphabet based on sequence type
+        seq_upper = signature.upper().strip()
+        
+        if self.is_protein:
+            # For protein sequences, all characters must be valid amino acid codes
+            # Use 1-letter codes from KNOWN_RESIDUE_CODES values
+            valid_chars = set(v.upper() for v in KNOWN_RESIDUE_CODES.values())
+            for char in seq_upper:
+                if char not in valid_chars:
+                    return False
+        else:
+            # For nucleotide sequences, all characters must be valid nucleic acid codes
+            # Use 1-letter codes from KNOWN_NUCLEIC_ACIDS_CODES values  
+            valid_chars = set(v.upper() for v in KNOWN_NUCLEIC_ACIDS_CODES.values())
+            for char in seq_upper:
+                if char not in valid_chars:
+                    return False
+        
         return True
 
     def _get_exec_path(self) -> str:
@@ -151,7 +228,7 @@ class BLASTResolver(IdentifierResolver):
             List of JSON results, or None on failure.
             
         Raises:
-            IdentifierResolutionError: If BLAST execution fails.
+            IdentifierResolutionError: If BLAST execution fails or times out.
         """
         executable_path = self._get_exec_path()
         
@@ -168,11 +245,26 @@ class BLASTResolver(IdentifierResolver):
             if len(sequence) < self.blast_config.local_instance_run_short_search_if_under_X_residues:
                 short_search = ['-task', 'blastp-short'] if self.is_protein else ['-task', 'blastn-short']
 
+            # Build BLAST command with performance and safety options
+            num_threads = self.blast_config.blastp_num_threads if self.is_protein else self.blast_config.blastn_num_threads
+            max_target_seqs = self.blast_config.max_target_seqs
+            timeout_s = self.blast_config.timeout_s
+            
+            cmd = [
+                executable_path, 
+                "-outfmt", "15", 
+                "-db", self.db_path, 
+                "-out", output_path,
+                "-num_threads", str(num_threads),
+                "-max_target_seqs", str(max_target_seqs)
+            ] + short_search
+
             result = subprocess.run(
-                [executable_path, "-outfmt", "15", "-db", self.db_path, "-out", output_path] + short_search,
+                cmd,
                 input=sequence,
                 text=True,
                 capture_output=True,
+                timeout=timeout_s,
             )
             if result.returncode != 0:
                 stderr_msg = result.stderr.strip() if result.stderr else "(no stderr)"
@@ -183,10 +275,20 @@ class BLASTResolver(IdentifierResolver):
                     f"Stderr: {stderr_msg}"
                 )
             
+            # Log warnings from stderr on successful runs
+            if result.stderr and result.stderr.strip():
+                logger.warning(f"BLAST completed with warnings: {result.stderr.strip()}")
+            
             with open(output_path, "r") as f:
                 json_files = [json.load(f)]
                 
             return json_files
+        except subprocess.TimeoutExpired:
+            raise IdentifierResolutionError(
+                f"BLAST timed out after {self.blast_config.timeout_s}s. "
+                f"Database: {self.db_path}. "
+                f"Executable: {executable_path}."
+            )
         except Exception as exc:
             raise IdentifierResolutionError(f"Local BLAST failed: {exc}")
         finally:
@@ -268,6 +370,19 @@ class BLASTResolver(IdentifierResolver):
             lambda hit: hit.coverage_p >= self.blast_config.exact_match_min_query_cov_p,
         )
         
+        # Capture metadata for each hit
+        metadata: dict[str, dict] = {}
+        for hit in hits:
+            meta = {
+                "evalue": hit.evalue,
+                "bit_score": hit.bits,
+                "identity_p": hit.identity_p,
+                "coverage_p": hit.coverage_p,
+            }
+            for accession in hit.accessions:
+                metadata[accession] = meta
+        self._last_resolution_metadata = metadata
+        
         return [accession for hit in hits for accession in hit.accessions]
 
     def _run_blast_similarity(self, sequence: str, working_directory: str) -> list[tuple[str, float]]:
@@ -293,6 +408,19 @@ class BLASTResolver(IdentifierResolver):
             hits,
             lambda hit: hit.coverage_p >= self.blast_config.similarity_match_min_query_cov_p,
         )
+        
+        # Capture metadata for each hit
+        metadata: dict[str, dict] = {}
+        for hit in hits:
+            meta = {
+                "evalue": hit.evalue,
+                "bit_score": hit.bits,
+                "identity_p": hit.identity_p,
+                "coverage_p": hit.coverage_p,
+            }
+            for accession in hit.accessions:
+                metadata[accession] = meta
+        self._last_resolution_metadata = metadata
         
         # Return as percentage (multiply by 100)
         return [(accession, hit.identity_p * 100.0) for hit in hits for accession in hit.accessions]
@@ -375,3 +503,33 @@ class BLASTResolverSWISSPROT(BLASTResolver):
             resolver_name="blast_swissprot_protein",
             identifier_type="SWISSPROT_ID"
         )
+
+class BLASTResolverCORENT(BLASTResolver):
+    """BLAST resolver for core_nt (core nucleotide) database."""
+    
+    def __init__(self, config: RunConfig) -> None:
+        """Initialize BLAST resolver for core_nt nucleotide sequences."""
+        db_path = getattr(config.blast, 'core_nt_db', '')
+        super().__init__(
+            config=config,
+            db_path=db_path,
+            is_protein=False,
+            resolver_name="blast_core_nt",
+            identifier_type="CORE_NT_ID"
+        )
+
+
+class BLASTResolverNT(BLASTResolver):
+    """BLAST resolver for nt (full nucleotide) database."""
+    
+    def __init__(self, config: RunConfig) -> None:
+        """Initialize BLAST resolver for nt nucleotide sequences."""
+        db_path = getattr(config.blast, 'nt_db', '')
+        super().__init__(
+            config=config,
+            db_path=db_path,
+            is_protein=False,
+            resolver_name="blast_nt",
+            identifier_type="NT_ID"
+        )
+

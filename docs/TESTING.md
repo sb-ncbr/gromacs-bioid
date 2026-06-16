@@ -373,3 +373,51 @@ Before submitting a change:
 - Do not add fragile live-service assertions to unit tests.
 - Document any tests that could not be run and why.
 - Keep fixtures small and scientifically interpretable.
+
+---
+
+## 11. BLAST End-to-End Test
+
+The BLAST integration can be tested end-to-end using the dedicated test file:
+
+```bash
+PYTHONPATH=/home/tomsko/tmp/BAT3_new pytest tests/src_new/test_blast_to_api_e2e.py -v
+```
+
+This test verifies:
+- BLAST databases are accessible
+- Sequence extraction works correctly
+- BLAST search executes and returns hits
+- Identifiers are properly exposed via the API
+
+### Key BLAST Integration Test Files
+
+| Test File | Purpose |
+|-----------|---------|
+| `tests/src_new/identification/test_blast_integration.py` | Core BLAST resolver integration tests |
+| `tests/src_new/verification/test_dedup.py` | Hit deduplication verification |
+| `tests/src_new/verification/test_fetchers.py` | Database fetcher tests |
+| `tests/src_new/verification/test_workers.py` | Worker pool tests for verification |
+| `tests/src_new/test_blast_to_api_e2e.py` | Full end-to-end BLAST pipeline test |
+
+### Running BLAST Tests
+
+```bash
+# All identification tests including BLAST
+PYTHONPATH=/home/tomsko/tmp/BAT3_new pytest tests/src_new/identification/ -v
+
+# Specific BLAST integration tests
+PYTHONPATH=/home/tomsko/tmp/BAT3_new pytest tests/src_new/identification/test_blast_integration.py -v
+
+# End-to-end test
+PYTHONPATH=/home/tomsko/tmp/BAT3_new pytest tests/src_new/test_blast_to_api_e2e.py -v
+```
+
+### Prerequisites for BLAST Tests
+
+BLAST tests require:
+1. BLAST+ executables installed (`blastp`, `blastn`)
+2. BLAST databases downloaded and accessible at configured paths
+3. Sufficient disk space for database files
+
+For local development without full databases, mock-based unit tests in `test_resolvers.py` can be used instead.

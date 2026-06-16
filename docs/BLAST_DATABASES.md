@@ -2,6 +2,8 @@
 
 **Purpose:** Reference documentation for BLAST database management in bat3
 
+**Last Updated:** 2026-06-13
+
 ---
 
 ## Database Overview
@@ -284,57 +286,142 @@ python /app/scripts/populate_blast_databases.py \
 
 ---
 
-## Database Paths in Configuration
+## Configuration
 
-### config.ini
+### Database Paths in Configuration
+
+#### config.ini `[blast]` section
 
 ```ini
 [blast]
-aa_db_path = /app/databases/nr
-swissprot_aa_db_path = /app/databases/swissprot
-pdb_aa_db_path = /app/databases/pdbaa
-pdb_nt_db_path = /app/databases/pdbnt
-core_nt_db_path = /app/databases/core_nt
-nt_db_path = /app/databases/nt
+blastp_exec = /usr/bin/blastp
+blastn_exec = /usr/bin/blastn
+nr_aa_db = /app/databases/nr
+swissprot_aa_db = /app/databases/swissprot
+pdb_aa_db = /app/databases/pdbaa
+pdb_nt_db = /app/databases/pdbnt
+core_nt_db = /app/databases/core_nt
+nt_db = /app/databases/nt
+blastp_num_threads = 1
+blastn_num_threads = 1
+max_target_seqs = 500
+timeout_s = 300
+local_instance_run_short_search_if_under_X_residues = 30
 ```
 
-### src_new/config/loader.py
+#### src_new/config/loader.py BlastConfig
 
 ```python
 @dataclass
 class BlastConfig:
-    blast_aa_db_path: str = "/app/databases/nr"
-    swissprot_aa_db_path: str = "/app/databases/swissprot"
-    pdb_aa_db_path: str = "/app/databases/pdbaa"
-    pdb_nt_db_path: str = "/app/databases/pdbnt"
-    core_nt_db_path: str = "/app/databases/core_nt"
-    nt_db_path: str = "/app/databases/nt"
+    blastp_exec: str = "/usr/bin/blastp"
+    blastn_exec: str = "/usr/bin/blastn"
+    nr_aa_db: str = "/app/databases/nr"           # non-redundant protein
+    swissprot_aa_db: str = "/app/databases/swissprot"  # curated protein
+    pdb_aa_db: str = "/app/databases/pdbaa"       # PDB protein sequences
+    pdb_nt_db: str = "/app/databases/pdbnt"       # PDB nucleotide sequences
+    core_nt_db: str = "/app/databases/core_nt"    # core nucleotide
+    nt_db: str = "/app/databases/nt"              # full nucleotide
+    blastp_num_threads: int = 1
+    blastn_num_threads: int = 1
+    max_target_seqs: int = 500
+    timeout_s: int = 300
+    local_instance_run_short_search_if_under_X_residues: int = 30
+    exact_match_max_evalue: float = 1e-50
+    exact_match_min_bits: int = 51
+    exact_match_min_identity_p: float = 0.99
+    exact_match_min_query_cov_p: float = 0.99
+    similarity_match_max_evalue: float = 0.1
+    similarity_match_min_bits: int = 20
+    similarity_match_min_identity_p: float = 0.4
 ```
 
----
+### BLAST Thresholds
 
-## Resolver Mapping
+BLAST hits are classified as **exact** (identity) or **similarity** matches based on thresholds:
 
-| Resolver Class | Database Path | Config Toggle |
-|----------------|---------------|---------------|
-| `BLASTResolverPDBAA` | `/app/databases/pdbaa` | `enabled_pdbaa` |
-| `BLASTResolverPDBNT` | `/app/databases/pdbnt` | `enabled_pdbnt` |
-| `BLASTResolverUNIPROT` | `/app/databases/swissprot` | `enabled_uniprot` |
-| `BLASTResolverNR` | `/app/databases/nr` | `enabled_nr` |
-| `BLASTResolverSWISSPROT` | `/app/databases/swissprot` | `enabled_swissprot` |
+#### Exact Match Thresholds (identity hits)
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `exact_match_max_evalue` | `1e-50` | Maximum acceptable e-value (lower = more significant) |
+| `exact_match_min_bits` | `51` | Minimum bit score |
+| `exact_match_min_identity_p` | `0.99` | Minimum identity (99%) |
+| `exact_match_min_query_cov_p` | `0.99` | Minimum query coverage (99%) |
+
+#### Similarity Match Thresholds
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `similarity_match_max_evalue` | `0.1` | Maximum acceptable e-value |
+| `similarity_match_min_bits` | `20` | Minimum bit score |
+| `similarity_match_min_identity_p` | `0.4` | Minimum identity (40%) |
+
+### Resolver Mapping
+
+The following BLAST resolvers are available in the `[identifiers]` section:
+
+| Resolver Config Key | Database | Type | Similarity Toggle |
+|---------------------|----------|------|-------------------|
+| `blast_pdb_protein` | pdbaa | Protein | `blast_pdb_protein_similarity` |
+| `blast_pdb_nucleic` | pdbnt | Nucleotide | `blast_pdb_nucleic_similarity` |
+| `blast_uniprot` | swissprot | Protein | `blast_uniprot_similarity` |
+| `blast_nr_protein` | nr | Protein | `blast_nr_protein_similarity` |
+| `blast_swissprot_protein` | swissprot | Protein | `blast_swissprot_protein_similarity` |
+| `blast_core_nt` | core_nt | Nucleotide | `blast_core_nt_similarity` |
+| `blast_nt` | nt | Nucleotide | `blast_nt_similarity` |
 
 ### Enable/Disable Resolvers
 
 In `config.ini`:
 
 ```ini
-[identifiers.resolvers.blast]
-enabled_pdbaa = true
-enabled_pdbnt = true
-enabled_uniprot = true
-enabled_nr = false      # Disable nr (large, slow)
-enabled_swissprot = true
+[identifiers]
+blast_pdb_protein = yes
+blast_pdb_protein_similarity = yes
+blast_uniprot = yes
+blast_uniprot_similarity = yes
+blast_nr_protein = yes
+blast_nr_protein_similarity = yes
+blast_swissprot_protein = yes
+blast_swissprot_protein_similarity = yes
+blast_pdb_nucleic = yes
+blast_pdb_nucleic_similarity = yes
+blast_core_nt = yes
+blast_core_nt_similarity = yes
+blast_nt = yes
+blast_nt_similarity = yes
 ```
+
+---
+
+## Reading Results
+
+### Understanding Identifier Hits
+
+When viewing results in the UI or API:
+
+- **Identity hits**: Displayed with score "Identity" in the UI. These are exact or near-exact matches meeting the strict exact-match thresholds.
+- **Similarity hits**: Displayed with an identity percentage (e.g., "85%"). These are homologous matches meeting the more relaxed similarity thresholds.
+
+### BLAST-Specific Metadata
+
+BLAST hits include additional metadata columns:
+
+| Field | Description |
+|-------|-------------|
+| `evalue` | BLAST e-value (expectation value) |
+| `bit_score` | BLAST bit score |
+| `identity_percent` | Sequence identity percentage (0-100) |
+| `coverage_percent` | Query coverage percentage (0-100) |
+
+### UI Display
+
+The RunResults page shows a "Top Identifiers" card on the Overview tab when identifier data exists, displaying:
+- Total hit count
+- Number of resolvers attempted and failed
+- Top 5 hits sorted by score (identity hits treated as 100%)
+- External link buttons for hits with database URLs
 
 ---
 
@@ -371,5 +458,3 @@ ftp://ftp.ncbi.nlm.nih.gov/blast/db/{database_name}.tar.gz.md5
 ```
 
 ---
-
-**Last Updated:** June 12, 2026

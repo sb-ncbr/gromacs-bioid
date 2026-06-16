@@ -11,7 +11,8 @@ from .resolvers.inchikey import InchiKeyResolver
 from .resolvers.formula import FormulaResolver
 from .resolvers.blast import (
     BLASTResolverPDBAA, BLASTResolverPDBNT, BLASTResolverUNIPROT,
-    BLASTResolverNR, BLASTResolverSWISSPROT
+    BLASTResolverNR, BLASTResolverSWISSPROT,
+    BLASTResolverCORENT, BLASTResolverNT
 )
 from .resolvers.pdb_struct import PDBStructResolverProtein, PDBStructResolverNucleotide
 from .resolvers.alphafind import AlphaFindStructResolver
@@ -99,6 +100,8 @@ def get_default_resolvers(config: RunConfig) -> list[IdentifierResolver]:
     resolvers.append(BLASTResolverUNIPROT(config))
     resolvers.append(BLASTResolverNR(config))
     resolvers.append(BLASTResolverSWISSPROT(config))
+    resolvers.append(BLASTResolverCORENT(config))
+    resolvers.append(BLASTResolverNT(config))
     resolvers.append(PDBStructResolverProtein(config))
     resolvers.append(PDBStructResolverNucleotide(config))
     resolvers.append(AlphaFindStructResolver(config))

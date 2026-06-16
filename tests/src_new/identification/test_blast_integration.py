@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -14,6 +15,8 @@ from src_new.identification.resolvers.blast import (
     BLASTResolverUNIPROT,
     BLASTResolverNR,
     BLASTResolverSWISSPROT,
+    BLASTResolverCORENT,
+    BLASTResolverNT,
     BlastHit,
 )
 from src_new.identification.base import IdentifierResolutionError
@@ -626,22 +629,24 @@ class TestBlastPreflight:
     """Tests for preflight checks (empty/missing database paths)."""
 
     def test_preflight_empty_db_path(self, config: RunConfig) -> None:
-        """resolver with db_path="" returns None from resolve()."""
+        """resolver with db_path="" raises IdentifierResolutionError from resolve()."""
         config.blast.pdb_aa_db = ""
         resolver = BLASTResolverPDBAA(config)
         
-        result = resolver.resolve("MKWVTFISLLFLFSSAYS", as_similarity=False)
+        with pytest.raises(IdentifierResolutionError) as exc_info:
+            resolver.resolve("MKWVTFISLLFLFSSAYS", as_similarity=False)
         
-        assert result is None
+        assert "BLAST database path not configured" in str(exc_info.value)
 
     def test_preflight_missing_database_files(self, config: RunConfig) -> None:
-        """resolver with db_path="/nonexistent/db" returns None."""
+        """resolver with db_path="/nonexistent/db" raises IdentifierResolutionError."""
         config.blast.pdb_aa_db = "/nonexistent/db"
         resolver = BLASTResolverPDBAA(config)
         
-        result = resolver.resolve("MKWVTFISLLFLFSSAYS", as_similarity=False)
+        with pytest.raises(IdentifierResolutionError) as exc_info:
+            resolver.resolve("MKWVTFISLLFLFSSAYS", as_similarity=False)
         
-        assert result is None
+        assert "BLAST database not found" in str(exc_info.value)
 
     def test_preflight_valid_db_path_still_runs(self, tmp_path: Path, config: RunConfig) -> None:
         """With valid-looking path, reaches subprocess (mock subprocess to avoid real blast)."""
@@ -703,11 +708,13 @@ class TestBlastPreflight:
         mock_result.stdout = ""
         
         with patch("subprocess.run", return_value=mock_result):
-            result = resolver.resolve("MKWVTFISLLFLFSSAYS", as_similarity=False)
+            with pytest.raises(IdentifierResolutionError) as exc_info:
+                resolver.resolve("MKWVTFISLLFLFSSAYS", as_similarity=False)
         
-        # Exception propagates to resolve() which logs and returns None
-        assert result is None
-        # Check that the error log contains the stderr message
+        # Exception propagates to resolve() which logs and re-raises
+        assert "BLAST failed with return code 1" in str(exc_info.value)
+        assert "BLAST Database error: File not found" in str(exc_info.value)
+        # Check that the error log also contains the message
         assert "BLAST failed with return code 1" in caplog.text
         assert "BLAST Database error: File not found" in caplog.text
 
@@ -913,3 +920,713 @@ class TestBlastEndToEnd:
         assert "1A2B" in similarity_accessions
         assert "1A2C_A" in similarity_accessions
         assert len(similarity_result) == 2
+
+
+# =============================================================================
+# Test Class: TestBlastAlphabetValidation
+# =============================================================================
+
+class TestBlastAlphabetValidation:
+    """Test _is_applicable query alphabet validation (BLAST-1)."""
+
+    def test_protein_resolver_rejects_nucleic_only_sequence(self, config: RunConfig) -> None:
+        """Protein resolver should reject sequence containing only nucleic-specific codes (T, U).
+        
+        Note: A, C, G are valid amino acids (Alanine, Cysteine, Glycine), so we use
+        T (Thymine) and U (Uracil) which are nucleic-specific.
+        """
+        resolver = BLASTResolverPDBAA(config)
+        
+        # Pure nucleic acid sequence with T and U (not valid amino acids)
+        nucleic_seq = "TTTTUUUUAAAA"
+        
+        assert resolver._is_applicable(nucleic_seq) is False
+
+    def test_nucleic_resolver_rejects_protein_only_sequence(self, config: RunConfig) -> None:
+        """Nucleotide resolver should reject sequence containing only protein-specific residues."""
+        resolver = BLASTResolverPDBNT(config)
+        
+        # Protein sequence with residues not in nucleic acids
+        protein_seq = "MKWVTFISLLFLFSSAYS"
+        
+        assert resolver._is_applicable(protein_seq) is False
+
+    def test_protein_resolver_accepts_valid_protein_sequence(self, config: RunConfig) -> None:
+        """Protein resolver should accept valid amino acid sequence."""
+        resolver = BLASTResolverPDBAA(config)
+        
+        # Valid protein sequence
+        protein_seq = "MKWVTFISLLFLFSSAYSRGVFRR"
+        
+        assert resolver._is_applicable(protein_seq) is True
+
+    def test_nucleic_resolver_accepts_valid_nucleic_sequence(self, config: RunConfig) -> None:
+        """Nucleotide resolver should accept valid nucleic acid sequence."""
+        resolver = BLASTResolverPDBNT(config)
+        
+        # Valid nucleic acid sequence
+        nucleic_seq = "ACGTACGTACGTACGT"
+        
+        assert resolver._is_applicable(nucleic_seq) is True
+
+    def test_protein_resolver_rejects_invalid_characters(self, config: RunConfig) -> None:
+        """Protein resolver should reject sequence with invalid characters."""
+        resolver = BLASTResolverPDBAA(config)
+        
+        # Sequence with invalid characters (numbers, special chars)
+        invalid_seq = "MKWV123!@#"
+        
+        assert resolver._is_applicable(invalid_seq) is False
+
+    def test_nucleic_resolver_rejects_invalid_characters(self, config: RunConfig) -> None:
+        """Nucleotide resolver should reject sequence with invalid characters."""
+        resolver = BLASTResolverPDBNT(config)
+        
+        # Sequence with invalid characters
+        invalid_seq = "ACGT123!@#"
+        
+        assert resolver._is_applicable(invalid_seq) is False
+
+    def test_protein_resolver_rejects_empty_sequence(self, config: RunConfig) -> None:
+        """Protein resolver should reject empty sequence."""
+        resolver = BLASTResolverPDBAA(config)
+        
+        assert resolver._is_applicable("") is False
+        assert resolver._is_applicable("   ") is False
+
+    def test_nucleic_resolver_rejects_empty_sequence(self, config: RunConfig) -> None:
+        """Nucleotide resolver should reject empty sequence."""
+        resolver = BLASTResolverPDBNT(config)
+        
+        assert resolver._is_applicable("") is False
+        assert resolver._is_applicable("   ") is False
+
+    def test_protein_resolver_accepts_lowercase(self, config: RunConfig) -> None:
+        """Protein resolver should accept lowercase amino acid codes."""
+        resolver = BLASTResolverPDBAA(config)
+        
+        # Lowercase protein sequence
+        protein_seq = "mkwvtfillflfssays"
+        
+        assert resolver._is_applicable(protein_seq) is True
+
+    def test_nucleic_resolver_accepts_lowercase(self, config: RunConfig) -> None:
+        """Nucleotide resolver should accept lowercase nucleic acid codes."""
+        resolver = BLASTResolverPDBNT(config)
+        
+        # Lowercase nucleic acid sequence
+        nucleic_seq = "acgtacgtacgt"
+        
+        assert resolver._is_applicable(nucleic_seq) is True
+
+    def test_uniprot_resolver_rejects_nucleic_sequence(self, config: RunConfig) -> None:
+        """UniProt protein resolver should reject nucleic acid sequence."""
+        resolver = BLASTResolverUNIPROT(config)
+        
+        # Use T and U which are not valid amino acids
+        nucleic_seq = "TTTTUUUU"
+        
+        assert resolver._is_applicable(nucleic_seq) is False
+
+    def test_nr_resolver_rejects_nucleic_sequence(self, config: RunConfig) -> None:
+        """NR protein resolver should reject nucleic acid sequence."""
+        resolver = BLASTResolverNR(config)
+        
+        # Use T and U which are not valid amino acids
+        nucleic_seq = "TTTTUUUU"
+        
+        assert resolver._is_applicable(nucleic_seq) is False
+
+
+# =============================================================================
+# Test Class: TestIdentifierResolutionErrorPropagation
+# =============================================================================
+
+class TestIdentifierResolutionErrorPropagation:
+    """Test that IdentifierResolutionError propagates through resolve() (BASE-8)."""
+
+    def test_identifer_resolution_error_propagates(self, config: RunConfig) -> None:
+        """Test that IdentifierResolutionError raised in _resolve_identity propagates."""
+        from src_new.identification.base import IdentifierResolver, IdentifierResolutionError
+        
+        # Create a mock resolver that always raises IdentifierResolutionError
+        class FailingResolver(IdentifierResolver):
+            name = "failing_resolver"
+            identifier_type = "TEST_ID"
+            accepted_signatures = ["test_sig"]
+            
+            def _is_applicable(self, signature: str) -> bool:
+                return True
+            
+            def _resolve_identity(self, signature: str, working_directory: str) -> list[str]:
+                raise IdentifierResolutionError("Test resolution failure")
+            
+            def _resolve_similarity(self, signature: str, working_directory: str) -> list[tuple[str, float]]:
+                raise IdentifierResolutionError("Test similarity failure")
+        
+        resolver = FailingResolver(config)
+        
+        # Should raise IdentifierResolutionError, not return None
+        with pytest.raises(IdentifierResolutionError) as exc_info:
+            resolver.resolve("TEST_SIGNATURE", as_similarity=False)
+        
+        assert "Test resolution failure" in str(exc_info.value)
+
+    def test_identifer_resolution_error_propagates_similarity(self, config: RunConfig) -> None:
+        """Test that IdentifierResolutionError raised in _resolve_similarity propagates."""
+        from src_new.identification.base import IdentifierResolver, IdentifierResolutionError
+        
+        class FailingSimilarityResolver(IdentifierResolver):
+            name = "failing_sim_resolver"
+            identifier_type = "TEST_ID"
+            accepted_signatures = ["test_sig"]
+            
+            def _is_applicable(self, signature: str) -> bool:
+                return True
+            
+            def _resolve_identity(self, signature: str, working_directory: str) -> list[str]:
+                return ["ID1"]
+            
+            def _resolve_similarity(self, signature: str, working_directory: str) -> list[tuple[str, float]]:
+                raise IdentifierResolutionError("Test similarity resolution failure")
+        
+        resolver = FailingSimilarityResolver(config)
+        
+        # Should raise IdentifierResolutionError, not return None
+        with pytest.raises(IdentifierResolutionError) as exc_info:
+            resolver.resolve("TEST_SIGNATURE", as_similarity=True)
+        
+        assert "Test similarity resolution failure" in str(exc_info.value)
+
+    def test_generic_exception_returns_none(self, config: RunConfig) -> None:
+        """Test that generic exceptions still return None (not re-raised)."""
+        from src_new.identification.base import IdentifierResolver
+        
+        class GenericFailingResolver(IdentifierResolver):
+            name = "generic_failing_resolver"
+            identifier_type = "TEST_ID"
+            accepted_signatures = ["test_sig"]
+            
+            def _is_applicable(self, signature: str) -> bool:
+                return True
+            
+            def _resolve_identity(self, signature: str, working_directory: str) -> list[str]:
+                raise ValueError("Unexpected error")
+            
+            def _resolve_similarity(self, signature: str, working_directory: str) -> list[tuple[str, float]]:
+                raise ValueError("Unexpected error")
+        
+        resolver = GenericFailingResolver(config)
+        
+        # Generic exceptions should return None, not propagate
+        result = resolver.resolve("TEST_SIGNATURE", as_similarity=False)
+        assert result is None
+
+
+# =============================================================================
+# Test Class: TestBlastNewResolverClasses
+# =============================================================================
+
+class TestBlastNewResolverClasses:
+    """Test the two new nucleotide resolver subclasses."""
+
+    def test_corent_has_correct_attributes(self, config: RunConfig) -> None:
+        """Test CORE_NT has correct db_path, is_protein, resolver_name, identifier_type."""
+        config.blast.core_nt_db = "/test/core_nt"
+        resolver = BLASTResolverCORENT(config)
+        
+        assert resolver.db_path == "/test/core_nt"
+        assert resolver.is_protein is False
+        assert resolver.name == "blast_core_nt"
+        assert resolver.identifier_type == "CORE_NT_ID"
+        assert resolver.accepted_signatures == ["residue_sequence_nucleotide"]
+
+    def test_corent_uses_correct_executable(self, config: RunConfig) -> None:
+        """Test CORE_NT uses blastn for nucleotide."""
+        resolver = BLASTResolverCORENT(config)
+        assert resolver._get_exec_path() == config.blast.blastn_exec
+
+    def test_corent_accepted_signatures(self, config: RunConfig) -> None:
+        """Test CORE_NT accepts residue_sequence_nucleotide."""
+        resolver = BLASTResolverCORENT(config)
+        assert resolver.accepted_signatures == ["residue_sequence_nucleotide"]
+
+    def test_nt_has_correct_attributes(self, config: RunConfig) -> None:
+        """Test NT has correct attributes."""
+        config.blast.nt_db = "/test/nt"
+        resolver = BLASTResolverNT(config)
+        
+        assert resolver.db_path == "/test/nt"
+        assert resolver.is_protein is False
+        assert resolver.name == "blast_nt"
+        assert resolver.identifier_type == "NT_ID"
+        assert resolver.accepted_signatures == ["residue_sequence_nucleotide"]
+
+    def test_nt_uses_correct_executable(self, config: RunConfig) -> None:
+        """Test NT uses blastn for nucleotide."""
+        resolver = BLASTResolverNT(config)
+        assert resolver._get_exec_path() == config.blast.blastn_exec
+
+    def test_nt_accepted_signatures(self, config: RunConfig) -> None:
+        """Test NT accepts residue_sequence_nucleotide."""
+        resolver = BLASTResolverNT(config)
+        assert resolver.accepted_signatures == ["residue_sequence_nucleotide"]
+
+
+# =============================================================================
+# Test Class: TestBlastPreflightExtended
+# =============================================================================
+
+class TestBlastPreflightExtended:
+    """Extended preflight tests for new file patterns (.nal, multi-volume)."""
+
+    def test_preflight_nal_file_accepted(self, tmp_path: Path, config: RunConfig) -> None:
+        """Preflight should pass with .nal (nucleotide alias) file."""
+        db_dir = tmp_path / "databases"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        db_file = db_dir / "testdb"
+        nal_file = db_dir / "testdb.nal"
+        nal_file.touch()
+        
+        config.blast.pdb_nt_db = str(db_file)
+        resolver = BLASTResolverPDBNT(config)
+        
+        # Should not raise
+        resolver._preflight_check()
+
+    def test_preflight_multi_volume_n00_accepted(self, tmp_path: Path, config: RunConfig) -> None:
+        """Preflight should pass with .n00 multi-volume file."""
+        db_dir = tmp_path / "databases"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        db_file = db_dir / "testdb"
+        n00_file = db_dir / "testdb.n00"
+        n00_file.touch()
+        
+        config.blast.pdb_nt_db = str(db_file)
+        resolver = BLASTResolverPDBNT(config)
+        
+        # Should not raise
+        resolver._preflight_check()
+
+    def test_preflight_multi_volume_p00_accepted(self, tmp_path: Path, config: RunConfig) -> None:
+        """Preflight should pass with .p00 multi-volume file."""
+        db_dir = tmp_path / "databases"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        db_file = db_dir / "testdb"
+        p00_file = db_dir / "testdb.p00"
+        p00_file.touch()
+        
+        config.blast.pdb_aa_db = str(db_file)
+        resolver = BLASTResolverPDBAA(config)
+        
+        # Should not raise
+        resolver._preflight_check()
+
+    def test_preflight_nin_nsq_combo_accepted(self, tmp_path: Path, config: RunConfig) -> None:
+        """Preflight should pass with .nin + .nsq combo."""
+        db_dir = tmp_path / "databases"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        db_file = db_dir / "testdb"
+        nin_file = db_dir / "testdb.nin"
+        nsq_file = db_dir / "testdb.nsq"
+        nin_file.touch()
+        nsq_file.touch()
+        
+        config.blast.pdb_nt_db = str(db_file)
+        resolver = BLASTResolverPDBNT(config)
+        
+        # Should not raise
+        resolver._preflight_check()
+
+    def test_preflight_pin_psq_combo_accepted(self, tmp_path: Path, config: RunConfig) -> None:
+        """Preflight should pass with .pin + .psq combo."""
+        db_dir = tmp_path / "databases"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        db_file = db_dir / "testdb"
+        pin_file = db_dir / "testdb.pin"
+        psq_file = db_dir / "testdb.psq"
+        pin_file.touch()
+        psq_file.touch()
+        
+        config.blast.pdb_aa_db = str(db_file)
+        resolver = BLASTResolverPDBAA(config)
+        
+        # Should not raise
+        resolver._preflight_check()
+
+    def test_preflight_clear_error_message(self, config: RunConfig) -> None:
+        """Preflight should provide clear error message with expected files."""
+        config.blast.pdb_aa_db = "/nonexistent/db"
+        resolver = BLASTResolverPDBAA(config)
+        
+        with pytest.raises(IdentifierResolutionError) as exc_info:
+            resolver._preflight_check()
+        
+        error_msg = str(exc_info.value)
+        assert ".pal" in error_msg or ".nal" in error_msg
+        assert ".pin" in error_msg
+        assert ".nin" in error_msg
+
+
+# =============================================================================
+# Test Class: TestBlastInvocationHardening
+# =============================================================================
+
+class TestBlastInvocationHardening:
+    """Tests for hardened BLAST invocation (threads, max_target_seqs, timeout)."""
+
+    def test_protein_resolver_uses_blastp_num_threads(self, tmp_path: Path, config: RunConfig) -> None:
+        """Protein resolver should pass -num_threads from blastp_num_threads config."""
+        config.blast.blastp_num_threads = 8
+        config.blast.max_target_seqs = 250
+        
+        db_dir = tmp_path / "databases"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        pal_file = db_dir / "testdb.pal"
+        pal_file.touch()
+        
+        config.blast.pdb_aa_db = str(db_dir / "testdb")
+        resolver = BLASTResolverPDBAA(config)
+        
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stderr = ""
+        
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = mock_result
+            with patch('builtins.open', create=True) as mock_open:
+                import json
+                mock_open.return_value.__enter__ = lambda s: s
+                mock_open.return_value.__exit__ = lambda s, *args: None
+                mock_open.return_value.read.return_value = json.dumps({
+                    "BlastOutput2": {"report": {"results": {"search": {"query_len": 50, "hits": []}}}}
+                })
+                
+                try:
+                    resolver._run_blast_local("MKWVTFISLLFLFSSAYS", str(db_dir))
+                except Exception:
+                    pass
+                
+                call_args = mock_run.call_args[0][0]
+                assert '-num_threads' in call_args
+                assert '8' in call_args
+
+    def test_nucleotide_resolver_uses_blastn_num_threads(self, tmp_path: Path, config: RunConfig) -> None:
+        """Nucleotide resolver should pass -num_threads from blastn_num_threads config."""
+        config.blast.blastn_num_threads = 4
+        
+        db_dir = tmp_path / "databases"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        nal_file = db_dir / "testdb.nal"
+        nal_file.touch()
+        
+        config.blast.pdb_nt_db = str(db_dir / "testdb")
+        resolver = BLASTResolverPDBNT(config)
+        
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stderr = ""
+        
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = mock_result
+            with patch('builtins.open', create=True) as mock_open:
+                import json
+                mock_open.return_value.__enter__ = lambda s: s
+                mock_open.return_value.__exit__ = lambda s, *args: None
+                mock_open.return_value.read.return_value = json.dumps({
+                    "BlastOutput2": {"report": {"results": {"search": {"query_len": 50, "hits": []}}}}
+                })
+                
+                try:
+                    resolver._run_blast_local("ACGTACGTACGT", str(db_dir))
+                except Exception:
+                    pass
+                
+                call_args = mock_run.call_args[0][0]
+                assert '-num_threads' in call_args
+                assert '4' in call_args
+
+    def test_max_target_seqs_passed(self, tmp_path: Path, config: RunConfig) -> None:
+        """BLAST should receive -max_target_seqs from config."""
+        config.blast.max_target_seqs = 100
+        
+        db_dir = tmp_path / "databases"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        pal_file = db_dir / "testdb.pal"
+        pal_file.touch()
+        
+        config.blast.pdb_aa_db = str(db_dir / "testdb")
+        resolver = BLASTResolverPDBAA(config)
+        
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stderr = ""
+        
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = mock_result
+            with patch('builtins.open', create=True) as mock_open:
+                import json
+                mock_open.return_value.__enter__ = lambda s: s
+                mock_open.return_value.__exit__ = lambda s, *args: None
+                mock_open.return_value.read.return_value = json.dumps({
+                    "BlastOutput2": {"report": {"results": {"search": {"query_len": 50, "hits": []}}}}
+                })
+                
+                try:
+                    resolver._run_blast_local("MKWVTFISLLFLFSSAYS", str(db_dir))
+                except Exception:
+                    pass
+                
+                call_args = mock_run.call_args[0][0]
+                assert '-max_target_seqs' in call_args
+                assert '100' in call_args
+
+    def test_timeout_passed_to_subprocess(self, tmp_path: Path, config: RunConfig) -> None:
+        """subprocess.run should receive timeout from config."""
+        config.blast.timeout_s = 120
+        
+        db_dir = tmp_path / "databases"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        pal_file = db_dir / "testdb.pal"
+        pal_file.touch()
+        
+        config.blast.pdb_aa_db = str(db_dir / "testdb")
+        resolver = BLASTResolverPDBAA(config)
+        
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stderr = ""
+        
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = mock_result
+            with patch('builtins.open', create=True) as mock_open:
+                import json
+                mock_open.return_value.__enter__ = lambda s: s
+                mock_open.return_value.__exit__ = lambda s, *args: None
+                mock_open.return_value.read.return_value = json.dumps({
+                    "BlastOutput2": {"report": {"results": {"search": {"query_len": 50, "hits": []}}}}
+                })
+                
+                try:
+                    resolver._run_blast_local("MKWVTFISLLFLFSSAYS", str(db_dir))
+                except Exception:
+                    pass
+                
+                # Check timeout was passed as keyword argument
+                call_kwargs = mock_run.call_args[1]
+                assert 'timeout' in call_kwargs
+                assert call_kwargs['timeout'] == 120
+
+    def test_timeout_expired_converts_to_identifier_resolution_error(self, tmp_path: Path, config: RunConfig) -> None:
+        """subprocess.TimeoutExpired should be converted to IdentifierResolutionError."""
+        config.blast.timeout_s = 5
+        
+        db_dir = tmp_path / "databases"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        pal_file = db_dir / "testdb.pal"
+        pal_file.touch()
+        
+        config.blast.pdb_aa_db = str(db_dir / "testdb")
+        resolver = BLASTResolverPDBAA(config)
+        
+        with patch('subprocess.run') as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd="blastp", timeout=5)
+            
+            with pytest.raises(IdentifierResolutionError) as exc_info:
+                resolver._run_blast_local("MKWVTFISLLFLFSSAYS", str(db_dir))
+            
+            assert "timed out" in str(exc_info.value).lower()
+            assert "5" in str(exc_info.value)
+
+    def test_stderr_logged_as_warning_on_success(self, tmp_path: Path, config: RunConfig, caplog) -> None:
+        """BLAST stderr on successful run should be logged as warning."""
+        import logging
+        caplog.set_level(logging.WARNING, logger="identifier")
+        
+        db_dir = tmp_path / "databases"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        pal_file = db_dir / "testdb.pal"
+        pal_file.touch()
+        
+        config.blast.pdb_aa_db = str(db_dir / "testdb")
+        resolver = BLASTResolverPDBAA(config)
+        
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stderr = "Warning: query sequence is short\nWarning: low complexity region detected"
+        
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = mock_result
+            with patch('builtins.open', create=True) as mock_open:
+                import json
+                mock_open.return_value.__enter__ = lambda s: s
+                mock_open.return_value.__exit__ = lambda s, *args: None
+                mock_open.return_value.read.return_value = json.dumps({
+                    "BlastOutput2": {"report": {"results": {"search": {"query_len": 50, "hits": []}}}}
+                })
+                
+                resolver._run_blast_local("MKWVTFISLLFLFSSAYS", str(db_dir))
+        
+        # Check warning was logged
+        assert "BLAST completed with warnings" in caplog.text
+        assert "low complexity region detected" in caplog.text
+
+
+# =============================================================================
+# Test Class: TestBlastMetadataCapture
+# =============================================================================
+
+class TestBlastMetadataCapture:
+    """Test that BLAST resolvers capture per-accession metadata (BLAST-6)."""
+
+    def test_identity_metadata_captured(self, config: RunConfig) -> None:
+        """Test that _run_blast_identity captures metadata for each accession."""
+        resolver = BLASTResolverPDBAA(config)
+        
+        hits = [make_hit(
+            accessions=["1A2B_A"],
+            identity=99,
+            align_len=100,
+            bits=200.0,
+            evalue=1e-100
+        )]
+        json_data = make_blast_json(hits, query_len=100)
+        
+        with patch.object(resolver, '_run_blast_local', return_value=json_data):
+            result = resolver._run_blast_identity("SEQUENCE", "")
+        
+        assert result == ["1A2B_A"]
+        
+        # Check metadata was captured
+        metadata = resolver.get_last_resolution_metadata()
+        assert metadata is not None
+        assert "1A2B_A" in metadata
+        
+        meta = metadata["1A2B_A"]
+        assert meta["evalue"] == 1e-100
+        assert meta["bit_score"] == 200.0
+        assert meta["identity_p"] == 0.99
+        assert meta["coverage_p"] == 1.0
+
+    def test_similarity_metadata_captured(self, config: RunConfig) -> None:
+        """Test that _run_blast_similarity captures metadata for each accession."""
+        resolver = BLASTResolverPDBAA(config)
+        
+        hits = [make_hit(
+            accessions=["SIMILAR_HIT"],
+            identity=75,
+            align_len=80,
+            bits=100.0,
+            evalue=1e-20
+        )]
+        json_data = make_blast_json(hits, query_len=100)
+        
+        with patch.object(resolver, '_run_blast_local', return_value=json_data):
+            result = resolver._run_blast_similarity("SEQUENCE", "")
+        
+        assert len(result) == 1
+        assert result[0][0] == "SIMILAR_HIT"
+        
+        # Check metadata was captured
+        metadata = resolver.get_last_resolution_metadata()
+        assert metadata is not None
+        assert "SIMILAR_HIT" in metadata
+        
+        meta = metadata["SIMILAR_HIT"]
+        assert meta["evalue"] == 1e-20
+        assert meta["bit_score"] == 100.0
+        assert meta["identity_p"] == 0.9375  # 75/80
+        assert meta["coverage_p"] == 0.8   # 80/100
+
+    def test_multiple_accessions_metadata(self, config: RunConfig) -> None:
+        """Test metadata is captured for all accessions in a multi-accession hit."""
+        resolver = BLASTResolverPDBAA(config)
+        
+        hit = {
+            "description": [
+                {"accession": "1A2B_A"},
+                {"accession": "1A2B_B"}
+            ],
+            "hsps": [{
+                "identity": 100,  # Must be 100% for exact match filter
+                "align_len": 100,
+                "bit_score": 180.0,
+                "evalue": 1e-80
+            }]
+        }
+        json_data = make_blast_json([hit], query_len=100)
+        
+        with patch.object(resolver, '_run_blast_local', return_value=json_data):
+            result = resolver._run_blast_identity("SEQUENCE", "")
+        
+        assert "1A2B_A" in result
+        assert "1A2B_B" in result
+        
+        # Both accessions should have the same metadata
+        metadata = resolver.get_last_resolution_metadata()
+        assert metadata is not None
+        assert "1A2B_A" in metadata
+        assert "1A2B_B" in metadata
+        
+        # Both should point to the same metadata dict
+        assert metadata["1A2B_A"] == metadata["1A2B_B"]
+        assert metadata["1A2B_A"]["evalue"] == 1e-80
+        assert metadata["1A2B_A"]["identity_p"] == 1.0
+
+    def test_metadata_cleared_on_new_resolve(self, config: RunConfig) -> None:
+        """Test that metadata is cleared when resolve() is called again."""
+        resolver = BLASTResolverPDBAA(config)
+        
+        # First resolution
+        hits = [make_hit(["FIRST_HIT"], identity=100, align_len=100, bits=200.0, evalue=1e-100)]
+        json_data = make_blast_json(hits, query_len=100)
+        
+        with patch.object(resolver, '_run_blast_local', return_value=json_data):
+            resolver._run_blast_identity("SEQUENCE", "")
+        
+        metadata1 = resolver.get_last_resolution_metadata()
+        assert metadata1 is not None
+        assert "FIRST_HIT" in metadata1
+        
+        # Second resolution with no hits should clear metadata
+        empty_json = make_blast_json([], query_len=100)
+        with patch.object(resolver, '_run_blast_local', return_value=empty_json):
+            resolver._run_blast_identity("SEQUENCE2", "")
+        
+        # Metadata should be cleared (None or empty)
+        metadata2 = resolver.get_last_resolution_metadata()
+        assert metadata2 is not None  # Still returns dict but empty
+        assert "FIRST_HIT" not in metadata2
+
+    def test_identity_vs_similarity_filters_preserved(self, config: RunConfig) -> None:
+        """Test that identity and similarity filters work correctly with metadata."""
+        resolver = BLASTResolverPDBAA(config)
+        
+        # Create hits that would pass similarity but fail identity
+        hits = [
+            make_hit(["PERFECT"], identity=100, align_len=100, bits=200.0, evalue=1e-100),
+            make_hit(["SIMILAR"], identity=50, align_len=80, bits=60.0, evalue=1e-10),
+        ]
+        json_data = make_blast_json(hits, query_len=100)
+        
+        with patch.object(resolver, '_run_blast_local', return_value=json_data):
+            identity_result = resolver._run_blast_identity("SEQUENCE", "")
+            metadata_identity = resolver.get_last_resolution_metadata()
+            
+            similarity_result = resolver._run_blast_similarity("SEQUENCE", "")
+            metadata_similarity = resolver.get_last_resolution_metadata()
+        
+        # Identity should only get perfect hit
+        assert identity_result == ["PERFECT"]
+        assert metadata_identity is not None
+        assert "PERFECT" in metadata_identity
+        assert "SIMILAR" not in metadata_identity
+        
+        # Similarity should get both
+        similarity_accessions = [r[0] for r in similarity_result]
+        assert "PERFECT" in similarity_accessions
+        assert "SIMILAR" in similarity_accessions
+        assert metadata_similarity is not None
+        assert "PERFECT" in metadata_similarity
+        assert "SIMILAR" in metadata_similarity
+

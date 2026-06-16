@@ -2,12 +2,48 @@
 
 from __future__ import annotations
 
+import logging
+
 import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+logger = logging.getLogger("verification")
+
 if TYPE_CHECKING:
     from ..results.results_manager import ResultsManager
+
+# Canonical signature type mapping (same as in resolution_manager.py)
+_CANONICAL_SIGNATURE_TYPES: dict[str, str] = {
+    "smiles": "smiles",
+    "smiles_not_sanitized": "smiles",
+    "inchi_key": "inchikey",
+    "morgan_fingerprint": "morgan_fingerprint",
+    "selfies": "selfies",
+    "molecular_formula": "formula",
+    "fasta_map_protein": "residue_sequence_protein",
+    "fasta_map_nucleic": "residue_sequence_nucleotide",
+    "fasta_resname_protein": "residue_sequence_protein",
+    "fasta_resname_nucleic": "residue_sequence_nucleotide",
+    "pdb_protein": "pdb_protein",
+    "pdb_not_sanitized_protein": "pdb_protein",
+    "pdb_backbone_protein": "pdb_protein",
+    "pdb_backbone_not_sanitized_protein": "pdb_protein",
+    "pdb_nucleic": "pdb_nucleic",
+    "pdb_not_sanitized_nucleic": "pdb_nucleic",
+    "pdb_backbone_nucleic": "pdb_nucleic",
+    "pdb_backbone_not_sanitized_nucleic": "pdb_nucleic",
+    "ca_only_pdb": "ca_only_pdb",
+    "tdi": "3di_sequence",
+    "lipid_shorthand": "lipid_shorthand",
+    "glycan_composition": "glycan_composition",
+    "mmcif": "mmcif",
+    "name_chain": "name",
+    "name_molecule": "name",
+    "name_segment": "name",
+    "atom": "element",
+    "fingerprint": "hash",
+}
 
 
 @dataclass
@@ -108,8 +144,13 @@ def collect_hits(results: ResultsManager, segment: str) -> list[RawHit]:
             if not signature or not hit_type or not hit_list or not ident_type:
                 continue
             
-            # Determine signature type from generator name
-            signature_type = generator_name.lower().replace("_", "")
+            # Determine signature type: prefer from resolver result, fallback to canonical mapping
+            signature_type = resolver_result.get("signature_type")
+            if signature_type is None:
+                signature_type = _CANONICAL_SIGNATURE_TYPES.get(generator_name)
+            if signature_type is None:
+                logger.warning(f"Unknown signature generator '{generator_name}', using fallback")
+                signature_type = generator_name.lower().replace("_", "")
             
             # Process hits based on type
             if hit_type == "identity":

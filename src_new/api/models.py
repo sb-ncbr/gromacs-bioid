@@ -154,8 +154,21 @@ class IdentifierHit(BaseModel):
     ident_type: str = Field(..., description="Identifier type (e.g., PDB_ID, UNIPROT_ID)")
     hit_type: str = Field(..., description="Hit type: exact/similarity")
     resolver_name: str = Field(..., description="Name of the resolver that found this hit")
+    segment: Optional[str] = Field(None, description="Segment name from which this hit originated")
     score: Optional[float] = Field(None, description="Resolution score")
     database_url: Optional[str] = Field(None, description="URL to the database entry")
+    evalue: Optional[float] = Field(None, description="BLAST e-value")
+    bit_score: Optional[float] = Field(None, description="BLAST bit score")
+    identity_percent: Optional[float] = Field(None, description="Identity percentage (0-100)")
+    coverage_percent: Optional[float] = Field(None, description="Coverage percentage (0-100)")
+
+
+class ResolverErrorItem(BaseModel):
+    """A resolver failure item."""
+
+    resolver_name: str = Field(..., description="Name of the resolver that failed")
+    generator: Optional[str] = Field(None, description="Generator name associated with the failure")
+    message: str = Field(..., description="Error message")
 
 
 class IdentifiersResponse(BaseModel):
@@ -166,6 +179,9 @@ class IdentifiersResponse(BaseModel):
     hits: List[IdentifierHit] = Field(default_factory=list, description="List of identifier hits")
     attempted_resolvers: List[str] = Field(
         default_factory=list, description="Resolvers that were attempted"
+    )
+    failed_resolvers: List[ResolverErrorItem] = Field(
+        default_factory=list, description="Resolvers that failed with error messages"
     )
 
 

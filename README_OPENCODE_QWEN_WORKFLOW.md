@@ -17,12 +17,14 @@ AGENTS.md
     researcher.md
     programmer.md
     debugger.md
+    kubernetes.md
   commands/
     work.md
     code.md
     research.md
     plan.md
     debug.md
+    kubernetes.md
 ```
 
 ## Install
@@ -86,6 +88,7 @@ planner
 researcher
 programmer
 debugger
+kubernetes
 ```
 
 ### 2. Planner should not edit
@@ -133,6 +136,14 @@ Expected: Researcher uses web tools and does not inspect repo files.
 ```
 
 Expected: Debugger uses kubectl exec with ls and reports findings. No files are modified.
+
+### 7. Kubernetes test
+
+```text
+/kubernetes Get pods --all-namespaces
+```
+
+Expected: Kubernetes agent uses kubectl get and reports pod list. No local files are modified.
 
 ## If the programmer appears frozen
 

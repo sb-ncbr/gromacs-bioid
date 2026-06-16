@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bat3-download-monitor
+  labels:
+    app: bat3-download-monitor
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: monitor
+      image: cerit.io/tomsko/bat3-worker:latest
+      imagePullPolicy: IfNotPresent
+      command: ["bash", "-c"]
+      args:
+        - |
+          set -euo pipefail
+          LOG=/app/databases/download.log
+          AUDIT=/app/databases/audit.log
+          NAMESPACE=gromacs-bioid-ns
+          DOWNLOAD_POD=bat3-blast-db-download
+          WORKER_DEPLOYMENT=bat3-bat3-worker
+          
+          echo "[$(date '+%Y-%m-%d %H:%M:%S')] Monitor started. Checking every 30 minutes." | tee -a "$AUDIT"
+          
+          while true; do
+            if [ ! -f "$LOG" ]; then
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] Download log not found yet. Waiting..." | tee -a "$AUDIT"
+            else
+              # Check if download is still active (look for "Downloading volume" in last 20 lines)
+              if tail -20 "$LOG" | grep -q "Downloading volume"; then
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Download still in progress." | tee -a "$AUDIT"
+              # Check if the final database (nt) has completed
+              elif tail -20 "$LOG" | grep -q "Downloaded nt"; then
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Download appears complete. Starting audit..." | tee -a "$AUDIT"
+                
+                # Audit each database
+                FAILED=0
+                for db in swissprot pdbaa pdbnt core_nt nr nt; do
+                  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Auditing $db..." | tee -a "$AUDIT"
+                  if ! blastdbcmd -db "$db" -info >> "$AUDIT" 2>&1; then
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAILED: $db audit failed." | tee -a "$AUDIT"
+                    FAILED=1
+                  else
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] PASSED: $db audit passed." | tee -a "$AUDIT"
+                  fi
+                done
+                
+                if [ "$FAILED" -eq 0 ]; then
+                  echo "[$(date '+%Y-%m-%d %H:%M:%S')] All audits passed. Scaling worker up..." | tee -a "$AUDIT"
+                  kubectl --kubeconfig ~/.kube/config -n "$NAMESPACE" scale deployment "$WORKER_DEPLOYMENT" --replicas=1
+                  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Deleting download pod..." | tee -a "$AUDIT"
+                  kubectl --kubeconfig ~/.kube/config -n "$NAMESPACE" delete pod "$DOWNLOAD_POD" --ignore-not-found=true
+                  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Done. Worker scaled up." | tee -a "$AUDIT"
+                else
+                  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Audit failed. Not scaling worker or deleting download pod." | tee -a "$AUDIT"
+                fi
+                
+                # Exit the monitoring loop regardless
+                break
+              else
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Download log exists but status unclear. Waiting..." | tee -a "$AUDIT"
+              fi
+            fi
+            sleep 1800
+          done
+      workingDir: /app/databases
+      volumeMounts:
+        - name: databases-data
+          mountPath: /app/databases
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "100m"
+        limits:
+          memory: "1Gi"
+          cpu: "500m"
+  volumes:
+    - name: databases-data
+      persistentVolumeClaim:
+        claimName: bat3-bat3-databases-data

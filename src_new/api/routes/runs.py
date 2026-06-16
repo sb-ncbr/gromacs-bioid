@@ -4,6 +4,7 @@ from __future__ import annotations
 import errno
 import time
 
+import re
 import shutil
 import json
 import os
@@ -35,6 +36,7 @@ from ..models import (
     SignatureInfo,
     IdentifiersResponse,
     IdentifierHit,
+    ResolverErrorItem,
     VerificationResponse,
     VerifiedHitItem,
     RunCreateResponse,
@@ -46,6 +48,9 @@ from ..utils import build_database_url
 from ..tasks import run_pipeline_task
 
 router = APIRouter()
+
+# Maximum upload size: 128 MiB (matches ingress limit)
+MAX_UPLOAD_BYTES = 128 * 1024 * 1024
 
 
 @router.get("/config/default", response_model=dict)
@@ -149,24 +154,34 @@ async def create_run(
     # Create run directory structure
     input_dir.mkdir(parents=True, exist_ok=True)
     
-    # Save uploaded files to input directory
+    # Save uploaded files to input directory with size validation
     saved_files = {}
     for file in files:
         if file.filename:
+            file_content = await file.read()
+            if len(file_content) > MAX_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File '{file.filename}' exceeds 128 MiB limit"
+                )
             file_path = input_dir / file.filename
-            content = await file.read()
             with open(file_path, "wb") as f:
-                f.write(content)
+                f.write(file_content)
             saved_files[file.filename] = str(file_path)
     
     # Handle config: uploaded file, JSON overrides, or default
     config_path: Optional[Path] = None
     if config_file and config_file.filename:
-        # Use uploaded config file
+        # Use uploaded config file with size validation
+        config_content_bytes = await config_file.read()
+        if len(config_content_bytes) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File '{config_file.filename}' exceeds 128 MiB limit"
+            )
         config_path = run_dir / "config.ini"
-        content_bytes = await config_file.read()
         with open(config_path, "wb") as f:
-            f.write(content_bytes)
+            f.write(config_content_bytes)
         # Apply quick structure search overrides if enabled
         from src_new.config.loader import RunConfig
         config = RunConfig.from_ini_path(config_path)
@@ -178,8 +193,18 @@ async def create_run(
     elif config_json:
         # Parse JSON overrides and write customized config
         import json as json_module
-        overrides_dict = json_module.loads(config_json)
+        try:
+            overrides_dict = json_module.loads(config_json)
+        except json_module.JSONDecodeError as e:
+            raise HTTPException(status_code=422, detail=f"Invalid config JSON: {e}")
+        
+        # Validate top-level keys against RunConfig sections
         from src_new.config.loader import RunConfig
+        valid_sections = set(RunConfig.__dataclass_fields__.keys())
+        for key in overrides_dict.keys():
+            if key not in valid_sections:
+                raise HTTPException(status_code=422, detail=f"Unknown config section: {key}")
+        
         config = RunConfig.from_default_ini()
         config.apply_nested_overrides(overrides_dict)
         # Apply quick structure search overrides if enabled
@@ -766,6 +791,22 @@ async def get_identifiers(run_id: str, segment: Optional[str] = None) -> Identif
                     # Build database URL
                     db_url = build_database_url(identifier, ident_type)
                     
+                    # Look up metadata from hits_metadata
+                    metadata = {}
+                    hits_metadata = resolver_data.get("hits_metadata", {})
+                    if isinstance(hits_metadata, dict):
+                        metadata = hits_metadata.get(identifier, {})
+                    
+                    # Extract metadata fields
+                    evalue = metadata.get("evalue")
+                    bit_score = metadata.get("bit_score")
+                    identity_percent = None
+                    if metadata.get("identity_p") is not None:
+                        identity_percent = metadata.get("identity_p") * 100.0
+                    coverage_percent = None
+                    if metadata.get("coverage_p") is not None:
+                        coverage_percent = metadata.get("coverage_p") * 100.0
+                    
                     # Deduplicate by (identifier, ident_type, resolver_name)
                     dedup_key = (identifier, ident_type, resolver_name)
                     if dedup_key in seen_keys:
@@ -777,8 +818,35 @@ async def get_identifiers(run_id: str, segment: Optional[str] = None) -> Identif
                         ident_type=ident_type,
                         hit_type=hit_type_label,
                         resolver_name=resolver_name,
+                        segment=seg_name,
                         score=score,
                         database_url=db_url,
+                        evalue=evalue,
+                        bit_score=bit_score,
+                        identity_percent=identity_percent,
+                        coverage_percent=coverage_percent,
+                    ))
+    
+    # Parse failed_resolvers from warnings
+    failed_resolvers_set = set()  # For deduplication by (resolver_name, generator, message)
+    failed_resolvers = []
+    warnings = data.get("warnings", [])
+    for warning in warnings:
+        if warning.get("code") == "identifier_resolver_failed":
+            message = warning.get("message", "")
+            # Parse message of the form "{resolver_name} ({generator_name}): {error}"
+            match = re.match(r"^([^()]+)\s*\(([^)]+)\):\s*(.+)$", message)
+            if match:
+                resolver_name = match.group(1).strip()
+                generator = match.group(2).strip()
+                error_msg = match.group(3).strip()
+                dedup_key = (resolver_name, generator, error_msg)
+                if dedup_key not in failed_resolvers_set:
+                    failed_resolvers_set.add(dedup_key)
+                    failed_resolvers.append(ResolverErrorItem(
+                        resolver_name=resolver_name,
+                        generator=generator,
+                        message=error_msg,
                     ))
     
     # Use first segment name or "unknown"
@@ -789,6 +857,7 @@ async def get_identifiers(run_id: str, segment: Optional[str] = None) -> Identif
         segment=seg,
         hits=all_hits,
         attempted_resolvers=list(all_attempted_resolvers),
+        failed_resolvers=failed_resolvers,
     )
 
 

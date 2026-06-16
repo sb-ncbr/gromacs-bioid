@@ -107,6 +107,186 @@ class TestSequenceFetcher:
         
         # Should return None due to parsing error
         assert result is None
+    
+    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    def test_sequence_fetcher_nr_id(self, mock_get) -> None:
+        """Mock NCBI protein FASTA for NR_ID."""
+        mock_response = Mock()
+        mock_response.text = ">gi|12345|ref|NP_001| test protein\nMVLSPADK\n"
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+        
+        fetcher = SequenceSignatureFetcher()
+        result = fetcher.fetch("NP_001", "NR_ID")
+        
+        assert result == "MVLSPADK"
+        mock_get.assert_called_once()
+        assert "db=protein" in mock_get.call_args[0][0]
+    
+    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    def test_sequence_fetcher_swissprot_id(self, mock_get) -> None:
+        """Mock UniProt FASTA for SWISSPROT_ID."""
+        mock_response = Mock()
+        mock_response.text = ">sp|P04637|TEST Test protein\nMVLSPADK\n"
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+        
+        fetcher = SequenceSignatureFetcher()
+        result = fetcher.fetch("P04637", "SWISSPROT_ID")
+        
+        assert result == "MVLSPADK"
+    
+    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    def test_sequence_fetcher_nt_id(self, mock_get) -> None:
+        """Mock NCBI nucleotide FASTA for NT_ID."""
+        mock_response = Mock()
+        mock_response.text = ">NM_001123 test transcript\nATGCGTACGT\n"
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+        
+        fetcher = SequenceSignatureFetcher()
+        result = fetcher.fetch("NM_001123", "NT_ID")
+        
+        assert result == "ATGCGTACGT"
+        mock_get.assert_called_once()
+        assert "db=nuccore" in mock_get.call_args[0][0]
+    
+    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    def test_sequence_fetcher_core_nt_id(self, mock_get) -> None:
+        """Mock NCBI nucleotide FASTA for CORE_NT_ID."""
+        mock_response = Mock()
+        mock_response.text = ">NC_000001 human chromosome\nATGCATGC\n"
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+        
+        fetcher = SequenceSignatureFetcher()
+        result = fetcher.fetch("NC_000001", "CORE_NT_ID")
+        
+        assert result == "ATGCATGC"
+    
+    def test_sequence_fetcher_supports_new_types(self) -> None:
+        """Test that supports() returns True for new identifier types."""
+        fetcher = SequenceSignatureFetcher()
+        
+        assert fetcher.supports("NR_ID") is True
+        assert fetcher.supports("SWISSPROT_ID") is True
+        assert fetcher.supports("NT_ID") is True
+        assert fetcher.supports("CORE_NT_ID") is True
+    
+    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    def test_sequence_fetcher_pdb_entities_multi_entity(self, mock_get) -> None:
+        """Test _fetch_pdb_entities with mocked multi-entity PDB response."""
+        # Mock entry response with multiple polymer entities
+        mock_entry_response = type('MockResponse', (), {
+            'json': lambda self: {
+                "rcsb_entry_container_identifiers": {
+                    "polymer_entity_ids": ["1", "2"]
+                }
+            },
+            'raise_for_status': lambda self: None
+        })()
+        
+        # Mock entity 1 response
+        mock_entity1_response = type('MockResponse', (), {
+            'json': lambda self: {
+                "entity_poly": {"pdbx_seq_one_letter_code_can": "AAAA\n"}
+            },
+            'raise_for_status': lambda self: None
+        })()
+        
+        # Mock entity 2 response
+        mock_entity2_response = type('MockResponse', (), {
+            'json': lambda self: {
+                "entity_poly": {"pdbx_seq_one_letter_code_can": "MVLSPADKT\n"}
+            },
+            'raise_for_status': lambda self: None
+        })()
+        
+        # Set up side_effect to return different responses for different URLs
+        def side_effect(url, **kwargs):
+            if "core/entry/" in url:
+                return mock_entry_response
+            elif url.endswith("/1"):
+                return mock_entity1_response
+            elif url.endswith("/2"):
+                return mock_entity2_response
+            raise ValueError(f"Unexpected URL: {url}")
+        
+        mock_get.side_effect = side_effect
+        
+        fetcher = SequenceSignatureFetcher()
+        sequences = fetcher._fetch_pdb_entities("1ABC")
+        
+        assert len(sequences) == 2
+        assert "AAAA" in sequences
+        assert "MVLSPADKT" in sequences
+    
+    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    def test_sequence_fetcher_pdb_entities_empty(self, mock_get) -> None:
+        """Test _fetch_pdb_entities when no polymer entities found."""
+        # Mock entry response with no polymer entities
+        mock_entry_response = type('MockResponse', (), {
+            'json': lambda self: {
+                "rcsb_entry_container_identifiers": {
+                    "polymer_entity_ids": []
+                }
+            },
+            'raise_for_status': lambda self: None
+        })()
+        
+        mock_get.return_value = mock_entry_response
+        
+        fetcher = SequenceSignatureFetcher()
+        sequences = fetcher._fetch_pdb_entities("1ABC")
+        
+        assert sequences == []
+    
+    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    def test_sequence_fetcher_pdb_entities_with_empty_seq(self, mock_get) -> None:
+        """Test _fetch_pdb_entities skips entities with empty sequences."""
+        # Mock entry response with multiple polymer entities
+        mock_entry_response = type('MockResponse', (), {
+            'json': lambda self: {
+                "rcsb_entry_container_identifiers": {
+                    "polymer_entity_ids": ["1", "2"]
+                }
+            },
+            'raise_for_status': lambda self: None
+        })()
+        
+        # Mock entity 1 response with empty sequence
+        mock_entity1_response = type('MockResponse', (), {
+            'json': lambda self: {
+                "entity_poly": {"pdbx_seq_one_letter_code_can": ""}
+            },
+            'raise_for_status': lambda self: None
+        })()
+        
+        # Mock entity 2 response with valid sequence
+        mock_entity2_response = type('MockResponse', (), {
+            'json': lambda self: {
+                "entity_poly": {"pdbx_seq_one_letter_code_can": "MVLSPADKT\n"}
+            },
+            'raise_for_status': lambda self: None
+        })()
+        
+        def side_effect(url, **kwargs):
+            if "core/entry/" in url:
+                return mock_entry_response
+            elif url.endswith("/1"):
+                return mock_entity1_response
+            elif url.endswith("/2"):
+                return mock_entity2_response
+            raise ValueError(f"Unexpected URL: {url}")
+        
+        mock_get.side_effect = side_effect
+        
+        fetcher = SequenceSignatureFetcher()
+        sequences = fetcher._fetch_pdb_entities("1ABC")
+        
+        # Should skip entity 1 (empty seq) and only return entity 2
+        assert len(sequences) == 1
+        assert sequences[0] == "MVLSPADKT"
 
 
 class TestStructureFetcher:

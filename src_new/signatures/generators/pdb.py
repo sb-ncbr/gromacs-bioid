@@ -25,7 +25,7 @@ class PDBGenerator(SignatureGenerator):
     """PDB generator base class."""
     
     name = "pdb_protein"
-    signature_type = "pdb_protein"
+    # signature_type is set by subclasses
     
     def __init__(
         self,
@@ -106,48 +106,56 @@ class PDBGenerator(SignatureGenerator):
 
 class PDBGeneratorSanitizeProtein(PDBGenerator):
     """PDB generator for proteins with sanitization."""
+    signature_type = "pdb_protein"
     def __init__(self, config: SignaturesConfig) -> None:
         super().__init__(config, backbone_only=False, sanitize=True, is_protein=True)
 
 
 class PDBGeneratorNoSanitizeProtein(PDBGenerator):
     """PDB generator for proteins without sanitization."""
+    signature_type = "pdb_protein"
     def __init__(self, config: SignaturesConfig) -> None:
         super().__init__(config, backbone_only=False, sanitize=False, is_protein=True)
 
 
 class PDBBackboneGeneratorSanitizeProtein(PDBGenerator):
     """PDB backbone generator for proteins with sanitization."""
+    signature_type = "pdb_protein"
     def __init__(self, config: SignaturesConfig) -> None:
         super().__init__(config, backbone_only=True, sanitize=True, is_protein=True)
 
 
 class PDBBackboneGeneratorNoSanitizeProtein(PDBGenerator):
     """PDB backbone generator for proteins without sanitization."""
+    signature_type = "pdb_protein"
     def __init__(self, config: SignaturesConfig) -> None:
         super().__init__(config, backbone_only=True, sanitize=False, is_protein=True)
 
 
 class PDBGeneratorSanitizeNucleic(PDBGenerator):
     """PDB generator for nucleic acids with sanitization."""
+    signature_type = "pdb_nucleic"
     def __init__(self, config: SignaturesConfig) -> None:
         super().__init__(config, backbone_only=False, sanitize=True, is_nucleotide=True)
 
 
 class PDBGeneratorNoSanitizeNucleic(PDBGenerator):
     """PDB generator for nucleic acids without sanitization."""
+    signature_type = "pdb_nucleic"
     def __init__(self, config: SignaturesConfig) -> None:
         super().__init__(config, backbone_only=False, sanitize=False, is_nucleotide=True)
 
 
 class PDBBackboneGeneratorSanitizeNucleic(PDBGenerator):
     """PDB backbone generator for nucleic acids with sanitization."""
+    signature_type = "pdb_nucleic"
     def __init__(self, config: SignaturesConfig) -> None:
         super().__init__(config, backbone_only=True, sanitize=True, is_nucleotide=True)
 
 
 class PDBBackboneGeneratorNoSanitizeNucleic(PDBGenerator):
     """PDB backbone generator for nucleic acids without sanitization."""
+    signature_type = "pdb_nucleic"
     def __init__(self, config: SignaturesConfig) -> None:
         super().__init__(config, backbone_only=True, sanitize=False, is_nucleotide=True)
 

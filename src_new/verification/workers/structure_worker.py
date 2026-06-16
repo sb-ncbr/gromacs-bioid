@@ -7,7 +7,7 @@ import tempfile
 import os
 
 import numpy as np
-from Bio import pairwise2
+from Bio.Align import PairwiseAligner
 from Bio.PDB import PDBParser, Polypeptide
 
 from ..base import VerificationWorker
@@ -235,17 +235,16 @@ class StructureVerificationWorker(VerificationWorker):
                     normalized_score=0.0,
                 )
             
-            # Use globalms alignment with same parameters as SequenceVerificationWorker
+            # Use PairwiseAligner with same parameters as SequenceVerificationWorker
             # match=2, mismatch=-1, gap_open=-0.5, gap_extend=-0.1
-            alignments = pairwise2.align.globalms(
-                seq1,
-                seq2,
-                2,    # match
-                -1,   # mismatch
-                -0.5, # gap_open
-                -0.1, # gap_extend
-                one_alignment_only=True
-            )
+            aligner = PairwiseAligner()
+            aligner.mode = "global"
+            aligner.match_score = 2
+            aligner.mismatch_score = -1
+            aligner.open_gap_score = -0.5
+            aligner.extend_gap_score = -0.1
+            
+            alignments = aligner.align(seq1, seq2)
             
             if not alignments:
                 logger.warning(f"No alignment found for structure sequences")
@@ -258,12 +257,16 @@ class StructureVerificationWorker(VerificationWorker):
             
             aln = alignments[0]
             
+            # For PairwiseAligner, alignment sequences are accessed via aln[0] and aln[1]
+            aln_seq1 = str(aln[0])
+            aln_seq2 = str(aln[1])
+            
             # Compute identity = matches / len(alignment.seqA)
-            matches = sum(a == b for a, b in zip(aln.seqA, aln.seqB))
-            identity = matches / len(aln.seqA) if len(aln.seqA) > 0 else 0.0
+            matches = sum(a == b for a, b in zip(aln_seq1, aln_seq2))
+            identity = matches / len(aln_seq1) if len(aln_seq1) > 0 else 0.0
             
             # Compute coverage = aligned_positions / len(seq1)
-            aligned_positions = sum(1 for a in aln.seqA if a != '-')
+            aligned_positions = sum(1 for a in aln_seq1 if a != '-')
             coverage = aligned_positions / len(seq1) if len(seq1) > 0 else 0.0
             
             # Final score = identity * coverage * 100.0, capped at 100

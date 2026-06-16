@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from unittest.mock import patch, MagicMock
 
 # Try to import optional dependencies
 try:
@@ -12,10 +13,10 @@ except ImportError:
     _RDKit_AVAILABLE = False
 
 try:
-    from Bio import pairwise2
-    _BIOPYTHON_AVAILABLE = True
+    from Bio.Align import PairwiseAligner
+    _BIOPYTHON_ALIGN_AVAILABLE = True
 except ImportError:
-    _BIOPYTHON_AVAILABLE = False
+    _BIOPYTHON_ALIGN_AVAILABLE = False
 
 from src_new.verification.workers import (
     CompoundVerificationWorker,
@@ -55,7 +56,7 @@ class TestCompoundWorker:
         assert score is None
     
     def test_compound_worker_invalid_smiles(self) -> None:
-        """Pass invalid SMILES -> assert None or normalized_score == 0.0."""
+        """Pass invalid SMILES string -> assert None or normalized_score == 0.0."""
         worker = CompoundVerificationWorker()
         # Invalid SMILES string
         score = worker.verify("INVALID_SMILES_123", "962", "PUBCHEM_CID", canonical_signature="O")
@@ -65,7 +66,7 @@ class TestCompoundWorker:
             assert score.normalized_score == 0.0
 
 
-@pytest.mark.skipif(not _BIOPYTHON_AVAILABLE, reason="Biopython not installed")
+@pytest.mark.skipif(not _BIOPYTHON_ALIGN_AVAILABLE, reason="Biopython not installed")
 class TestSequenceWorker:
     """Tests for SequenceVerificationWorker."""
     
@@ -107,6 +108,101 @@ class TestSequenceWorker:
         score = worker.verify("MVLSPADK", "P04637", "UNIPROT_ID", canonical_signature=None)
         
         assert score is None
+    
+    def test_sequence_worker_is_applicable_new_types(self) -> None:
+        """Test is_applicable for new identifier types (NR_ID, SWISSPROT_ID, NT_ID, CORE_NT_ID)."""
+        worker = SequenceVerificationWorker()
+        
+        # All new types should be applicable for residue_sequence signatures
+        assert worker.is_applicable("residue_sequence_protein", "NR_ID") is True
+        assert worker.is_applicable("residue_sequence_protein", "SWISSPROT_ID") is True
+        assert worker.is_applicable("residue_sequence_nucleotide", "NT_ID") is True
+        assert worker.is_applicable("residue_sequence_nucleotide", "CORE_NT_ID") is True
+        
+        # Old types should still work
+        assert worker.is_applicable("residue_sequence_protein", "PDB_ID") is True
+        assert worker.is_applicable("residue_sequence_protein", "UNIPROT_ID") is True
+        assert worker.is_applicable("residue_sequence_protein", "ALPHAFOLD_ID") is True
+        
+        # Unsupported types should return False
+        assert worker.is_applicable("residue_sequence_protein", "PUBCHEM_CID") is False
+    
+    def test_sequence_worker_pairwise_aligner_used(self) -> None:
+        """Test that PairwiseAligner is used instead of deprecated pairwise2."""
+        worker = SequenceVerificationWorker()
+        seq = "MVLSPADK"
+        
+        # Mock PairwiseAligner to verify it's called
+        with patch('src_new.verification.workers.sequence_worker.PairwiseAligner') as mock_aligner_class:
+            mock_aligner = MagicMock()
+            mock_aligner_class.return_value = mock_aligner
+            
+            # Create a mock alignment result
+            mock_alignment = MagicMock()
+            mock_alignment.__getitem__.side_effect = lambda idx: seq if idx == 0 else seq
+            mock_aligner.align.return_value = [mock_alignment]
+            
+            worker.verify(seq, "TEST", "UNIPROT_ID", canonical_signature=seq)
+            
+            # Verify PairwiseAligner was instantiated and configured
+            mock_aligner_class.assert_called_once()
+            assert mock_aligner.mode == "global"
+            assert mock_aligner.match_score == 2
+            assert mock_aligner.mismatch_score == -1
+            assert mock_aligner.open_gap_score == -0.5
+            assert mock_aligner.extend_gap_score == -0.1
+            mock_aligner.align.assert_called_once()
+    
+    @patch("src_new.verification.fetchers.sequence_fetcher.SequenceSignatureFetcher._fetch_pdb_entities")
+    def test_sequence_worker_pdb_multi_entity_best_match(self, mock_fetch_entities) -> None:
+        """Test that SequenceVerificationWorker picks best-matching PDB entity.
+        
+        When given a query sequence matching the second entity (not the first),
+        the worker should return a high score by selecting the correct entity.
+        """
+        # Mock _fetch_pdb_entities to return two sequences
+        # First entity: "AAAA" (won't match query)
+        # Second entity: "MVLSPADKT" (will match query)
+        mock_fetch_entities.return_value = ["AAAA", "MVLSPADKT"]
+        
+        worker = SequenceVerificationWorker()
+        query_seq = "MVLSPADKT"
+        
+        # The canonical_signature provided is the first entity (mismatch)
+        # but the worker should fetch entities and pick the best match
+        score = worker.verify(
+            query_seq,
+            "1ABC",
+            "PDB_ID",
+            canonical_signature="AAAA"  # This is the "wrong" entity
+        )
+        
+        # Should get high score because worker picked the matching entity
+        assert score is not None
+        assert score.normalized_score >= 95.0, f"Expected high score for matching entity, got {score.normalized_score}"
+        
+        # Verify _fetch_pdb_entities was called
+        mock_fetch_entities.assert_called_once_with("1ABC")
+    
+    @patch("src_new.verification.fetchers.sequence_fetcher.SequenceSignatureFetcher._fetch_pdb_entities")
+    def test_sequence_worker_pdb_fallback_to_canonical(self, mock_fetch_entities) -> None:
+        """Test fallback when _fetch_pdb_entities returns empty list."""
+        # Mock empty entity list
+        mock_fetch_entities.return_value = []
+        
+        worker = SequenceVerificationWorker()
+        seq = "MVLSPADK"
+        
+        # Should fall back to provided canonical_signature
+        score = worker.verify(
+            seq,
+            "1ABC",
+            "PDB_ID",
+            canonical_signature=seq
+        )
+        
+        assert score is not None
+        assert score.normalized_score >= 95.0
 
 
 class TestStructureWorker:
@@ -176,3 +272,22 @@ END
         )
         
         assert score is None
+    
+    def test_structure_worker_pairwise_aligner_used(self, minimal_pdb) -> None:
+        """Test that PairwiseAligner is used instead of deprecated pairwise2 in sequence proxy."""
+        worker = StructureVerificationWorker()
+        
+        # Mock PairwiseAligner to verify it's called in the sequence proxy fallback
+        with patch('src_new.verification.workers.structure_worker.PairwiseAligner') as mock_aligner_class:
+            mock_aligner = MagicMock()
+            mock_aligner_class.return_value = mock_aligner
+            
+            # Create a mock alignment result
+            mock_alignment = MagicMock()
+            mock_alignment.__getitem__.side_effect = lambda idx: "AA" if idx == 0 else "AA"
+            mock_aligner.align.return_value = [mock_alignment]
+            
+            worker.verify(minimal_pdb, "1ABC", "PDB_ID", canonical_signature=minimal_pdb)
+            
+            # Verify PairwiseAligner was called (in sequence proxy fallback)
+            mock_aligner.align.assert_called()

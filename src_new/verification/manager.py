@@ -98,7 +98,6 @@ class VerificationManager:
                 source_resolvers = metadata["source_resolvers"]
                 hit_type = metadata["hit_type"]
                 
-                
                 # Look up SignatureFetcher
                 fetcher = self._registry.get_fetcher(ident_type)
                 canonical_signature: str | None = None
@@ -175,8 +174,14 @@ class VerificationManager:
                     final_confidence = 0.0
                 
                 # Determine if verified
+                # Identity hits can be verified without similarity/annotation scores
+                # For non-identity hits, require positive evidence (score > 0)
                 min_confidence = self._verification_config.min_final_confidence
-                has_positive_evidence = similarity_score is not None or annotation_score is not None
+                has_positive_evidence = (
+                    similarity_score is not None or 
+                    (annotation_score is not None and annotation_score > 0) or 
+                    hit_type == "identity"
+                )
                 
                 if final_confidence >= min_confidence and has_positive_evidence:
                     # Create verified hit

@@ -153,9 +153,18 @@ def _download_with_urllib(staging_dir: Path, db_name: str) -> bool:
     num_volumes = meta.get("number-of-volumes", 1)
     log(f"{db_name}: {num_volumes} volume(s) to download")
     
+    # Get actual filenames from metadata to handle varying digit formats (nr uses 3 digits, others use 2)
+    files_list = meta.get("files", [])
+    
     # 2. Download each volume
     for vol in range(num_volumes):
-        vol_file = f"{db_name}.{vol:02d}.tar.gz"
+        if files_list and vol < len(files_list):
+            # Extract filename from full FTP URL in metadata
+            vol_file = files_list[vol].split("/")[-1]
+        elif num_volumes == 1:
+            vol_file = f"{db_name}.tar.gz"
+        else:
+            vol_file = f"{db_name}.{vol:02d}.tar.gz"
         vol_url = f"{base_url}/{vol_file}"
         vol_path = staging_dir / vol_file
         md5_url = f"{vol_url}.md5"

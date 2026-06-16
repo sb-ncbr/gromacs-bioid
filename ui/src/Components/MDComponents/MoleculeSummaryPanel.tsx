@@ -111,12 +111,20 @@ interface IdentifierHit {
     hit_type: string;
     resolver_name: string;
     score: number;
+    segment?: string;
+    database_url?: string | null;
+    evalue?: number | null;
+    bit_score?: number | null;
+    identity_percent?: number | null;
+    coverage_percent?: number | null;
 }
 
 interface IdentifiersData {
     run_id: string;
     segment: string;
     hits: IdentifierHit[];
+    attempted_resolvers?: string[];
+    failed_resolvers?: { resolver_name: string; generator?: string; message: string }[];
 }
 
 type DialogMode = 'off' | 'signatures' | 'identifiers' | 'verification';
@@ -415,26 +423,78 @@ const MoleculeSummaryPanel: React.FC<MoleculeSummaryPanelProps> = ({ runId, segm
                                     <TableCell>Type</TableCell>
                                     <TableCell>Resolver</TableCell>
                                     <TableCell>Score</TableCell>
+                                    <TableCell>Identity</TableCell>
+                                    <TableCell>Coverage</TableCell>
+                                    <TableCell>E-value</TableCell>
+                                    <TableCell>Database URL</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
                                 {identifiersData?.hits?.map((hit, idx) => (
                                     <TableRow key={idx}>
-                                        <TableCell>{hit.identifier ? segment : '-'}</TableCell>
+                                        <TableCell>{hit.segment || segment}</TableCell>
                                         <TableCell>{hit.identifier || '-'}</TableCell>
                                         <TableCell>{hit.ident_type || '-'}</TableCell>
                                         <TableCell>{hit.resolver_name || '-'}</TableCell>
                                         <TableCell>{hit.score !== undefined && hit.score !== null ? Math.round(hit.score) + '%' : (hit.identifier ? 'Identity' : '-')}</TableCell>
+                                        <TableCell>
+                                            {hit.identity_percent !== undefined && hit.identity_percent !== null 
+                                                ? hit.identity_percent.toFixed(1) + '%' 
+                                                : '—'}
+                                        </TableCell>
+                                        <TableCell>
+                                            {hit.coverage_percent !== undefined && hit.coverage_percent !== null 
+                                                ? hit.coverage_percent.toFixed(1) + '%' 
+                                                : '—'}
+                                        </TableCell>
+                                        <TableCell>
+                                            {hit.evalue !== undefined && hit.evalue !== null 
+                                                ? hit.evalue.toExponential(1) 
+                                                : '—'}
+                                        </TableCell>
+                                        <TableCell>
+                                            {hit.database_url ? (
+                                                <Link href={hit.database_url} target="_blank" rel="noopener noreferrer">
+                                                    Open
+                                                </Link>
+                                            ) : (
+                                                '—'
+                                            )}
+                                        </TableCell>
                                     </TableRow>
                                 ))}
                                 {!identifiersData?.hits?.length && (
                                     <TableRow>
-                                        <TableCell colSpan={5} align="center">No identifiers found.</TableCell>
+                                        <TableCell colSpan={9} align="center">No identifiers found.</TableCell>
                                     </TableRow>
                                 )}
                             </TableBody>
                         </Table>
                     </TableContainer>
+
+                    {/* Attempted resolvers */}
+                    {identifiersData?.attempted_resolvers && identifiersData.attempted_resolvers.length > 0 && (
+                        <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ mt: 2 }}>
+                            <Typography variant="caption" fontWeight="bold" sx={{ mr: 1 }}>Attempted resolvers:</Typography>
+                            {identifiersData.attempted_resolvers.map((resolver, idx) => (
+                                <Chip key={idx} label={resolver} size="small" />
+                            ))}
+                        </Stack>
+                    )}
+
+                    {/* Failed resolvers */}
+                    {identifiersData?.failed_resolvers && identifiersData.failed_resolvers.length > 0 && (
+                        <Alert severity="warning" sx={{ mt: 1 }}>
+                            <Typography variant="caption" fontWeight="bold">Failed resolvers:</Typography>
+                            <ul style={{ margin: 0, paddingLeft: '1.2em' }}>
+                                {identifiersData.failed_resolvers.map((failed, idx) => (
+                                    <li key={idx}>
+                                        {failed.resolver_name}{failed.generator ? ` (${failed.generator})` : ''}: {failed.message}
+                                    </li>
+                                ))}
+                            </ul>
+                        </Alert>
+                    )}
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setDialogMode('off')}>Close</Button>
@@ -492,7 +552,9 @@ const MoleculeSummaryPanel: React.FC<MoleculeSummaryPanelProps> = ({ runId, segm
                                                 {hit.is_verified ? (
                                                     <Chip label="Yes" color="success" size="small" />
                                                 ) : (
-                                                    <Chip label="No" color="error" size="small" />
+                                                    <Tooltip title={hit.rejection_reason || 'Verification failed'}>
+                                                        <Chip label="No" color="error" size="small" />
+                                                    </Tooltip>
                                                 )}
                                             </TableCell>
                                         </TableRow>

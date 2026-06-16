@@ -13,6 +13,12 @@ import {
     Tabs,
     Tab,
     Button,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
 } from "@mui/material";
 import { useParams } from "react-router-dom";
 import TasksProgressBar, { TaskInfo } from "../Components/TasksProgressBar";
@@ -22,7 +28,7 @@ import MoleculeSummaryPanel from "../Components/MDComponents/MoleculeSummaryPane
 import DownloadActions from "../Components/DownloadActions";
 import LogViewer from "../Components/LogViewer";
 import RunFileBrowser from "../Components/RunFileBrowser";
-import { Article } from "@mui/icons-material";
+import { Article, OpenInNew } from "@mui/icons-material";
 
 interface PipelineStatus {
     run_id: string;
@@ -105,6 +111,34 @@ interface SignaturesResponse {
     signatures: SignatureItem[];
 }
 
+interface IdentifierHit {
+    identifier: string;
+    ident_type: string;
+    hit_type: string;
+    resolver_name: string;
+    segment: string | null;
+    score: number | null;
+    database_url: string | null;
+    evalue: number | null;
+    bit_score: number | null;
+    identity_percent: number | null;
+    coverage_percent: number | null;
+}
+
+interface ResolverErrorItem {
+    resolver_name: string;
+    generator: string | null;
+    message: string;
+}
+
+interface IdentifiersData {
+    run_id: string;
+    segment: string;
+    hits: IdentifierHit[];
+    attempted_resolvers: string[];
+    failed_resolvers: ResolverErrorItem[];
+}
+
 type ActiveTab = 'overview' | 'loading' | 'warnings' | 'files' | 'signatures';
 
 const RunResults = () => {
@@ -127,6 +161,9 @@ const RunResults = () => {
     const [signatures, setSignatures] = useState<SignaturesResponse | null>(null);
     const [totalFragmentCount, setTotalFragmentCount] = useState<number | undefined>(undefined);
     const [typeCounts, setTypeCounts] = useState<Record<string, number>>({});
+    
+    // Identifiers state
+    const [identifiersData, setIdentifiersData] = useState<IdentifiersData | null>(null);
 
     // Refs to track last-known values to prevent unnecessary re-renders
     const segmentsRef = useRef<string[]>([]);
@@ -212,6 +249,20 @@ const RunResults = () => {
         }
     }, []);
 
+    const fetchIdentifiers = useCallback(async (id: string) => {
+        try {
+            const res = await fetch(`/runs/${id}/identifiers`);
+            if (res.ok) {
+                const data: IdentifiersData = await res.json();
+                setIdentifiersData(data);
+            } else {
+                console.error("Failed to fetch identifiers:", res.status);
+            }
+        } catch (err) {
+            console.error("Failed to fetch identifiers:", err);
+        }
+    }, []);
+
     // Poll for status
     useEffect(() => {
         if (!runId) return;
@@ -232,6 +283,7 @@ const RunResults = () => {
                 fetchMolecules(data.run_id);
                 fetchSignatures(data.run_id);
                 fetchLoadingInfo(data.run_id);
+                fetchIdentifiers(data.run_id);
 
                 // Stop polling if success or failed
                 if (data.pipeline.status === 'success' || data.pipeline.status === 'failed') {
@@ -260,7 +312,7 @@ const RunResults = () => {
                 clearInterval(interval);
             }
         };
-    }, [runId, fetchMolecules, fetchLoadingInfo, fetchSignatures]);
+    }, [runId, fetchMolecules, fetchLoadingInfo, fetchSignatures, fetchIdentifiers]);
 
     if (initialLoading) {
         return (
@@ -274,6 +326,26 @@ const RunResults = () => {
 
     const handleTabChange = (_event: React.SyntheticEvent, newValue: ActiveTab) => {
         setActiveTab(newValue);
+    };
+
+    // Helper to get display score for a hit
+    const getHitScoreDisplay = (hit: IdentifierHit): string => {
+        if (hit.hit_type === 'identity' || hit.score === null) {
+            return 'Identity';
+        }
+        return `${Math.round(hit.score)}%`;
+    };
+
+    // Get top 5 hits sorted by score descending
+    const getTopHits = (): IdentifierHit[] => {
+        if (!identifiersData?.hits?.length) return [];
+        return [...identifiersData.hits]
+            .sort((a, b) => {
+                const scoreA = a.hit_type === 'identity' || a.score === null ? 100 : a.score;
+                const scoreB = b.hit_type === 'identity' || b.score === null ? 100 : b.score;
+                return scoreB - scoreA;
+            })
+            .slice(0, 5);
     };
 
     return (
@@ -436,6 +508,63 @@ const RunResults = () => {
                                             <Typography variant="body2">
                                                 Finished: {new Date(statusData.pipeline.finished_at).toLocaleString()}
                                             </Typography>
+                                        )}
+
+                                        {/* Top Identifiers Section */}
+                                        {identifiersData?.hits && identifiersData.hits.length > 0 && (
+                                            <Paper variant="outlined" sx={{ p: 2, mt: 2 }}>
+                                                <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 1 }}>Top Identifiers</Typography>
+                                                <Stack spacing={1} sx={{ mb: 2 }}>
+                                                    <Typography variant="body2">
+                                                        Total hits: <strong>{identifiersData.hits.length}</strong>
+                                                    </Typography>
+                                                    <Typography variant="body2">
+                                                        Resolvers attempted: <strong>{identifiersData.attempted_resolvers?.length || 0}</strong>
+                                                        {identifiersData.failed_resolvers && identifiersData.failed_resolvers.length > 0 && (
+                                                            <span> (<strong style={{ color: 'error.main' }}>Failed: {identifiersData.failed_resolvers.length}</strong>)</span>
+                                                        )}
+                                                    </Typography>
+                                                </Stack>
+                                                <TableContainer>
+                                                    <Table size="small">
+                                                        <TableHead>
+                                                            <TableRow>
+                                                                <TableCell>Segment</TableCell>
+                                                                <TableCell>Identifier</TableCell>
+                                                                <TableCell>Type</TableCell>
+                                                                <TableCell>Resolver</TableCell>
+                                                                <TableCell>Score</TableCell>
+                                                                <TableCell>Links</TableCell>
+                                                            </TableRow>
+                                                        </TableHead>
+                                                        <TableBody>
+                                                            {getTopHits().map((hit, idx) => (
+                                                                <TableRow key={idx} hover>
+                                                                    <TableCell>{hit.segment}</TableCell>
+                                                                    <TableCell>{hit.identifier}</TableCell>
+                                                                    <TableCell>{hit.ident_type}</TableCell>
+                                                                    <TableCell>{hit.resolver_name}</TableCell>
+                                                                    <TableCell>{getHitScoreDisplay(hit)}</TableCell>
+                                                                    <TableCell>
+                                                                        {hit.database_url && (
+                                                                            <Tooltip title="Open in database">
+                                                                                <IconButton
+                                                                                    size="small"
+                                                                                    href={hit.database_url}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                >
+                                                                                    <OpenInNew fontSize="small" />
+                                                                                </IconButton>
+                                                                            </Tooltip>
+                                                                        )}
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            ))}
+                                                        </TableBody>
+                                                    </Table>
+                                                </TableContainer>
+                                            </Paper>
                                         )}
 
                                         {/* Events */}

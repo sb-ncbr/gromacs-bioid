@@ -2,8 +2,7 @@
 description: >-
   Primary workflow orchestrator. Use for normal work requests. Reads the repo,
   asks blocking questions, delegates web/current-info research to researcher,
-  and delegates all implementation to programmer. Never edits files or runs
-  shell commands.
+  and delegates all implementation to programmer, and may delegate kubernetes operations to kubernetes. Never edits files or runs shell commands.
 mode: primary
 model: litellm/kimi-k2.6
 temperature: 0.15
@@ -27,6 +26,7 @@ permission:
     researcher: allow
     programmer: allow
     debugger: allow
+    kubernetes: allow
 ---
 
 # Planner Agent
@@ -53,6 +53,8 @@ You do not code. You turn human intent into a small, executable programming task
 - You MAY invoke only these subagents through the Task tool:
   - researcher
   - programmer
+  - debugger
+  - kubernetes
 - You MUST invoke `researcher` through the Task tool for external, current, version-specific, library/API, package, standards, or documentation research.
 - You MUST invoke `programmer` through the Task tool for all implementation.
 

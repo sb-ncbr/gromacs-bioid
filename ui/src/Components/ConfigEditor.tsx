@@ -8,6 +8,7 @@ import {
     FormControlLabel,
     Typography,
     Stack,
+
 } from "@mui/material"
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore"
 
@@ -16,8 +17,13 @@ interface ConfigEditorProps {
     onChange: (updated: Record<string, any>) => void
 }
 
+interface InvalidFieldState {
+    [key: string]: boolean
+}
+
 const ConfigEditor: React.FC<ConfigEditorProps> = ({ config, onChange }) => {
     const [localConfig, setLocalConfig] = useState<Record<string, any>>({})
+    const [invalidFields, setInvalidFields] = useState<InvalidFieldState>({})
 
     useEffect(() => {
         // Early return if config is null/undefined
@@ -42,6 +48,42 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ config, onChange }) => {
         }
         setLocalConfig(updated)
         onChange(updated)
+    }
+
+    // Check if field name suggests it should be non-negative
+    const shouldBeNonNegative = (fieldName: string): boolean => {
+        const lowerName = fieldName.toLowerCase()
+        return lowerName.includes('timeout') ||
+               lowerName.includes('threshold') ||
+               lowerName.includes('max') ||
+               lowerName.includes('min') ||
+               lowerName.includes('weight') ||
+               lowerName.includes('limit') ||
+               lowerName.includes('count') ||
+               lowerName.includes('size')
+    }
+
+    const handleNumberChange = (section: string, fieldName: string, value: string, currentValue: number) => {
+        const fieldKey = `${section}.${fieldName}`
+        const parsed = parseFloat(value)
+        
+        if (value === '' || Number.isNaN(parsed)) {
+            // Empty or invalid input - keep previous valid value
+            setInvalidFields(prev => ({ ...prev, [fieldKey]: true }))
+            updateValue(section, fieldName, currentValue)
+            return
+        }
+        
+        if (shouldBeNonNegative(fieldName) && parsed < 0) {
+            // Negative value for field that should be non-negative
+            setInvalidFields(prev => ({ ...prev, [fieldKey]: true }))
+            updateValue(section, fieldName, currentValue)
+            return
+        }
+        
+        // Valid number
+        setInvalidFields(prev => ({ ...prev, [fieldKey]: false }))
+        updateValue(section, fieldName, parsed)
     }
 
     // Filter out private keys (starting with _)
@@ -75,6 +117,9 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ config, onChange }) => {
                                         return null
                                     }
 
+                                    const fieldKey = `${sectionName}.${fieldName}`
+                                    const isInvalid = invalidFields[fieldKey]
+
                                     if (typeof value === "boolean") {
                                         return (
                                             <FormControlLabel
@@ -95,18 +140,22 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ config, onChange }) => {
                                             />
                                         )
                                     } else if (typeof value === "number") {
+                                        const currentValue = localConfig[sectionName]?.[fieldName] ?? value
                                         return (
-                                            <TextField
-                                                key={fieldName}
-                                                label={fieldName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-                                                type="number"
-                                                size="small"
-                                                fullWidth
-                                                value={localConfig[sectionName]?.[fieldName] ?? value}
-                                                onChange={(e) =>
-                                                    updateValue(sectionName, fieldName, parseFloat(e.target.value) || 0)
-                                                }
-                                            />
+                                            <React.Fragment key={fieldName}>
+                                                <TextField
+                                                    label={fieldName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                                                    type="number"
+                                                    size="small"
+                                                    fullWidth
+                                                    value={currentValue}
+                                                    onChange={(e) =>
+                                                        handleNumberChange(sectionName, fieldName, e.target.value, currentValue)
+                                                    }
+                                                    error={isInvalid}
+                                                    helperText={isInvalid ? "Value must be a valid number" : undefined}
+                                                />
+                                            </React.Fragment>
                                         )
                                     } else {
                                         return (

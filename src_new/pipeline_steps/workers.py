@@ -511,12 +511,17 @@ def _identify_molecules_worker(item: tuple) -> dict[str, Any]:
                         )
                         
                         if result:
-                            results[f"identifiers/{fragment_name}/{generator_name}/{resolver.name}"] = {
+                            resolver_data = {
                                 "signature": signature,
                                 "hit_type": "identity",
                                 "hits": result,
-                                "ident_type": resolver.identifier_type
+                                "ident_type": resolver.identifier_type,
+                                "signature_type": signature_type
                             }
+                            metadata = resolver.get_last_resolution_metadata()
+                            if metadata is not None:
+                                resolver_data["hits_metadata"] = metadata
+                            results[f"identifiers/{fragment_name}/{generator_name}/{resolver.name}"] = resolver_data
                     except Exception as e:
                         errors.append({"resolver": resolver.name, "generator": generator_name, "error": str(e)})
                         continue
@@ -539,12 +544,17 @@ def _identify_molecules_worker(item: tuple) -> dict[str, Any]:
                         )
                         
                         if result:
-                            results[f"identifiers/{fragment_name}/{generator_name}/{resolver.name}"] = {
+                            resolver_data = {
                                 "signature": signature,
                                 "hit_type": "similarity",
                                 "hits": result,
-                                "ident_type": resolver.identifier_type
+                                "ident_type": resolver.identifier_type,
+                                "signature_type": signature_type
                             }
+                            metadata = resolver.get_last_resolution_metadata()
+                            if metadata is not None:
+                                resolver_data["hits_metadata"] = metadata
+                            results[f"identifiers/{fragment_name}/{generator_name}/{resolver.name}"] = resolver_data
                     except Exception as e:
                         errors.append({"resolver": resolver.name, "generator": generator_name, "error": str(e)})
                         continue

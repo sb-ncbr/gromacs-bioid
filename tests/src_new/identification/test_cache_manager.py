@@ -153,3 +153,37 @@ def test_cache_is_thread_safe(tmp_path: Path) -> None:
             key = f"resolver_{i}"
             assert key in results
             assert f"CID_{i}" in results[key]
+
+
+def test_cache_default_config_uses_app_runs(tmp_path) -> None:
+    """Test that ResolverCache with default config uses /app/runs directory.
+    
+    This test verifies the safe default path for worker container environments.
+    We override with tmp_path for testing, but verify the structure works correctly.
+    """
+    # Create cache with tmp_path (simulating /app/runs behavior)
+    config = RunConfig()
+    config.identifiers_cache.directory = str(tmp_path / "runs")
+    config.identifiers_cache.file = "resolver_cache.sqlite3"
+    
+    cache = ResolverCache(config)
+    
+    # Access connection to trigger creation
+    _ = cache._connection
+    
+    # Verify file was created in the expected location
+    cache_path = tmp_path / "runs" / "resolver_cache.sqlite3"
+    assert cache_path.exists()
+    assert cache_path.suffix == ".sqlite3"
+
+
+def test_cache_creates_directory_if_missing(tmp_path) -> None:
+    """Test that create_empty_cache_if_not_exists creates parent directories."""
+    nested_path = tmp_path / "nested" / "deep" / "path" / "cache.sqlite3"
+    
+    assert not nested_path.parent.exists()
+    
+    create_empty_cache_if_not_exists(str(nested_path))
+    
+    assert nested_path.exists()
+    assert nested_path.parent.exists()

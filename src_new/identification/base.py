@@ -38,6 +38,7 @@ class IdentifierResolver(ABC):
         # Read enablement from IdentifiersConfig automatically by name
         self.enabled_identity = getattr(config.identifiers, self.name, True)
         self.enabled_similarity = getattr(config.identifiers, f"{self.name}_similarity", True)
+        self._last_resolution_metadata: dict[str, dict] | None = None
     
     def is_applicable(self, signature: str, signature_type: str, as_similarity: bool = False) -> bool:
         """Check if this resolver can resolve the signature.
@@ -83,6 +84,9 @@ class IdentifierResolver(ABC):
             List of identifiers (identity) or list of (identifier, score) tuples (similarity),
             or None if resolution fails or is disabled.
         """
+        # Clear metadata from previous resolution
+        self._last_resolution_metadata = None
+        
         # Check cache first
         if cache is not None:
             if as_similarity:
@@ -121,7 +125,7 @@ class IdentifierResolver(ABC):
             return result
         except IdentifierResolutionError as exc:
             logger.error(f"Resolution failed for {self.name}: {exc}")
-            return None
+            raise  # Re-raise so callers can handle appropriately
         except Exception as exc:
             logger.error(f"Unexpected error in {self.name} resolver: {exc}")
             return None
@@ -169,3 +173,7 @@ class IdentifierResolver(ABC):
             IdentifierResolutionError: If resolution fails.
         """
         ...
+
+    def get_last_resolution_metadata(self) -> dict[str, dict] | None:
+        """Return optional per-accession metadata from the last resolve() call."""
+        return self._last_resolution_metadata

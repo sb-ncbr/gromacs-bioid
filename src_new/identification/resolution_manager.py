@@ -153,14 +153,19 @@ class IdentifierResolutionManager:
             
             if result:
                 hits_found = True
+                resolver_data = {
+                    "signature": signature,
+                    "hit_type": "identity",
+                    "hits": result,
+                    "ident_type": resolver.identifier_type,
+                    "signature_type": signature_type
+                }
+                metadata = resolver.get_last_resolution_metadata()
+                if metadata is not None:
+                    resolver_data["hits_metadata"] = metadata
                 results.set_data(
                     f"identifiers/{segment}/{signature_generator_name}/{resolver.name}",
-                    {
-                        "signature": signature,
-                        "hit_type": "identity",
-                        "hits": result,
-                        "ident_type": resolver.identifier_type
-                    }
+                    resolver_data
                 )
         
         # Phase 2: Similarity resolution
@@ -199,14 +204,19 @@ class IdentifierResolutionManager:
             
             if result:
                 hits_found = True
+                resolver_data = {
+                    "signature": signature,
+                    "hit_type": "similarity",
+                    "hits": result,
+                    "ident_type": resolver.identifier_type,
+                    "signature_type": signature_type
+                }
+                metadata = resolver.get_last_resolution_metadata()
+                if metadata is not None:
+                    resolver_data["hits_metadata"] = metadata
                 results.set_data(
                     f"identifiers/{segment}/{signature_generator_name}/{resolver.name}",
-                    {
-                        "signature": signature,
-                        "hit_type": "similarity",
-                        "hits": result,
-                        "ident_type": resolver.identifier_type
-                    }
+                    resolver_data
                 )
         
         # Record attempted resolvers
