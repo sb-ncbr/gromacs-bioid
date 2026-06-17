@@ -83,6 +83,7 @@ class IdentifierResolutionManager:
         signature: str,
         cache: ResolverCache | None = None,
         working_directory: str = "",
+        errors: list[dict] | None = None,
     ) -> bool:
         """Attempt identity then similarity resolution for one signature.
         
@@ -92,6 +93,7 @@ class IdentifierResolutionManager:
             signature_generator_name: Name of the signature generator.
             signature: The signature string to resolve.
             cache: Optional ResolverCache instance. If None, uses self.cache.
+        errors: Optional list to collect error dicts with resolver/generator info.
             
         Returns:
             True if any hit was found, False otherwise.
@@ -116,6 +118,10 @@ class IdentifierResolutionManager:
         # Track attempted resolvers
         attempted_resolvers: list[str] = []
         hits_found = False
+        
+        # Initialize errors list if not provided
+        if errors is None:
+            errors = []
         
         # Phase 1: Identity resolution
         identity_resolvers = self._registry.get_applicable_resolvers(
@@ -144,12 +150,16 @@ class IdentifierResolutionManager:
                         continue
             
             # Attempt resolution
-            result = resolver.resolve(
-                signature=signature,
-                as_similarity=False,
-                working_directory=working_directory,
-                cache=cache
-            )
+            try:
+                result = resolver.resolve(
+                    signature=signature,
+                    as_similarity=False,
+                    working_directory=working_directory,
+                    cache=cache
+                )
+            except Exception as e:
+                errors.append({"resolver": resolver.name, "generator": signature_generator_name, "error": str(e)})
+                continue
             
             if result:
                 hits_found = True
@@ -195,12 +205,16 @@ class IdentifierResolutionManager:
                         continue
             
             # Attempt resolution
-            result = resolver.resolve(
-                signature=signature,
-                as_similarity=True,
-                working_directory=working_directory,
-                cache=cache
-            )
+            try:
+                result = resolver.resolve(
+                    signature=signature,
+                    as_similarity=True,
+                    working_directory=working_directory,
+                    cache=cache
+                )
+            except Exception as e:
+                errors.append({"resolver": resolver.name, "generator": signature_generator_name, "error": str(e)})
+                continue
             
             if result:
                 hits_found = True

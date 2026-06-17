@@ -314,18 +314,19 @@ def _identify_molecules(context):
         for fragment_name, valid_sigs in items_serial:
             fragment_result = {"fragment_name": fragment_name, "results": {}, "errors": []}
             for generator_name, signature in valid_sigs.items():
-                try:
-                    hits_found = manager.resolve(
-                        results=context.results,
-                        segment=fragment_name,
-                        signature_generator_name=generator_name,
-                        signature=signature,
-                        cache=cache,
-                        working_directory=str(context.working_directory),
-                    )
-                except Exception as exc:
-                    fragment_result["errors"].append({"generator": generator_name, "error": str(exc)})
-                    continue
+                # Collect errors from this resolution
+                resolver_errors = []
+                hits_found = manager.resolve(
+                    results=context.results,
+                    segment=fragment_name,
+                    signature_generator_name=generator_name,
+                    signature=signature,
+                    cache=cache,
+                    working_directory=str(context.working_directory),
+                    errors=resolver_errors,
+                )
+                # Add resolver errors to fragment_result
+                fragment_result["errors"].extend(resolver_errors)
             # In serial mode, manager.resolve() writes directly to context.results
             # so we just return an empty results dict and errors
             results.append(fragment_result)

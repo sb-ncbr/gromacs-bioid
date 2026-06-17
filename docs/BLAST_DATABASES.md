@@ -296,12 +296,12 @@ python /app/scripts/populate_blast_databases.py \
 [blast]
 blastp_exec = /usr/bin/blastp
 blastn_exec = /usr/bin/blastn
-nr_aa_db = /app/databases/nr
-swissprot_aa_db = /app/databases/swissprot
-pdb_aa_db = /app/databases/pdbaa
-pdb_nt_db = /app/databases/pdbnt
-core_nt_db = /app/databases/core_nt
-nt_db = /app/databases/nt
+nr_aa_db = /app/databases/nr/nr
+swissprot_aa_db = /app/databases/swissprot/swissprot
+pdb_aa_db = /app/databases/pdbaa/pdbaa
+pdb_nt_db = /app/databases/pdbnt/pdbnt
+core_nt_db = /app/databases/core_nt/core_nt
+nt_db = /app/databases/nt/nt
 blastp_num_threads = 1
 blastn_num_threads = 1
 max_target_seqs = 500
@@ -316,12 +316,12 @@ local_instance_run_short_search_if_under_X_residues = 30
 class BlastConfig:
     blastp_exec: str = "/usr/bin/blastp"
     blastn_exec: str = "/usr/bin/blastn"
-    nr_aa_db: str = "/app/databases/nr"           # non-redundant protein
-    swissprot_aa_db: str = "/app/databases/swissprot"  # curated protein
-    pdb_aa_db: str = "/app/databases/pdbaa"       # PDB protein sequences
-    pdb_nt_db: str = "/app/databases/pdbnt"       # PDB nucleotide sequences
-    core_nt_db: str = "/app/databases/core_nt"    # core nucleotide
-    nt_db: str = "/app/databases/nt"              # full nucleotide
+    nr_aa_db: str = "/app/databases/nr/nr"           # non-redundant protein
+    swissprot_aa_db: str = "/app/databases/swissprot/swissprot"  # curated protein
+    pdb_aa_db: str = "/app/databases/pdbaa/pdbaa"       # PDB protein sequences
+    pdb_nt_db: str = "/app/databases/pdbnt/pdbnt"       # PDB nucleotide sequences
+    core_nt_db: str = "/app/databases/core_nt/core_nt"    # core nucleotide
+    nt_db: str = "/app/databases/nt/nt"              # full nucleotide
     blastp_num_threads: int = 1
     blastn_num_threads: int = 1
     max_target_seqs: int = 500

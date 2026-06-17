@@ -78,24 +78,24 @@ Template: `bat3-chart/templates/pvc-databases-data.yaml`
 **Configuration (`src_new/config/loader.py` BlastConfig):**
 
 ```python
-blast_aa_db_path = "/app/databases/nr"
-swissprot_aa_db_path = "/app/databases/swissprot"
-pdb_aa_db_path = "/app/databases/pdbaa"
-pdb_nt_db_path = "/app/databases/pdbnt"
-core_nt_db_path = "/app/databases/core_nt"
-nt_db_path = "/app/databases/nt"
+blast_aa_db_path = "/app/databases/nr/nr"
+swissprot_aa_db_path = "/app/databases/swissprot/swissprot"
+pdb_aa_db_path = "/app/databases/pdbaa/pdbaa"
+pdb_nt_db_path = "/app/databases/pdbnt/pdbnt"
+core_nt_db_path = "/app/databases/core_nt/core_nt"
+nt_db_path = "/app/databases/nt/nt"
 ```
 
 **config.ini `[blast]` section:**
 
 ```ini
 [blast]
-aa_db_path = /app/databases/nr
-swissprot_aa_db_path = /app/databases/swissprot
-pdb_aa_db_path = /app/databases/pdbaa
-pdb_nt_db_path = /app/databases/pdbnt
-core_nt_db_path = /app/databases/core_nt
-nt_db_path = /app/databases/nt
+aa_db_path = /app/databases/nr/nr
+swissprot_aa_db_path = /app/databases/swissprot/swissprot
+pdb_aa_db_path = /app/databases/pdbaa/pdbaa
+pdb_nt_db_path = /app/databases/pdbnt/pdbnt
+core_nt_db_path = /app/databases/core_nt/core_nt
+nt_db_path = /app/databases/nt/nt
 ```
 
 **Resolvers implemented (`src_new/identification/resolvers/blast.py`):**

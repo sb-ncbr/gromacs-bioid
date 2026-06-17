@@ -130,12 +130,12 @@ class IdentifiersConfig:
 class BlastConfig:
     blastp_exec: str = "/usr/bin/blastp"
     blastn_exec: str = "/usr/bin/blastn"
-    nr_aa_db: str = "/app/databases/nr"           # non-redundant protein
-    swissprot_aa_db: str = "/app/databases/swissprot"  # curated protein
-    pdb_aa_db: str = "/app/databases/pdbaa"       # PDB protein sequences
-    pdb_nt_db: str = "/app/databases/pdbnt"       # PDB nucleotide sequences
-    core_nt_db: str = "/app/databases/core_nt"    # core nucleotide
-    nt_db: str = "/app/databases/nt"              # full nucleotide
+    nr_aa_db: str = "/app/databases/nr/nr"           # non-redundant protein
+    swissprot_aa_db: str = "/app/databases/swissprot/swissprot"  # curated protein
+    pdb_aa_db: str = "/app/databases/pdbaa/pdbaa"       # PDB protein sequences
+    pdb_nt_db: str = "/app/databases/pdbnt/pdbnt"       # PDB nucleotide sequences
+    core_nt_db: str = "/app/databases/core_nt/core_nt"    # core nucleotide
+    nt_db: str = "/app/databases/nt/nt"              # full nucleotide
     blastp_num_threads: int = 1
     blastn_num_threads: int = 1
     max_target_seqs: int = 500
