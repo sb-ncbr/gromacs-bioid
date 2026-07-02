@@ -387,6 +387,22 @@ const RunResults = () => {
                                 (Upload &rarr; Customize Config &rarr; Loader &rarr; Guess Missing Bonds) and re-run for proper molecule detection.
                             </Alert>
                         )}
+                        {/* PBC unwrap applied info banner */}
+                        {statusData?.warnings?.some(w => w.code === 'pbc_unwrap_applied') && (
+                            <Alert severity="info" sx={{ mb: 1 }}>
+                                Periodic boundary unwrapping was applied to make molecules whole.
+                            </Alert>
+                        )}
+
+                        {/* PBC jumps detected warning banner */}
+                        {statusData?.warnings?.some(w => w.code === 'pbc_jumps_detected') && (
+                            <Alert severity="warning" sx={{ mb: 1 }}>
+                                <AlertTitle>Periodic boundary jumps detected</AlertTitle>
+                                The input structure appears broken across periodic boundaries.{" "}
+                                <strong>Enable "unwrap_periodic_boundaries" in the loader configuration</strong>{" "}
+                                (Upload → Customize Config → Loader → Unwrap Periodic Boundaries) and re-run for a continuous structure.
+                            </Alert>
+                        )}
 
                         {/* Failed banner */}
                         {isFailed && (

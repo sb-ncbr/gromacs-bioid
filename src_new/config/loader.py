@@ -17,6 +17,15 @@ class LoaderConfig:
     quick_structure_search: bool = True
     element_mass_tolerance: float = 0.01
     bond_guess_vdw_factor: float = 0.55
+    # Periodic boundary unwrapping options (default-on)
+    unwrap_periodic_boundaries: bool = True
+    unwrap_compound: str = "fragments"
+    unwrap_reference: str = "com"
+    unwrap_selection: str = "all"
+    unwrap_guess_bonds_if_missing: bool = True
+    unwrap_warn_if_jumps_detected: bool = True
+    unwrap_max_bond_length_factor: float = 0.5
+    unwrap_max_backbone_gap: float = 10.0
 
 
 @dataclass

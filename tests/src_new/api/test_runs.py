@@ -21,7 +21,7 @@ def client() -> TestClient:
 
 @pytest.fixture(autouse=True)
 def mock_celery_task(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Mock Celery task delay to avoid Redis connections during tests."""
+    """Mock Celery task apply_async to avoid Redis connections during tests."""
     class MockAsyncResult:
         def __init__(self, task_id: str) -> None:
             self.id = task_id
@@ -30,13 +30,15 @@ def mock_celery_task(monkeypatch: pytest.MonkeyPatch) -> None:
             return "PENDING"
         def ready(self) -> bool:
             return False
+        def revoke(self, terminate: bool = False) -> None:
+            pass
     
-    def mock_delay(*args, **kwargs):
-        return MockAsyncResult("mock-task-id")
+    def mock_apply_async(task_id: str = None, kwargs: dict = None) -> MockAsyncResult:
+        return MockAsyncResult(task_id or "mock-task-id")
     
     monkeypatch.setattr(
-        "src_new.api.routes.runs.run_pipeline_task.delay",
-        mock_delay,
+        "src_new.api.routes.runs.run_pipeline_task.apply_async",
+        mock_apply_async,
     )
 
 
@@ -605,3 +607,362 @@ class TestHealthEndpoints:
         
         assert response.status_code == 200
         assert response.json() == {"status": "healthy"}
+
+
+class TestRunCancellation:
+    """Tests for run cancellation endpoint."""
+    
+    def test_cancel_running_run(self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test cancelling a running/queued run returns 200 and sets status to cancelled."""
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        
+        # Create a run with "running" status
+        run_id = "test-run-cancel"
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        
+        results_data = {
+            "pipeline": {
+                "name": "BAT3",
+                "status": "running",
+                "started_at": "2026-05-26T10:00:00Z",
+            },
+            "tasks": {},
+            "warnings": [],
+            "critical_errors": [],
+            "events": [],
+        }
+        
+        results_path = run_dir / "results.json"
+        with open(results_path, "w", encoding="utf-8") as f:
+            json.dump(results_data, f, indent=2)
+        
+        # Mock Celery AsyncResult to return STARTED status
+        class MockAsyncResult:
+            def __init__(self, task_id: str) -> None:
+                self.id = task_id
+                self._status = "STARTED"
+            @property
+            def status(self) -> str:
+                return self._status
+            def ready(self) -> bool:
+                return False
+            def revoke(self, terminate: bool = False) -> None:
+                self._status = "REVOKED"
+        
+        def mock_async_result(task_id: str) -> MockAsyncResult:
+            return MockAsyncResult(task_id)
+        
+        # Mock at the celery_app module level since cancel_run imports from there
+        monkeypatch.setattr("src_new.celery_app.celery.AsyncResult", mock_async_result)
+        
+        # Cancel the run
+        response = client.post(f"/runs/{run_id}/cancel")
+        
+        assert response.status_code == 200
+        json_response = response.json()
+        assert json_response["run_id"] == run_id
+        assert json_response["status"] == "cancelled"
+        
+        # Verify results.json was updated
+        with open(results_path, "r") as f:
+            updated_data = json.load(f)
+        assert updated_data["pipeline"]["status"] == "cancelled"
+        assert "finished_at" in updated_data["pipeline"]
+    
+    def test_cancel_completed_run_returns_400(self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test cancelling a completed run returns 400."""
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        
+        run_id = "test-run-cancel-done"
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        
+        results_data = {
+            "pipeline": {
+                "name": "BAT3",
+                "status": "success",
+                "started_at": "2026-05-26T10:00:00Z",
+                "finished_at": "2026-05-26T10:05:00Z",
+            },
+        }
+        
+        results_path = run_dir / "results.json"
+        with open(results_path, "w", encoding="utf-8") as f:
+            json.dump(results_data, f, indent=2)
+        
+        response = client.post(f"/runs/{run_id}/cancel")
+        
+        assert response.status_code == 400
+        assert "already in terminal state" in response.json()["detail"]
+    
+    def test_cancel_failed_run_returns_400(self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test cancelling a failed run returns 400."""
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        
+        run_id = "test-run-cancel-failed"
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        
+        results_data = {
+            "pipeline": {
+                "name": "BAT3",
+                "status": "failed",
+            },
+        }
+        
+        results_path = run_dir / "results.json"
+        with open(results_path, "w", encoding="utf-8") as f:
+            json.dump(results_data, f, indent=2)
+        
+        response = client.post(f"/runs/{run_id}/cancel")
+        
+        assert response.status_code == 400
+    
+    def test_cancel_already_cancelled_run_returns_400(self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test cancelling an already cancelled run returns 400."""
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        
+        run_id = "test-run-cancel-twice"
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        
+        results_data = {
+            "pipeline": {
+                "name": "BAT3",
+                "status": "cancelled",
+            },
+        }
+        
+        results_path = run_dir / "results.json"
+        with open(results_path, "w", encoding="utf-8") as f:
+            json.dump(results_data, f, indent=2)
+        
+        response = client.post(f"/runs/{run_id}/cancel")
+        
+        assert response.status_code == 400
+    
+    def test_cancel_nonexistent_run_returns_404(self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test cancelling a non-existent run returns 404."""
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        
+        response = client.post("/runs/nonexistent-run/cancel")
+        
+        assert response.status_code == 404
+
+
+class TestStatusSinceParameter:
+    """Tests for ?since= polling on status endpoint."""
+    
+    def test_status_without_since_returns_all(self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test status endpoint without since returns all events/warnings/errors."""
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        
+        run_id = "test-run-since-all"
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        
+        results_data = {
+            "updated_at": "2026-05-26T10:10:00Z",
+            "pipeline": {
+                "name": "BAT3",
+                "status": "success",
+                "started_at": "2026-05-26T10:00:00Z",
+                "finished_at": "2026-05-26T10:05:00Z",
+            },
+            "tasks": {},
+            "warnings": [
+                {
+                    "code": "WARN1",
+                    "message": "First warning",
+                    "recorded_at": "2026-05-26T10:01:00Z",
+                },
+                {
+                    "code": "WARN2",
+                    "message": "Second warning",
+                    "recorded_at": "2026-05-26T10:03:00Z",
+                },
+            ],
+            "critical_errors": [
+                {
+                    "code": "ERR1",
+                    "message": "An error",
+                    "recorded_at": "2026-05-26T10:02:00Z",
+                },
+            ],
+            "events": [
+                {"kind": "log", "timestamp": "2026-05-26T10:00:00Z", "message": "Start"},
+                {"kind": "log", "timestamp": "2026-05-26T10:05:00Z", "message": "End"},
+            ],
+        }
+        
+        results_path = run_dir / "results.json"
+        with open(results_path, "w", encoding="utf-8") as f:
+            json.dump(results_data, f, indent=2)
+        
+        response = client.get(f"/runs/{run_id}/status")
+        
+        assert response.status_code == 200
+        json_response = response.json()
+        
+        # Should have all items
+        assert len(json_response["warnings"]) == 2
+        assert len(json_response["critical_errors"]) == 1
+        assert len(json_response["events"]) == 2
+        assert json_response["updated_at"] == "2026-05-26T10:10:00Z"
+    
+    def test_status_with_since_filters_items(self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test status endpoint with since filters events/warnings/errors correctly."""
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        
+        run_id = "test-run-since-filter"
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        
+        results_data = {
+            "updated_at": "2026-05-26T10:10:00Z",
+            "pipeline": {
+                "name": "BAT3",
+                "status": "success",
+            },
+            "tasks": {},
+            "warnings": [
+                {
+                    "code": "WARN1",
+                    "message": "First warning",
+                    "recorded_at": "2026-05-26T10:01:00Z",
+                },
+                {
+                    "code": "WARN2",
+                    "message": "Second warning",
+                    "recorded_at": "2026-05-26T10:05:00Z",
+                },
+            ],
+            "critical_errors": [
+                {
+                    "code": "ERR1",
+                    "message": "An error",
+                    "recorded_at": "2026-05-26T10:02:00Z",
+                },
+                {
+                    "code": "ERR2",
+                    "message": "Later error",
+                    "recorded_at": "2026-05-26T10:06:00Z",
+                },
+            ],
+            "events": [
+                {"kind": "log", "timestamp": "2026-05-26T10:00:00Z", "message": "Start"},
+                {"kind": "log", "timestamp": "2026-05-26T10:03:00Z", "message": "Middle"},
+                {"kind": "log", "timestamp": "2026-05-26T10:07:00Z", "message": "End"},
+            ],
+        }
+        
+        results_path = run_dir / "results.json"
+        with open(results_path, "w", encoding="utf-8") as f:
+            json.dump(results_data, f, indent=2)
+        
+        # Request since 10:04:00 - should only get items after this time
+        response = client.get(f"/runs/{run_id}/status?since=2026-05-26T10:04:00Z")
+        
+        assert response.status_code == 200
+        json_response = response.json()
+        
+        # Should only have items after 10:04:00
+        assert len(json_response["warnings"]) == 1
+        assert json_response["warnings"][0]["code"] == "WARN2"
+        
+        assert len(json_response["critical_errors"]) == 1
+        assert json_response["critical_errors"][0]["code"] == "ERR2"
+        
+        assert len(json_response["events"]) == 1
+        assert json_response["events"][0]["message"] == "End"
+        
+        # Pipeline and tasks should still be returned in full
+        assert json_response["pipeline"]["status"] == "success"
+    
+    def test_status_with_since_includes_recorded_at(self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that warnings/errors in status response include recorded_at."""
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        
+        run_id = "test-run-recorded-at"
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        
+        results_data = {
+            "pipeline": {
+                "name": "BAT3",
+                "status": "success",
+            },
+            "tasks": {},
+            "warnings": [
+                {
+                    "code": "WARN1",
+                    "message": "A warning",
+                    "recorded_at": "2026-05-26T10:01:00Z",
+                },
+            ],
+            "critical_errors": [
+                {
+                    "code": "ERR1",
+                    "message": "An error",
+                    "recorded_at": "2026-05-26T10:02:00Z",
+                },
+            ],
+            "events": [],
+        }
+        
+        results_path = run_dir / "results.json"
+        with open(results_path, "w", encoding="utf-8") as f:
+            json.dump(results_data, f, indent=2)
+        
+        response = client.get(f"/runs/{run_id}/status")
+        
+        assert response.status_code == 200
+        json_response = response.json()
+        
+        # Verify recorded_at is present
+        assert len(json_response["warnings"]) == 1
+        assert json_response["warnings"][0]["recorded_at"] == "2026-05-26T10:01:00Z"
+        
+        assert len(json_response["critical_errors"]) == 1
+        assert json_response["critical_errors"][0]["recorded_at"] == "2026-05-26T10:02:00Z"
+    
+    def test_status_with_invalid_since_ignores_filter(self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that invalid since parameter is ignored and all items are returned."""
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        
+        run_id = "test-run-invalid-since"
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        
+        results_data = {
+            "pipeline": {
+                "name": "BAT3",
+                "status": "success",
+            },
+            "tasks": {},
+            "warnings": [
+                {
+                    "code": "WARN1",
+                    "message": "A warning",
+                    "recorded_at": "2026-05-26T10:01:00Z",
+                },
+            ],
+            "critical_errors": [],
+            "events": [],
+        }
+        
+        results_path = run_dir / "results.json"
+        with open(results_path, "w", encoding="utf-8") as f:
+            json.dump(results_data, f, indent=2)
+        
+        # Invalid since format
+        response = client.get(f"/runs/{run_id}/status?since=not-a-valid-timestamp")
+        
+        assert response.status_code == 200
+        json_response = response.json()
+        
+        # Should still return all items
+        assert len(json_response["warnings"]) == 1
+
+

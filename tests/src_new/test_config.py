@@ -399,3 +399,75 @@ class TestDefaultValues:
         assert "limit=50" in config.alphafind.url
         assert "offset=0" in config.alphafind.url
         assert "superposition=true" in config.alphafind.url
+
+
+class TestUnwrapConfigFields:
+    """Test new unwrap configuration fields."""
+
+    def test_default_unwrap_config(self):
+        """Test default unwrap config values."""
+        config = RunConfig()
+
+        assert config.loader.unwrap_periodic_boundaries is True
+        assert config.loader.unwrap_compound == "fragments"
+        assert config.loader.unwrap_reference == "com"
+        assert config.loader.unwrap_selection == "all"
+        assert config.loader.unwrap_guess_bonds_if_missing is True
+        assert config.loader.unwrap_warn_if_jumps_detected is True
+        assert config.loader.unwrap_max_bond_length_factor == 0.5
+        assert config.loader.unwrap_max_backbone_gap == 10.0
+
+    def test_override_unwrap_fields(self):
+        """Test overriding unwrap config values."""
+        config = RunConfig()
+
+        config.override("loader.unwrap_periodic_boundaries", False)
+        config.override("loader.unwrap_compound", "segments")
+        config.override("loader.unwrap_max_bond_length_factor", 0.75)
+
+        assert config.loader.unwrap_periodic_boundaries is False
+        assert config.loader.unwrap_compound == "segments"
+        assert config.loader.unwrap_max_bond_length_factor == 0.75
+
+    def test_nested_override_unwrap(self):
+        """Test nested override for unwrap fields."""
+        config = RunConfig()
+        
+        nested = {
+            "loader": {
+                "unwrap_periodic_boundaries": False,
+                "unwrap_selection": "protein",
+            }
+        }
+        config.apply_nested_overrides(nested)
+
+        assert config.loader.unwrap_periodic_boundaries is False
+        assert config.loader.unwrap_selection == "protein"
+
+    def test_to_dict_includes_unwrap_fields(self):
+        """Test that to_dict includes unwrap fields."""
+        config = RunConfig()
+        result = config.to_dict()
+
+        assert "loader" in result
+        assert "unwrap_periodic_boundaries" in result["loader"]
+        assert result["loader"]["unwrap_periodic_boundaries"] is True
+        assert result["loader"]["unwrap_compound"] == "fragments"
+
+    def test_ini_roundtrip_preserves_unwrap_options(self):
+        """Test that INI roundtrip preserves unwrap options."""
+        import tempfile
+        from pathlib import Path
+
+        config = RunConfig()
+        config.override("loader.unwrap_periodic_boundaries", False)
+        config.override("loader.unwrap_compound", "segments")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ini_path = Path(tmpdir) / "test.ini"
+            config.to_ini_path(ini_path)
+
+            loaded = RunConfig.from_ini_path(ini_path)
+
+            assert loaded.loader.unwrap_periodic_boundaries is False
+            assert loaded.loader.unwrap_compound == "segments"

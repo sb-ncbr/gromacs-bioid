@@ -9,6 +9,7 @@ from ..executor.task import Task, StepResult
 from ..input.discovery import inspect_directory, select_best_file_combination
 from ..loader.strategies import load_simulation
 from ..loader.repair import TopologyRepair
+from ..loader.unwrap import PbcRepair, PbcRepairReport
 from ..loader.universe_facade import LoadedUniverse
 from ..loader.fragment_store import FragmentStore
 from ..loader.export_mmcif import export_system_mmcif, export_segment_mmcif
@@ -82,6 +83,50 @@ def _repair_topology(context):
     return StepResult(
         summary={"repaired": True, **report.to_dict()},
         context_updates={"repair_report": report}
+    )
+
+
+def _unwrap_periodic_boundaries(context):
+    """Unwrap periodic boundary conditions for single-frame simulations."""
+    universe = context.get_value("universe")
+    if not universe:
+        context.fail("missing_universe", "No universe loaded for PBC unwrapping")
+
+    pbc = PbcRepair(universe, context.config)
+    report = pbc.run()
+
+    context.record_data("pbc/report", report.to_dict())
+
+    # Warn if jumps detected but unwrapping is disabled
+    if report.jumps_detected and not context.config.loader.unwrap_periodic_boundaries:
+        context.add_warning(
+            "pbc_jumps_detected",
+            "Periodic boundary jumps detected. The input structure appears broken across periodic boundaries.",
+            details={
+                "max_bond_length": report.max_bond_length,
+                "bond_jumps": report.bond_jumps,
+                "max_backbone_gap": report.max_backbone_gap,
+                "backbone_jumps": report.backbone_jumps,
+            }
+        )
+
+    # Info warning if unwrapping was applied
+    if report.unwrapped:
+        context.add_warning(
+            "pbc_unwrap_applied",
+            "Periodic boundary unwrapping was applied to make molecules whole."
+        )
+
+    # Warning if unwrapping was enabled but failed
+    if context.config.loader.unwrap_periodic_boundaries and report.error:
+        context.add_warning(
+            "pbc_unwrap_failed",
+            f"Periodic boundary unwrapping failed: {report.error}"
+        )
+
+    return StepResult(
+        summary={"unwrapped": report.unwrapped, "jumps_detected": report.jumps_detected},
+        context_updates={"pbc_report": report}
     )
 
 
@@ -455,7 +500,7 @@ def _export_results(context):
 
 
 def build_load_and_export_tasks():
-    """Build the task list for the load-and-export pipeline."""
+    """Build the tasks list for the load-and-export pipeline."""
     return [
         Task(
             task_id="discover_input",
@@ -475,10 +520,16 @@ def build_load_and_export_tasks():
             requires_tasks=("load_simulation",),
         ),
         Task(
+            task_id="unwrap_periodic_boundaries",
+            name="Unwrap Periodic Boundaries",
+            handler=_unwrap_periodic_boundaries,
+            requires_tasks=("repair_topology",),
+        ),
+        Task(
             task_id="analyze_universe",
             name="Analyze Universe",
             handler=_analyze_universe,
-            requires_tasks=("repair_topology",),
+            requires_tasks=("unwrap_periodic_boundaries",),
         ),
         Task(
             task_id="generate_signatures",

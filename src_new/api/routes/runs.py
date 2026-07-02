@@ -10,6 +10,8 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
+
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +21,7 @@ from fastapi.responses import PlainTextResponse
 from ..models import (
     RerunAllResponse,
     RerunRunItem,
+    CancelRunResponse,
     RunFilesResponse,
     PipelineStatusResponse,
     RunStatusResponse,
@@ -241,12 +244,15 @@ async def create_run(
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(initial_results, f, indent=2)
     
-    # Enqueue Celery task
-    run_pipeline_task.delay(
-        run_id=run_id,
-        input_dir=str(input_dir),
-        results_path=str(results_path),
-        config_path=str(config_path) if config_path else None,
+    # Enqueue Celery task with run_id as task_id
+    run_pipeline_task.apply_async(
+        task_id=run_id,
+        kwargs={
+            "run_id": run_id,
+            "input_dir": str(input_dir),
+            "results_path": str(results_path),
+            "config_path": str(config_path) if config_path else None,
+        },
     )
     
     return RunCreateResponse(
@@ -339,10 +345,47 @@ async def get_run_summary(run_id: str) -> RunSummaryResponse:
     )
 
 
+logger = logging.getLogger(__name__)
+
+
+def _parse_iso_datetime(dt_str: str) -> datetime:
+    """Parse ISO 8601 datetime string, handling various formats."""
+    # Try common formats
+    formats = [
+        "%Y-%m-%dT%H:%M:%S.%f%z",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S.%fZ",
+        "%Y-%m-%dT%H:%M:%SZ",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+    ]
+    for fmt in formats:
+        try:
+            return datetime.strptime(dt_str, fmt)
+        except ValueError:
+            continue
+    raise ValueError(f"Unable to parse datetime: {dt_str}")
+
+
 @router.get("/{run_id}/status", response_model=RunStatusResponse)
-async def get_run_status(run_id: str) -> RunStatusResponse:
-    """Get full run status including pipeline, tasks, warnings, errors, and events."""
+async def get_run_status(run_id: str, since: Optional[str] = None) -> RunStatusResponse:
+    """Get full run status including pipeline, tasks, warnings, errors, and events.
+    
+    Args:
+        run_id: The run identifier
+        since: Optional ISO 8601 timestamp to filter events/warnings/errors. Only items
+               with timestamp >= since will be returned. Invalid timestamps are ignored.
+    """
     data = load_results_json(run_id)
+    
+    # Parse since parameter if provided
+    since_dt = None
+    if since:
+        try:
+            since_dt = _parse_iso_datetime(since)
+        except ValueError as e:
+            logger.warning(f"Invalid 'since' parameter '{since}': {e}")
+            # Ignore invalid since parameter
     
     # Build pipeline status
     pipeline_data = data.get("pipeline", {})
@@ -357,7 +400,7 @@ async def get_run_status(run_id: str) -> RunStatusResponse:
         metadata=pipeline_data.get("metadata", {}),
     )
     
-    # Build task list
+    # Build task list (always return all tasks)
     tasks_data = data.get("tasks", {})
     tasks = []
     for task_id, task_info in tasks_data.items():
@@ -371,44 +414,76 @@ async def get_run_status(run_id: str) -> RunStatusResponse:
             artifacts=task_info.get("artifacts", []),
         ))
     
-    # Build warnings list
+    # Build warnings list (filter by since if provided)
     warnings_data = data.get("warnings", [])
-    warnings = [
-        WarningItem(
+    warnings = []
+    for w in warnings_data:
+        if since_dt:
+            recorded_at = w.get("recorded_at")
+            if recorded_at:
+                try:
+                    w_dt = _parse_iso_datetime(recorded_at)
+                    if w_dt < since_dt:
+                        continue
+                except ValueError:
+                    pass  # Include items with unparseable timestamps
+        warnings.append(WarningItem(
             code=w.get("code", ""),
             message=w.get("message", ""),
             step_id=w.get("step_id"),
             details=w.get("details", {}),
-        )
-        for w in warnings_data
-    ]
+            recorded_at=w.get("recorded_at"),
+        ))
     
-    # Build errors list
+    # Build errors list (filter by since if provided)
     errors_data = data.get("critical_errors", [])
-    errors = [
-        ErrorItem(
+    errors = []
+    for e in errors_data:
+        if since_dt:
+            recorded_at = e.get("recorded_at")
+            if recorded_at:
+                try:
+                    e_dt = _parse_iso_datetime(recorded_at)
+                    if e_dt < since_dt:
+                        continue
+                except ValueError:
+                    pass  # Include items with unparseable timestamps
+        errors.append(ErrorItem(
             code=e.get("code", ""),
             message=e.get("message", ""),
             step_id=e.get("step_id"),
             details=e.get("details", {}),
             critical=e.get("critical", False),
             exception_type=e.get("exception_type"),
-        )
-        for e in errors_data
-    ]
+            recorded_at=e.get("recorded_at"),
+        ))
     
-    # Build events list
+    # Build events list (filter by since if provided)
     events_data = data.get("events", [])
-    events = [
-        EventItem(
+    events = []
+    for e in events_data:
+        if since_dt:
+            timestamp = e.get("timestamp")
+            if timestamp:
+                try:
+                    e_dt = _parse_iso_datetime(timestamp)
+                    if e_dt < since_dt:
+                        continue
+                except ValueError:
+                    pass  # Include items with unparseable timestamps
+        events.append(EventItem(
             kind=e.get("kind", ""),
             timestamp=e.get("timestamp", ""),
             level=e.get("level"),
             message=e.get("message"),
             task_id=e.get("task_id"),
-        )
-        for e in events_data
-    ]
+        ))
+    
+    # Get updated_at from results.json
+    updated_at = data.get("updated_at")
+    if not updated_at:
+        # Fallback to pipeline finished_at or started_at
+        updated_at = pipeline_data.get("finished_at") or pipeline_data.get("started_at")
     
     return RunStatusResponse(
         run_id=run_id,
@@ -417,7 +492,56 @@ async def get_run_status(run_id: str) -> RunStatusResponse:
         warnings=warnings,
         critical_errors=errors,
         events=events,
+        updated_at=updated_at,
     )
+
+
+
+
+@router.post("/{run_id}/cancel", response_model=CancelRunResponse)
+async def cancel_run(run_id: str) -> CancelRunResponse:
+    """Cancel a running or queued run.
+    
+    Revokes the Celery task and sets pipeline status to "cancelled".
+    
+    Args:
+        run_id: The run identifier
+        
+    Returns:
+        CancelRunResponse with run_id and status
+        
+    Raises:
+        HTTPException: 404 if run not found, 400 if run is already finished
+    """
+    from src_new.celery_app import celery
+    from src_new.results.results_manager import ResultsManager
+    
+    # Verify run exists by loading results.json
+    data = load_results_json(run_id)
+    
+    # Check current pipeline status
+    pipeline_data = data.get("pipeline", {})
+    current_status = pipeline_data.get("status", "unknown")
+    
+    # Cannot cancel if already in a terminal state
+    terminal_states = {"success", "failed", "cancelled"}
+    if current_status in terminal_states:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Run is already in terminal state: {current_status}"
+        )
+    
+    # Get Celery task result and revoke if running/pending
+    result = celery.AsyncResult(run_id)
+    if result.status in {"PENDING", "STARTED", "RETRY"}:
+        from celery.exceptions import SoftTimeLimitExceeded, TimeLimitExceeded
+        result.revoke(terminate=True)
+    
+    # Update results.json to mark as cancelled
+    results_manager = ResultsManager(str(get_runs_dir() / run_id / "results.json"))
+    results_manager.finish_run("cancelled")
+    
+    return CancelRunResponse(run_id=run_id, status="cancelled")
 
 
 @router.get("/{run_id}/loading", response_model=LoadingInfoResponse)
@@ -1152,12 +1276,15 @@ async def rerun_all() -> RerunAllResponse:
         with open(new_results_path, "w", encoding="utf-8") as f:
             json.dump(initial_results, f, indent=2)
         
-        # Enqueue Celery task
-        run_pipeline_task.delay(
-            run_id=new_run_id,
-            input_dir=str(new_input_dir),
-            results_path=str(new_results_path),
-            config_path=str(new_config_path),
+        # Enqueue Celery task with run_id as task_id
+        run_pipeline_task.apply_async(
+            task_id=new_run_id,
+            kwargs={
+                "run_id": new_run_id,
+                "input_dir": str(new_input_dir),
+                "results_path": str(new_results_path),
+                "config_path": str(new_config_path),
+            },
         )
         
         new_runs.append(RerunRunItem(

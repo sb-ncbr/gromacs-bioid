@@ -9,6 +9,7 @@ import MDAnalysis
 
 from ..results.results_manager import ResultsManager
 from .universe_facade import LoadedUniverse
+from .unwrap import MMCIFIOWithCell
 
 logger = logging.getLogger("base")
 
@@ -89,7 +90,14 @@ def export_system_mmcif(facade: LoadedUniverse, output_path: Path, results: Resu
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     structure = _build_biopython_structure(facade.universe)
-    io = MMCIFIO()
+    
+    # Use MMCIFIOWithCell to preserve box dimensions
+    cell = facade.universe.dimensions
+    if cell is not None:
+        io = MMCIFIOWithCell(cell=cell)
+    else:
+        io = MMCIFIO()
+    
     io.set_structure(structure)
     io.save(str(output_path))
     
@@ -110,7 +118,14 @@ def export_segment_mmcif(facade: LoadedUniverse, segment_name: str, output_path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     structure = _build_biopython_structure(facade.universe, filter_segment=segment_name)
-    io = MMCIFIO()
+    
+    # Use MMCIFIOWithCell to preserve box dimensions
+    cell = facade.universe.dimensions
+    if cell is not None:
+        io = MMCIFIOWithCell(cell=cell)
+    else:
+        io = MMCIFIO()
+    
     io.set_structure(structure)
     io.save(str(output_path))
     

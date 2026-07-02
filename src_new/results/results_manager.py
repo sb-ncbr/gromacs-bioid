@@ -252,7 +252,8 @@ class ResultsManager:
         warning = {
             "code": code,
             "message": message,
-            "details": details or {}
+            "details": details or {},
+            "recorded_at": _now_iso()
         }
         if step_id:
             warning["step_id"] = step_id
@@ -266,7 +267,8 @@ class ResultsManager:
         error = {
             "code": code,
             "message": message,
-            "details": details or {}
+            "details": details or {},
+            "recorded_at": _now_iso()
         }
         if step_id:
             error["step_id"] = step_id

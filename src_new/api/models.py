@@ -39,6 +39,7 @@ class WarningItem(BaseModel):
     message: str = Field(..., description="Warning message")
     step_id: Optional[str] = Field(None, description="Task/step ID that generated the warning")
     details: Dict[str, Any] = Field(default_factory=dict, description="Additional warning details")
+    recorded_at: Optional[str] = Field(None, description="ISO 8601 timestamp when warning was recorded")
 
 
 class ErrorItem(BaseModel):
@@ -50,6 +51,7 @@ class ErrorItem(BaseModel):
     details: Dict[str, Any] = Field(default_factory=dict, description="Additional error details")
     critical: bool = Field(default=False, description="Whether this is a critical error")
     exception_type: Optional[str] = Field(None, description="Type of exception if applicable")
+    recorded_at: Optional[str] = Field(None, description="ISO 8601 timestamp when error was recorded")
 
 
 class EventItem(BaseModel):
@@ -71,6 +73,7 @@ class RunStatusResponse(BaseModel):
     warnings: List[WarningItem] = Field(default_factory=list, description="List of warnings")
     critical_errors: List[ErrorItem] = Field(default_factory=list, description="List of critical errors")
     events: List[EventItem] = Field(default_factory=list, description="List of events")
+    updated_at: Optional[str] = Field(None, description="ISO 8601 timestamp when results were last updated")
 
 
 class LoadingAttemptInfo(BaseModel):
@@ -282,3 +285,10 @@ class RerunAllResponse(BaseModel):
     new_runs: List[RerunRunItem] = Field(default_factory=list, description="List of successfully re-queued runs")
     skipped: List[str] = Field(default_factory=list, description="List of old run_ids that were skipped (missing input)")
     count: int = Field(..., description="Number of new runs queued")
+
+
+class CancelRunResponse(BaseModel):
+    """Response model for cancelling a run."""
+
+    run_id: str = Field(..., description="Run identifier that was cancelled")
+    status: str = Field(..., description="Cancellation status: cancelled")

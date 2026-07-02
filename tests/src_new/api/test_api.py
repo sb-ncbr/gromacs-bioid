@@ -38,7 +38,7 @@ def runs_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture(autouse=True)
 def mock_celery_task(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Mock Celery task delay to avoid Redis connections during tests."""
+    """Mock Celery task apply_async to avoid Redis connections during tests."""
     class MockAsyncResult:
         def __init__(self, task_id: str) -> None:
             self.id = task_id
@@ -47,13 +47,15 @@ def mock_celery_task(monkeypatch: pytest.MonkeyPatch) -> None:
             return "PENDING"
         def ready(self) -> bool:
             return False
+        def revoke(self, terminate: bool = False) -> None:
+            pass
     
-    def mock_delay(*args, **kwargs):
-        return MockAsyncResult("mock-task-id")
+    def mock_apply_async(task_id: str = None, kwargs: dict = None) -> MockAsyncResult:
+        return MockAsyncResult(task_id or "mock-task-id")
     
     monkeypatch.setattr(
-        "src_new.api.routes.runs.run_pipeline_task.delay",
-        mock_delay,
+        "src_new.api.routes.runs.run_pipeline_task.apply_async",
+        mock_apply_async,
     )
 
 
