@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""BAT3 validation campaign statistics.
+"""BAT3 validation campaign statistics (v3).
 
-On-demand reporting over Postgres (queue/runs/GT) and, optionally, the
-per-entry results.json files on NFS. Replaces interactive UI querying.
+S1 coverage - S2 failure taxonomy - S3 per-stage - S4 per-molecule -
+S5 exact-match hit@K (lower bound) - S6 health extras -
+S7 SIMILARITY hit@K vs MDDBR annotations (sequence identity via local
+alignment; chemical InChIKey/PubChem fingerprint Tanimoto).
 
-Usage (inside a pod with DATABASE_URL + /data/validation mounted):
-  python3 campaign_stats.py                 # quick SQL-only report
-  python3 campaign_stats.py --full          # + NFS results.json scan
-  python3 campaign_stats.py --full --sample 200 --threads 16
-  python3 campaign_stats.py --entry 2944    # per-entry drill-down
-Sections: S1 coverage, S2 failure taxonomy, S3 per-stage, S4 per-molecule,
-S5 verification per GT annotation type, S6 health extras.
+Usage inside a pod with DATABASE_URL + NFS:
+  python3 campaign_stats.py                 # quick SQL
+  python3 campaign_stats.py --full          # + NFS scan (results.json)
+  python3 campaign_stats.py --full --sim    # + S7 similarity metrics
+  python3 campaign_stats.py --full --sim --pattern results-v4.json --sample 456
 """
 import argparse
 import collections
@@ -46,9 +46,10 @@ FAIL_CLASSES = [
     ("stale-timeout", "%stale_timeout%"),
     ("timeout", "%timeout%"),
 ]
+SIM_VALIDATED = 0.9
 
 
-def norm(ident_type, value):
+def norm_ident(ident_type, value):
     v = (value or "").strip().upper()
     if not v:
         return ""
@@ -73,8 +74,8 @@ def verified_hits(doc):
     return out
 
 
-def hit_at_k(gt_map, hits):
-    ranked = [norm(t, v) for t, v, _ in hits if norm(t, v)]
+def exact_hit_at_k(gt_map, hits):
+    ranked = [norm_ident(t, v) for t, v, _ in hits if norm_ident(t, v)]
     per = {}
     for t in sorted(set(gt_map) | {"overall"}):
         wanted = ({v for s in gt_map.values() for v in s} if t == "overall"
@@ -148,9 +149,8 @@ def attempted_any(by_sig):
     return False
 
 
-def scan_entry(pair):
-    eid, root = pair
-    path = os.path.join(root, str(eid), "results.json")
+def scan_entry(eid, root, pattern):
+    path = os.path.join(root, str(eid), pattern)
     try:
         with open(path) as fh:
             doc = json.load(fh)
@@ -185,7 +185,9 @@ def scan_entry(pair):
             mol_identified += 1
         if (ver.get(mol) or {}).get("verified_hits"):
             mol_verified += 1
-    warns = [((w.get("code") or w.get("message") or str(w))[:120] if isinstance(w, dict) else str(w)[:120]) for w in doc.get("warnings") or []][:10]
+    warns = [((w.get("code") or w.get("message") or str(w))[:120]
+              if isinstance(w, dict) else str(w)[:120])
+             for w in doc.get("warnings") or []][:10]
     dl = set()
     try:
         with open(os.path.join(root, str(eid), "download_report.json")) as fh:
@@ -204,13 +206,14 @@ def scan_entry(pair):
     }
 
 
-def full_section(con, root, sample, threads):
+def full_section(con, root, sample, threads, pattern, sim_engine):
     cur = con.cursor()
     cur.execute("SELECT entry_id, signature_type, signature_value FROM ground_truth_signatures")
-    gt = {}
+    gt = collections.defaultdict(lambda: collections.defaultdict(set))
     for eid, t, v in cur.fetchall():
         if v and t:
-            gt.setdefault(eid, {}).setdefault(t.strip().lower(), set()).add(v.strip().upper())
+            gt[eid][t.strip().lower()].add(v.strip())
+
     min_mtime = 0.0
     since = os.environ.get("CAMPAIGN_STATS_SINCE", "2026-09-10T11:00:00")
     try:
@@ -220,13 +223,14 @@ def full_section(con, root, sample, threads):
     try:
         ids = [int(d.name) for d in os.scandir(root)
                if d.is_dir() and d.name.isdigit()
-               and os.path.exists(os.path.join(d.path, "results.json"))
-               and os.path.getmtime(os.path.join(d.path, "results.json")) >= min_mtime]
+               and os.path.exists(os.path.join(d.path, pattern))
+               and os.path.getmtime(os.path.join(d.path, pattern)) >= min_mtime]
     except FileNotFoundError:
         ids = []
     ids.sort()
     if sample:
         ids = ids[:: max(1, len(ids) // sample)][:sample]
+
     agg = {
         "scanned": 0, "read_errors": 0,
         "stage_status": collections.defaultdict(collections.Counter),
@@ -240,11 +244,17 @@ def full_section(con, root, sample, threads):
         "dl_resolvers": collections.Counter(),
         "pipeline_status": collections.Counter(),
     }
+    sim_agg = {
+        "per_type": collections.defaultdict(list),
+        "any": {k: 0 for k in KSET}, "any_n": 0,
+    }
+
     t0 = time.time()
     with ThreadPoolExecutor(max_workers=threads) as ex:
-        futs = [ex.submit(scan_entry, (eid, root)) for eid in ids]
+        futs = {ex.submit(scan_entry, eid, root, pattern): eid for eid in ids}
         for i, fut in enumerate(as_completed(futs), 1):
-            eid, r = fut.result()
+            eid = futs[fut]
+            _, r = fut.result()
             if i % 500 == 0:
                 print(f"  ...scanned {i}/{len(ids)} ({time.time() - t0:.0f}s)", file=sys.stderr)
             if "error" in r:
@@ -264,31 +274,49 @@ def full_section(con, root, sample, threads):
             agg["resolvers"].update(r["resolvers"])
             agg["sig_attempts"].update(r["sig_attempts"])
             for w in r["warnings"]:
-                if isinstance(w, dict):
-                    key = (w.get("code") or w.get("message") or str(w))[:60]
-                else:
-                    key = (w.split(":")[0][:60] or w[:60])
-                agg["warnings"][key] += 1
+                agg["warnings"][(w.split(":")[0][:60] or w[:60])] += 1
             agg["critical"] += r["critical"]
             for dlr in r["dl_resolvers"]:
                 agg["dl_resolvers"][dlr] += 1
             agg["pipeline_status"][r["status_pipeline"]] += 1
+
             gt_map = gt.get(eid) or {}
             if gt_map:
                 agg["gt_covered"] += 1
-                scores = hit_at_k(gt_map, r["hits"])
-                has_gt_type = False
+                scores = exact_hit_at_k(gt_map, r["hits"])
                 for t, row in scores.items():
                     agg["hit_n"][t] += 1
-                    has_gt_type = True
                     for k in KSET:
                         if row[f"hit@{k}"] is not None:
                             agg["hit_agg"][t][f"hit@{k}"] += row[f"hit@{k}"]
                 if r["hits"]:
                     agg["entries_with_verified_hit"] += 1
+
+                if sim_engine is not None and r["hits"]:
+                    annotations = [(t, v) for t, vals in gt_map.items() for v in vals]
+                    per_ann_max = {k: [] for k in KSET}
+                    validated_best = 0.0
+                    best_by_k = {k: 0.0 for k in KSET}
+                    for t, v in annotations:
+                        row = {}
+                        for idx, (ht, hid, _conf) in enumerate(r["hits"][:10], 1):
+                            s = sim_engine.sim(t, v, ht, hid)
+                            for k in KSET:
+                                if idx <= k:
+                                    row[k] = max(row.get(k, 0.0), s)
+                        rec = {k: row.get(k, 0.0) for k in KSET}
+                        sim_agg["per_type"][t].append(rec)
+                        for k in KSET:
+                            best_by_k[k] = max(best_by_k[k], rec[k])
+                        validated_best = max(validated_best, rec[10])
+                    sim_agg["any_n"] += 1
+                    for k in KSET:
+                        if best_by_k[k] >= SIM_VALIDATED:
+                            sim_agg["any"][k] += 1
+
     out = {"scanned_entries": agg["scanned"], "read_errors": agg["read_errors"],
            "gt_covered_scanned": agg["gt_covered"],
-           "scan_seconds": round(time.time() - t0, 1)}
+           "scan_seconds": round(time.time() - t0, 1), "pattern": pattern}
     out["S3_per_stage"] = {n: {"total": sum(c.values()), **dict(c)}
                            for n, c in agg["stage_status"].items()}
     out["S3_deepest_stage_reached"] = dict(agg["deepest"].most_common())
@@ -311,9 +339,27 @@ def full_section(con, root, sample, threads):
         n = agg["hit_n"][t]
         hitk[t] = {k: round(v / n, 4) if n else None for k, v in row.items()}
         hitk[t]["entries"] = n
-    out["S5_hit_at_k"] = hitk
+    out["S5_exact_hit_at_k"] = hitk
     out["S5_entries_with_verified_hit_pct"] = round(
         100.0 * agg["entries_with_verified_hit"] / max(1, agg["gt_covered"]), 1)
+
+    if sim_engine is not None:
+        s7 = {"validated_threshold": SIM_VALIDATED}
+        for t, rows in sim_agg["per_type"].items():
+            n = len(rows)
+            s7[t] = {
+                "annotations": n,
+                **{f"mean_sim@{k}": round(sum(r[k] for r in rows) / n, 4) for k in KSET},
+                **{f"pct_validated@{k}": round(100.0 * sum(1 for r in rows if r[k] >= SIM_VALIDATED) / n, 1)
+                   for k in KSET},
+            }
+        anyn = sim_agg["any_n"]
+        if anyn:
+            s7["entry_any_validated@%"] = {k: round(100.0 * sim_agg["any"][k] / anyn, 1) for k in KSET}
+        s7["pairs_computed"] = sim_engine.new_pairs
+        s7["unmapped"] = sim_engine.unmapped
+        out["S7_similarity_hit_at_k"] = s7
+
     out["S6_top_warnings"] = dict(agg["warnings"].most_common(20))
     out["S6_critical_errors_total"] = agg["critical"]
     out["S6_download_resolvers"] = dict(agg["dl_resolvers"].most_common())
@@ -321,8 +367,8 @@ def full_section(con, root, sample, threads):
     return out
 
 
-def entry_section(con, root, eid):
-    _, r = scan_entry((eid, root))
+def entry_section(con, root, eid, pattern):
+    _, r = scan_entry(eid, root, pattern)
     cur = con.cursor()
     cur.execute("SELECT status, retry_count, left(last_error,200) FROM validation_queue WHERE entry_id=%s", (eid,))
     q = cur.fetchall()
@@ -360,7 +406,7 @@ def print_report(rep):
             print(f"  {cls:<20} {v['count']:>5}  e.g. entry {v['example_entry']}")
     full = rep.get("full")
     if full:
-        print(f"\n--- NFS scan: {full['scanned_entries']} entries"
+        print(f"\n--- NFS scan[{full.get('pattern')}]: {full['scanned_entries']} entries"
               f" ({full.get('read_errors', 0)} read errors, {full['scan_seconds']}s) ---")
         print("S3 per-stage status:")
         for name in STAGES:
@@ -373,10 +419,22 @@ def print_report(rep):
               f"  verified-rate={full['S4_molecules']['verified_rate_mean']}")
         print("S4 resolver attempts:", full["S4_resolver_attempts"])
         print("S4 signature-type attempts:", full["S4_signature_attempts"])
-        print(f"S5 hit@K (n={full['gt_covered_scanned']} GT-covered):")
-        for t, row in full["S5_hit_at_k"].items():
+        print(f"S5 EXACT hit@K (lower bound, n={full['gt_covered_scanned']}):")
+        for t, row in full["S5_exact_hit_at_k"].items():
             print(f"  {t:<10} hit@1={row['hit@1']}  hit@5={row['hit@5']}  hit@10={row['hit@10']}")
         print(f"S5 entries with >=1 verified hit: {full['S5_entries_with_verified_hit_pct']}%")
+        s7 = full.get("S7_similarity_hit_at_k")
+        if s7:
+            print(f"\nS7 SIMILARITY hit@K (validated: sim>={s7['validated_threshold']};"
+                  f" pairs computed: {s7.get('pairs_computed')}, unmapped: {s7.get('unmapped')}):")
+            for t in sorted(k for k in s7 if isinstance(s7[k], dict) and "annotations" in s7[k]):
+                row = s7[t]
+                print(f"  {t:<10} n={row['annotations']:<5} "
+                      f"mean@1={row['mean_sim@1']:.3f} mean@5={row['mean_sim@5']:.3f} mean@10={row['mean_sim@10']:.3f}   "
+                      f"validated@1={row['pct_validated@1']}% @5={row['pct_validated@5']}% @10={row['pct_validated@10']}%")
+            anyrow = s7.get("entry_any_validated@%")
+            if anyrow:
+                print(f"  entry-any-validated: @1={anyrow.get(1)}% @5={anyrow.get(5)}% @10={anyrow.get(10)}%")
         print("S6 runtime:", full.get("S6_runtime_s"))
         print("S6 download resolver mix:", full["S6_download_resolvers"])
         print("S6 pipeline status:", full["S6_pipeline_status"])
@@ -388,20 +446,35 @@ def print_report(rep):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--quick", action="store_true", help="SQL only (default)")
-    ap.add_argument("--full", action="store_true", help="include NFS results.json scan")
-    ap.add_argument("--sample", type=int, default=0, help="evenly sample N entries for --full")
+    ap.add_argument("--full", action="store_true", help="include NFS results scan")
+    ap.add_argument("--sample", type=int, default=0)
     ap.add_argument("--threads", type=int, default=32)
     ap.add_argument("--entry", type=int, default=0)
     ap.add_argument("--json-out", default="")
+    ap.add_argument("--pattern", default="results.json",
+                    help="results filename to scan (results.json | results-v4.json ...)")
+    ap.add_argument("--sim", action="store_true",
+                    help="compute S7 similarity-based hit@K (uses /data/validation/sim_cache)")
+    ap.add_argument("--sim-budget", type=int, default=20000,
+                    help="max NEW pairwise similarity computations for this run")
     args = ap.parse_args()
+
+    sim_engine = None
+    if args.sim:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from validation_similarity import SimEngine
+        sim_engine = SimEngine(budget=args.sim_budget)
+        print(f"sim engine: {len(sim_engine.pairs)} cached pairs loaded", file=sys.stderr)
+
     con = psycopg2.connect(DATABASE_URL)
     if args.entry:
-        rep = entry_section(con, DATA_ROOT, args.entry)
+        rep = entry_section(con, DATA_ROOT, args.entry, args.pattern)
         print(json.dumps(rep, indent=2, default=str))
     else:
         rep = sql_section(con)
         if args.full:
-            rep["full"] = full_section(con, DATA_ROOT, args.sample, args.threads)
+            rep["full"] = full_section(con, DATA_ROOT, args.sample, args.threads,
+                                       args.pattern, sim_engine)
         print_report(rep)
         if args.json_out:
             with open(args.json_out, "w") as fh:

@@ -1,0 +1,48 @@
+================================================================
+BAT3 VALIDATION CAMPAIGN - 2026-09-10T16:46:18.489139Z
+================================================================
+Entries total: 15185  |  with GT: 14943  |  GT signatures: 36954 {'inchikey': 9626, 'pdb': 12541, 'uniprot': 14787}
+Queue: {'completed': 1296, 'failed': 55, 'processing': 31, 'queued': 13240}
+Runs:  {'completed': 3961, 'failed': 1676, 'running': 54}
+Batches: {'cancelled': 56, 'completed': 11, 'running': 2}
+Completion: 8.9%   rate: 21.6/min   windows(1h/6h/24h): {'1h': 1296, '6h': 1296, '24h': 1296}   ETA: 613.0 h
+
+--- Failure taxonomy (queue 'failed') ---
+  loading                 54  e.g. entry 971
+  download                 1  e.g. entry 1667
+
+--- NFS scan[results-v4.json]: 456 entries (0 read errors, 456.9s) ---
+S3 per-stage status:
+  discover_input               {'total': 456, 'success': 456}
+  load_simulation              {'total': 456, 'success': 455, 'failed': 1}
+  repair_topology              {'total': 456, 'success': 455, 'skipped': 1}
+  unwrap_periodic_boundaries   {'total': 456, 'warning': 455, 'skipped': 1}
+  analyze_universe             {'total': 456, 'success': 455, 'skipped': 1}
+  generate_signatures          {'total': 456, 'success': 335, 'warning': 120, 'skipped': 1}
+  identify_molecules           {'total': 456, 'success': 453, 'warning': 2, 'skipped': 1}
+  verify_results               {'total': 456, 'success': 455, 'skipped': 1}
+  export_results               {'total': 456, 'success': 455, 'skipped': 1}
+S3 deepest successful stage (drop-off points):
+  export_results               455
+  discover_input               1
+S4 molecules/entry: mean=1.0  verified-rate=0.989
+S4 resolver attempts: {'pdb_struct_protein': 4500, 'name_ccd': 1820, 'name_maps': 1820, 'name_manual': 1820, 'blast_pdb_protein': 1560, 'blast_uniprot': 1560, 'blast_swissprot_protein': 1560, 'formula_pubchem': 910, 'mmcif_struct': 910, 'pdb_struct_nucleotide': 900, 'alphafind_struct': 900, 'lipid_maps': 90}
+S4 signature-type attempts: {'molecular_formula': 455, 'mmcif': 455, 'name_chain': 455, 'name_molecule': 455, 'fasta_resname_protein': 450, 'pdb_protein': 450, 'pdb_not_sanitized_protein': 450, 'pdb_backbone_protein': 450, 'pdb_backbone_not_sanitized_protein': 450, 'topology_less_pdb': 450, 'ca_only_pdb': 450, 'fasta_map_protein': 330, 'lipid_shorthand': 45}
+S5 EXACT hit@K (lower bound, n=456):
+  overall    hit@1=0.3483  hit@5=0.7323  hit@10=0.8118
+  pdb        hit@1=0.2352  hit@5=0.7297  hit@10=0.8418
+  uniprot    hit@1=0.4577  hit@5=0.7358  hit@10=0.7855
+  inchikey   hit@1=0.0  hit@5=0.0  hit@10=0.0
+S5 entries with >=1 verified hit: 98.7%
+
+S7 SIMILARITY hit@K (validated: sim>=0.9; pairs computed: 2460, unmapped: 13):
+  pdb        n=449   mean@1=0.996 mean@5=0.999 mean@10=0.999   validated@1=99.3% @5=99.6% @10=99.6%
+  uniprot    n=469   mean@1=0.976 mean@5=0.986 mean@10=0.990   validated@1=95.1% @5=97.0% @10=97.7%
+  entry-any-validated: @1=99.6% @5=100.0% @10=100.0%
+S6 runtime: {'p50': 160.2, 'p95': 359.0, 'max': 3681.4}
+S6 download resolver mix: {}
+S6 pipeline status: {'success': 455, 'failed': 1}
+S6 top warnings:
+    455x pbc_unwrap_failed
+    120x signature_generator_failed
+      2x identifier_resolver_failed
