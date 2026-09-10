@@ -12,7 +12,8 @@ import requests
 from requests import Response
 
 from ...config.loader import RunConfig
-from ..base import IdentifierResolver, IdentifierResolutionError
+from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
+from ._ssh_upload import has_ssh_config, ssh_delete, ssh_upload
 
 logger = logging.getLogger("identifier")
 
@@ -68,7 +69,7 @@ class PDBStructResolver(IdentifierResolver):
             List of PDB identifiers with >= 99.9% similarity.
         """
         # Create temp file for PDB structure
-        fd, pdb_path = tempfile.mkstemp(suffix=".pdb", dir=working_directory if working_directory else tempfile.gettempdir())
+        fd, pdb_path = tempfile.mkstemp(suffix=".pdb", dir=safe_tmp_dir(working_directory))
         os.close(fd)
         
         try:
@@ -98,7 +99,7 @@ class PDBStructResolver(IdentifierResolver):
             List of (identifier, similarity_score) tuples.
         """
         # Create temp file for PDB structure
-        fd, pdb_path = tempfile.mkstemp(suffix=".pdb", dir=working_directory if working_directory else tempfile.gettempdir())
+        fd, pdb_path = tempfile.mkstemp(suffix=".pdb", dir=safe_tmp_dir(working_directory))
         os.close(fd)
         
         try:
@@ -118,26 +119,63 @@ class PDBStructResolver(IdentifierResolver):
 
     def _upload_file(self, pdb_path: str) -> str | None:
         """
-        Upload PDB file to remote server (placeholder).
+        Upload PDB file to remote server via SSH/SCP.
         
         Args:
             pdb_path: Path to the PDB file.
             
         Returns:
-            None (upload not implemented in this deployment).
+            Public URL to the uploaded file, or None if upload failed.
         """
-        pdb_name = os.path.basename(pdb_path)
-        logger.debug(f"Upload not available for '{pdb_name}'")
-        return None
+        config = self.config.pdb
+        
+        if config.use_deployment_file_access:
+            logger.debug("Using deployment file access; no upload needed")
+            return None
+        
+        if not has_ssh_config(config):
+            logger.debug("SSH config not present; cannot upload")
+            return None
+        
+        # Use curr_uuid for remote subdir, or generate a temp one
+        uuid = config.curr_uuid or "temp"
+        remote_subdir = f"{uuid}/input"
+        
+        public_url = ssh_upload(pdb_path, remote_subdir, config)
+        return public_url
 
     def _delete_file(self, pdb_name: str) -> None:
         """
-        Remove uploaded PDB file from remote server (no-op).
+        Remove uploaded PDB file from remote server via SSH.
         
         Args:
-            pdb_name: Name of the file to delete.
+            pdb_name: Name of the file to delete (actually the full remote subdir path in upload mode).
         """
-        logger.debug(f"Delete not available for '{pdb_name}'")
+        config = self.config.pdb
+        
+        if config.use_deployment_file_access:
+            logger.debug("Using deployment file access; no delete needed")
+            return
+        
+        if not has_ssh_config(config):
+            logger.debug("SSH config not present; skipping delete")
+            return
+        
+        # pdb_name in upload mode is the full URL; extract subdir and filename
+        # Format: {ssh_public_url}/{uuid}/input/{filename}
+        base_url = config.ssh_public_url.rstrip('/')
+        if pdb_name.startswith(base_url):
+            relative_path = pdb_name[len(base_url):].lstrip('/')
+            # relative_path is like "{uuid}/input/{filename}"
+            parts = relative_path.split('/')
+            if len(parts) >= 3:
+                remote_subdir = '/'.join(parts[:-1])
+                filename = parts[-1]
+                ssh_delete(remote_subdir, filename, config)
+            else:
+                logger.warning(f"Cannot parse remote path from URL: {pdb_name}")
+        else:
+            logger.debug(f"Delete not applicable for '{pdb_name}'")
 
     def _fetch_pdb_similarity(self, remote_path: str, as_protein: bool, as_nucleic: bool) -> dict:
         """
@@ -244,19 +282,17 @@ class PDBStructResolver(IdentifierResolver):
             remote_path = f"{base}/files/{uuid}/input/{filename}"
             logger.info(f"PDB query remote_path: {remote_path}")
         else:
-            filename = self._upload_file(pdb_path)
-            if filename is None:
+            remote_path = self._upload_file(pdb_path)
+            if remote_path is None:
                 logger.warning("PDB upload not available and deployment file access disabled; skipping search")
                 return []
-            # Construct remote URL from config (upload mode not fully implemented)
-            logger.warning("Upload mode not fully implemented; skipping search")
-            return []
+            logger.info(f"PDB upload mode remote_path: {remote_path}")
 
         response = self._fetch_pdb_similarity(remote_path, self._protein_mode, self._nucleotide_mode)
         similar_structures = self._parse_pdb_response(response)
         
-        if not deployment_file_access and filename:
-            self._delete_file(filename)
+        if not deployment_file_access and remote_path:
+            self._delete_file(remote_path)
         
         return similar_structures
 

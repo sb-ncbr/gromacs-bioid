@@ -160,7 +160,12 @@ class IdentifierResolutionManager:
             except Exception as e:
                 errors.append({"resolver": resolver.name, "generator": signature_generator_name, "error": str(e)})
                 continue
-            
+
+            if not result:
+                _last_err = getattr(resolver, "get_last_error", lambda: None)()
+                if _last_err:
+                    errors.append({"resolver": resolver.name, "generator": signature_generator_name, "error": _last_err})
+
             if result:
                 hits_found = True
                 resolver_data = {
@@ -215,7 +220,12 @@ class IdentifierResolutionManager:
             except Exception as e:
                 errors.append({"resolver": resolver.name, "generator": signature_generator_name, "error": str(e)})
                 continue
-            
+
+            if not result:
+                _last_err = getattr(resolver, "get_last_error", lambda: None)()
+                if _last_err:
+                    errors.append({"resolver": resolver.name, "generator": signature_generator_name, "error": _last_err})
+
             if result:
                 hits_found = True
                 resolver_data = {

@@ -13,7 +13,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from ...config.loader import RunConfig
-from ..base import IdentifierResolver, IdentifierResolutionError
+from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
 
 logger = logging.getLogger("identifier")
 
@@ -84,7 +84,7 @@ class AlphaFindStructResolver(IdentifierResolver):
             List of AlphaFold identifiers with 100% alignment.
         """
         # Create temp file for PDB structure
-        fd, pdb_path = tempfile.mkstemp(suffix=".pdb", dir=working_directory if working_directory else tempfile.gettempdir())
+        fd, pdb_path = tempfile.mkstemp(suffix=".pdb", dir=safe_tmp_dir(working_directory))
         os.close(fd)
         
         try:
@@ -112,7 +112,7 @@ class AlphaFindStructResolver(IdentifierResolver):
             List of (identifier, similarity_score) tuples.
         """
         # Create temp file for PDB structure
-        fd, pdb_path = tempfile.mkstemp(suffix=".pdb", dir=working_directory if working_directory else tempfile.gettempdir())
+        fd, pdb_path = tempfile.mkstemp(suffix=".pdb", dir=safe_tmp_dir(working_directory))
         os.close(fd)
         
         try:

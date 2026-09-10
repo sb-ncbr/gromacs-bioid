@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ...config.loader import RunConfig
-from ..base import IdentifierResolver, IdentifierResolutionError
+from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
 
 # Import residue/nucleic codes for alphabet validation
 try:
@@ -135,40 +135,44 @@ class BLASTResolver(IdentifierResolver):
             f"{self.db_path}.p00/.n00 (multi-volume)."
         )
 
+    # Maximum fraction of non-alphabet characters tolerated in a sequence.
+    # Real structures routinely contain unknown (X) or modified residues;
+    # rejecting the whole protein over a few such positions silently
+    # destroys recall (INCIDENT_REGISTRY_2026-09 P0-6).
+    _MAX_INVALID_CHAR_FRACTION = 0.5
+    _MIN_SEQUENCE_LENGTH = 10
+
+    def _valid_chars(self) -> set:
+        if self.is_protein:
+            return set(v.upper() for v in KNOWN_RESIDUE_CODES.values())
+        return set(v.upper() for v in KNOWN_NUCLEIC_ACIDS_CODES.values())
+
+    def _sanitize_sequence(self, signature: str) -> str:
+        """Replace non-alphabet characters with wildcards (X / N)."""
+        valid = self._valid_chars()
+        wildcard = "X" if self.is_protein else "N"
+        return "".join(c if c in valid else wildcard for c in signature.upper().strip())
+
     def _is_applicable(self, signature: str) -> bool:
         """
         Check if signature is applicable for BLAST.
-        
-        Validates that the sequence contains only valid residue/nucleic acid codes.
-        
-        Args:
-            signature: The signature string to check.
-            
-        Returns:
-            True if applicable, False otherwise.
+
+        Accepts sequences that are long enough and whose fraction of
+        unknown/modified-residue characters is below the tolerance.
+        Offending characters are sanitized to wildcards before search.
         """
-        # Basic check: non-empty sequence
         if not signature or len(signature.strip()) == 0:
             return False
-        
-        # Validate alphabet based on sequence type
+
         seq_upper = signature.upper().strip()
-        
-        if self.is_protein:
-            # For protein sequences, all characters must be valid amino acid codes
-            # Use 1-letter codes from KNOWN_RESIDUE_CODES values
-            valid_chars = set(v.upper() for v in KNOWN_RESIDUE_CODES.values())
-            for char in seq_upper:
-                if char not in valid_chars:
-                    return False
-        else:
-            # For nucleotide sequences, all characters must be valid nucleic acid codes
-            # Use 1-letter codes from KNOWN_NUCLEIC_ACIDS_CODES values  
-            valid_chars = set(v.upper() for v in KNOWN_NUCLEIC_ACIDS_CODES.values())
-            for char in seq_upper:
-                if char not in valid_chars:
-                    return False
-        
+        if len(seq_upper) < self._MIN_SEQUENCE_LENGTH:
+            return False
+
+        valid_chars = self._valid_chars()
+        invalid = sum(1 for c in seq_upper if c not in valid_chars)
+        if invalid and (invalid / len(seq_upper)) > self._MAX_INVALID_CHAR_FRACTION:
+            return False
+
         return True
 
     def _get_exec_path(self) -> str:
@@ -233,7 +237,7 @@ class BLASTResolver(IdentifierResolver):
         executable_path = self._get_exec_path()
         
         # Use temp directory
-        tmp_dir = working_directory if working_directory else tempfile.gettempdir()
+        tmp_dir = safe_tmp_dir(working_directory)
 
         # Create temp file for output using tempfile
         fd, output_path = tempfile.mkstemp(suffix=".json", dir=tmp_dir)
@@ -261,7 +265,7 @@ class BLASTResolver(IdentifierResolver):
 
             result = subprocess.run(
                 cmd,
-                input=sequence,
+                input=self._sanitize_sequence(sequence),
                 text=True,
                 capture_output=True,
                 timeout=timeout_s,

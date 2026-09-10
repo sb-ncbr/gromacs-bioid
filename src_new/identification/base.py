@@ -10,6 +10,28 @@ from .cache_manager import ResolverCache
 
 logger = logging.getLogger("identifier")
 
+def safe_tmp_dir(working_directory: str | None = None) -> str:
+    """Return a writable temporary directory.
+
+    Uses working_directory only when it exists and is writable for the
+    current process; otherwise falls back to the system temp dir.
+    Run/input directories may be owned by a different uid than the worker
+    (scheduler-created NFS dirs), so resolvers must not assume writability.
+    """
+    import os as _os
+    import tempfile as _tempfile
+
+    if working_directory and _os.path.isdir(working_directory) and _os.access(working_directory, _os.W_OK):
+        return working_directory
+    fallback = _tempfile.gettempdir()
+    if working_directory and working_directory != fallback:
+        logger.warning(
+            f"Working directory '{working_directory}' is not writable; "
+            f"using '{fallback}' for resolver temp files"
+        )
+    return fallback
+
+
 
 class IdentifierResolutionError(Exception):
     """Raised when identifier resolution fails."""
@@ -39,6 +61,7 @@ class IdentifierResolver(ABC):
         self.enabled_identity = getattr(config.identifiers, self.name, True)
         self.enabled_similarity = getattr(config.identifiers, f"{self.name}_similarity", True)
         self._last_resolution_metadata: dict[str, dict] | None = None
+        self._last_error: str | None = None
     
     def is_applicable(self, signature: str, signature_type: str, as_similarity: bool = False) -> bool:
         """Check if this resolver can resolve the signature.
@@ -86,6 +109,7 @@ class IdentifierResolver(ABC):
         """
         # Clear metadata from previous resolution
         self._last_resolution_metadata = None
+        self._last_error = None
         
         # Check cache first
         if cache is not None:
@@ -124,12 +148,18 @@ class IdentifierResolver(ABC):
             
             return result
         except IdentifierResolutionError as exc:
+            self._last_error = str(exc)
             logger.error(f"Resolution failed for {self.name}: {exc}")
             raise  # Re-raise so callers can handle appropriately
         except Exception as exc:
+            self._last_error = str(exc)
             logger.error(f"Unexpected error in {self.name} resolver: {exc}")
             return None
     
+    def get_last_error(self) -> str | None:
+        """Return the last resolution error message, if any."""
+        return self._last_error
+
     @abstractmethod
     def _is_applicable(self, signature: str) -> bool:
         """Check applicability (internal implementation).

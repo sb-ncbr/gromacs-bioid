@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 
 from ...config.loader import RunConfig
-from ..base import IdentifierResolver, IdentifierResolutionError
+from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
 
 logger = logging.getLogger("identifier")
 
@@ -101,7 +101,7 @@ class Foldseek3DiResolver(IdentifierResolver):
             return []
         
         # Create temporary directory for foldseek operations
-        tmp_dir = tempfile.mkdtemp(prefix="foldseek_", dir=working_directory if working_directory else tempfile.gettempdir())
+        tmp_dir = tempfile.mkdtemp(prefix="foldseek_", dir=safe_tmp_dir(working_directory))
         
         try:
             return self._run_foldseek_search(signature, tmp_dir)

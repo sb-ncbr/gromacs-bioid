@@ -10,7 +10,8 @@ import tempfile
 import requests
 
 from ...config.loader import RunConfig
-from ..base import IdentifierResolver, IdentifierResolutionError
+from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
+from ._ssh_upload import has_ssh_config, ssh_delete, ssh_upload
 
 logger = logging.getLogger("identifier")
 
@@ -81,7 +82,7 @@ class MmCifResolver(IdentifierResolver):
             List of (PDB ID, score*100) tuples.
         """
         # Create temp file for mmCIF structure
-        fd, cif_path = tempfile.mkstemp(suffix=".cif", dir=working_directory if working_directory else tempfile.gettempdir())
+        fd, cif_path = tempfile.mkstemp(suffix=".cif", dir=safe_tmp_dir(working_directory))
         os.close(fd)
         
         try:
@@ -99,17 +100,61 @@ class MmCifResolver(IdentifierResolver):
 
     def _upload_cif_file(self, cif_path: str) -> str | None:
         """
-        Upload mmCIF file to make it accessible via URL (placeholder).
+        Upload mmCIF file to remote server via SSH/SCP.
         
         Args:
             cif_path: Path to mmCIF file.
             
         Returns:
-            None (upload not implemented in this deployment).
+            Public URL to the uploaded file, or None if upload failed.
         """
-        cif_name = os.path.basename(cif_path)
-        logger.debug(f"Upload not available for mmCIF file '{cif_name}'")
-        return None
+        config = self.config.pdb
+        
+        if config.use_deployment_file_access:
+            logger.debug("Using deployment file access; no upload needed")
+            return None
+        
+        if not has_ssh_config(config):
+            logger.debug("SSH config not present; cannot upload")
+            return None
+        
+        # Use curr_uuid for remote subdir, or generate a temp one
+        uuid = config.curr_uuid or "temp"
+        remote_subdir = f"{uuid}/input"
+        
+        public_url = ssh_upload(cif_path, remote_subdir, config)
+        return public_url
+
+    def _delete_cif_file(self, remote_url: str) -> None:
+        """
+        Remove uploaded mmCIF file from remote server via SSH.
+        
+        Args:
+            remote_url: URL of the file to delete.
+        """
+        config = self.config.pdb
+        
+        if config.use_deployment_file_access:
+            logger.debug("Using deployment file access; no delete needed")
+            return
+        
+        if not has_ssh_config(config):
+            logger.debug("SSH config not present; skipping delete")
+            return
+        
+        # remote_url format: {ssh_public_url}/{uuid}/input/{filename}
+        base_url = config.ssh_public_url.rstrip('/')
+        if remote_url.startswith(base_url):
+            relative_path = remote_url[len(base_url):].lstrip('/')
+            parts = relative_path.split('/')
+            if len(parts) >= 3:
+                remote_subdir = '/'.join(parts[:-1])
+                filename = parts[-1]
+                ssh_delete(remote_subdir, filename, config)
+            else:
+                logger.warning(f"Cannot parse remote path from URL: {remote_url}")
+        else:
+            logger.debug(f"Delete not applicable for '{remote_url}'")
 
     def _fetch_mmcif_similarity(self, remote_path: str) -> dict:
         """
@@ -210,6 +255,18 @@ class MmCifResolver(IdentifierResolver):
             response = self._fetch_mmcif_similarity(remote_path)
             return self._parse_mmcif_response(response)
         else:
-            # Upload mode not implemented; return empty results gracefully
-            logger.warning("mmCIF upload mode not implemented and deployment file access disabled; skipping search")
-            return []
+            # Upload mode via SSH
+            remote_path = self._upload_cif_file(cif_path)
+            if remote_path is None:
+                logger.warning("mmCIF upload not available and deployment file access disabled; skipping search")
+                return []
+            logger.info(f"mmCIF upload mode remote_path: {remote_path}")
+            
+            # Fetch similar structures
+            response = self._fetch_mmcif_similarity(remote_path)
+            results = self._parse_mmcif_response(response)
+            
+            # Clean up uploaded file
+            self._delete_cif_file(remote_path)
+            
+            return results
