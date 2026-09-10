@@ -1,0 +1,43 @@
+# Common Issues — Validation Incident Signatures (2026-09)
+
+## Core Concept
+Failure signatures from the Sept-2026 incident (P0-1..P0-6, P1 family), how to detect and fix. Full log: `bat3_validation/docs/INCIDENT_REGISTRY_2026-09.md`.
+
+## P0-1: BLAST "database not found" but PVC Bound
+- Signature: results.json warnings `identifier_resolver_failed ... BLAST database not found at /app/databases/...`; `ls /app/databases` empty in worker
+- Cause: helm chart templates ignored `storage.*.existingClaim` → mounted auto-created empty PVC, real DBs in legacy claim
+- Fix: templates honor `existingClaim` (chart ≥0.1.1); check `helm get values -a` + template `--dry-run` claimName output
+- Verify: `kubectl exec <worker> -- ls /app/databases/pdbaa | head`
+
+## P0-4/P1-11: Zero hits with "identified: true", no warnings
+- Signature: pipeline success, `verified_hits=[]`, identify step finishes in seconds, no errors
+- Cause: resolvers `tempfile.mkstemp(dir=working_directory)` → PermissionError on non-writable run dir (uid mismatch) → swallowed by base generic except
+- Fix: `safe_tmp_dir()` (falls back to system temp) + `_last_error` surfaced as `identifier_resolver_failed` warning (worker ≥v2.12)
+
+## P0-5: Every resolver fails with "file is not a database"
+- Signature: ALL resolvers (even non-BLAST) error `file is not a database` after parallel campaign starts
+- Cause: shared `resolver_cache.sqlite3` on NFS corrupted by concurrent writes (WAL over NFS = never safe)
+- Check: `sqlite3.connect cache; PRAGMA integrity_check` → error
+- Fix: per-pod caches (`identifiers_cache.directory` empty in config); never share sqlite over NFS; archive corrupt file
+
+## P0-6: Proteins silently invisible to identification (no attempt recorded)
+- Signature: identifiers block has NO attempted entry for sequence signatures; manual blastp of the signature finds perfect hits
+- Cause: `_is_applicable` alphabet gate rejected the whole protein over ONE non-standard char (`X` from unknown residues is routine)
+- Check: `invalid_chars = set(seq) - valid_aa` non-empty on affected sigs
+- Fix: tolerant gate (>50% invalid → reject) + sanitize to wildcard before blast (worker ≥v2.13)
+
+## P1: Scheduler state corruption
+- Zombies: `bat3_runs` stuck 'running' (celery result keys expire ~24h → never observed). Fix: `sweep_stale_validations()` in 30s tick
+- Duplicate runs per entry (pairs 1-3s apart): was double background thread + unlocked SELECT. Fix: single thread, `FOR UPDATE SKIP LOCKED`
+- Failed rows with empty `last_error`: was `pass # error_message not available`. Fix: errors persisted everywhere
+- Batches stuck "running" with 0 done: counters only moved on successful redis reads. Fix: sweeper recomputes from queue rows
+- Entry/queue/run counts divergent: models lacked mapped columns the migration added (`run_id`, `retry_count`, `last_error`). Fix: models synced
+
+## Ownership / NFS gotchas
+- dirs/files split root/1000/65534, often 0600 → cross-service "Permission denied"; read via the pod with matching uid (validation-worker=65534, bat3-worker=1000)
+- `results.json` modes vary by writer; analysis scripts may get EPERM on a subset
+- Transient EPERM wave on `results.log` across 20 pods observed once (NFS attribute-cache timing); re-dispatch recovered
+
+## Reference
+- `../lookup/ceitec-deployment.md` — live facts
+- `../guides/validation-reprocessing.md` — recovery workflow
