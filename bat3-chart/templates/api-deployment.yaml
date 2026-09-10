@@ -28,9 +28,9 @@ spec:
             - containerPort: {{ .Values.service.api.port | default 8000 }}
           env:
             - name: CELERY_BROKER_URL
-              value: redis://{{ include "bat3.fullname" . }}-redis:{{ .Values.redis.port | default 6379 }}/0
+              value: {{ .Values.celery.brokerUrl | default (printf "redis://%s-redis:%v/0" (include "bat3.fullname" .) (.Values.redis.port | default 6379)) }}
             - name: CELERY_RESULT_BACKEND
-              value: redis://{{ include "bat3.fullname" . }}-redis:{{ .Values.redis.port | default 6379 }}/0
+              value: {{ .Values.celery.resultBackend | default (printf "redis://%s-redis:%v/0" (include "bat3.fullname" .) (.Values.redis.port | default 6379)) }}
             - name: BAT3_RUNS_DIR
               value: "{{ .Values.dataFolder }}"
             - name: CLEANUP_DAYS
@@ -72,7 +72,7 @@ spec:
       volumes:
         - name: runs-data
           persistentVolumeClaim:
-            claimName: {{ include "bat3.fullname" . }}-runs-data
+            claimName: {{ .Values.storage.runsData.existingClaim | default (printf "%s-runs-data" (include "bat3.fullname" .)) }}
         - name: databases-data
           persistentVolumeClaim:
-            claimName: {{ include "bat3.fullname" . }}-databases-data
+            claimName: {{ .Values.storage.databasesData.existingClaim | default (printf "%s-databases-data" (include "bat3.fullname" .)) }}

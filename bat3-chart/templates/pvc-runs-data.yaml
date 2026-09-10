@@ -1,3 +1,4 @@
+{{- if not .Values.storage.runsData.existingClaim }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -11,3 +12,4 @@ spec:
   {{- if .Values.storage.runsData.storageClass }}
   storageClassName: {{ .Values.storage.runsData.storageClass }}
   {{- end }}
+{{- end }}
