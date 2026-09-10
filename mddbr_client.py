@@ -296,9 +296,23 @@ def _http_download_atomic(url: str, dest: Path, expected_size: Optional[int],
     last_err: Optional[Exception] = None
     for attempt in range(attempts):
         try:
-            with requests.get(url, stream=True, timeout=(30, 300)) as resp:
+            # per-attempt mkdir: under parallel intake + NFS metadata caching
+            # the dir may not be visible to this client yet (stale attr cache)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            # resume an aborted partial download instead of restarting from 0
+            headers = {}
+            resume_at = part.stat().st_size if part.exists() else 0
+            mode = "wb"
+            if resume_at > 0:
+                headers["Range"] = f"bytes={resume_at}-"
+            with requests.get(url, stream=True, timeout=(30, 600),
+                              headers=headers) as resp:
+                if resume_at and resp.status_code == 206:
+                    mode = "ab"
+                elif resume_at and resp.status_code == 200:
+                    mode = "wb"  # server ignored Range: restart
                 resp.raise_for_status()
-                with open(part, "wb") as f:
+                with open(part, mode) as f:
                     for chunk in resp.iter_content(chunk_size=1024 * 1024):
                         if chunk:
                             f.write(chunk)
@@ -311,11 +325,11 @@ def _http_download_atomic(url: str, dest: Path, expected_size: Optional[int],
             return
         except Exception as exc:  # noqa: BLE001 - retried below
             last_err = exc
-            try:
-                part.unlink()
-            except OSError:
-                pass
             time.sleep(2 * (2 ** attempt))
+    try:
+        part.unlink()
+    except OSError:
+        pass
     raise last_err if last_err else IOError(f"download failed: {url}")
 
 

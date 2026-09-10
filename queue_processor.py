@@ -190,27 +190,64 @@ def process_validation_queue(
     Each item is its own transaction (claim lock held until commit),
     so one failing item never discards progress of others.
     """
-    started_count = 0
+    # Phase 1: atomically claim up to `concurrency` items (fast).
+    claimed_ids = []
     try:
         for _ in range(max(1, concurrency)):
-            try:
-                queue_item = _claim_queue_item(db, batch_id)
-                if not queue_item:
-                    break
-                if _process_single_item(db, queue_item, batch_id):
-                    started_count += 1
-                db.commit()
-            except Exception as item_error:
-                logger.error(f"Failed to process queue item: {item_error}")
-                db.rollback()  # discards THIS item only
-                continue
-        if started_count:
-            logger.info(f"Queue processor: started {started_count} validations")
-        return started_count
+            queue_item = _claim_queue_item(db, batch_id)
+            if not queue_item:
+                break
+            claimed_ids.append(queue_item.id)
+        db.commit()
     except Exception as e:
-        logger.error(f"Error in queue processor: {e}")
+        logger.error(f"Error claiming queue items: {e}")
         db.rollback()
-        return started_count
+        return 0
+
+    if not claimed_ids:
+        return 0
+
+    # Phase 2: process claimed items in parallel (downloads dominate
+    # intake latency ~GB-scale trajectories). Each worker gets its own
+    # DB session and commits independently.
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _process(item_id: int) -> bool:
+        session = models.SessionLocal()
+        try:
+            item = session.query(models.ValidationQueue).get(item_id)
+            if item is None:
+                return False
+            ok = _process_single_item(session, item, batch_id)
+            session.commit()
+            return ok
+        except Exception as item_error:
+            logger.error(f"Failed to process queue item {item_id}: {item_error}")
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            return False
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
+
+    started_count = 0
+    max_workers = min(len(claimed_ids), int(os.environ.get("VALIDATION_INTAKE_WORKERS", "16")))
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_process, cid): cid for cid in claimed_ids}
+        for fut in as_completed(futures):
+            try:
+                if fut.result():
+                    started_count += 1
+            except Exception as fut_error:
+                logger.error(f"Intake worker failed: {fut_error}")
+
+    if started_count:
+        logger.info(f"Queue processor: started {started_count} validations")
+    return started_count
 
 
 def cancel_queued_validations(
