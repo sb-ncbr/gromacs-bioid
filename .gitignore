@@ -185,4 +185,16 @@ examples/
 .jupyter_ystore.db
 
 databases/*
-cache.sqlite3
+cache.sqlite3.tmp/
+*.bak
+*.bak2
+*.backup
+*.backup2
+*.broken
+*.swp
+bat3.db
+bat3_runs.db
+bat3_validation/
+web/public/static/
+web/public/asset-manifest.json
+validation

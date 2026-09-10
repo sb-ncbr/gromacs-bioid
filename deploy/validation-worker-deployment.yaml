@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: validation-worker
+  namespace: ceitec-biodata-ns
+  labels:
+    app: validation-worker
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: validation-worker
+  template:
+    metadata:
+      labels:
+        app: validation-worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: worker
+        image: cerit.io/tomsko/bat3-validation-api:v3.20
+        imagePullPolicy: Always
+        env:
+        - name: DATABASE_URL
+          value: "postgresql://validation:validation-password-change-me@validation-postgres:5432/bat3_validation"
+        - name: CELERY_BROKER_URL
+          value: "redis://bat3-redis.ceitec-biodata-ns.svc.cluster.local:6379/0"
+        - name: CELERY_RESULT_BACKEND
+          value: "redis://bat3-redis.ceitec-biodata-ns.svc.cluster.local:6379/0"
+        - name: MDDBR_API_BASE
+          value: "https://mdposit.mddbr.eu/api/rest/v1"
+        command: ["celery", "-A", "tasks", "worker", "--loglevel=info", "--pool=threads", "--concurrency=4"]
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
