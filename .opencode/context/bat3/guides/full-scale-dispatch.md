@@ -11,7 +11,9 @@ kubectl exec <worker-pod> -- test -f /data/validation/config_shared.ini         
 kubectl exec validation-postgres-... -- psql -U validation -d bat3_validation \
   -c "select status,count(*) from validation_queue group by 1"                  # ~14.5k queued
 ```
-Also confirm worker image is current pinned tag (see `lookup/ceitec-deployment.md`) and NFS has headroom (`df -h /data/validation` in a worker).
+Also confirm worker image is current pinned tag (see `lookup/ceitec-deployment.md`; post-GO pins: worker **v2.14**, validation-api/validation-worker **v3.86**) and NFS has headroom (`df -h /data/validation` in a worker).
+
+Entry-dir write precondition (learned 2026-09-10, P2-12): `input/` dirs must be o+w and both celery pools must share one uid (uid 1000). If a fresh perm wave appears, re-run the sweeps from `../errors/common-issues.md#p2-12`.
 
 ## GO
 ```bash
@@ -22,8 +24,8 @@ kubectl logs -l app=validation-api -n ceitec-biodata-ns --tail=50 -f | grep -E "
 ```
 
 ## Expected behavior
-- Intake: up to 5 claims per 15s tick (downloads then celery dispatch; `input/` skipped when already present)
-- Throughput: 80 celery slots (20 workers × 4 threads); ~1-4 min/entry typical, nr/core_nt/nt off
+- Intake: up to 5 claims per 15s tick (downloads then celery dispatch; `input/` skipped when already present and non-empty). Dead downloads fail terminal-fast as `project_not_found` — they are real upstream gaps, not bugs
+- Throughput: 120 celery slots (20 bat3-workers ×4 + 10 validation-workers ×4, same queue); observed peak ~10 completions/min during GO#2; downloads dominate intake early. Worker logs are DEBUG-flooded — grep server-side, never by eye
 - Download-needed entries: ~3.8k of 14.4k (10.8k already on NFS) — first hours are download-heavy
 - Metrics land per-entry `results.json`; hit@K later via `offline_hit_k.py --pattern results.json --write-db`
 - Batches (67/68 "running") complete via sweeper counters as items settle

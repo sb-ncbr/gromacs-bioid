@@ -10,11 +10,11 @@ Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-0
 ## Components & Images (pinned)
 | Deploy | Replicas | Image | Notes |
 |---|---|---|---|
-| bat3-ceitec-bat3-worker | 20 | `cerit.io/tomsko/bat3-worker:v2.13` | helm `bat3-ceitec`; mounts runs+databases+validation-data |
+| bat3-ceitec-bat3-worker | 20 | `cerit.io/tomsko/bat3-worker:v2.14` | helm `bat3-ceitec`; uid 1000; mounts runs+databases+validation-data |
 | bat3-ceitec-bat3-api | 1 | `bat3-api:latest` | helm |
 | bat3-ceitec-bat3-web | 1 | `bat3-frontend:latest` | helm |
-| validation-api | 1 | `bat3-validation-api:v3.83` | runs `uvicorn main:app` (full validation api + scheduler); mounts validation-data at /data/validation |
-| validation-worker | 10 | `bat3-validation-api:v3.83` | celery `-A tasks` |
+| validation-api | 1 | `bat3-validation-api:v3.86` | runs `uvicorn main:app` (full api + scheduler); env: `VALIDATION_DISPATCH_ENABLED` (gate), MDFIND_S3_* from `mdfind-s3-secret`; mounts validation-data |
+| validation-worker | 10 | `bat3-validation-api:v3.86` | celery `-A tasks`; **uid 1000 since 2026-09-10 PM** (was 65534 — source of cross-uid EPERM); consumes the SAME default `celery` queue as bat3-worker |
 | validation-ui | 1 | `bat3-validation-ui:latest` | |
 | validation-postgres | 1 | `postgres:15-alpine` | DB `bat3_validation` |
 | bat3-redis | 1 | `redis:8-alpine` | broker+backend; orphan `bat3-ceitec-bat3-redis` scaled 0 |

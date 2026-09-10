@@ -33,6 +33,31 @@ Failure signatures from the Sept-2026 incident (P0-1..P0-6, P1 family), how to d
 - Batches stuck "running" with 0 done: counters only moved on successful redis reads. Fix: sweeper recomputes from queue rows
 - Entry/queue/run counts divergent: models lacked mapped columns the migration added (`run_id`, `retry_count`, `last_error`). Fix: models synced
 
+## Session 2 (full-scale GO) signatures — P2-11..P2-16
+
+### P2-11: 100% of download claims fail with upstream "404"
+- Signature: every claim retries `download failed (attempt N)` fast; MDposit probe: `/projects/<canonical>` 200 + filenotes n>0, but logs show 404 on a DIFFERENT (legacy `local`) accession
+- Cause: claimer remapped canonical `MD-A*` accession to the project's legacy `local` field before filenotes fetch
+- Fix: direct canonical accession (v3.84); verify with `requests.get(f"{base}/projects/{acc}/filenotes")`
+
+### P2-12: EPERM waves on `.part` / `results.log` / `results.json` across pods
+- Signature: `[Errno 13] Permission denied` on files *just created by another pod*; `stat` shows different uid than the failing writer
+- Cause: per-entry files written by TWO pools with different uids (bat3-worker=1000 vs validation-worker=65534) owning 0600/0644 artifacts + `input/` dirs at 2755
+- Fix recipe: (1) `find /data/validation -maxdepth 2 -type d -name input ! -perm -o+w -exec chmod 777 {} +` (from 65534-owner pod); (2) files `a+r` then `o+w` same way; (3) unify both pools to one uid (deployments patched to uid 1000); (4) legacy 65534 leftovers → dedicated `kubectl run` pod at uid 65534 for the final chmod pass
+
+### P2-13: `float32 not JSON serializable`
+- Fix: numpy normalization in `src_new/utils/file_utils.py::_sanitize_for_json`
+- Trap: BOTH celery consumer deployments run the same pipeline task — rebuild BOTH images (worker v2.14 + validation-api v3.86) or the stale pool keeps failing ~1/3 of items
+
+### P2-15 (open): "failed" rows that aren't
+- Signature: queue items flip to failed exactly at :27/:57 (sweeper ticks); entry's `input/` and `results.log` mtimes keep advancing afterwards
+- Hypothesis: sweeper re-attaches stale Redis celery exceptions — VERIFY live file mtime / current run row before trusting or re-queueing a "failed" item
+
+### P2-16: image built from dirty working tree
+- Signature: crashloop `Could not import module "main"` right after a rebuild
+- Cause: uncommitted WIP line `RUN mv /app/main.py /app/main.py.old` in `Dockerfile.api`
+- Policy: `git show HEAD:Dockerfile.<x> > /tmp/… && docker build -f /tmp/<x>` — never build from the dirty tree
+
 ## Ownership / NFS gotchas
 - dirs/files split root/1000/65534, often 0600 → cross-service "Permission denied"; read via the pod with matching uid (validation-worker=65534, bat3-worker=1000)
 - `results.json` modes vary by writer; analysis scripts may get EPERM on a subset
