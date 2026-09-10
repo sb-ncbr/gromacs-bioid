@@ -4,9 +4,23 @@ import os
 import tempfile
 from pathlib import Path
 
+try:
+    import numpy as _np
+except ImportError:  # pragma: no cover - numpy is present in workers
+    _np = None
+
 
 def _sanitize_for_json(obj):
-    """Recursively replace NaN/Inf with None for JSON serialization."""
+    """Recursively prepare data for JSON serialization.
+
+    Replaces NaN/Inf with None and converts numpy scalars/arrays to their
+    Python-native equivalents (np.float32 & friends are not JSON
+    serializable and isinstance(np.float32(...), float) is False).
+    """
+    if _np is not None and isinstance(obj, _np.generic):
+        return _sanitize_for_json(obj.item())
+    if _np is not None and isinstance(obj, _np.ndarray):
+        return _sanitize_for_json(obj.tolist())
     if isinstance(obj, float):
         if math.isnan(obj) or math.isinf(obj):
             return None

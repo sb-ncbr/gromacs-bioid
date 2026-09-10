@@ -68,15 +68,17 @@ def schedule_validation(
             
             # Download simulation files
             logger.info(f"Downloading files for {local_accession}...")
-            success = download_simulation_files(
+            success, _failure_class = download_simulation_files(
                 db_session=None,
                 entry_id=entry_id,
                 local_accession=local_accession,
                 input_dir=input_dir
             )
-            
+
             if not success:
-                logger.error(f"Failed to download files for entry {entry_id}")
+                logger.error(
+                    f"Failed to download files for entry {entry_id}: {_failure_class}"
+                )
                 return f"failed-download-{entry_id}"
             
             logger.info(f"Files downloaded successfully for {entry_id}")

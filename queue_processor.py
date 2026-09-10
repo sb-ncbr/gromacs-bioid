@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
-from mddbr_client import download_simulation_files
+from mddbr_client import TERMINAL_FAILURE_CLASSES, download_simulation_files
 
 import models
 
@@ -100,29 +100,24 @@ def _process_single_item(db: Session, queue_item: models.ValidationQueue,
         return False
 
     local_acc = entry.local_accession
-    try:
-        import requests
-        proj_resp = requests.get(
-            f"https://mdposit.mddbr.eu/api/rest/v1/projects/{entry.local_accession}",
-            timeout=10,
-        )
-        if proj_resp.ok:
-            local_acc = proj_resp.json().get("local", entry.local_accession)
-    except Exception as proj_error:
-        logger.warning(f"Could not get project metadata for {entry.local_accession}: {proj_error}")
 
     already_downloaded = os.path.isdir(input_dir) and any(
         f for f in os.listdir(input_dir) if not f.startswith(".")
     )
     if not already_downloaded:
         logger.info(f"Downloading files for entry {entry.local_accession}")
-        if not download_simulation_files(db, entry.id, local_acc, input_dir):
+        ok, failure_class = download_simulation_files(db, entry.id, local_acc, input_dir)
+        if not ok:
             queue_item.retry_count = (queue_item.retry_count or 0) + 1
-            queue_item.last_error = f"download failed (attempt {queue_item.retry_count})"
-            if queue_item.retry_count < MAX_RETRIES:
-                queue_item.status = "queued"  # released; claimed again later
+            if failure_class in TERMINAL_FAILURE_CLASSES:
+                # 404 / unusable data: retrying is pointless, fail permanently
+                _fail_queue_item(queue_item, f"{failure_class} (terminal)", entry)
             else:
-                _fail_queue_item(queue_item, queue_item.last_error, entry)
+                queue_item.last_error = f"{failure_class} (attempt {queue_item.retry_count})"
+                if queue_item.retry_count < MAX_RETRIES:
+                    queue_item.status = "queued"  # released; claimed again later
+                else:
+                    _fail_queue_item(queue_item, queue_item.last_error, entry)
             return False
 
     # Create Bat3Run record
