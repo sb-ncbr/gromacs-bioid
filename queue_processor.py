@@ -42,11 +42,21 @@ def _log_activity_safe(db: Session, job_id: str, activity_type: str, message: st
         logger.debug(f"Could not log activity: {log_error}")
 
 
-def _claim_queue_item(db: Session, batch_id: Optional[str]) -> Optional[models.ValidationQueue]:
-    """Atomically claim one queued item (row lock, skipped if already locked)."""
+def _claim_queue_item(db: Session, batch_id: Optional[str],
+                      exclude_ids: Optional[list] = None) -> Optional[models.ValidationQueue]:
+    """Atomically claim one queued item (row lock, skipped if already locked).
+
+    exclude_ids is MANDATORY within a batch claim loop: this app uses
+    sessionmaker(autoflush=False), so a pending status change is invisible
+    to the next SELECT in the same transaction, and SKIP LOCKED does not
+    skip rows locked by our own transaction - without exclusion the same
+    row is returned again and again (P2-18 duplicate intake).
+    """
     query = db.query(models.ValidationQueue).filter(
         models.ValidationQueue.status == "queued"
     )
+    if exclude_ids:
+        query = query.filter(~models.ValidationQueue.id.in_(exclude_ids))
     if batch_id:
         query = query.filter(models.ValidationQueue.batch_id == batch_id)
     return query.order_by(
@@ -61,6 +71,40 @@ def _fail_queue_item(queue_item: models.ValidationQueue, reason: str, entry=None
     queue_item.completed_at = _utcnow()
     if entry is not None:
         entry.status = "failed"
+
+def _release_reserved_item(item_id: int, error: str) -> None:
+    """Phase-2 crash path: the claim reserve already committed this item as
+    'processing'; return it to the queue (retry budget) or fail it.
+
+    Never touches items that reached run-dispatch (run_id linked) - those are
+    owned by the celery task / stale sweeper from that point on.
+    Uses a fresh session: the worker's own session may be unhealthy.
+    """
+    session = models.SessionLocal()
+    try:
+        item = session.query(models.ValidationQueue).get(item_id)
+        if item is None or item.status != "processing" or item.run_id:
+            return
+        item.retry_count = (item.retry_count or 0) + 1
+        item.last_error = f"intake failed: {error[:400]}"
+        if item.retry_count < MAX_RETRIES:
+            item.status = "queued"
+            item.started_at = None
+        else:
+            item.status = "failed"
+            item.completed_at = _utcnow()
+        session.commit()
+    except Exception as rel_err:
+        logger.error(f"Failed to release reserved queue item {item_id}: {rel_err}")
+        try:
+            session.rollback()
+        except Exception:
+            pass
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
 
 
 def _process_single_item(db: Session, queue_item: models.ValidationQueue,
@@ -194,9 +238,16 @@ def process_validation_queue(
     claimed_ids = []
     try:
         for _ in range(max(1, concurrency)):
-            queue_item = _claim_queue_item(db, batch_id)
+            queue_item = _claim_queue_item(db, batch_id, exclude_ids=claimed_ids)
             if not queue_item:
                 break
+            # Reserve immediately: without this the row stays 'queued' for
+            # the whole download (minutes) and every dispatcher tick
+            # re-claims it, spawning duplicate intake threads that race the
+            # same input dir (P2-18). Phase 2 either finalizes the dispatch
+            # (status stays processing + run linked) or releases/fails it.
+            queue_item.status = "processing"
+            queue_item.started_at = _utcnow()
             claimed_ids.append(queue_item.id)
         db.commit()
     except Exception as e:
@@ -227,6 +278,7 @@ def process_validation_queue(
                 session.rollback()
             except Exception:
                 pass
+            _release_reserved_item(item_id, str(item_error))
             return False
         finally:
             try:

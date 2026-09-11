@@ -7,7 +7,7 @@ Current truth for the ceitec-biodata-ns validation deployment. Full-scale run is
 - **Entries indexed**: 15,185 (14,066 with ground truth: 27,328 signatures = 14,787 UniProt + 12,541 PDB)
 - **Full-scale run**: 1,691/14,622 completed (11.6%); throughput cohort-bound (on-disk wave ~20/min; GB-download wave ~5-8 runs/15min over MDposit bandwidth)
 - **Validation metrics (pilot, hit@K vs GT)**: hit@1 = 0.348, hit@5 = 0.731, hit@10 = 0.811 overall (pdb 0.840); 456 rows in `validation_results`
-- **Images live**: `bat3-worker:v2.15` ×40, `bat3-validation-api:v3.92` (api ×1 + validation-worker ×50, resourced 10Gi post-OOM); helm rev 6 + kubectl scale drift
+- **Images live**: `bat3-worker:v2.15` ×40, `bat3-validation-api:v3.94` api ×1 (P2-18 dup-intake fix; validation-worker still v3.92 ×50 — worker code untouched by v3.93/94); helm rev 6 + kubectl scale/set-image drift
 - **Worker pools**: uid 1000 everywhere; BOTH consume one default celery queue — ship pipeline-code fixes into BOTH images (v2.15 + v3.92); validation-worker mounts BLAST DBs (P2-17)
 - **Downloader hardened**: taxonomy (terminal `project_not_found`/`no_simulation_files` vs transient `download_failed`), atomic `.part`, size verify, S3 fallback via `mdfind-s3-secret` (mddata bucket; legacy `mddbr_A0001_<file>` layout), `download_report.json` audit per entry
 
@@ -26,7 +26,7 @@ Current truth for the ceitec-biodata-ns validation deployment. Full-scale run is
 - Scale-up: bat3-worker 40 + validation-worker 50 (uid 1000, DBs mounted on both) = ~360 slots; observed ~20/min with on-disk entries
 - REQUEUE-ALL executed after validation-worker DB-mount fix (P2-17 resolved); scorch theory replaced by full reprocessing
 
-- Intake throughput: download-cohort-bound (GB trajectories over MDposit bandwidth; runs-created ~5-6/15min in that segment). v3.91 adds parallel phase-2 intake (VALIDATION_INTAKE_WORKERS, 16) + Range-resume; further gains need a dedicated prefetch pipeline, not more threads
+- Intake throughput: v3.94 claim loop now dispatches 24 UNIQUE entries/tick with 16 parallel downloads (was 16x dup of ONE entry, P2-18). True ceiling (MDposit bandwidth) being re-measured post-fix. Range-resume active
 - 2026-09-11 OOM incident: validation-worker resourced at web-tier (2CPU/4Gi) while running the BAT3 pipeline → wholesale OOMKilled churn overnight (~2,127 zombie runs accumulated, throughput collapsed). Fixed: resources → 4CPU/10Gi (same as bat3-worker); sweeper VALIDATION_STALE_HOURS=3 reclaimed ~1.8k zombies; post-fix 33 runs/15min + 18 completions/15min
 ## Known Remaining Items
 - P2-15: sweeper batch fail-marks at :27/:57 need attribution audit before bulk-trusting "failed"

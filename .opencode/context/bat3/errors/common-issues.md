@@ -74,6 +74,12 @@ Failure signatures from the Sept-2026 incident (P0-1..P0-6, P1 family), how to d
 - Fix: `LoadedUniverse._discover_virtual_segments()` (F1, worker ≥v2.15) + smiles coordinate-perception fallback (≤150 atoms)
 - Known residual nits: `PUBCHEM_CID 0` junk hits pass verification (filter falsy ids); no structure-consuming lipid resolver yet
 
+### Duplicate intake storm (P2-18, fixed)
+- Signature: same accession `Downloading files` >=2x within milliseconds; `Key (run_id) already exists` bursts; `running` runs >> queue `processing`; S7 unmapped-pairs explosion; ~1 run/min ceiling despite idle fleet
+- Cause: batch claim loop issuing N `SELECT ... FOR UPDATE SKIP LOCKED` in ONE transaction while `sessionmaker(autoflush=False)` keeps the pending status-UPDATE invisible to following SELECTs; SKIP LOCKED never skips locks owned by our own transaction -> same row claimed N times -> N threads download/race one entry's input dir
+- Fix: claim-time reserve (`status='processing'` before commit) + claim-loop filter `~ValidationQueue.id.in_(claimed_ids)` + `_release_reserved_item` crash path (api >=v3.94)
+- Cleanup pattern: per entry keep queue-linked (else newest) live run, `revoke(terminate=True)` the rest and mark failed; requeue race casualties (`Stale file handle` / `No such file or directory` / `.part` / `download_failed`) with `retry_count=0`
+
 ### Similarity-module dev traps
 - Bio PairwiseAligner: `alignment.counts()` → AlignmentCounts object with `.identities` & `.aligned` ints (not dict, not `.identical`); PubChem Fingerprint2D = **base64** (not hex)
 - Pair cache is append-only JSONL on NFS: stale wrong values persist — delete `sim_cache/pairs.jsonl` after fixing scorer logic (self-poisoning)
