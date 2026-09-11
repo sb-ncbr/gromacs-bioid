@@ -1,14 +1,14 @@
-# BAT3 Validation Status (2026-09-10, post-full-scale-GO)
+# BAT3 Validation Status (2026-09-11, post scale-up + chemistry fix)
 
 ## Core Concept
 Current truth for the ceitec-biodata-ns validation deployment. Full-scale run is LIVE and healthy as of 2026-09-10 ~14:20 UTC.
 
 ## Key Points
 - **Entries indexed**: 15,185 (14,066 with ground truth: 27,328 signatures = 14,787 UniProt + 12,541 PDB)
-- **Full-scale run**: queue drain in progress — ~640 completed of 14.6k at checkpoint, ~10 completions/min peak, celery depth 0, dispatch ON
+- **Full-scale run**: 1,691/14,622 completed (11.6%); throughput cohort-bound (on-disk wave ~20/min; GB-download wave ~5-8 runs/15min over MDposit bandwidth)
 - **Validation metrics (pilot, hit@K vs GT)**: hit@1 = 0.348, hit@5 = 0.731, hit@10 = 0.811 overall (pdb 0.840); 456 rows in `validation_results`
-- **Images live**: `bat3-worker:v2.14`, `bat3-validation-api:v3.86` (api + validation-worker), helm `bat3-ceitec` rev 6
-- **Worker uids unified**: both consumer pools run as uid 1000 (validation-worker was 65534 → cross-uid EPERM source, unified 2026-09-10 PM)
+- **Images live**: `bat3-worker:v2.15` ×40, `bat3-validation-api:v3.92` (api ×1 + validation-worker ×50, resourced 10Gi post-OOM); helm rev 6 + kubectl scale drift
+- **Worker pools**: uid 1000 everywhere; BOTH consume one default celery queue — ship pipeline-code fixes into BOTH images (v2.15 + v3.92); validation-worker mounts BLAST DBs (P2-17)
 - **Downloader hardened**: taxonomy (terminal `project_not_found`/`no_simulation_files` vs transient `download_failed`), atomic `.part`, size verify, S3 fallback via `mdfind-s3-secret` (mddata bucket; legacy `mddbr_A0001_<file>` layout), `download_report.json` audit per entry
 
 ## Scheduler State (at checkpoint)

@@ -10,11 +10,11 @@ Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-0
 ## Components & Images (pinned)
 | Deploy | Replicas | Image | Notes |
 |---|---|---|---|
-| bat3-ceitec-bat3-worker | 20 | `cerit.io/tomsko/bat3-worker:v2.14` | helm `bat3-ceitec`; uid 1000; mounts runs+databases+validation-data |
+| bat3-ceitec-bat3-worker | 40 | `cerit.io/tomsko/bat3-worker:v2.15` | helm values drift (kubectl scale); uid 1000; req 2CPU/6Gi lim 4/10Gi |
 | bat3-ceitec-bat3-api | 1 | `bat3-api:latest` | helm |
 | bat3-ceitec-bat3-web | 1 | `bat3-frontend:latest` | helm |
-| validation-api | 1 | `bat3-validation-api:v3.86` | runs `uvicorn main:app` (full api + scheduler); env: `VALIDATION_DISPATCH_ENABLED` (gate), MDFIND_S3_* from `mdfind-s3-secret`; mounts validation-data |
-| validation-worker | 10 | `bat3-validation-api:v3.86` | celery `-A tasks`; **uid 1000 since 2026-09-10 PM** (was 65534 — source of cross-uid EPERM); consumes the SAME default `celery` queue as bat3-worker |
+| validation-api | 1 | `bat3-validation-api:v3.92` | `uvicorn main:app`; env: VALIDATION_DISPATCH_ENABLED (gate), VALIDATION_DISPATCH_CONCURRENCY=24, VALIDATION_INTAKE_WORKERS=16, VALIDATION_STALE_HOURS=3, MDFIND_S3_* from mdfind-s3-secret |
+| validation-worker | 50 | `bat3-validation-api:v3.92` | celery threads×4; uid 1000; **req 1CPU/6Gi lim 4CPU/10Gi (since OOM incident 2026-09-11)**; mounts databases+runs+validation-data; shares the default `celery` queue with bat3-worker |
 | validation-ui | 1 | `bat3-validation-ui:latest` | |
 | validation-postgres | 1 | `postgres:15-alpine` | DB `bat3_validation` |
 | bat3-redis | 1 | `redis:8-alpine` | broker+backend; orphan `bat3-ceitec-bat3-redis` scaled 0 |
