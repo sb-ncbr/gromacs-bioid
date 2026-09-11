@@ -191,7 +191,7 @@ def scan_entry(eid, root, pattern):
     dl = set()
     try:
         with open(os.path.join(root, str(eid), "download_report.json")) as fh:
-            dl = {f.get("resolver") for f in json.load(fh).get("files") or []}
+            dl = {(f.get("resolver") or "unknown") for f in json.load(fh).get("files") or []}
     except Exception:
         pass
     return eid, {
@@ -248,6 +248,7 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
         "per_type": collections.defaultdict(list),
         "any": {k: 0 for k in KSET}, "any_n": 0,
     }
+    agg_sim_attempt = collections.defaultdict(lambda: {"total": 0, "attempted": 0})
 
     t0 = time.time()
     with ThreadPoolExecutor(max_workers=threads) as ex:
@@ -297,7 +298,15 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
                     per_ann_max = {k: [] for k in KSET}
                     validated_best = 0.0
                     best_by_k = {k: 0.0 for k in KSET}
+                    FAMILIES = {"inchikey": ("PUBCHEM", "INCHI")}
                     for t, v in annotations:
+                        fam = FAMILIES.get(t)
+                        if fam:
+                            attempted = any(any(fstr in (ht or "").upper() for fstr in fam)
+                                            for ht, _, _ in r["hits"][:10])
+                            agg_sim_attempt[t]["total"] += 1
+                            if attempted:
+                                agg_sim_attempt[t]["attempted"] += 1
                         row = {}
                         for idx, (ht, hid, _conf) in enumerate(r["hits"][:10], 1):
                             s = sim_engine.sim(t, v, ht, hid)
@@ -305,6 +314,7 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
                                 if idx <= k:
                                     row[k] = max(row.get(k, 0.0), s)
                         rec = {k: row.get(k, 0.0) for k in KSET}
+                        rec["_attempted"] = (fam is None) or attempted
                         sim_agg["per_type"][t].append(rec)
                         for k in KSET:
                             best_by_k[k] = max(best_by_k[k], rec[k])
@@ -347,9 +357,16 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
         s7 = {"validated_threshold": SIM_VALIDATED}
         for t, rows in sim_agg["per_type"].items():
             n = len(rows)
+            att = agg_sim_attempt.get(t) or {}
+            n_att = att.get("attempted", n)
+            att_rows = [x for x in rows if x.get("_attempted")]
             s7[t] = {
                 "annotations": n,
-                **{f"mean_sim@{k}": round(sum(r[k] for r in rows) / n, 4) for k in KSET},
+                "attempted": n_att,
+                "attempted_pct": round(100.0 * n_att / n, 1) if n else None,
+                **{f"mean_sim@{k}": round(
+                       sum(r[k] for r in (att_rows or rows)) / max(1, len(att_rows or rows)), 4)
+                   for k in KSET},
                 **{f"pct_validated@{k}": round(100.0 * sum(1 for r in rows if r[k] >= SIM_VALIDATED) / n, 1)
                    for k in KSET},
             }
@@ -429,7 +446,8 @@ def print_report(rep):
                   f" pairs computed: {s7.get('pairs_computed')}, unmapped: {s7.get('unmapped')}):")
             for t in sorted(k for k in s7 if isinstance(s7[k], dict) and "annotations" in s7[k]):
                 row = s7[t]
-                print(f"  {t:<10} n={row['annotations']:<5} "
+                att_s = f" att={row.get('attempted')}({row.get('attempted_pct')}%)" if "attempted" in row else ""
+                print(f"  {t:<10} n={row['annotations']:<5}{att_s}"
                       f"mean@1={row['mean_sim@1']:.3f} mean@5={row['mean_sim@5']:.3f} mean@10={row['mean_sim@10']:.3f}   "
                       f"validated@1={row['pct_validated@1']}% @5={row['pct_validated@5']}% @10={row['pct_validated@10']}%")
             anyrow = s7.get("entry_any_validated@%")

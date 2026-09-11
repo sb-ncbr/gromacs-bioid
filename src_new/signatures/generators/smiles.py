@@ -23,7 +23,8 @@ class SimpleSmilesGenerator(SignatureGenerator):
     
     name = "smiles"
     signature_type = "smiles"
-    
+    MAX_PERCEPTION_ATOMS = 150
+
     def __init__(self, config: SignaturesConfig, sanitize: bool = True) -> None:
         super().__init__(config)
         self._sanitize = sanitize
@@ -55,17 +56,18 @@ class SimpleSmilesGenerator(SignatureGenerator):
         atom_indices = {int(idx): i for i, idx in enumerate(fragment.atoms.indices)}
         is_atom_bonded = [False] * len(atom_indices)
         
+        bonded_all = True
         try:
             for atom_idx1, atom_idx2 in fragment.bonds.indices:
                 is_atom_bonded[atom_indices[int(atom_idx1)]] = True
                 is_atom_bonded[atom_indices[int(atom_idx2)]] = True
+            bonded_all = all(is_atom_bonded)
         except Exception:
-            return False
-        
-        if not all(is_atom_bonded):
-            return False
-        
-        return True
+            # No bond records in topology: allow coordinate-based bond
+            # perception on small molecules (bounded cost, see _generate)
+            return fragment.n_atoms <= self.MAX_PERCEPTION_ATOMS
+
+        return bonded_all
     
     def _generate(
         self,
@@ -81,9 +83,28 @@ class SimpleSmilesGenerator(SignatureGenerator):
         atom_idx_to_rdkit_idx = _fragment_to_rdkit_atoms(
             fragment, atom_idx_to_index, molecule_build
         )
-        _fragment_to_rdkit_bonds(fragment, atom_idx_to_rdkit_idx, molecule_build)
-        
+        perceived = False
+        try:
+            _fragment_to_rdkit_bonds(fragment, atom_idx_to_rdkit_idx, molecule_build)
+        except Exception:
+            # Topology carries no bond records: perceive bonds from 3D
+            # coordinates (small molecules only, guarded by _is_applicable)
+            mol_tmp = molecule_build.GetMol()
+            conf = Chem.Conformer(mol_tmp.GetNumAtoms())
+            for atom_idx, rdkit_idx in atom_idx_to_rdkit_idx.items():
+                pos = fragment.atoms.positions[atom_idx_to_index[atom_idx]]
+                conf.SetAtomPosition(
+                    rdkit_idx,
+                    (float(pos[0]), float(pos[1]), float(pos[2])),
+                )
+            mol_tmp.AddConformer(conf, assignId=True)
+            rdDetermineBonds.DetermineBonds(mol_tmp, charge=0)
+            molecule_build = EditableMol(mol_tmp)
+            perceived = True
+
         molecule = molecule_build.GetMol()
+        if perceived:
+            logger.debug("smiles: bonds perceived from coordinates (%d atoms)", fragment.n_atoms)
         _fix_bond_orders_rdkit(molecule)
         molecule = Chem.RemoveHs(molecule, sanitize=self._sanitize)
         

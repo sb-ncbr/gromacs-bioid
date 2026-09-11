@@ -97,6 +97,7 @@ class LoadedUniverse:
         self._segments: set[str] = set()
         self._segment_properties: dict[str, SegmentProperties] = {}
         self._analyze()
+        self._discover_virtual_segments()
         self._record_summary()
     
     def _is_polymer_segment(self, selected: AtomGroup) -> bool:
@@ -256,9 +257,81 @@ class LoadedUniverse:
         self.results.set_data("universe/decision", self.decision.to_dict())
         self.results.set_data("universe/segment_list", sorted(self._segments))
     
+    _MAX_VIRTUAL_PER_SEGMENT = 64
+
+    @staticmethod
+    def _species_key(frag) -> tuple:
+        """Cheap structural identity for copy clustering
+        (atom count, residue count, sorted element counts)."""
+        import collections
+        try:
+            elems = [(e or "?").upper() for e in frag.atoms.elements]
+        except Exception:
+            elems = ["?"] * len(frag.atoms)
+        comp = tuple(sorted(collections.Counter(elems).items()))
+        return (len(frag.atoms), len(frag.residues), comp)
+
+    def _discover_virtual_segments(self) -> None:
+        """Expose minority molecular species inside segid-coarse topologies.
+
+        Many depositions pack membrane + solutes (ligands, cofactors, ions)
+        + solvent under ONE segid; the classic one-instance-per-segment
+        flow then only ever identifies the majority fragment class. Each
+        unique minority fragment species is exposed as a virtual segment
+        "seg__vN" (waters and tiny <=3-atom species skipped), so
+        signatures, identification and verification process them.
+        """
+        self._virtual_fragments: dict = {}
+        for segment_name in list(getattr(self, "_segments", ())):
+            selected = self.universe.atoms[self.universe.atoms.segids == segment_name]
+            try:
+                fragments = selected.fragments
+            except Exception:
+                continue
+            if not fragments or len(fragments) < 2:
+                continue
+            fragments = [f for f in fragments if len(set(f.atoms.segids)) == 1]
+            if len(fragments) < 2:
+                continue
+            clusters: dict = {}
+            for frag in fragments:
+                clusters.setdefault(self._species_key(frag), []).append(frag)
+            if len(clusters) < 2:
+                continue
+            rep_key = self._species_key(LoadedUniverse.get_fragment(self, segment_name))
+            n = 0
+            for key, members in sorted(clusters.items(), key=lambda kv: -len(kv[1][0].atoms)):
+                if key == rep_key:
+                    continue
+                if len(members[0].atoms) <= 3:
+                    continue  # waters / tiny species keep classic flow
+                n += 1
+                if n > self._MAX_VIRTUAL_PER_SEGMENT:
+                    break
+                vname = f"{segment_name}__v{n}"
+                frag0 = members[0]
+                self._virtual_fragments[vname] = frag0
+                props = SegmentProperties(
+                    atom_count_total=len(frag0.atoms),
+                    atom_count_fragment=len(frag0.atoms),
+                    bond_count_fragment=len(frag0.bonds) if hasattr(frag0, "bonds") else 0,
+                    molecule_count=len(members),
+                    residue_count=len(frag0.residues),
+                )
+                props.flags = self._compute_flags(frag0, frag0)
+                self._segment_properties[vname] = props
+        if self._virtual_fragments:
+            logger.info(
+                "Virtual minority segments discovered: %d (e.g. %s)",
+                len(self._virtual_fragments),
+                sorted(self._virtual_fragments)[:4],
+            )
+
     def get_segments(self) -> set[str]:
-        """Return set of segment IDs."""
-        return self._segments.copy()
+        """Return set of segment IDs, including virtual minority segments."""
+        segs = self._segments.copy()
+        segs |= set(getattr(self, "_virtual_fragments", {}).keys())
+        return segs
     
     def get_fragment(self, segment_name: str) -> AtomGroup:
         """Get the representative fragment for a segment.
@@ -272,6 +345,10 @@ class LoadedUniverse:
         Returns:
             The representative AtomGroup (largest fragment or full segment for polymers).
         """
+        virtual = getattr(self, "_virtual_fragments", {})
+        if segment_name in virtual:
+            return virtual[segment_name]
+
         if segment_name not in self._segments:
             raise KeyError(f"Segment '{segment_name}' not found")
         
