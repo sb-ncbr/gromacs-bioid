@@ -2252,7 +2252,10 @@ def periodic_dispatch_check():
         from queue_processor import process_validation_queue
         db = sessionmaker(autocommit=False, autoflush=False, bind=bg_engine)()
         try:
-            started = process_validation_queue(db=db, concurrency=5)
+            started = process_validation_queue(
+                db=db,
+                concurrency=int(_os.environ.get("VALIDATION_DISPATCH_CONCURRENCY", "12")),
+            )
             if started > 0:
                 logger.info(f"Dispatch: started {started} validations")
         finally:
