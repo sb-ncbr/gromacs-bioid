@@ -27,6 +27,7 @@ Current truth for the ceitec-biodata-ns validation deployment. Full-scale run is
 - REQUEUE-ALL executed after validation-worker DB-mount fix (P2-17 resolved); scorch theory replaced by full reprocessing
 
 - Intake throughput: download-cohort-bound (GB trajectories over MDposit bandwidth; runs-created ~5-6/15min in that segment). v3.91 adds parallel phase-2 intake (VALIDATION_INTAKE_WORKERS, 16) + Range-resume; further gains need a dedicated prefetch pipeline, not more threads
+- 2026-09-11 OOM incident: validation-worker resourced at web-tier (2CPU/4Gi) while running the BAT3 pipeline → wholesale OOMKilled churn overnight (~2,127 zombie runs accumulated, throughput collapsed). Fixed: resources → 4CPU/10Gi (same as bat3-worker); sweeper VALIDATION_STALE_HOURS=3 reclaimed ~1.8k zombies; post-fix 33 runs/15min + 18 completions/15min
 ## Known Remaining Items
 - P2-15: sweeper batch fail-marks at :27/:57 need attribution audit before bulk-trusting "failed"
 - 5 loading failures: genuine data rejects (loader tried all strategies) — inspect per entry
