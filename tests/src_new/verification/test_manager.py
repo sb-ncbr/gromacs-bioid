@@ -245,7 +245,7 @@ class TestManagerVerifyAll:
             # Similarity hit without worker/scorer should not be verified
             assert hit.is_verified is False
             # Rejection reason can be no_worker or verification_failed depending on flow
-            assert hit.rejection_reason in ("no_worker", "verification_failed", "below_threshold")
+            assert hit.rejection_reason in ("no_worker", "verification_failed", "below_threshold", "fingerprint_unavailable", "fingerprint_mismatch")
     
     @patch("src_new.verification.fetchers.compound_fetcher.requests.get")
     @patch("src_new.verification.scorers.pubchem_scorer.requests.get")

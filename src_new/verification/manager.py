@@ -13,7 +13,41 @@ if TYPE_CHECKING:
 from .base import VerificationWorker, SignatureFetcher, AnnotationQualityScorer
 from .dedup import RawHit, collect_hits, deduplicate_and_score
 from .models import VerifiedHit, VerificationScore, AnnotationQuality
+from ..signatures.skeletize import from_smiles, hex_to_fp, parse_signature, skeleton_fp as _skel_fp, tanimoto as _skel_tanimoto
+from .models import CHEMICAL_IDENT_TYPES, SKELF_VERIFY_THRESHOLD
 from .registry import VerificationRegistry, get_default_registry
+
+
+def _molecule_skeleton_fp_hex(results, segment: str):
+    """Fetch the molecule's skeleton_fp signature hex for a segment, if any."""
+    try:
+        value = results.get_data(f"signatures/{segment}/generated/skeleton_fp")
+    except Exception:
+        return None
+    if not value:
+        return None
+    hex_part, _ = parse_signature(str(value))
+    return hex_part
+
+
+def _chemical_corroboration(results, segment: str, canonical_signature):
+    """Skeleton Tanimoto between molecule and candidate canonical SMILES.
+
+    Returns (sim, method) or (None, reason).
+    """
+    if not canonical_signature or not isinstance(canonical_signature, str):
+        return None, "fingerprint_unavailable"
+    mol_hex = _molecule_skeleton_fp_hex(results, segment)
+    if not mol_hex:
+        return None, "fingerprint_unavailable"
+    try:
+        mol_fp = hex_to_fp(mol_hex)
+        cand_fp = _skel_fp(from_smiles(canonical_signature))
+        if mol_fp is None or cand_fp is None:
+            return None, "fingerprint_unavailable"
+        return _skel_tanimoto(mol_fp, cand_fp), "skelfp:v1"
+    except Exception:
+        return None, "fingerprint_unavailable"
 
 
 class VerificationManager:
@@ -183,6 +217,26 @@ class VerificationManager:
                     hit_type == "identity"
                 )
                 
+                # F7 chemical gate: identity/candidate hits are NEVER sufficient
+                # for chemical compounds - require skeleton-fingerprint
+                # corroboration between the molecule and the candidate structure.
+                skeleton_sim = None
+                skeleton_method = None
+                if ident_type in CHEMICAL_IDENT_TYPES:
+                    skeleton_sim, _c_method = _chemical_corroboration(
+                        results, segment, canonical_signature
+                    )
+                    skeleton_method = _c_method if skeleton_sim is not None else None
+                    has_positive_evidence = (
+                        skeleton_sim is not None
+                        and skeleton_sim >= SKELF_VERIFY_THRESHOLD
+                    )
+                    if not has_positive_evidence:
+                        rejection_reason = (
+                            "fingerprint_mismatch" if skeleton_sim is not None
+                            else "fingerprint_unavailable"
+                        )
+                
                 if final_confidence >= min_confidence and has_positive_evidence:
                     # Create verified hit
                     verified_hit = VerifiedHit(
@@ -195,6 +249,8 @@ class VerificationManager:
                         final_confidence=min(final_confidence, 100.0),
                         supporting_evidence_count=len(source_resolvers),
                         is_verified=True,
+                        skeleton_sim=skeleton_sim,
+                        skeleton_method=skeleton_method,
                     )
                 else:
                     # Create unverified hit
@@ -209,6 +265,9 @@ class VerificationManager:
                         supporting_evidence_count=len(source_resolvers),
                         rejection_reason=rejection_reason,
                     )
+                    if ident_type in CHEMICAL_IDENT_TYPES:
+                        verified_hit.skeleton_sim = skeleton_sim
+                        verified_hit.skeleton_method = skeleton_method
                 
                 verified_hits.append(verified_hit)
             

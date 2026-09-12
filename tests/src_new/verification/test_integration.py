@@ -177,7 +177,7 @@ class TestVerificationWithRealNetwork:
         # If False, check that rejection_reason is present
         if not top_hit.is_verified:
             assert top_hit.rejection_reason is not None
-            assert top_hit.rejection_reason in ("fetch_failed", "verification_failed", "below_threshold", "no_worker")
+            assert top_hit.rejection_reason in ("fetch_failed", "verification_failed", "below_threshold", "no_worker", "fingerprint_unavailable", "fingerprint_mismatch")
 
 
 class TestVerificationCrossResolverConsensus:
@@ -308,7 +308,7 @@ class TestVerificationUnverifiedFallback:
         if not hit.is_verified:
             # If unverified, rejection_reason should be present
             assert hit.rejection_reason is not None
-            assert hit.rejection_reason in ("fetch_failed", "verification_failed", "below_threshold", "no_worker")
+            assert hit.rejection_reason in ("fetch_failed", "verification_failed", "below_threshold", "no_worker", "fingerprint_unavailable", "fingerprint_mismatch")
             # Unverified hits should have final_confidence == 0.0
             assert hit.final_confidence == 0.0
         # If verified, that's also acceptable (resolver_score alone may be sufficient)

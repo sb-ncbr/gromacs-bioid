@@ -8,6 +8,7 @@ from .resolvers.pubchem import PubChemResolver
 from .resolvers.chembl import ChemblResolver
 from .resolvers.idsm import IDSMResolverPubchem, IDSMResolverChembl, IDSMResolverChebi
 from .resolvers.inchikey import InchiKeyResolver
+from .resolvers.hfamily import FormulaHFamilyResolver
 from .resolvers.formula import FormulaResolver
 from .resolvers.blast import (
     BLASTResolverPDBAA, BLASTResolverPDBNT, BLASTResolverUNIPROT,
@@ -93,6 +94,7 @@ def get_default_resolvers(config: RunConfig) -> list[IdentifierResolver]:
     resolvers.append(IDSMResolverChebi(config))
     resolvers.append(InchiKeyResolver(config))
     resolvers.append(FormulaResolver(config))
+    resolvers.append(FormulaHFamilyResolver(config))
     
     # Phase 3 resolvers (macromolecule identifiers)
     resolvers.append(BLASTResolverPDBAA(config))

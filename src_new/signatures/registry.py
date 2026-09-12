@@ -93,6 +93,7 @@ def get_default_generators(config: SignaturesConfig) -> list[SignatureGenerator]
     from .generators.inchi import InchiKeyGenerator
     from .generators.morgan import MorganFingerprintGenerator
     from .generators.formula import MolecularFormulaGenerator
+    from .generators.skeleton_fp import SkeletonFingerprintGenerator
     from .generators.tdi import ThreeDiGenerator
     from .generators.lipid import LipidShorthandGenerator
     from .generators.glycan import GlycanCompositionGenerator
@@ -111,6 +112,7 @@ def get_default_generators(config: SignaturesConfig) -> list[SignatureGenerator]
     if SelfiesGenerator:
         generators.append(SelfiesGenerator(config))
     generators.append(MolecularFormulaGenerator(config))
+    generators.append(SkeletonFingerprintGenerator(config))
     
     generators.append(MapFastaGeneratorProtein(config))
     generators.append(MapFastaGeneratorNucleotide(config))

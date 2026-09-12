@@ -5,6 +5,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
+# Identifier types that name chemical compounds. For these, hit_type=="identity"
+# must NEVER be sufficient evidence on its own (a formula/candidate list is not
+# a compound confirmation): verification requires skeleton-fingerprint
+# corroboration (F7, docs/CHEMISTRY_FIX_TODO.md).
+CHEMICAL_IDENT_TYPES = frozenset({
+    "PUBCHEM_CID", "CHEMBL_ID", "CHEBI_ID", "CHEBI", "INCHIKEY",
+    "SMILES", "SELFIES", "PUBCHEM_SID",
+})
+
+# Minimum molecule-vs-candidate skeleton Tanimoto for chemical verification.
+# Probe anchors: neutral-vs-dianion 1.0; true vs formula-mate 0.19; prodrug 0.58.
+SKELF_VERIFY_THRESHOLD = 0.7
+
+
 @dataclass
 class VerificationScore:
     """A single verification score comparing simulation vs canonical signature."""
@@ -39,6 +53,9 @@ class VerifiedHit:
     supporting_evidence_count: int  # how many distinct resolvers found this hit
     is_verified: bool
     rejection_reason: str | None = None
+    # F7: skeleton-fingerprint corroboration for chemical hits (None = not computed)
+    skeleton_sim: float | None = None
+    skeleton_method: str | None = None
     
     @classmethod
     def unverified(
