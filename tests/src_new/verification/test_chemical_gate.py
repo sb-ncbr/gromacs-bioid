@@ -114,3 +114,32 @@ def test_protein_hits_untouched_by_gate():
     """Non-chemical ident types keep the legacy evidence rule."""
     assert "PDB_ID" not in CHEMICAL_IDENT_TYPES
     assert "UNIPROT_ID" not in CHEMICAL_IDENT_TYPES
+
+
+def test_prefetch_pubchem_batch_cache(monkeypatch, tmp_path):
+    """Batch prefetch fills NFS cache; per-CID fetch then hits cache (no HTTP)."""
+    import src_new.verification.fetchers.compound_fetcher as cf
+    monkeypatch.setattr(cf, "_SIM_CACHE", str(tmp_path))
+    seen = []
+
+    class FakeResp:
+        def __init__(self, payload): self._p = payload
+        def raise_for_status(self): pass
+        @property
+        def status_code(self): return 200
+        def json(self): return self._p
+
+    def fake_get(url):
+        seen.append(url)
+        return FakeResp({"PropertyTable": {"Properties": [
+            {"CID": 1, "CanonicalSMILES": "CCO"},
+            {"CID": 2, "CanonicalSMILES": "CCCO"},
+        ]}})
+
+    monkeypatch.setattr(cf, "_polite_get", fake_get)
+    # bypass cache read (empty tmp dir)
+    n = cf.prefetch_pubchem(["1", "2", "1"])
+    assert n == 2
+    assert len(seen) == 1                      # single CSV call for 3 input ids
+    assert cf._cache_read("1") == "CCO"
+    assert cf._cache_read("2") == "CCCO"

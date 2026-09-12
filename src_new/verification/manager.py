@@ -6,6 +6,10 @@ import dataclasses
 import math
 from typing import TYPE_CHECKING
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from ..config.loader import RunConfig
     from ..results.results_manager import ResultsManager
@@ -122,6 +126,16 @@ class VerificationManager:
             # Take top N
             top_n = self._verification_config.verify_top_n
             top_groups = sorted_groups[:top_n]
+            
+            # Batch-warm canonical structures for chemical candidates (one CSV
+            # call per ~50 CIDs instead of N serial 503-prone calls; F7 gate)
+            try:
+                chem_cids = [str(nid) for (nid, it), _m in top_groups if it in CHEMICAL_IDENT_TYPES]
+                if chem_cids:
+                    from .fetchers.compound_fetcher import prefetch_pubchem
+                    prefetch_pubchem(chem_cids)
+            except Exception as warm_exc:
+                logger.warning(f"chemical prefetch failed (non-fatal): {warm_exc}")
             
             verified_hits: list[VerifiedHit] = []
             
