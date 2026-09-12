@@ -83,6 +83,7 @@ Failure signatures from the Sept-2026 incident (P0-1..P0-6, P1 family), how to d
 - GT frame class: MDDBR annotates prodrug (azilsartan medoxomil) while MD sim carries the active acid; not a pipeline error.
 - Phase-1 fix pattern (worker>=v2.16, api>=v3.95b): skeleton_fp signature (H-scrub skeleton Morgan FP, tolerance like protein alignment), F7 verification gate (chemicals need skeleton-Tanimoto>=0.7 corroboration vs fetched candidate SMILES), F9 hfamily resolver (H+-4 formula candidates). Evidence: 2207 replay junk 0.14-0.28 rejected, acid 1.0, prodrug 0.73.
 - Secondary crater OPEN: membrane lipids fragment into ~14-atom junk clusters (F11, parked).
+- Ops: PubChem rate-limits the whole cluster egress after heavy waves (503 everywhere incl. trivial CIDs); ChEMBL unaffected. Mitigation shipped v3.96: min-interval requests, 429/503 backoff, batch CSV prefetch (50 CIDs/call), NFS smiles cache `_cache_read` reuse. Gate fails closed (fingerprint_unavailable) during outages and self-heals once cache warms / PUG recovers.
 
 ### Duplicate intake storm (P2-18, fixed)
 - Signature: same accession `Downloading files` >=2x within milliseconds; `Key (run_id) already exists` bursts; `running` runs >> queue `processing`; S7 unmapped-pairs explosion; ~1 run/min ceiling despite idle fleet
