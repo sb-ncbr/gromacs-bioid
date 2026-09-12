@@ -198,3 +198,7 @@ bat3_validation/
 web/public/static/
 web/public/asset-manifest.json
 validation
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
