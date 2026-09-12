@@ -1,4 +1,9 @@
-"""Manager for identifier resolution across results."""
+"""Manager for identifier resolution across results.
+
+Includes a PubChem circuit breaker (PUG outages): while the PUG endpoint is
+unhealthy, PubChem-dependent resolvers are skipped to avoid retry-storm
+stalls (the 2026-09-12 PUG throttle froze per-task time budget cluster-wide).
+"""
 
 from __future__ import annotations
 
@@ -11,6 +16,44 @@ from .cache_manager import ResolverCache
 from .registry import IdentifierRegistry
 
 logger = logging.getLogger("identifier")
+
+# ---------------------------------------------------------------------------
+# PubChem circuit breaker (PUG outages): skip pubchem-dependent resolvers
+# while PUG is unhealthy to avoid retry-storm stalls fleet-wide.
+# ---------------------------------------------------------------------------
+_PUBCHEM_RESOLVERS = {
+    "inchikey_pubchem", "formula_pubchem", "formula_hfamily",
+    "pubchem_struct", "idsm_pubchem", "pubchem",
+}
+_PUG_PROBE_URL = ("https://pubchem.ncbi.nlm.nih.gov/rest/pug/"
+                  "compound/cid/702/property/CanonicalSMILES/TXT")
+_probe_state = {"ts": 0.0, "healthy": True}
+_PROBE_TTL_S = 30.0
+
+
+def _pubchem_healthy() -> bool:
+    import os
+    import time
+    import requests
+    if os.environ.get("VALIDATION_PUBCHEM_BREAKER", "1") != "1":
+        return True
+    now = time.time()
+    if now - _probe_state["ts"] < _PROBE_TTL_S:
+        return _probe_state["healthy"]
+    try:
+        r = requests.get(_PUG_PROBE_URL, timeout=10)
+        healthy = r.status_code == 200
+    except Exception:
+        healthy = False
+    _probe_state["ts"] = now
+    _probe_state["healthy"] = healthy
+    return healthy
+
+
+def pubchem_breaker_active() -> bool:
+    """Diagnostic helper for logs/tests."""
+    return not _pubchem_healthy()
+
 
 _CANONICAL_SIGNATURE_TYPES: dict[str, str] = {
     "smiles": "smiles",
@@ -129,7 +172,15 @@ class IdentifierResolutionManager:
             as_similarity=False
         )
         
+        _pug_up = _pubchem_healthy()
+
+        def _breaker_blocked(resolver) -> bool:
+            return (not _pug_up) and (getattr(resolver, "name", "") in _PUBCHEM_RESOLVERS)
+
         for resolver in identity_resolvers:
+            if _breaker_blocked(resolver):
+                logger.debug(f"Skipping {resolver.name}: PubChem circuit breaker open")
+                continue
             # Check if resolver is applicable for this specific signature
             if not resolver.is_applicable(signature, signature_type, as_similarity=False):
                 continue
@@ -190,6 +241,9 @@ class IdentifierResolutionManager:
         )
         
         for resolver in similarity_resolvers:
+            if _breaker_blocked(resolver):
+                logger.debug(f"Skipping {resolver.name}: PubChem circuit breaker open")
+                continue
             # Check if resolver is applicable for this specific signature
             if not resolver.is_applicable(signature, signature_type, as_similarity=True):
                 continue
