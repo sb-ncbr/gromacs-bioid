@@ -1,0 +1,44 @@
+/**
+ * Copyright (c) 2018-2024 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ *
+ * @author David Sehnal <david.sehnal@gmail.com>
+ * @author Adam Midlik <midlik@gmail.com>
+ */
+import fetch, { AbortError, Response } from 'node-fetch';
+import { retryIf } from '../../../mol-util/retry-if';
+import { downloadGs } from '../../common/google-cloud-storage';
+const RETRIABLE_NETWORK_ERRORS = [
+    'ECONNRESET', 'ENOTFOUND', 'ESOCKETTIMEDOUT', 'ETIMEDOUT',
+    'ECONNREFUSED', 'EHOSTUNREACH', 'EPIPE', 'EAI_AGAIN'
+];
+function isRetriableNetworkError(error) {
+    return error && RETRIABLE_NETWORK_ERRORS.includes(error.code);
+}
+export async function fetchRetry(url, timeout, retryCount, onRetry) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    const signal = controller.signal; // TODO: fix type
+    const result = await retryIf(() => wrapFetch(url, { signal }), {
+        retryThenIf: r => r.status === 408 /** timeout */ || r.status === 429 /** too many requests */ || (r.status >= 500 && r.status < 600),
+        // TODO test retryCatchIf
+        retryCatchIf: e => isRetriableNetworkError(e),
+        onRetry,
+        retryCount
+    });
+    clearTimeout(id);
+    return result;
+}
+/** Like `fetch` but supports Google Cloud Storage (gs://) protocol. */
+export function wrapFetch(url, init) {
+    if (url.startsWith('gs://'))
+        return fetchGS(url, init);
+    else
+        return fetch(url, init);
+}
+async function fetchGS(url, init) {
+    var _a;
+    if ((_a = init === null || init === void 0 ? void 0 : init.signal) === null || _a === void 0 ? void 0 : _a.aborted)
+        throw new AbortError('The user aborted a request.');
+    const data = await downloadGs(url);
+    return new Response(data, init);
+}

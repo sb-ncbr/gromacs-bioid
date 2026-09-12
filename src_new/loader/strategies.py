@@ -27,6 +27,8 @@ class LoadStrategy(str, Enum):
     GROMACS_ITP_GRO = "gromacs_itp_gro"
     AMBER_PRMTOP_NC = "amber_prmtop_nc"
     AMBER_PARM7_NC = "amber_parm7_nc"
+    AMBER_PRMTOP_XTC = "amber_prmtop_xtc"
+    AMBER_PARM7_XTC = "amber_parm7_xtc"
     PDB = "pdb"
     MMCIF_GEMMI = "mmcif_gemmi"
 
@@ -191,10 +193,50 @@ def validate_for_strategy(bundle: InputBundle, strategy: LoadStrategy) -> FileVa
                 errors.append("No .nc files found")
             elif len(nc_files) == 1:
                 selected_files["nc"] = nc_files[0]
+
+        case LoadStrategy.AMBER_PRMTOP_XTC:
+            prmtop_files = _get_files_by_ext(bundle, ".prmtop")
+            xtc_files = _get_files_by_ext(bundle, ".xtc")
+            
+            if len(prmtop_files) == 0:
+                errors.append("No .prmtop files found")
+            elif len(prmtop_files) == 1:
+                selected_files["prmtop"] = prmtop_files[0]
             else:
-                warnings.append("multiple_nc_files")
-                sorted_nc = sorted(nc_files, key=lambda p: p.name)
-                selected_files["nc"] = sorted_nc[0]
+                warnings.append("multiple_prmtop_files")
+                sorted_prmtop = sorted(prmtop_files, key=lambda p: p.name)
+                selected_files["prmtop"] = sorted_prmtop[0]
+            
+            if len(xtc_files) == 0:
+                errors.append("No .xtc files found")
+            elif len(xtc_files) == 1:
+                selected_files["xtc"] = xtc_files[0]
+            else:
+                warnings.append("multiple_xtc_files")
+                sorted_xtc = sorted(xtc_files, key=lambda p: p.name)
+                selected_files["xtc"] = sorted_xtc[0]
+
+        case LoadStrategy.AMBER_PARM7_XTC:
+            parm7_files = _get_files_by_ext(bundle, ".parm7")
+            xtc_files = _get_files_by_ext(bundle, ".xtc")
+            
+            if len(parm7_files) == 0:
+                errors.append("No .parm7 files found")
+            elif len(parm7_files) == 1:
+                selected_files["parm7"] = parm7_files[0]
+            else:
+                warnings.append("multiple_parm7_files")
+                sorted_parm7 = sorted(parm7_files, key=lambda p: p.name)
+                selected_files["parm7"] = sorted_parm7[0]
+            
+            if len(xtc_files) == 0:
+                errors.append("No .xtc files found")
+            elif len(xtc_files) == 1:
+                selected_files["xtc"] = xtc_files[0]
+            else:
+                warnings.append("multiple_xtc_files")
+                sorted_xtc = sorted(xtc_files, key=lambda p: p.name)
+                selected_files["xtc"] = sorted_xtc[0]
 
         case LoadStrategy.PDB:
             pdb_files = _get_files_by_ext(bundle, ".pdb")
@@ -271,12 +313,16 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
     elif input_kind == InputKind.AMBER:
         if strategy == "PRMTOP_NC":
             base_strategies = [
+                LoadStrategy.AMBER_PRMTOP_XTC,
                 LoadStrategy.AMBER_PRMTOP_NC,
+                LoadStrategy.AMBER_PARM7_XTC,
                 LoadStrategy.AMBER_PARM7_NC,
             ]
         else:
             base_strategies = [
+                LoadStrategy.AMBER_PRMTOP_XTC,
                 LoadStrategy.AMBER_PRMTOP_NC,
+                LoadStrategy.AMBER_PARM7_XTC,
                 LoadStrategy.AMBER_PARM7_NC,
             ]
     elif input_kind == InputKind.PDB:
@@ -296,8 +342,10 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
             LoadStrategy.GROMACS_TPR_GRO,
             LoadStrategy.GROMACS_TOP_GRO,
             LoadStrategy.GROMACS_ITP_GRO,
-            LoadStrategy.AMBER_PRMTOP_NC,
-            LoadStrategy.AMBER_PARM7_NC,
+            LoadStrategy.AMBER_PRMTOP_XTC,
+                LoadStrategy.AMBER_PRMTOP_NC,
+            LoadStrategy.AMBER_PARM7_XTC,
+                LoadStrategy.AMBER_PARM7_NC,
             LoadStrategy.PDB,
             LoadStrategy.MMCIF_GEMMI,
         ]
@@ -399,6 +447,10 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
             return Universe(str(files["prmtop"]), str(files["nc"]))
         case LoadStrategy.AMBER_PARM7_NC:
             return Universe(str(files["parm7"]), str(files["nc"]))
+        case LoadStrategy.AMBER_PRMTOP_XTC:
+            return Universe(str(files["prmtop"]), str(files["xtc"]))
+        case LoadStrategy.AMBER_PARM7_XTC:
+            return Universe(str(files["parm7"]), str(files["xtc"]))
         case LoadStrategy.PDB:
             return Universe(str(files["pdb"]), in_memory=True)
         case LoadStrategy.MMCIF_GEMMI:

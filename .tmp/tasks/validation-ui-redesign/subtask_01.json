@@ -1,0 +1,27 @@
+{
+  "id": "01",
+  "title": "Create Main Dashboard Layout with Tabs",
+  "description": "Create ValidationDashboard.tsx with MUI tabs navigation and routing",
+  "type": "frontend",
+  "priority": "high",
+  "parallel": true,
+  "dependencies": [],
+  "estimated_minutes": 30,
+  "files": [
+    "web/src/Pages/ValidationDashboard.tsx"
+  ],
+  "requirements": [
+    "Create main container with MUI Tabs component",
+    "Add 6 tabs: Overview, Queue, Workers, Batches, Failure Analysis, Activity Log",
+    "Implement tab navigation with React Router",
+    "Add loading states and error boundaries",
+    "Use green theme (#2E7D32) from existing theme",
+    "Make responsive for mobile/tablet"
+  ],
+  "acceptance_criteria": [
+    "All 6 tabs render correctly",
+    "Tab switching works without page reload",
+    "Loading states show during navigation",
+    "Responsive on mobile (tabs become scrollable or stack)"
+  ]
+}

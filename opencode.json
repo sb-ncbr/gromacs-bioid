@@ -11,8 +11,8 @@
           "baseURL": "https://llm.ai.e-infra.cz/v1"
         },
         "models": {
-          "kimi-k2.6": {
-            "name": "kimi-k2.6"
+          "kimi-k3": {
+            "name": "kimi-k3"
           },
           "gpt-oss-120b": {
             "name": "gpt-oss-120b"

@@ -1,0 +1,29 @@
+{
+  "id": "05",
+  "title": "Build WorkerList with Health Monitoring",
+  "description": "Create worker monitoring component with scaling controls",
+  "type": "frontend",
+  "priority": "medium",
+  "parallel": true,
+  "dependencies": [],
+  "estimated_minutes": 30,
+  "files": [
+    "web/src/Components/Validation/WorkerList.tsx"
+  ],
+  "requirements": [
+    "Display worker cards with status/uptime/tasks",
+    "Fetch from /api/validation/queue/workers",
+    "Add worker scaling controls (scale up/down)",
+    "Implement health check ping button",
+    "Show worker pool stats (active, idle, total)",
+    "Auto-refresh every 10 seconds",
+    "Add restart/purge buttons per worker"
+  ],
+  "acceptance_criteria": [
+    "Shows all active workers with details",
+    "Scaling controls work (POST to scale endpoint)",
+    "Health check shows response time",
+    "Auto-refreshes worker status",
+    "Restart/purge buttons work"
+  ]
+}

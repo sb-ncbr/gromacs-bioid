@@ -1,0 +1,10 @@
+/**
+ * Copyright (c) 2018-2025 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ *
+ * @author Alexander Rose <alexander.rose@weirdbyte.de>
+ */
+import { Primitive } from './primitive';
+import { Cage } from './cage';
+export declare function Plane(): Primitive;
+export declare function PlaneCage(): Cage;
+export declare function SegmentedPlane(widthSegments: number, heightSegments: number): Primitive;

@@ -15,6 +15,7 @@ COPY . /app
 # Purge stale __pycache__ and .pyc/.pyo files to prevent AttributeError from stale bytecode
 RUN find /app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && find /app -type f -name "*.pyc" -delete && find /app -type f -name "*.pyo" -delete
 
+RUN mv /app/main.py /app/main.py.old 2>/dev/null || true
 RUN mkdir -p /app/runs /app/databases && chown -R 1000:1000 /app
 
 USER 1000

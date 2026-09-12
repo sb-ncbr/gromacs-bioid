@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BAT3 Validation Dashboard</title>
+    <link rel="stylesheet" href="styles.css?v=20260731">
+</head>
+<body>
+    <div class="dashboard">
+        <!-- Header -->
+        <header class="header">
+            <h1>BAT3 Validation Dashboard</h1>
+            <button id="refreshBtn" class="btn btn-secondary">Refresh</button>
+        </header>
+
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab active" data-tab="validation">Validation</button>
+            <button class="tab" data-tab="indexing">MDDBR Indexing</button>
+            <button class="tab" data-tab="ground-truth">Ground Truth</button>
+            <button class="tab" data-tab="database">Database</button>
+        </div>
+
+        <div id="tab-validation" class="tab-content active">
+
+
+        <!-- Stats Bar -->
+        <section class="stats-bar">
+            <div class="stat">
+                <span class="stat-label">Total Entries:</span>
+                <span id="statTotal" class="stat-value">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Completed:</span>
+                <span id="statCompleted" class="stat-value stat-success">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Pending:</span>
+                <span id="statPending" class="stat-value stat-warning">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Failed:</span>
+                <span id="statFailed" class="stat-value stat-error">-</span>
+            </div>
+        </section>
+
+        <!-- Control Panel -->
+        <section class="control-panel">
+            <div class="controls">
+                <button id="startBatchBtn" class="btn btn-primary">Start Batch</button>
+                <button id="stopBtn" class="btn btn-danger" disabled>Stop</button>
+                <div class="control-group">
+                    <label for="concurrency">Concurrency:</label>
+                    <select id="concurrency">
+                        <option value="10">10</option>
+                        <option value="25">25</option>
+                        <option value="50" selected>50</option>
+                        <option value="100">100</option>
+                        <option value="200">200</option>
+                    </select>
+                </div>
+            </div>
+        </section>
+
+        <!-- Progress Section -->
+        <section class="progress-section">
+            <div class="progress-header">
+                <span>Progress:</span>
+                <span id="progressText" class="progress-text">0%</span>
+            </div>
+            <div class="progress-bar-container">
+                <div id="progressBar" class="progress-bar" style="width: 0%"></div>
+            </div>
+            <div id="batchInfo" class="batch-info">
+                No active batch
+            </div>
+        </section>
+
+        <!-- Recent Entries Table -->
+        <section class="entries-section">
+            <h2>Recent Entries</h2>
+            <div class="table-container">
+                <table id="entriesTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Accession</th>
+                            <th>Status</th>
+                            <th>Run ID</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="entriesBody">
+                        <tr>
+                            <td colspan="5" class="loading">Loading entries...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Recent Runs -->
+        <section class="runs-section">
+            <h2>Recent Runs</h2>
+            <div class="table-container">
+                <table id="runsTable">
+                    <thead>
+                        <tr>
+                            <th>Run ID</th>
+                            <th>Status</th>
+                            <th>Entries</th>
+                            <th>Started</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="runsBody">
+                        <tr>
+                            <td colspan="5" class="loading">Loading runs...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Failed Entries Section -->
+        <section class="failed-section">
+            <div class="section-header">
+                <h2>Failed Entries</h2>
+                <button id="retryAllFailedBtn" class="btn btn-primary">Retry All Failed</button>
+            </div>
+            <div class="table-container">
+                <table id="failedEntriesTable">
+                    <thead>
+                        <tr>
+                            <th>Entry ID</th>
+                            <th>Accession</th>
+                            <th>Project</th>
+                            <th>Error</th>
+                            <th>Failed At</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="failedEntriesBody">
+                        <tr>
+                            <td colspan="6" class="loading">Loading failed entries...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        </div>
+
+        <!-- Indexing Tab Content -->
+        <div id="tab-indexing" class="tab-content">
+            <!-- Indexing Stats Card -->
+            <section class="stats-card">
+                <h2>Indexing Stats</h2>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-label">References:</span>
+                        <span id="indexRefsTotal" class="stat-value">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Projects:</span>
+                        <span id="indexProjects" class="stat-value">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Total Entries Indexed:</span>
+                        <span id="indexTotal" class="stat-value">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Completeness:</span>
+                        <span id="indexCompleteness" class="stat-value">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Last Indexed:</span>
+                        <span id="indexLastTimestamp" class="stat-value">-</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Indexing Controls -->
+            <section class="control-panel">
+                <div class="controls">
+                    <button id="startIndexingBtn" class="btn btn-primary">Start Indexing</button>
+                    <button id="fetchMissingBtn" class="btn btn-secondary">Fetch Missing</button>
+                    <div class="control-group">
+                        <label for="indexConcurrency">Concurrency:</label>
+                        <select id="indexConcurrency">
+                            <option value="5">5</option>
+                            <option value="10" selected>10</option>
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Indexing Progress -->
+            <section class="progress-section">
+                <div class="progress-header">
+                    <span>Indexing Progress:</span>
+                    <span id="indexProgressText" class="progress-text">0%</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div id="indexProgressBar" class="progress-bar" style="width: 0%"></div>
+                </div>
+            </section>
+
+            <!-- Recent Activity Table -->
+            <section class="entries-section">
+                <h2>Recent Indexing Jobs</h2>
+                <div class="table-container">
+                    <table id="indexingJobsTable">
+                        <thead>
+                            <tr>
+                                <th>Job ID</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th>Processed</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="indexingJobsBody">
+                            <tr>
+                                <td colspan="6" class="loading">Loading indexing jobs...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- Ground Truth Tab Content -->
+        <div id="tab-ground-truth" class="tab-content">
+            <!-- Coverage Stats Card -->
+            <section class="stats-card">
+                <h2>Ground Truth Coverage</h2>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-label">With Ground Truth:</span>
+                        <span id="gtWithCount" class="stat-value stat-success">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Without Ground Truth:</span>
+                        <span id="gtWithoutCount" class="stat-value stat-error">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Coverage %:</span>
+                        <span id="gtCoveragePercent" class="stat-value">-</span>
+                    </div>
+                </div>
+                <div class="stats-breakdown">
+                    <h3>Breakdown by Type</h3>
+                    <div class="breakdown-grid">
+                        <div class="breakdown-item">
+                            <span class="breakdown-label">UniProt:</span>
+                            <span id="gtUniProtCount" class="breakdown-value">-</span>
+                        </div>
+                        <div class="breakdown-item">
+                            <span class="breakdown-label">PDB:</span>
+                            <span id="gtPdbCount" class="breakdown-value">-</span>
+                        </div>
+                        <div class="breakdown-item">
+                            <span class="breakdown-label">InChI:</span>
+                            <span id="gtInchiCount" class="breakdown-value">-</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Bulk Actions -->
+            <section class="control-panel">
+                <div class="controls">
+                    <button id="fetchAllMissingGtBtn" class="btn btn-primary">Fetch All Missing</button>
+                </div>
+            </section>
+            <div id="gtJobProgress" style="margin-top: 10px; font-weight: bold; display: none;"></div>
+
+            <!-- Missing Entries Table -->
+            <section class="entries-section">
+                <h2>Entries Missing Ground Truth</h2>
+                <div class="table-container">
+                    <table id="missingGtTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Accession</th>
+                                <th>Type</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="missingGtBody">
+                            <tr>
+                                <td colspan="4" class="loading">Loading missing entries...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- Database Tab Content -->
+        <div id="tab-database" class="tab-content">
+            <!-- Import Section -->
+            <section class="import-section">
+                <h2>Import from SQLite</h2>
+                <div class="import-controls">
+                    <div class="control-group">
+                        <label for="sqliteSourcePath">Source Database Path:</label>
+                        <input type="text" id="sqliteSourcePath" value="/data/mddb_index.db" placeholder="/path/to/source.db" class="form-input">
+                    </div>
+                    <div class="control-group">
+                        <label for="sqliteTables">Tables to Import:</label>
+                        <select id="sqliteTables" class="form-select">
+                            <option value="all">All Tables</option>
+                            <option value="mddb_entries">mddb_entries</option>
+                            <option value="mddb_references">mddb_references</option>
+                            <option value="mddb_filenotes">mddb_filenotes</option>
+                            <option value="mddb_projects">mddb_projects</option>
+                            <option value="bat3_runs">bat3_runs</option>
+                            <option value="validation_queue">validation_queue</option>
+                            <option value="validation_results">validation_results</option>
+                            <option value="ground_truth_signatures">ground_truth_signatures</option>
+                            <option value="indexing_jobs">indexing_jobs</option>
+                            <option value="batch_runs">batch_runs</option>
+                            <option value="audit_log">audit_log</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="conflictStrategy">Conflict Strategy:</label>
+                        <select id="conflictStrategy" class="form-select">
+                            <option value="skip">Skip Existing Records</option>
+                            <option value="overwrite">Overwrite Existing Records</option>
+                        </select>
+                    </div>
+                    <button id="startImportBtn" class="btn btn-primary">Start Import</button>
+                </div>
+            </section>
+
+            <!-- Import Progress Section -->
+            <section class="import-progress-section">
+                <div class="progress-header">
+                    <span>Import Progress:</span>
+                    <span id="importProgressText" class="progress-text">0%</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div id="importProgressBar" class="progress-bar" style="width: 0%"></div>
+                </div>
+                <div id="importStatusInfo" class="import-status-info">
+                    No active import job
+                </div>
+            </section>
+
+            <!-- Recent Import Jobs -->
+            <section class="entries-section">
+                <h2>Recent Import Jobs</h2>
+                <div class="table-container">
+                    <table id="importJobsTable">
+                        <thead>
+                            <tr>
+                                <th>Job ID</th>
+                                <th>Status</th>
+                                <th>Tables</th>
+                                <th>Progress</th>
+                                <th>Created</th>
+                            </tr>
+                        </thead>
+                        <tbody id="importJobsBody">
+                            <tr>
+                                <td colspan="5" class="loading">Loading import jobs...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Database Stats -->
+            <section class="stats-card">
+                <h2>Database Statistics</h2>
+                <div class="table-container">
+                    <table id="dbStatsTable">
+                        <thead>
+                            <tr>
+                                <th>Table</th>
+                                <th>Row Count</th>
+                                <th>Storage Size</th>
+                                <th>Index Size</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dbStatsBody">
+                            <tr>
+                                <td colspan="4" class="loading">Loading database stats...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script src="app.js?v=20260731"></script>
+</body>
+</html>

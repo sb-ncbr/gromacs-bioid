@@ -1,0 +1,27 @@
+{
+  "id": "09",
+  "title": "Integrate Queue Page Components",
+  "description": "Assemble Queue page from QueueTable, ProgressBar, and actions",
+  "type": "frontend",
+  "priority": "high",
+  "parallel": false,
+  "dependencies": ["03", "04"],
+  "estimated_minutes": 20,
+  "files": [
+    "web/src/Pages/ValidationQueue.tsx"
+  ],
+  "requirements": [
+    "Combine ProgressBar at top",
+    "Add QueueTable below",
+    "Include bulk action toolbar",
+    "Add filter panel (collapsible)",
+    "Show queue statistics summary",
+    "Add quick actions (start processor, retry all failed, clear completed)"
+  ],
+  "acceptance_criteria": [
+    "All components render together",
+    "Actions trigger correct API calls",
+    "Layout is responsive",
+    "State persists across tab switches"
+  ]
+}

@@ -1,0 +1,4 @@
+FROM nginxinc/nginx-unprivileged:1.27
+COPY build /var/www/app
+COPY nginx-validation-ui.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80

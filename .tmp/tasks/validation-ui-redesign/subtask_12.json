@@ -1,0 +1,29 @@
+{
+  "id": "12",
+  "title": "Add Validation Routes to App.tsx",
+  "description": "Update main App.tsx with validation dashboard routes",
+  "type": "frontend",
+  "priority": "high",
+  "parallel": false,
+  "dependencies": ["01"],
+  "estimated_minutes": 10,
+  "files": [
+    "web/src/App.tsx"
+  ],
+  "requirements": [
+    "Add /validation route (main dashboard)",
+    "Add /validation/queue route",
+    "Add /validation/workers route",
+    "Add /validation/batches route",
+    "Add /validation/failure-analysis route",
+    "Add /validation/activity-log route",
+    "Update Header component with validation nav link",
+    "Ensure routes match tab navigation"
+  ],
+  "acceptance_criteria": [
+    "All routes are accessible",
+    "Navigation works from header",
+    "Direct URL access works",
+    "Browser back/forward works"
+  ]
+}

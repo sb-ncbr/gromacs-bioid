@@ -47,6 +47,16 @@ FAIL_CLASSES = [
     ("timeout", "%timeout%"),
 ]
 SIM_VALIDATED = 0.9
+# S7v2 family-aware scoring: post-F1 hit lists run into the hundreds, so a
+# global [:10] window buried each annotation's own family (P2-18 follow-up).
+# Score each GT type only against mappable hit families; bounded depths.
+GT_FAMILIES = {
+    "pdb": ("PDB", "ALPHAFOLD", "UNIPROT", "SWISSPROT"),
+    "uniprot": ("UNIPROT", "SWISSPROT", "PDB", "ALPHAFOLD"),
+    "inchikey": ("PUBCHEM", "INCHI"),
+}
+FAMILY_DEPTH = 50      # cap family-relevant hits per annotation
+FALLBACK_DEPTH = 25    # shallow global window when no family candidate exists
 
 
 def norm_ident(ident_type, value):
@@ -248,7 +258,7 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
         "per_type": collections.defaultdict(list),
         "any": {k: 0 for k in KSET}, "any_n": 0,
     }
-    agg_sim_attempt = collections.defaultdict(lambda: {"total": 0, "attempted": 0})
+    agg_sim_attempt = collections.defaultdict(lambda: {"total": 0, "attempted": 0, "no_family": 0})
 
     t0 = time.time()
     with ThreadPoolExecutor(max_workers=threads) as ex:
@@ -295,30 +305,31 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
 
                 if sim_engine is not None and r["hits"]:
                     annotations = [(t, v) for t, vals in gt_map.items() for v in vals]
-                    per_ann_max = {k: [] for k in KSET}
-                    validated_best = 0.0
                     best_by_k = {k: 0.0 for k in KSET}
-                    FAMILIES = {"inchikey": ("PUBCHEM", "INCHI")}
                     for t, v in annotations:
-                        fam = FAMILIES.get(t)
-                        if fam:
-                            attempted = any(any(fstr in (ht or "").upper() for fstr in fam)
-                                            for ht, _, _ in r["hits"][:10])
-                            agg_sim_attempt[t]["total"] += 1
-                            if attempted:
-                                agg_sim_attempt[t]["attempted"] += 1
+                        fam = GT_FAMILIES.get(t)
+                        fhits = ([h for h in r["hits"]
+                                  if any(f in (h[0] or "").upper() for f in fam)][:FAMILY_DEPTH]
+                                 if fam else r["hits"][:FAMILY_DEPTH])
+                        attempted = bool(fhits)
+                        if not attempted:
+                            fhits = r["hits"][:FALLBACK_DEPTH]
+                        agg_sim_attempt[t]["total"] += 1
+                        if attempted:
+                            agg_sim_attempt[t]["attempted"] += 1
+                        else:
+                            agg_sim_attempt[t]["no_family"] += 1
                         row = {}
-                        for idx, (ht, hid, _conf) in enumerate(r["hits"][:10], 1):
+                        for idx, (ht, hid, _conf) in enumerate(fhits, 1):
                             s = sim_engine.sim(t, v, ht, hid)
                             for k in KSET:
                                 if idx <= k:
                                     row[k] = max(row.get(k, 0.0), s)
                         rec = {k: row.get(k, 0.0) for k in KSET}
-                        rec["_attempted"] = (fam is None) or attempted
+                        rec["_attempted"] = attempted
                         sim_agg["per_type"][t].append(rec)
                         for k in KSET:
                             best_by_k[k] = max(best_by_k[k], rec[k])
-                        validated_best = max(validated_best, rec[10])
                     sim_agg["any_n"] += 1
                     for k in KSET:
                         if best_by_k[k] >= SIM_VALIDATED:

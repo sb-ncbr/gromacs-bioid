@@ -1,0 +1,60 @@
+# Node modules (frontend builds separately)
+**/node_modules
+**/node_modules/**
+
+# Build outputs
+**/dist
+
+# Python cache
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Virtual environments
+**/.venv
+**/venv
+**.venv/**
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+
+# Git
+.git
+.gitignore
+
+# Data directories (mounted as volumes)
+runs
+databases
+data
+
+# Logs
+*.log
+logs
+
+# Test files
+**/test_*.py
+**/*_test.py
+tests
+
+# Documentation
+*.md
+!requirements.txt
+docs
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Old deployment files
+**/deploy/**
+*.sh
+
+# Misc
+*.tar
+*.gz
+.cache

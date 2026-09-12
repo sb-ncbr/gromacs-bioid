@@ -1,0 +1,27 @@
+{
+  "id": "10",
+  "title": "Integrate Workers Page Components",
+  "description": "Assemble Workers page from WorkerList with controls",
+  "type": "frontend",
+  "priority": "medium",
+  "parallel": false,
+  "dependencies": ["05"],
+  "estimated_minutes": 15,
+  "files": [
+    "web/src/Pages/ValidationWorkers.tsx"
+  ],
+  "requirements": [
+    "Display WorkerList as main content",
+    "Add global scaling controls at top",
+    "Show worker pool statistics",
+    "Add worker health summary",
+    "Include restart all / purge all buttons",
+    "Add auto-refresh toggle"
+  ],
+  "acceptance_criteria": [
+    "Workers display correctly",
+    "Scaling controls work",
+    "Health checks execute",
+    "Page auto-refreshes (configurable)"
+  ]
+}

@@ -194,6 +194,12 @@ class PDBConfig:
     use_deployment_file_access: bool = True
     deployment_file_url: str = "https://bioid.dyn.cloud.e-infra.cz"
     curr_uuid: str = ""  # runtime field, set by API/Celery
+    # SSH upload configuration (for local/validation runs)
+    ssh_host: str = ""
+    ssh_user: str = ""
+    ssh_key: str = ""
+    ssh_remote_path: str = ""
+    ssh_public_url: str = ""
 
 @dataclass
 class FoldseekConfig:
@@ -289,6 +295,7 @@ class RunConfig:
             "ALPHAFIND": ("alphafind", AlphafindConfig),
             "alphafind": ("alphafind", AlphafindConfig),
             "PDB": ("pdb", PDBConfig),
+            "pdb": ("pdb", PDBConfig),  # lowercase variant
             "foldseek": ("foldseek", FoldseekConfig),
             "names": ("names", NamesConfig),
         
@@ -513,3 +520,22 @@ def merge_with_dict(config: RunConfig, overrides: dict[str, Any]) -> RunConfig:
     """Merge a dictionary of overrides into the config."""
     config.apply_overrides(overrides)
     return config
+
+
+# API configuration constants (for validation API compatibility)
+import os
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://validation:validation-password-change-me@validation-postgres.ceitec-biodata-ns.svc.cluster.local:5432/bat3_validation"
+)
+
+CELERY_BROKER_URL = os.getenv(
+    "CELERY_BROKER_URL",
+    "redis://bat3-redis.ceitec-biodata-ns.svc.cluster.local:6379/0"
+)
+
+MDDBR_API_BASE = os.getenv(
+    "MDDBR_API_BASE",
+    "https://mdposit.mddbr.eu/api/rest/v1"
+)

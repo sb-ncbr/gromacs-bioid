@@ -1,0 +1,27 @@
+{
+  "id": "11",
+  "title": "Integrate Activity Log Page",
+  "description": "Assemble Activity Log page with stream viewer",
+  "type": "frontend",
+  "priority": "medium",
+  "parallel": false,
+  "dependencies": ["06"],
+  "estimated_minutes": 15,
+  "files": [
+    "web/src/Pages/ValidationActivityLog.tsx"
+  ],
+  "requirements": [
+    "Embed ActivityStream component",
+    "Add filter toolbar above stream",
+    "Include search functionality",
+    "Add export logs button",
+    "Show connection status indicator",
+    "Add clear logs button (local only)"
+  ],
+  "acceptance_criteria": [
+    "Stream connects and displays",
+    "Filters apply to stream",
+    "Search works in real-time",
+    "Export downloads filtered logs"
+  ]
+}

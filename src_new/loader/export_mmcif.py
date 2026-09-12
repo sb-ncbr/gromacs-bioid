@@ -33,6 +33,17 @@ def _safe(val, default="."):
     return str(val).strip()
 
 
+def _get_universe_dimensions(universe):
+    """Safely get universe dimensions, returning None if unavailable.
+    
+    MDAnalysis raises AttributeError if no trajectory is loaded.
+    """
+    try:
+        return universe.dimensions
+    except AttributeError:
+        return None
+
+
 def _build_biopython_structure(universe: MDAnalysis.Universe, filter_segment: str | None = None) -> Structure.Structure:
     """Build a Biopython Structure from an MDAnalysis Universe."""
     if not BIOPYTHON_AVAILABLE:
@@ -92,7 +103,7 @@ def export_system_mmcif(facade: LoadedUniverse, output_path: Path, results: Resu
     structure = _build_biopython_structure(facade.universe)
     
     # Use MMCIFIOWithCell to preserve box dimensions
-    cell = facade.universe.dimensions
+    cell = _get_universe_dimensions(facade.universe)
     if cell is not None:
         io = MMCIFIOWithCell(cell=cell)
     else:
@@ -120,7 +131,7 @@ def export_segment_mmcif(facade: LoadedUniverse, segment_name: str, output_path:
     structure = _build_biopython_structure(facade.universe, filter_segment=segment_name)
     
     # Use MMCIFIOWithCell to preserve box dimensions
-    cell = facade.universe.dimensions
+    cell = _get_universe_dimensions(facade.universe)
     if cell is not None:
         io = MMCIFIOWithCell(cell=cell)
     else:

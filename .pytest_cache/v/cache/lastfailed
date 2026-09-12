@@ -1,0 +1,17 @@
+{
+  "tests/src_new/loader/test_repair.py::TestHasSufficientBonds::test_has_sufficient_bonds_accepts_dense_topology": true,
+  "tests/src_new/loader/test_repair.py::TestHasSufficientBonds::test_has_sufficient_bonds_small_molecules": true,
+  "tests/src_new/loader/test_universe_facade.py::TestPolymerSegmentDetection::test_is_polymer_segment_with_mixed_residues": true,
+  "tests/src_new/loader/test_universe_facade.py::TestPolymerSegmentDetection::test_is_polymer_segment_below_threshold": true,
+  "tests/signatures/test_signature_generators.py": true,
+  "tests/src_new/loader/test_repair.py::TestHasSufficientBonds::test_has_sufficient_bonds_no_bonds": true,
+  "tests/src_new/loader/test_repair.py::TestHasSufficientBonds::test_has_sufficient_bonds_with_guessed_bonds": true,
+  "tests/src_new/loader/test_repair.py::TestHasSufficientBonds::test_has_sufficient_bonds_rejects_sparse_topology": true,
+  "tests/executor/test_executor.py": true,
+  "tests/src_new/api/test_api.py::TestMoleculesEndpoint::test_get_run_molecules": true,
+  "tests/src_new/api/test_api.py::TestPostRunsEndpoint::test_post_runs_with_config": true,
+  "tests/src_new/verification/test_dedup.py::test_deduplicate_and_score_cross_resolver_consensus": true,
+  "tests/src_new/verification/test_integration.py::TestVerificationCrossResolverConsensus::test_same_hit_from_two_resolvers_gets_higher_confidence": true,
+  "tests/src_new/executor/test_parallel.py::TestParallelUtilities::test_run_with_process_pool": true,
+  "tests/src_new/identification/test_base.py::test_resolver_catches_resolution_error_and_returns_none": true
+}

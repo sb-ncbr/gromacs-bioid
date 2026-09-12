@@ -1,0 +1,27 @@
+{
+  "id": "02",
+  "title": "Build StatsCards Component for Overview",
+  "description": "Create reusable statistics cards component for dashboard overview",
+  "type": "frontend",
+  "priority": "high",
+  "parallel": true,
+  "dependencies": [],
+  "estimated_minutes": 25,
+  "files": [
+    "web/src/Components/Validation/StatsCards.tsx"
+  ],
+  "requirements": [
+    "Create StatsCard component with MUI Card",
+    "Support multiple stat types (entries, runs, queue, workers)",
+    "Add trend indicators (up/down arrows)",
+    "Include loading skeletons",
+    "Fetch data from /api/stats/dashboard",
+    "Auto-refresh every 10 seconds"
+  ],
+  "acceptance_criteria": [
+    "Displays 4+ stat cards in responsive grid",
+    "Shows loading skeletons during fetch",
+    "Auto-refreshes data every 10 seconds",
+    "Handles errors gracefully with retry"
+  ]
+}

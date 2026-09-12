@@ -1,0 +1,31 @@
+{
+  "id": "08",
+  "title": "Fix and Rebuild FailureAnalysis Page",
+  "description": "Create working failure analysis with charts and recommendations",
+  "type": "frontend",
+  "priority": "high",
+  "parallel": false,
+  "dependencies": ["02"],
+  "estimated_minutes": 35,
+  "files": [
+    "web/src/Pages/ValidationFailureAnalysis.tsx"
+  ],
+  "requirements": [
+    "Fetch from /api/validation/stats/failure-analysis",
+    "Display error categories with pie/bar chart",
+    "Show task failures breakdown",
+    "Add recent failures timeline",
+    "Display recommendations panel prominently",
+    "Add refresh button (fix broken button)",
+    "Export failure report (PDF/CSV)",
+    "Handle loading and error states properly"
+  ],
+  "acceptance_criteria": [
+    "Page loads without errors",
+    "Charts render correctly",
+    "Refresh button fetches new data",
+    "Recommendations display properly",
+    "Export generates downloadable file",
+    "No console errors"
+  ]
+}

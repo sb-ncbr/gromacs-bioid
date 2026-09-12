@@ -1,0 +1,32 @@
+{
+  "id": "14",
+  "title": "Integration Testing and Polish",
+  "description": "Test all components together, fix bugs, polish UI",
+  "type": "frontend",
+  "priority": "high",
+  "parallel": false,
+  "dependencies": ["07", "08", "09", "10", "11", "12", "13"],
+  "estimated_minutes": 30,
+  "files": [
+    "all"
+  ],
+  "requirements": [
+    "Test all 6 tabs load correctly",
+    "Verify real-time updates work (polling/SSE)",
+    "Test all buttons and actions",
+    "Check responsive design on mobile/tablet",
+    "Fix any console errors",
+    "Verify error handling in all components",
+    "Test with real data from API",
+    "Add loading skeletons where missing",
+    "Polish spacing, colors, typography"
+  ],
+  "acceptance_criteria": [
+    "No console errors",
+    "All features work end-to-end",
+    "Responsive on mobile (320px+) and tablet (768px+)",
+    "Loading states show during fetches",
+    "Error states handle gracefully",
+    "UI matches design expectations"
+  ]
+}

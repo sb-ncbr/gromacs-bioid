@@ -1,0 +1,29 @@
+{
+  "id": "04",
+  "title": "Build QueueTable with Filtering and Sorting",
+  "description": "Create filterable, sortable queue items table",
+  "type": "frontend",
+  "priority": "high",
+  "parallel": true,
+  "dependencies": [],
+  "estimated_minutes": 35,
+  "files": [
+    "web/src/Components/Validation/QueueTable.tsx"
+  ],
+  "requirements": [
+    "Use MUI Table with pagination",
+    "Add filters: status, batch_id, date range",
+    "Implement column sorting (click headers)",
+    "Add search by accession number",
+    "Fetch from /api/validation/queue/list",
+    "Add bulk actions: retry failed, clear completed",
+    "Show batch tags as MUI Chips"
+  ],
+  "acceptance_criteria": [
+    "Table displays queue items with all columns",
+    "Filters work correctly (status, batch, search)",
+    "Sorting works on all columns",
+    "Bulk actions execute successfully",
+    "Pagination works for large datasets"
+  ]
+}

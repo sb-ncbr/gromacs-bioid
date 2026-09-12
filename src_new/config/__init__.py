@@ -35,3 +35,6 @@ __all__ = [
     "load_config_from_path",
     "merge_with_dict",
 ]
+
+# Re-export for compatibility
+from src_new.config.loader import DATABASE_URL, CELERY_BROKER_URL, MDDBR_API_BASE

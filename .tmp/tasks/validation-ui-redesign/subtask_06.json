@@ -1,0 +1,30 @@
+{
+  "id": "06",
+  "title": "Build ActivityStream with SSE",
+  "description": "Create real-time activity log viewer using Server-Sent Events",
+  "type": "frontend",
+  "priority": "medium",
+  "parallel": true,
+  "dependencies": [],
+  "estimated_minutes": 30,
+  "files": [
+    "web/src/Components/Validation/ActivityStream.tsx"
+  ],
+  "requirements": [
+    "Implement SSE connection to /api/validation/activity-log/stream",
+    "Display events in chronological order (newest first)",
+    "Add filters: event type, severity, time range",
+    "Implement auto-scroll to newest",
+    "Add pause/resume streaming",
+    "Support log export (JSON/CSV)",
+    "Handle reconnection on disconnect"
+  ],
+  "acceptance_criteria": [
+    "SSE connection establishes successfully",
+    "Events display in real-time",
+    "Filters work correctly",
+    "Auto-scroll works (with pause override)",
+    "Reconnects on connection loss",
+    "Export downloads log file"
+  ]
+}

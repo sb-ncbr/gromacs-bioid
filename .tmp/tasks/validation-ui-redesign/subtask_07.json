@@ -1,0 +1,30 @@
+{
+  "id": "07",
+  "title": "Build BatchTable for Batch History",
+  "description": "Create batch history table with statistics and comparison",
+  "type": "frontend",
+  "priority": "medium",
+  "parallel": false,
+  "dependencies": ["01"],
+  "estimated_minutes": 30,
+  "files": [
+    "web/src/Components/Validation/BatchTable.tsx",
+    "web/src/Pages/ValidationBatches.tsx"
+  ],
+  "requirements": [
+    "Display batch history with columns: ID, created, entries, completed, failed, duration",
+    "Add batch statistics (success rate, avg duration, total entries)",
+    "Implement batch comparison (select 2-3 batches)",
+    "Add export batch results button",
+    "Show batch progress for active batches",
+    "Add cancel batch button for running batches"
+  ],
+  "acceptance_criteria": [
+    "Table displays batch history correctly",
+    "Statistics calculate accurately",
+    "Batch comparison shows differences",
+    "Export downloads batch results",
+    "Cancel button stops active batches"
+  ],
+  "notes": "May need to add API endpoint for batch list if not exists"
+}

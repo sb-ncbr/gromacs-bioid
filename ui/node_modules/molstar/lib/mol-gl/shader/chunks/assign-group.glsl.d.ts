@@ -1,0 +1,1 @@
+export declare const assign_group = "\n#ifdef dGeometryType_textureMesh\n    float group = unpackRGBToInt(readFromTexture(tGroup, vertexId, uGeoTexDim).rgb);\n#else\n    float group = aGroup;\n#endif\n";

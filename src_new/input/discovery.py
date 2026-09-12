@@ -52,6 +52,7 @@ def inspect_directory(dir_path: Path) -> InputBundle:
         ".prmtop": "AMBER_PRMTOP",
         ".parm7": "AMBER_PARM7",
         ".nc": "AMBER_NC",
+        ".xtc": "AMBER_XTC",
         ".itp": "GROMACS_ITP",
     }
     
@@ -123,6 +124,16 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
         )
     
     # 5. .prmtop + .nc or .parm7 + .nc -> "PRMTOP_NC", AMBER
+    
+    # 5b. .prmtop + .xtc or .parm7 + .xtc -> "PRMTOP_XTC", AMBER
+    if (".prmtop" in exts or ".parm7" in exts) and ".xtc" in exts:
+        prmtop_files = [f.path for f in bundle.files if f.path.suffix.lower() in (".prmtop", ".parm7")]
+        xtc_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".xtc"]
+        return LoadDecision(
+            input_kind=InputKind.AMBER,
+            selected_strategy="PRMTOP_XTC",
+            topology_files=[prmtop_files[0]] if prmtop_files else [],
+        )
     if (".prmtop" in exts or ".parm7" in exts) and ".nc" in exts:
         prmtop_files = [f.path for f in bundle.files if f.path.suffix.lower() in (".prmtop", ".parm7")]
         nc_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".nc"]

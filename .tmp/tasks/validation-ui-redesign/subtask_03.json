@@ -1,0 +1,27 @@
+{
+  "id": "03",
+  "title": "Build Live ProgressBar Component",
+  "description": "Create real-time progress bar for queue processing",
+  "type": "frontend",
+  "priority": "high",
+  "parallel": true,
+  "dependencies": [],
+  "estimated_minutes": 20,
+  "files": [
+    "web/src/Components/Validation/ProgressBar.tsx"
+  ],
+  "requirements": [
+    "Use MUI LinearProgress or CircularProgress",
+    "Show queue processing progress (pending/processing/completed/failed)",
+    "Poll /api/validation/queue/status every 5 seconds",
+    "Display detailed stats (total, processing, completed, failed)",
+    "Add start/stop processor buttons",
+    "Show concurrency level"
+  ],
+  "acceptance_criteria": [
+    "Progress bar updates in real-time",
+    "Shows accurate queue statistics",
+    "Start/Stop buttons control processor",
+    "Handles connection errors with retry"
+  ]
+}

@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Failure Analysis - BAT3</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .run-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .run-btn:hover { background: #45a049; transform: translateY(-2px); }
+        .run-btn:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+        .run-btn.running { background: #2196F3; animation: pulse 1.5s infinite; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .analysis-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #4CAF50;
+        }
+        .stat-card.critical { border-left-color: #f44336; }
+        .stat-card.warning { border-left-color: #ff9800; }
+        .stat-card.info { border-left-color: #2196F3; }
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #333;
+        }
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .error-list {
+            list-style: none;
+        }
+        .error-list li {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f8f9fa;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .error-count {
+            background: #f44336;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .recommendation {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 6px;
+            background: #fff3cd;
+            border-left: 4px solid #ff9800;
+        }
+        .recommendation.critical {
+            background: #f8d7da;
+            border-left-color: #f44336;
+        }
+        .recommendation.info {
+            background: #d1ecf1;
+            border-left-color: #2196F3;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4CAF50;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .task-bar {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+        }
+        .task-name {
+            width: 250px;
+            font-weight: 500;
+        }
+        .task-progress {
+            flex: 1;
+            height: 24px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 0 15px;
+        }
+        .task-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #45a049);
+            transition: width 0.3s;
+        }
+        .task-bar-fill.failed {
+            background: linear-gradient(90deg, #f44336, #d32f2f);
+        }
+        .task-count {
+            width: 80px;
+            text-align: right;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>
+            🔍 Failure Analysis
+            <button class="run-btn" id="runAnalysis" onclick="runAnalysis()">
+                Run Analysis
+            </button>
+        </h1>
+        
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Analyzing failed runs...</p>
+        </div>
+        
+        <div id="results" style="display: none;">
+            <!-- Summary Stats -->
+            <div class="analysis-section">
+                <h2 class="section-title">📊 Summary</h2>
+                <div class="stats-grid" id="summaryStats"></div>
+            </div>
+            
+            <!-- Error Categories -->
+            <div class="analysis-section">
+                <h2 class="section-title">⚠️ Error Categories</h2>
+                <ul class="error-list" id="errorCategories"></ul>
+            </div>
+            
+            <!-- Task Failures -->
+            <div class="analysis-section">
+                <h2 class="section-title">🔴 Task Failures</h2>
+                <div id="taskFailures"></div>
+            </div>
+            
+            <!-- Recommendations -->
+            <div class="analysis-section">
+                <h2 class="section-title">💡 Recommendations</h2>
+                <div id="recommendations"></div>
+            </div>
+            
+            <!-- Raw Data -->
+            <div class="analysis-section">
+                <h2 class="section-title">📄 Raw Data</h2>
+                <pre id="rawData"></pre>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        async function runAnalysis() {
+            const btn = document.getElementById('runAnalysis');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            
+            btn.disabled = true;
+            btn.classList.add('running');
+            btn.textContent = 'Analyzing...';
+            loading.style.display = 'block';
+            results.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/failure-analysis');
+                const data = await response.json();
+                
+                displayResults(data);
+                
+                loading.style.display = 'none';
+                results.style.display = 'block';
+            } catch (error) {
+                alert('Analysis failed: ' + error.message);
+                loading.style.display = 'none';
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('running');
+                btn.textContent = 'Run Analysis';
+            }
+        }
+        
+        function displayResults(data) {
+            // Summary stats
+            const summary = data.summary;
+            const dbStats = data.database;
+            
+            document.getElementById('summaryStats').innerHTML = `
+                <div class="stat-card critical">
+                    <div class="stat-value">${dbStats.total_failed_runs}</div>
+                    <div class="stat-label">Total Failed Runs</div>
+                </div>
+                <div class="stat-card critical">
+                    <div class="stat-value">${dbStats.without_results_json}</div>
+                    <div class="stat-label">Hung (No Results)</div>
+                </div>
+                <div class="stat-card warning">
+                    <div class="stat-value">${dbStats.with_results_json}</div>
+                    <div class="stat-label">Completed w/ Errors</div>
+                </div>
+                <div class="stat-card info">
+                    <div class="stat-value">${summary.most_common_error_category ? summary.most_common_error_category[0] : 'N/A'}</div>
+                    <div class="stat-label">Top Error Category</div>
+                </div>
+            `;
+            
+            // Error categories
+            const categories = dbStats.error_categories;
+            document.getElementById('errorCategories').innerHTML = Object.entries(categories)
+                .map(([cat, count]) => `
+                    <li>
+                        <span>${cat}</span>
+                        <span class="error-count">${count}</span>
+                    </li>
+                `).join('');
+            
+            // Task failures
+            const taskFailures = data.results_files.task_failures;
+            const totalTasks = Object.values(taskFailures).reduce((a, b) => a + b, 0) || 1;
+            
+            document.getElementById('taskFailures').innerHTML = Object.entries(taskFailures)
+                .map(([task, count]) => {
+                    const pct = (count / totalTasks * 100).toFixed(1);
+                    return `
+                        <div class="task-bar">
+                            <div class="task-name">${task}</div>
+                            <div class="task-progress">
+                                <div class="task-bar-fill failed" style="width: ${pct}%"></div>
+                            </div>
+                            <div class="task-count">${count}</div>
+                        </div>
+                    `;
+                }).join('') || '<p>No task failures in results.json files</p>';
+            
+            // Recommendations
+            document.getElementById('recommendations').innerHTML = data.recommendations
+                .map(rec => {
+                    const isCritical = rec.includes('🔴');
+                    const isInfo = rec.includes('💡') || rec.includes('📥') || rec.includes('🔧');
+                    const cls = isCritical ? 'critical' : (isInfo ? 'info' : '');
+                    return `<div class="recommendation ${cls}">${rec}</div>`;
+                }).join('');
+            
+            // Raw data
+            document.getElementById('rawData').textContent = JSON.stringify(data, null, 2);
+        }
+        
+        // Auto-run on load
+        window.onload = runAnalysis;
+    </script>
+</body>
+</html>

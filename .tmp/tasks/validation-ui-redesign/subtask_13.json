@@ -1,0 +1,28 @@
+{
+  "id": "13",
+  "title": "Add Batch List API Endpoint",
+  "description": "Create GET /api/validation/batches/list endpoint for batch history",
+  "type": "backend",
+  "priority": "medium",
+  "parallel": true,
+  "dependencies": [],
+  "estimated_minutes": 20,
+  "files": [
+    "validation/api/validation_enhancements.py"
+  ],
+  "requirements": [
+    "Add GET /validation/batches/list endpoint",
+    "Query validation_queue grouped by batch_id",
+    "Return batch statistics (total, completed, failed, started_at, completed_at)",
+    "Add filtering by status, date range",
+    "Add pagination support",
+    "Include batch progress for active batches"
+  ],
+  "acceptance_criteria": [
+    "Endpoint returns batch list",
+    "Statistics are accurate",
+    "Filtering works",
+    "Pagination works",
+    "Tested with curl/Postman"
+  ]
+}

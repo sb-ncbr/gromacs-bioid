@@ -1,0 +1,59 @@
+{
+  "task_name": "validation-ui-redesign",
+  "description": "Complete redesign of BAT3 Validation Dashboard UI",
+  "complexity": "high",
+  "estimated_files": 14,
+  "estimated_time_minutes": 180,
+  "objectives": [
+    "Create modern Validation Dashboard with 6 tabs (Overview, Queue, Workers, Batches, Failure Analysis, Activity Log)",
+    "Implement real-time updates using polling and SSE",
+    "Build responsive Material-UI components with green theme",
+    "Add filterable/sortable tables for queue and workers",
+    "Create interactive charts for analytics",
+    "Implement bulk actions for queue management",
+    "Fix broken failure analysis functionality",
+    "Add worker monitoring and scaling controls"
+  ],
+  "deliverables": [
+    "web/src/Pages/ValidationDashboard.tsx - Main dashboard container with tabs",
+    "web/src/Pages/ValidationQueue.tsx - Queue management page",
+    "web/src/Pages/ValidationWorkers.tsx - Worker monitoring page",
+    "web/src/Pages/ValidationBatches.tsx - Batch history page",
+    "web/src/Pages/ValidationFailureAnalysis.tsx - Fixed failure analysis",
+    "web/src/Pages/ValidationActivityLog.tsx - Real-time activity stream",
+    "web/src/Components/Validation/StatsCards.tsx - Statistics cards",
+    "web/src/Components/Validation/QueueTable.tsx - Queue items table",
+    "web/src/Components/Validation/WorkerList.tsx - Worker monitoring",
+    "web/src/Components/Validation/ProgressBar.tsx - Live progress indicator",
+    "web/src/Components/Validation/ActivityStream.tsx - SSE log viewer",
+    "web/src/Components/Validation/BatchTable.tsx - Batch history table",
+    "web/src/App.tsx - Updated with validation routes",
+    "validation/api/main.py - Add batch list endpoint if needed"
+  ],
+  "constraints": [
+    "Use existing Material-UI theme (green accent #2E7D32)",
+    "Follow existing component patterns in web/src/Components/",
+    "Use TypeScript for all new files",
+    "Implement proper error handling and loading states",
+    "Ensure responsive design for mobile/tablet",
+    "Use existing API endpoints where available"
+  ],
+  "api_endpoints": {
+    "dashboard_stats": "GET /api/stats/dashboard",
+    "queue_list": "GET /api/validation/queue/list",
+    "queue_status": "GET /api/validation/queue/status",
+    "workers": "GET /api/validation/queue/workers",
+    "worker_scale": "POST /api/validation/queue/workers/scale",
+    "failure_analysis": "GET /api/validation/stats/failure-analysis",
+    "activity_stream": "GET /api/validation/activity-log/stream",
+    "start_processor": "POST /api/validation/queue/start-processor",
+    "retry_failed": "POST /api/validation/entries/retry-failed"
+  },
+  "parallel_opportunities": [
+    "StatsCards component can be built independently",
+    "QueueTable can be built in parallel with WorkerList",
+    "ActivityStream can be built independently",
+    "BatchTable can be built in parallel with other components",
+    "Main dashboard layout can be created while components are being built"
+  ]
+}

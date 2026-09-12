@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.assign_group = void 0;
+exports.assign_group = `
+#ifdef dGeometryType_textureMesh
+    float group = unpackRGBToInt(readFromTexture(tGroup, vertexId, uGeoTexDim).rgb);
+#else
+    float group = aGroup;
+#endif
+`;
