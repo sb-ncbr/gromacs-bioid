@@ -74,6 +74,16 @@ Failure signatures from the Sept-2026 incident (P0-1..P0-6, P1 family), how to d
 - Fix: `LoadedUniverse._discover_virtual_segments()` (F1, worker ≥v2.15) + smiles coordinate-perception fallback (≤150 atoms)
 - Known residual nits: `PUBCHEM_CID 0` junk hits pass verification (filter falsy ids); no structure-consuming lipid resolver yet
 
+### Dockerfile.api HEAD poison (P2-16 variant, fixed)
+- HEAD `Dockerfile.api` ITSELF contained `RUN mv /app/main.py /app/main.py.old` (stray commit `12bebebd1`): any image built from HEAD crashes (`Could not import module main`). "Build from HEAD snapshot" is unsafe for Dockerfile.api; the known-good snapshot (`/tmp/opencode/Dockerfile.api.fixed`) is the build source. Poison removed in `0a3079a79`.
+- Rollout chown stall: worker pods took 15+ min in ContainerCreating -> kubelet chowning the entire 191k-file NFS pvc per pod. Fix: `fsGroupChangePolicy: OnRootMismatch` on worker deployments (rollouts now instant past pulls).
+
+### Chemistry misidentification (root-caused + phase-1 fixed)
+- Failure stack: bond perception garbage SMILES -> formula protonation drift (sim species vs neutral literature) -> formula fastsearch returns ~100-300 formula-mates -> verification `hit_type=="identity"` free-pass auto-verified ALL of them @conf40 -> chemical hit lists flooded with junk (att~84%, Tanimoto~0).
+- GT frame class: MDDBR annotates prodrug (azilsartan medoxomil) while MD sim carries the active acid; not a pipeline error.
+- Phase-1 fix pattern (worker>=v2.16, api>=v3.95b): skeleton_fp signature (H-scrub skeleton Morgan FP, tolerance like protein alignment), F7 verification gate (chemicals need skeleton-Tanimoto>=0.7 corroboration vs fetched candidate SMILES), F9 hfamily resolver (H+-4 formula candidates). Evidence: 2207 replay junk 0.14-0.28 rejected, acid 1.0, prodrug 0.73.
+- Secondary crater OPEN: membrane lipids fragment into ~14-atom junk clusters (F11, parked).
+
 ### Duplicate intake storm (P2-18, fixed)
 - Signature: same accession `Downloading files` >=2x within milliseconds; `Key (run_id) already exists` bursts; `running` runs >> queue `processing`; S7 unmapped-pairs explosion; ~1 run/min ceiling despite idle fleet
 - Cause: batch claim loop issuing N `SELECT ... FOR UPDATE SKIP LOCKED` in ONE transaction while `sessionmaker(autoflush=False)` keeps the pending status-UPDATE invisible to following SELECTs; SKIP LOCKED never skips locks owned by our own transaction -> same row claimed N times -> N threads download/race one entry's input dir
