@@ -100,3 +100,33 @@ Same currency everywhere: identification rescore, verification gate, S7 validati
 - `PUBCHEM_CID "0"` junk filter (falsy ids) — batch with F7.
 - S7 family-depth cap (50) vs per-molecule ranking — revisit if best-sim ranks beyond 50 after F7 (evaluate on rebaseline data).
 - Sweeper dwell vs celery backlog (STALE_HOURS=12) — recheck near campaign end.
+
+---
+
+## LANDED post-plan (2026-09-12/13 execution record)
+
+### Phase 1-2 status
+- [x] F12 skeleton_fp (`7863b56..` in `3d9a6a87f`) — generator+util+registry, live v2.16+
+- [x] F7 verification gate (skeleton Tanimoto>=0.7) — live; 2207 replay junk 0.14-0.28 rejected, acid 1.0, prodrug 0.73
+- [x] F7b via gate semantics (chemical identity cannot self-verify)
+- [x] F9 hfamily candidate union (candidates-only; rescoring unified in gate)
+- [x] Fetch hardening (v3.96 fetcher: polite retry, batch CSV prefetch 50/call, NFS smiles cache)
+- [x] PubChem circuit breaker (skip PUG-dependent resolvers during outage; worker v2.18)
+- [x] MGET settle batch fix (completion job no longer self-throttles; api v3.98)
+- [x] IPv4-first transport fix (IPv6 PUG endpoint blackhole; images v2.19/v3.99)
+- [x] Per-IP PUG block confirmed (laptop 200 / cluster 503); **PUG-independence stack shipped**:
+      CID: cache -> PUG -> IDSM SPARQL mirror | inchikey: cactus -> chembl -> PUG
+      ChEMBL/ChEBI native. images v3.101/v2.21, workers 16+16, pubchem_struct+formula_pubchem disabled in config
+- [x] Celery ghost-fleet purge + NFS-truth settlement (23,705 ghosts purged; 5,181 settled completed)
+
+### Metrics stack
+- [x] S7 skeleton-FP currency (skel-cid/skel-inchikey re-versioned; validates>=0.7 chem / 0.9 seq), gate-verified counters
+
+### Remaining (carry to next phase)
+- [ ] F8 CCD-template bond assignment (authoritative channel for known resnames)
+- [ ] F11 lipid fragment reconstruction (separate loader dive; A__v2 ~14-atom junk clusters)
+- [ ] F10 legacy SMILES quality (deprioritized; skeleton_fp is primary)
+- [ ] F12b prodrug/GT-delta reporting tag (band confirmed ~0.73; reporting-only)
+- [ ] ChemSpider integration (key available, 1000 tokens; add as CID fallback chain member)
+- [ ] Re-scale workers when PUG stabilizes + config re-enable of disabled resolvers decision
+- [ ] Final full-population skeleton S7 rebaseline (v3 run in flight)

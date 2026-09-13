@@ -85,6 +85,14 @@ Failure signatures from the Sept-2026 incident (P0-1..P0-6, P1 family), how to d
 - Secondary crater OPEN: membrane lipids fragment into ~14-atom junk clusters (F11, parked).
 - Ops: PubChem rate-limits the whole cluster egress after heavy waves (503 everywhere incl. trivial CIDs); ChEMBL unaffected. Mitigation shipped v3.96: min-interval requests, 429/503 backoff, batch CSV prefetch (50 CIDs/call), NFS smiles cache `_cache_read` reuse. Gate fails closed (fingerprint_unavailable) during outages and self-heals once cache warms / PUG recovers.
 
+### NCBI/PUG pressure series (2026-09-12/13)
+- IPv6 PUG endpoint blackholes cluster egress (name-503 vs literal-IP-200 identical URL): prefer_ipv4() installed in all PUG consumers (v2.19/v3.99)
+- Sustained per-source-IP block by NCBI after heavy days (laptop 200 / cluster 503 even at 3s pacing): pacing cannot cure a standing block; only alternation to alternates does
+- Structure source matrix (PUG-independent): CID -> NFS cache -> PUG -> IDSM SPARQL mirror (ELIXIR-CZ); InChIKey -> cactus -> chembl -> PUG; ChEMBL/CHEBI native
+- Concurrency-side pressure: pubchem_struct + formula_pubchem disabled in config_shared.ini ini (heaviest POST consumers); workers reduced 40->16 to re-earn reputation
+- Circuit breaker (VALIDATION_PUBCHEM_BREAKER=1) skips PUG-dependent resolvers when unhealthy
+- Celery ghost fleet (P2-19): storm-era duplicate tasks re-executed after redeploys forgot revoke lists; 23.7k tasks purged, 5,181 NFS-truth completions settled; settle path itself needed MGET batching (api v3.98)
+
 ### Duplicate intake storm (P2-18, fixed)
 - Signature: same accession `Downloading files` >=2x within milliseconds; `Key (run_id) already exists` bursts; `running` runs >> queue `processing`; S7 unmapped-pairs explosion; ~1 run/min ceiling despite idle fleet
 - Cause: batch claim loop issuing N `SELECT ... FOR UPDATE SKIP LOCKED` in ONE transaction while `sessionmaker(autoflush=False)` keeps the pending status-UPDATE invisible to following SELECTs; SKIP LOCKED never skips locks owned by our own transaction -> same row claimed N times -> N threads download/race one entry's input dir
