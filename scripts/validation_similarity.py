@@ -6,6 +6,10 @@ similarity level (not exact identifier match):
 - proteins compared as sequences (global alignment identity, Bio PairwiseAligner)
 - structures (PDB/AlphaFold) mapped to their entity sequences first
 - chemicals compared via InChIKey connectivity block + PubChem fingerprint Tanimoto
+
+Chemistry now scores in SKELETON-FP space (H-scrub collapsed Morgan r2/2048,
+same currency as the F7 verification gate): entity kinds are versioned
+skel-cid/skel-inchikey so legacy CACTVS pairs never collide.
 All network payloads and pair scores cached durably on NFS (no sqlite).
 """
 import hashlib
@@ -16,8 +20,18 @@ import time
 
 import requests
 
+import sys
+for _p in ("/app", os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "."):
+    if os.path.isdir(os.path.join(_p, "src_new")) and _p not in sys.path:
+        sys.path.insert(0, _p)
+from src_new.signatures.skeletize import (
+    from_smiles as _sk_from_smiles,
+    skeleton_fp as _sk_fp,
+    tanimoto as _sk_tanimoto,
+)
+
 ROOT = "/data/validation/sim_cache"
-DIRS = ("uniprot_seq", "pdb_fasta", "pubchem_fp", "inchikey_cid", "neg")
+DIRS = ("uniprot_seq", "pdb_fasta", "pubchem_fp", "pubchem_smiles", "inchikey_cid", "neg")
 for _d in DIRS:
     os.makedirs(os.path.join(ROOT, _d), exist_ok=True)
 
@@ -79,10 +93,54 @@ def _inchikey_cid(ik):
                         _get(f"{PUG}/compound/inchikey/{ik}/cids/JSON", "json")["IdentifierList"]["CID"][0])
 
 
+def _inchikey_smiles(ik):
+    """InChIKey -> SMILES via alternates (PUG blocked cluster-wide; cactus/chembl healthy)."""
+    def _fetch():
+        for url in (
+            f"https://cactus.nci.nih.gov/chemical/structure/{ik}/smiles",
+            f"https://www.ebi.ac.uk/chembl/api/data/molecule.json?standard_inchi_key={ik}",
+        ):
+            try:
+                if "molecule.json" in url:
+                    import json as _json
+                    d = _json.loads(_get(url))
+                    mols = d.get("molecules") or []
+                    if mols:
+                        smi = (mols[0].get("molecule_structures") or {}).get("canonical_smiles")
+                        if smi:
+                            return smi
+                else:
+                    smi = _get(url).strip()
+                    if smi and " " not in smi and "<" not in smi:
+                        return smi
+            except LookupError:
+                continue
+        raise LookupError(f"inchikey unresolved: {ik}")
+    return _cached_json("inchikey_smiles", ik, _fetch)
+
+
 def _fp_hex(kind, value):
     return _cached_json("pubchem_fp", f"{kind}:{value}", lambda:
         _get(f"{PUG}/compound/{kind}/{value}/property/Fingerprint2D/JSON", "json")
         ["PropertyTable"]["Properties"][0]["Fingerprint2D"])
+
+
+def _cid_smiles(cid):
+    """Canonical structure for a CID (current property names, legacy fallback)."""
+    def _fetch():
+        try:
+            d = _get(f"{PUG}/compound/cid/{cid}/property/ConnectivitySMILES,SMILES/JSON", "json")
+        except LookupError:
+            d = _get(f"{PUG}/compound/cid/{cid}/property/CanonicalSMILES/JSON", "json")
+        p0 = d["PropertyTable"]["Properties"][0]
+        return p0.get("ConnectivitySMILES") or p0.get("SMILES") or p0.get("CanonicalSMILES")
+    return _cached_json("pubchem_smiles", f"cid:{cid}", _fetch)
+
+
+def _skel_tanimoto_cids(cid_a, cid_b):
+    fa = _sk_fp(_sk_from_smiles(_cid_smiles(cid_a)))
+    fb = _sk_fp(_sk_from_smiles(_cid_smiles(cid_b)))
+    return _sk_tanimoto(fa, fb)
 
 
 def _bits(fp_str):
@@ -105,11 +163,11 @@ def norm_accession(hit_type, ident):
     if not v:
         return None, None
     if "INCHI" in t:
-        return ("fp-inchikey", v[:27])
+        return ("skel-inchikey", v[:27])
     if "PUBCHEM" in t:
         m = re.search(r"(\d+)", v)
         if m:
-            return ("fp-cid", m.group(1))
+            return ("skel-cid", m.group(1))
         return None, None
     if "ALPHAFOLD" in t:
         m = ACC_RE.search(v)
@@ -190,15 +248,18 @@ class SimEngine:
             return 0.0
         sim = 0.0
         try:
-            if a[0].startswith("fp-") and b[0].startswith("fp-"):
-                ia = a[1] if a[0] == "fp-inchikey" else None
-                ib = b[1] if b[0] == "fp-inchikey" else None
+            if a[0].startswith("skel-") and b[0].startswith("skel-"):
+                ia = a[1] if a[0] == "skel-inchikey" else None
+                ib = b[1] if b[0] == "skel-inchikey" else None
                 if ia and ib and ia.split("-")[0] == ib.split("-")[0]:
                     sim = 1.0
                 else:
-                    cid_a = a[1] if a[0] == "fp-cid" else _inchikey_cid(a[1])
-                    cid_b = b[1] if b[0] == "fp-cid" else _inchikey_cid(b[1])
-                    sim = tanimoto(_bits(_fp_hex("cid", cid_a)), _bits(_fp_hex("cid", cid_b)))
+                    smi_a = _inchikey_smiles(a[1]) if ia else _cid_smiles(a[1])
+                    smi_b = _inchikey_smiles(b[1]) if ib else _cid_smiles(b[1])
+                    sim = _sk_tanimoto(
+                        _sk_fp(_sk_from_smiles(smi_a)),
+                        _sk_fp(_sk_from_smiles(smi_b)),
+                    )
             elif a[0].startswith("seq") and b[0].startswith("seq"):
                 sim = max((self._align_identity(x, y)
                            for x in self._seqs_of(*a) for y in self._seqs_of(*b)), default=0.0)

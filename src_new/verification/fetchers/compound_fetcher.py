@@ -101,7 +101,7 @@ def prefetch_pubchem(cids) -> int:
 class CompoundSignatureFetcher(SignatureFetcher):
     """Fetches canonical SMILES for compound identifiers."""
     
-    SUPPORTED_TYPES = {"PUBCHEM_CID", "CHEMBL_ID", "CHEBI_ID"}
+    SUPPORTED_TYPES = {"PUBCHEM_CID", "CHEMBL_ID", "CHEBI_ID", "INCHIKEY", "INCHI_KEY"}
     
     def supports(self, ident_type: str) -> bool:
         """Check if this fetcher supports the given identifier type."""
@@ -118,6 +118,9 @@ class CompoundSignatureFetcher(SignatureFetcher):
             The canonical SMILES string, or None if not found or on error.
         """
         try:
+            norm = ident_type.upper()
+            if norm in ("INCHIKEY", "INCHI_KEY"):
+                return self._fetch_inchikey(identifier)
             if ident_type == "PUBCHEM_CID":
                 return self._fetch_pubchem(identifier)
             elif ident_type == "CHEMBL_ID":
@@ -145,6 +148,44 @@ class CompoundSignatureFetcher(SignatureFetcher):
         _cache_write(str(cid), smiles)
         return smiles
     
+    def _fetch_inchikey(self, ik: str) -> str | None:
+        """InChIKey -> canonical SMILES without PubChem (NCBI blocks cluster IP).
+
+        Fallback order: CACTUS (NCI) -> ChEMBL molecule search -> PUG (last
+        resort, may be blocked - soft-failed by polite layer already).
+        """
+        ik = ik.strip()
+        if not ik:
+            return None
+        # 1) CACTUS
+        url1 = f"https://cactus.nci.nih.gov/chemical/structure/{ik}/smiles"
+        r = _polite_get(url1)
+        if r is not None:
+            smiles = r.text.strip()
+            if smiles and " " not in smiles and "<" not in smiles:
+                return smiles
+        # 2) ChEMBL search
+        url2 = f"https://www.ebi.ac.uk/chembl/api/data/molecule.json?standard_inchi_key={ik}"
+        r = _polite_get(url2)
+        if r is not None:
+            try:
+                mols = r.json().get("molecules") or []
+                if mols:
+                    smi = (mols[0].get("molecule_structures") or {}).get("canonical_smiles")
+                    if smi:
+                        return smi
+            except Exception:
+                pass
+        # 3) PUG (likely blocked; kept as last-resort)
+        url3 = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/inchikey/{ik}/property/CanonicalSMILES/TXT"
+        r = _polite_get(url3)
+        if r is not None:
+            smiles = r.text.strip()
+            if smiles:
+                return smiles
+        logger.warning(f"InChIKey {ik} unresolved by cactus/chembl/pug")
+        return None
+
     def _fetch_chembl(self, chembl_id: str) -> str | None:
         """Fetch SMILES from ChEMBL."""
         # Canonicalize: strip CHEMBL prefix if present, then prepend it back
