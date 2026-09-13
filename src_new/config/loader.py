@@ -86,6 +86,7 @@ class SignaturesConfig:
     morgan_fingerprint: bool = True
     selfies: bool = True
     skeleton_fp: bool = True
+    resname: bool = True
     molecular_formula: bool = True
     tdi: bool = True
     lipid_shorthand: bool = True
