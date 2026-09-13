@@ -9,6 +9,8 @@ import os
 import time
 
 import requests
+from ...utils.net import prefer_ipv4 as _prefer_ipv4
+_prefer_ipv4()
 
 from ..base import SignatureFetcher
 

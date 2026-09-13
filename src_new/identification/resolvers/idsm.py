@@ -8,6 +8,10 @@ from typing import TYPE_CHECKING
 
 from SPARQLWrapper import SPARQLWrapper, JSON
 
+
+from ...utils.net import prefer_ipv4 as _prefer_ipv4
+_prefer_ipv4()
+
 from ..base import IdentifierResolver, IdentifierResolutionError
 
 if TYPE_CHECKING:

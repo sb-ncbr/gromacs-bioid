@@ -18,6 +18,10 @@ import time
 import requests
 
 from ...config.loader import RunConfig
+
+from ...utils.net import prefer_ipv4 as _prefer_ipv4
+_prefer_ipv4()
+
 from ..base import IdentifierResolver, IdentifierResolutionError
 
 logger = logging.getLogger("base")
