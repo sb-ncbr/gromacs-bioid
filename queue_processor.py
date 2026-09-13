@@ -372,6 +372,38 @@ def _resolve_run_for_queue_item(db: Session, queue_item: models.ValidationQueue)
     ).order_by(models.Bat3Run.created_at.desc()).first()
 
 
+def _celery_meta_many(celery_task_ids: list) -> dict:
+    """Read many celery result metas in ONE Redis round trip (MGET chunks).
+
+    Returns {task_id: meta_dict}; missing keys are omitted. Critical at
+    thousands-of-processing scale (the old per-item connection loop stalled
+    the 30s completion job into permanent self-throttle).
+    """
+    import redis
+    from config import CELERY_BROKER_URL
+    redis_url = CELERY_BROKER_URL.replace("redis://", "")
+    host, rest = redis_url.split(":", 1)
+    port = int(rest.split("/")[0])
+    out = {}
+    if not celery_task_ids:
+        return out
+    r = redis.Redis(host=host, port=port, decode_responses=True, socket_timeout=10)
+    try:
+        keys = [f"celery-task-meta-{t}" for t in celery_task_ids]
+        for i in range(0, len(keys), 500):
+            chunk_keys = keys[i:i + 500]
+            vals = r.mget(chunk_keys)
+            for key, raw in zip(chunk_keys, vals):
+                if raw:
+                    try:
+                        out[key.replace("celery-task-meta-", "", 1)] = json.loads(raw)
+                    except Exception:
+                        continue
+        return out
+    finally:
+        r.close()
+
+
 def _celery_meta(celery_task_id: str) -> Optional[dict]:
     """Read celery result metadata from Redis. Returns None if missing/expired."""
     import redis
@@ -443,14 +475,24 @@ def check_task_completions(
         if not processing_items:
             return 0
 
-        updated_count = 0
+        # Preload runs in one pass and batch-read metas in one MGET chunk set
+        runs_by_id = {}
+        task_ids = []
+        items_with_run = []
         for queue_item in processing_items:
-            try:
-                run = _resolve_run_for_queue_item(db, queue_item)
-                if not run or not run.celery_task_id:
-                    continue
+            run = _resolve_run_for_queue_item(db, queue_item)
+            if not run or not run.celery_task_id:
+                continue
+            runs_by_id[queue_item.id] = run
+            task_ids.append(run.celery_task_id)
+            items_with_run.append(queue_item)
+        metas = _celery_meta_many(task_ids)
 
-                meta = _celery_meta(run.celery_task_id)
+        updated_count = 0
+        for queue_item in items_with_run:
+            try:
+                run = runs_by_id[queue_item.id]
+                meta = metas.get(run.celery_task_id)
                 if meta is None:
                     # Result expired from Redis (>24h); sweeper handles these
                     continue
