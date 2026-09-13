@@ -135,18 +135,51 @@ class CompoundSignatureFetcher(SignatureFetcher):
             return None
     
     def _fetch_pubchem(self, cid: str) -> str | None:
-        """Fetch SMILES from PubChem (NFS cached + polite HTTP)."""
+        """Fetch SMILES for a PubChem CID, ordered: NFS cache -> PUG -> IDSM
+        (ELIXIR-CZ mirrors the PubChem RDF; works while NCBI blocks cluster IP).
+        """
         cached = _cache_read(str(cid))
         if cached is not None:
             return cached
+        smiles = None
         url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/CanonicalSMILES/TXT"
         r = _polite_get(url)
-        if r is None:
-            logger.warning(f"PubChem {cid} fetch SMILES failed after retries")
-            return None
-        smiles = r.text.strip() or None
-        _cache_write(str(cid), smiles)
+        if r is not None:
+            smiles = r.text.strip() or None
+        if not smiles:
+            smiles = self._fetch_idsm_pubchem(cid)
+        if smiles:
+            _cache_write(str(cid), smiles)
         return smiles
+
+    @staticmethod
+    def _fetch_idsm_pubchem(cid: str) -> str | None:
+        """CID -> SMILES via IDSM SPARQL (ELIXIR-CZ PubChem mirror)."""
+        query = (
+            "SELECT ?v WHERE { "
+            f"<http://rdf.ncbi.nlm.nih.gov/pubchem/compound/CID{cid}> "
+            "<http://semanticscience.org/resource/SIO_000008> ?d . "
+            "?d a ?t . "
+            'FILTER(CONTAINS(STR(?t), "SMILES")) '
+            "?d <http://semanticscience.org/resource/SIO_000300> ?v "
+            "} LIMIT 2"
+        )
+        try:
+            r = _polite_get(
+                "https://idsm.elixir-czech.cz/sparql/endpoint/idsm"
+                "?query=" + requests.utils.quote(query)
+                + "&format=application/sparql-results%2Bjson"
+            )
+            if r is None:
+                return None
+            bindings = r.json().get("results", {}).get("bindings", [])
+            for b in bindings:
+                v = (b.get("v") or {}).get("value")
+                if v:
+                    return v.strip()
+        except Exception as exc:
+            logger.warning(f"IDSM PubChem mirror fetch failed for {cid}: {exc}")
+        return None
     
     def _fetch_inchikey(self, ik: str) -> str | None:
         """InChIKey -> canonical SMILES without PubChem (NCBI blocks cluster IP).

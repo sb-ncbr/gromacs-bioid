@@ -125,13 +125,40 @@ def _fp_hex(kind, value):
         ["PropertyTable"]["Properties"][0]["Fingerprint2D"])
 
 
+def _cid_smiles_idsm(cid):
+    """CID -> SMILES via IDSM SPARQL (ELIXIR-CZ PubChem mirror, PUG-independent)."""
+    q = (
+        "SELECT ?v WHERE { "
+        f"<http://rdf.ncbi.nlm.nih.gov/pubchem/compound/CID{cid}> "
+        "<http://semanticscience.org/resource/SIO_000008> ?d . "
+        "?d a ?t . "
+        'FILTER(CONTAINS(STR(?t), "SMILES")) '
+        "?d <http://semanticscience.org/resource/SIO_000300> ?v "
+        "} LIMIT 2"
+    )
+    url = ("https://idsm.elixir-czech.cz/sparql/endpoint/idsm?query="
+           + requests.utils.quote(q) + "&format=application/sparql-results%2Bjson")
+    try:
+        d = _get(url, "json")
+        for b in d.get("results", {}).get("bindings", []):
+            v = (b.get("v") or {}).get("value")
+            if v:
+                return v.strip()
+    except LookupError:
+        pass
+    raise LookupError(f"idsm cid unresolved: {cid}")
+
+
 def _cid_smiles(cid):
-    """Canonical structure for a CID (current property names, legacy fallback)."""
+    """Canonical structure for a CID (PUG first, IDSM mirror fallback)."""
     def _fetch():
         try:
             d = _get(f"{PUG}/compound/cid/{cid}/property/ConnectivitySMILES,SMILES/JSON", "json")
         except LookupError:
-            d = _get(f"{PUG}/compound/cid/{cid}/property/CanonicalSMILES/JSON", "json")
+            try:
+                d = _get(f"{PUG}/compound/cid/{cid}/property/CanonicalSMILES/JSON", "json")
+            except LookupError:
+                return _cid_smiles_idsm(cid)
         p0 = d["PropertyTable"]["Properties"][0]
         return p0.get("ConnectivitySMILES") or p0.get("SMILES") or p0.get("CanonicalSMILES")
     return _cached_json("pubchem_smiles", f"cid:{cid}", _fetch)
