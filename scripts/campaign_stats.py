@@ -47,6 +47,11 @@ FAIL_CLASSES = [
     ("timeout", "%timeout%"),
 ]
 SIM_VALIDATED = 0.9
+# Per-family validated thresholds: sequences stay strict; skeleton-FP chemistry
+# uses the F7 gate band (junk<=0.29 | prodrug 0.73 | exact 1.0; probe-validated).
+SIM_VALIDATED_BY_TYPE = {"inchikey": 0.7}
+def validated_threshold(t):
+    return SIM_VALIDATED_BY_TYPE.get(t, SIM_VALIDATED)
 # S7v2 family-aware scoring: post-F1 hit lists run into the hundreds, so a
 # global [:10] window buried each annotation's own family (P2-18 follow-up).
 # Score each GT type only against mappable hit families; bounded depths.
@@ -79,13 +84,15 @@ def verified_hits(doc):
                     conf = float(h.get("final_confidence") or 0.0)
                 except Exception:
                     conf = 0.0
-                out.append((h.get("ident_type"), h.get("identifier"), conf))
+                out.append((h.get("ident_type"), h.get("identifier"), conf,
+                            h.get("skeleton_sim"), h.get("skeleton_method"),
+                            h.get("is_verified")))
     out.sort(key=lambda x: x[2], reverse=True)
     return out
 
 
 def exact_hit_at_k(gt_map, hits):
-    ranked = [norm_ident(t, v) for t, v, _ in hits if norm_ident(t, v)]
+    ranked = [norm_ident(t, v) for t, v, *_ in hits if norm_ident(t, v)]
     per = {}
     for t in sorted(set(gt_map) | {"overall"}):
         wanted = ({v for s in gt_map.values() for v in s} if t == "overall"
@@ -253,6 +260,8 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
         "warnings": collections.Counter(), "critical": 0,
         "dl_resolvers": collections.Counter(),
         "pipeline_status": collections.Counter(),
+        "gate_verified_chem": 0,
+        "gate_verified_chem_hits": 0,
     }
     sim_agg = {
         "per_type": collections.defaultdict(list),
@@ -302,6 +311,9 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
                             agg["hit_agg"][t][f"hit@{k}"] += row[f"hit@{k}"]
                 if r["hits"]:
                     agg["entries_with_verified_hit"] += 1
+                if any(h[4] and h[5] for h in r["hits"] if len(h) > 5):
+                    agg["gate_verified_chem"] += 1
+                    agg["gate_verified_chem_hits"] += sum(1 for h in r["hits"] if len(h) > 5 and h[4] and h[5])
 
                 if sim_engine is not None and r["hits"]:
                     annotations = [(t, v) for t, vals in gt_map.items() for v in vals]
@@ -320,7 +332,7 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
                         else:
                             agg_sim_attempt[t]["no_family"] += 1
                         row = {}
-                        for idx, (ht, hid, _conf) in enumerate(fhits, 1):
+                        for idx, (ht, hid, _conf, *_g) in enumerate(fhits, 1):
                             s = sim_engine.sim(t, v, ht, hid)
                             for k in KSET:
                                 if idx <= k:
@@ -365,7 +377,7 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
         100.0 * agg["entries_with_verified_hit"] / max(1, agg["gt_covered"]), 1)
 
     if sim_engine is not None:
-        s7 = {"validated_threshold": SIM_VALIDATED}
+        s7 = {"validated_threshold": SIM_VALIDATED, "validated_threshold_by_type": SIM_VALIDATED_BY_TYPE}
         for t, rows in sim_agg["per_type"].items():
             n = len(rows)
             att = agg_sim_attempt.get(t) or {}
@@ -378,7 +390,7 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
                 **{f"mean_sim@{k}": round(
                        sum(r[k] for r in (att_rows or rows)) / max(1, len(att_rows or rows)), 4)
                    for k in KSET},
-                **{f"pct_validated@{k}": round(100.0 * sum(1 for r in rows if r[k] >= SIM_VALIDATED) / n, 1)
+                **{f"pct_validated@{k}": round(100.0 * sum(1 for r in rows if r[k] >= validated_threshold(t)) / n, 1)
                    for k in KSET},
             }
         anyn = sim_agg["any_n"]
@@ -388,6 +400,8 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
         s7["unmapped"] = sim_engine.unmapped
         out["S7_similarity_hit_at_k"] = s7
 
+    out["S7_gate_verified_chem_entries"] = agg["gate_verified_chem"]
+    out["S7_gate_verified_chem_hits"] = agg["gate_verified_chem_hits"]
     out["S6_top_warnings"] = dict(agg["warnings"].most_common(20))
     out["S6_critical_errors_total"] = agg["critical"]
     out["S6_download_resolvers"] = dict(agg["dl_resolvers"].most_common())
@@ -464,6 +478,9 @@ def print_report(rep):
             anyrow = s7.get("entry_any_validated@%")
             if anyrow:
                 print(f"  entry-any-validated: @1={anyrow.get(1)}% @5={anyrow.get(5)}% @10={anyrow.get(10)}%")
+        g = rep.get("full", {})
+        if g.get("S7_gate_verified_chem_entries") is not None:
+            print(f"  gate-verified chemical hits: entries={g.get('S7_gate_verified_chem_entries')} hits={g.get('S7_gate_verified_chem_hits')}")
         print("S6 runtime:", full.get("S6_runtime_s"))
         print("S6 download resolver mix:", full["S6_download_resolvers"])
         print("S6 pipeline status:", full["S6_pipeline_status"])
