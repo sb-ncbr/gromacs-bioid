@@ -143,3 +143,55 @@ def test_prefetch_pubchem_batch_cache(monkeypatch, tmp_path):
     assert len(seen) == 1                      # single CSV call for 3 input ids
     assert cf._cache_read("1") == "CCO"
     assert cf._cache_read("2") == "CCCO"
+
+
+def test_chembl_retry_on_timeout_then_cache(monkeypatch, tmp_path):
+    """Timeout on first EBI call -> polite retries -> success -> cached."""
+    import src_new.verification.fetchers.compound_fetcher as cf
+    monkeypatch.setattr(cf, "_SIM_CACHE", str(tmp_path))
+    calls = {"n": 0}
+
+    class R:
+        status_code = 200
+        def json(self): return {"molecule_structures": {"canonical_smiles": "CCO"}}
+        def raise_for_status(self): pass
+        @property
+        def text(self): return "CCO"
+
+    def fake_get(url, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise requests.exceptions.ReadTimeout("slow")
+        return R()
+
+    import requests
+    monkeypatch.setattr(cf.requests, "get", fake_get)
+    # no sleeping in tests
+    monkeypatch.setattr(cf.time, "sleep", lambda *_a, **_k: None)
+    f = cf.CompoundSignatureFetcher()
+    out = f._fetch_chembl("CHEMBL25")
+    assert out == "CCO"
+    assert calls["n"] == 2                       # timeout then success
+    assert cf._cache_read_ns("chemb", "CHEMBL25") == "CCO"
+    out2 = f._fetch_chembl("CHEMBL25")
+    assert out2 == "CCO" and calls["n"] == 2     # cache hit, no new HTTP
+
+
+def test_chebi_caches_and_reuses(monkeypatch, tmp_path):
+    import src_new.verification.fetchers.compound_fetcher as cf
+    monkeypatch.setattr(cf, "_SIM_CACHE", str(tmp_path))
+    calls = {"n": 0}
+
+    class R:
+        status_code = 200
+        def json(self): return {"default_structure": {"smiles": "OC(=O)c1ccccc1"}}
+        def raise_for_status(self): pass
+        @property
+        def text(self): return "x"
+
+    monkeypatch.setattr(cf.requests, "get", lambda url, timeout=None: (calls.__setitem__("n", calls["n"]+1) or R()))
+    import requests as _rq; _rq  # noqa
+    f = cf.CompoundSignatureFetcher()
+    assert f._fetch_chebi("CHEBI:30762") == "OC(=O)c1ccccc1"
+    assert f._fetch_chebi("CHEBI:30762") == "OC(=O)c1ccccc1"
+    assert calls["n"] == 1

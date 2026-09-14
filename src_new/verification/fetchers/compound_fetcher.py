@@ -25,6 +25,27 @@ def _cache_path(cid: str) -> str:
     return os.path.join(_SIM_CACHE, hashlib.sha1(f"cid:{cid}".encode()).hexdigest()[:24] + ".json")
 
 
+def _cache_path_ns(ns: str, ident: str) -> str:
+    return os.path.join(_SIM_CACHE, hashlib.sha1(f"{ns}:{ident}".encode()).hexdigest()[:24] + ".json")
+
+
+def _cache_read_ns(ns: str, ident: str):
+    try:
+        with open(_cache_path_ns(ns, ident)) as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+
+
+def _cache_write_ns(ns: str, ident: str, val) -> None:
+    try:
+        os.makedirs(_SIM_CACHE, exist_ok=True)
+        with open(_cache_path_ns(ns, ident), "w") as fh:
+            json.dump(val, fh)
+    except OSError:
+        pass
+
+
 def _cache_read(cid: str):
     try:
         with open(_cache_path(cid)) as fh:
@@ -51,9 +72,13 @@ def _polite_get(url: str, tries: int = 4) -> requests.Response | None:
         if gap < _MIN_INTERVAL_S:
             time.sleep(_MIN_INTERVAL_S - gap)
         try:
-            r = requests.get(url, timeout=15)
+            r = requests.get(url, timeout=30)
             _last_request_ts = time.time()
         except Exception as exc:
+            if attempt < tries - 1:
+                time.sleep(delay)
+                delay *= 2
+                continue
             logger.warning(f"GET failed {url}: {exc}")
             return None
         status = r.status_code if isinstance(getattr(r, "status_code", None), int) else 200
@@ -220,35 +245,49 @@ class CompoundSignatureFetcher(SignatureFetcher):
         return None
 
     def _fetch_chembl(self, chembl_id: str) -> str | None:
-        """Fetch SMILES from ChEMBL."""
+        """Fetch SMILES from ChEMBL (NFS cached + polite transport)."""
         # Canonicalize: strip CHEMBL prefix if present, then prepend it back
         chembl_id = chembl_id.upper()
         if chembl_id.startswith("CHEMBL"):
             chembl_id = chembl_id[6:]  # Strip prefix
         chembl_id = f"CHEMBL{chembl_id}"
+        cached = _cache_read_ns("chemb", chembl_id)
+        if cached is not None:
+            return cached
         url = f"https://www.ebi.ac.uk/chembl/api/data/molecule/{chembl_id}.json"
-        try:
-            r = requests.get(url, timeout=10)
-            r.raise_for_status()
-            data = r.json()
-            return data.get("molecule_structures", {}).get("canonical_smiles")
-        except Exception as e:
-            logger.warning(f"ChEMBL {chembl_id} fetch SMILES failed: {e}")
-            return None
+        r = _polite_get(url)
+        smiles = None
+        if r is not None:
+            try:
+                smiles = r.json().get("molecule_structures", {}).get("canonical_smiles")
+            except Exception as exc:
+                logger.warning(f"ChEMBL {chembl_id} parse failed: {exc}")
+        if smiles:
+            _cache_write_ns("chemb", chembl_id, smiles)
+        else:
+            logger.warning(f"ChEMBL {chembl_id} fetch SMILES failed")
+        return smiles
     
     def _fetch_chebi(self, chebi_id: str) -> str | None:
-        """Fetch SMILES from ChEBI."""
+        """Fetch SMILES from ChEBI (NFS cached + polite transport)."""
         # Strip CHEBI: prefix if present
         chebi_num = chebi_id.upper()
         if chebi_num.startswith("CHEBI:"):
             chebi_num = chebi_num[6:]  # Strip prefix
+        cached = _cache_read_ns("chebi", chebi_num)
+        if cached is not None:
+            return cached
         url = f"https://www.ebi.ac.uk/chebi/backend/api/public/compound/{chebi_num}/"
-        try:
-            r = requests.get(url, timeout=10)
-            r.raise_for_status()
-            data = r.json()
-            smiles = data.get("default_structure", {}).get("smiles")
-            return smiles.strip() if smiles else None
-        except Exception as e:
-            logger.warning(f"ChEBI {chebi_id} fetch SMILES failed: {e}")
-            return None
+        r = _polite_get(url)
+        smiles = None
+        if r is not None:
+            try:
+                smi = r.json().get("default_structure", {}).get("smiles")
+                smiles = smi.strip() if smi else None
+            except Exception as exc:
+                logger.warning(f"ChEBI {chebi_id} parse failed: {exc}")
+        if smiles:
+            _cache_write_ns("chebi", chebi_num, smiles)
+        else:
+            logger.warning(f"ChEBI {chebi_id} fetch SMILES failed")
+        return smiles
