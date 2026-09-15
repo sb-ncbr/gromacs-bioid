@@ -93,29 +93,104 @@ def _inchikey_cid(ik):
                         _get(f"{PUG}/compound/inchikey/{ik}/cids/JSON", "json")["IdentifierList"]["CID"][0])
 
 
+_CHEMSPIDER_KEY = os.environ.get("CHEMSPIDER_API_KEY", "MoJ1UDD4JE1I5QEb4wLEF1ZiNVrWiSl717c8ue7q")
+
+
+def _inchikey_chemspider(ik):
+    """InChIKey -> SMILES via ChemSpider (key-depleting; use AFTER cactus/pug)."""
+    try:
+        f = requests.post(
+            "https://api.rsc.org/compounds/v1/filter/inchikey",
+            headers={"apikey": _CHEMSPIDER_KEY, "Content-Type": "application/json"},
+            json={"inchikey": ik}, timeout=30,
+        )
+        if f.status_code != 200:
+            raise LookupError(f"chemspider filter {f.status_code}")
+        qid = f.json().get("queryId")
+        for _ in range(10):
+            time.sleep(1.5)
+            st = requests.get(f"https://api.rsc.org/compounds/v1/filter/{qid}/status",
+                              headers={"apikey": _CHEMSPIDER_KEY}, timeout=20)
+            if st.status_code == 200 and st.json().get("status") == "Complete":
+                break
+        res = requests.get(f"https://api.rsc.org/compounds/v1/filter/{qid}/results",
+                           headers={"apikey": _CHEMSPIDER_KEY}, timeout=20)
+        rr = res.json().get("results") or []
+        if not rr:
+            raise LookupError("chemspider no results")
+        det = requests.get(
+            f"https://api.rsc.org/compounds/v1/records/{rr[0]}/details?fields=smiles",
+            headers={"apikey": _CHEMSPIDER_KEY}, timeout=20)
+        smi = (det.json() or {}).get("smiles")
+        if smi:
+            return smi
+        raise LookupError("chemspider empty smiles")
+    except requests.RequestException as exc:
+        raise LookupError(str(exc))
+
+
+def _inchikey_idsm(ik):
+    """InChIKey -> SMILES via IDSM SPARQL descriptor search (PUG-independent)."""
+    q = ('SELECT ?c WHERE { ?c <http://semanticscience.org/resource/SIO_000008> ?d . '
+         '?d a ?t . FILTER(CONTAINS(STR(?t), "InChIKey")) '
+         '?d <http://semanticscience.org/resource/SIO_000300> ?v . '
+         f'FILTER(?v = "{ik}") }} LIMIT 2')
+    try:
+        d = _get(
+            "https://idsm.elixir-czech.cz/sparql/endpoint/idsm?query="
+            + requests.utils.quote(q) + "&format=application/sparql-results%2Bjson", "json")
+        b = d.get("results", {}).get("bindings", [])
+        if not b:
+            raise LookupError("idsm ik unknown")
+        cu = b[0]["c"]["value"]
+        q2 = (f'SELECT ?v WHERE {{ <{cu}> <http://semanticscience.org/resource/SIO_000008> ?d . '
+              '?d a ?t . FILTER(CONTAINS(STR(?t), "SMILES")) '
+              '?d <http://semanticscience.org/resource/SIO_000300> ?v } LIMIT 2')
+        d2 = _get(
+            "https://idsm.elixir-czech.cz/sparql/endpoint/idsm?query="
+            + requests.utils.quote(q2) + "&format=application/sparql-results%2Bjson", "json")
+        b2 = d2.get("results", {}).get("bindings", [])
+        if b2:
+            v = (b2[0].get("v") or {}).get("value")
+            if v:
+                return v.strip()
+    except LookupError:
+        raise
+    raise LookupError("idsm ik unresolved")
+
+
 def _inchikey_smiles(ik):
-    """InChIKey -> SMILES via alternates (PUG blocked cluster-wide; cactus/chembl healthy)."""
+    """InChIKey -> SMILES. Chain (chembl-inchikey removed: it returns
+    cross-contaminated/wrong structures): cactus -> pug -> ChemSpider -> IDSM.
+
+    WATCH: ChemSpider is token-limited; order keeps it late.
+    """
     def _fetch():
-        for url in (
-            f"https://cactus.nci.nih.gov/chemical/structure/{ik}/smiles",
-            f"https://www.ebi.ac.uk/chembl/api/data/molecule.json?standard_inchi_key={ik}",
-        ):
+        # 1) cactus (cheap + broad); charged-species keys (-Q/-S/... ) try the
+        # neutral -N form too: public registers only index neutral keys.
+        cactus_variants = [ik] if ik.endswith("-N") else [ik, ik[:-1] + "N"]
+        for cik in cactus_variants:
             try:
-                if "molecule.json" in url:
-                    import json as _json
-                    d = _json.loads(_get(url))
-                    mols = d.get("molecules") or []
-                    if mols:
-                        smi = (mols[0].get("molecule_structures") or {}).get("canonical_smiles")
-                        if smi:
-                            return smi
-                else:
-                    smi = _get(url).strip()
-                    if smi and " " not in smi and "<" not in smi:
-                        return smi
-            except LookupError:
+                smi = _get(f"https://cactus.nci.nih.gov/chemical/structure/{cik}/smiles").strip()
+                if smi and " " not in smi and "<" not in smi:
+                    return smi
+            except Exception:
                 continue
-        raise LookupError(f"inchikey unresolved: {ik}")
+        # 2) pug (cluster IP may be blocked; neutral -N variant on top)
+        for pik in cactus_variants:
+            try:
+                smi = _get(f"{PUG}/compound/inchikey/{pik}/property/CanonicalSMILES/TXT", "text").strip()
+                if smi and " " not in smi:
+                    return smi
+            except Exception:
+                continue
+        # 3) chemspider (token-budgeted)
+        try:
+            return _inchikey_chemspider(ik)
+        except LookupError:
+            pass
+        # 4) idsm inchikey descriptor
+        return _inchikey_idsm(ik)
     return _cached_json("inchikey_smiles", ik, _fetch)
 
 
