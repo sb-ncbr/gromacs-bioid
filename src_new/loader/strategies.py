@@ -248,6 +248,15 @@ def validate_for_strategy(bundle: InputBundle, strategy: LoadStrategy) -> FileVa
                 warnings.append("multiple_pdb_files")
                 sorted_pdb = sorted(pdb_files, key=lambda p: p.name)
                 selected_files["pdb"] = sorted_pdb[0]
+            # Optional trajectory companion: time-averaged PDBs (e.g. MDDBR
+            # average.pdb) break coordinate-based structure work; pairing with
+            # the trajectory lets us source instantaneous frame positions.
+            xtc_files = _get_files_by_ext(bundle, ".xtc")
+            if len(xtc_files) == 1:
+                selected_files["xtc"] = xtc_files[0]
+            elif len(xtc_files) > 1:
+                warnings.append("multiple_xtc_files")
+                selected_files["xtc"] = sorted(xtc_files, key=lambda p: p.name)[0]
 
         case LoadStrategy.MMCIF_GEMMI:
             cif_files = _get_files_by_ext(bundle, ".cif")
@@ -452,6 +461,22 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
         case LoadStrategy.AMBER_PARM7_XTC:
             return Universe(str(files["parm7"]), str(files["xtc"]))
         case LoadStrategy.PDB:
+            src_pref = None
+            try:
+                import os
+                src_pref = os.environ.get("LOADER_STRUCTURE_SOURCE", "trajectory")
+            except Exception:
+                src_pref = "trajectory"
+            xtc = files.get("xtc")
+            if src_pref == "trajectory" and xtc:
+                try:
+                    u = Universe(str(files["pdb"]), str(xtc), in_memory=True)
+                    # Realize frame-0 coordinates (instantaneous, not averaged)
+                    ts0 = u.trajectory[0]
+                    return u
+                except Exception:
+                    # Any trajectory incompatibility: fall back to static PDB
+                    pass
             return Universe(str(files["pdb"]), in_memory=True)
         case LoadStrategy.MMCIF_GEMMI:
             return _load_mmcif_via_gemmi(files["cif"])
