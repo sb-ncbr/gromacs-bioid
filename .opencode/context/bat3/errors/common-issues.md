@@ -115,3 +115,7 @@ Failure signatures from the Sept-2026 incident (P0-1..P0-6, P1 family), how to d
 ## Reference
 - `../lookup/ceitec-deployment.md` — live facts
 - `../guides/validation-reprocessing.md` — recovery workflow
+
+### ChEMBL inchikey-search poisoning (fixed)
+- `standard_inchi_key=<ik>` returned IDENTICAL bogus SMILES for unrelated queries (probe-proven country scale incl. ions): anything using it for GT structure fetches gets silently wrong truth. KEPT OUT of chains (only native CHEMBL_ID lookups retained). Legacy S7 low-sim waves partly attributed to this poison.
+- GT charged-species InChIKeys (-Q/-S/-O/-J) miss on neutral registers: try the -N form first (92% coverage unlocked).
