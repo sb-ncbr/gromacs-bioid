@@ -119,3 +119,9 @@ Failure signatures from the Sept-2026 incident (P0-1..P0-6, P1 family), how to d
 ### ChEMBL inchikey-search poisoning (fixed)
 - `standard_inchi_key=<ik>` returned IDENTICAL bogus SMILES for unrelated queries (probe-proven country scale incl. ions): anything using it for GT structure fetches gets silently wrong truth. KEPT OUT of chains (only native CHEMBL_ID lookups retained). Legacy S7 low-sim waves partly attributed to this poison.
 - GT charged-species InChIKeys (-Q/-S/-O/-J) miss on neutral registers: try the -N form first (92% coverage unlocked).
+
+### Average-frame destruction (F13)
+- PDB-only input dirs with time-averaged coordinates (average.pdb) break coordinate-based structure work: flexible rings smeared, perception produces wrong valences/aromaticity, skeleton sim vs GT ≈ 0.01 while formula stays correct. Instantaneous trajectory frame restores exact structure (sim=1.0). Fixed via trajectory frame-0 sourcing (loader v2.24+).
+
+### Ion annotations vs organic GT metrics (M9)
+- GT InChIKeys contain ions (Ca/Mg/Zn/Ni/K/Cl) at ~45% of the inchikey 'no molecule visible' class in fresh SSRs usefully wrong: organic structure similarity cannot see them and drags metrics. Ion GT entries must be presence-scored (element evidence in fragments.unique, e.g. `Cl=22`), not structure-scored. Classifier + route lives in scripts/gt_rules.py + S7 routing.
