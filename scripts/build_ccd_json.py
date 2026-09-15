@@ -13,7 +13,10 @@ BLACKLIST = {  # mirrored from identification/ccd_client (keep in sync)
     "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
     "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
     "HID", "HIE", "HIP", "CYX", "ASH", "GLH", "LYN", "MEU",
-    "A", "C", "G", "T", "U", "DA", "DC", "DG", "DT", "DU", "ATP", "ADP", "AMP",
+    "A", "C", "G", "T", "U",
+    "DA", "DC", "DG", "DT", "DU",
+    # cofactor nucleotides deliberately whitelisted: ATP/ADP/AMP (and G*)
+    # are CCD components in the sims and their annotations are common GTs
     "WAT", "HOH", "TP3", "TIP", "TIP3", "OPC", "SPC",
     "NA", "CL", "K", "CA", "MG", "ZN", "MN", "FE", "CU", "NI", "CD", "HG",
     "SO4", "PO4", "EDO", "GOL", "PEG", "ACT",
