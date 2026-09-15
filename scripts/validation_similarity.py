@@ -30,10 +30,13 @@ from src_new.signatures.skeletize import (
     tanimoto as _sk_tanimoto,
 )
 
-ROOT = "/data/validation/sim_cache"
+ROOT = os.environ.get("SIM_CACHE_ROOT", "/data/validation/sim_cache")
 DIRS = ("uniprot_seq", "pdb_fasta", "pubchem_fp", "pubchem_smiles", "inchikey_cid", "neg")
-for _d in DIRS:
-    os.makedirs(os.path.join(ROOT, _d), exist_ok=True)
+try:
+    for _d in DIRS:
+        os.makedirs(os.path.join(ROOT, _d), exist_ok=True)
+except OSError:
+    pass  # read-only/offline environments: fall through to direct fetch
 
 UNI = "https://rest.uniprot.org/uniprotkb"
 RCSB_FASTA = "https://www.rcsb.org/fasta/entry"

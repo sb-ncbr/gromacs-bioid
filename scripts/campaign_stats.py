@@ -166,6 +166,39 @@ def attempted_any(by_sig):
     return False
 
 
+def _ion_elements_of(doc):
+    """Ion-element symbols visible in fragment-unique element summaries.
+
+    Ions typically aren't separate small fragments (membrane/system clusters
+    swallow them), so scan ALL unique keys' element compositions for any
+    metal/halide symbol - presence in the universe = presence evidence
+    for ion-type GT annotations (Ca/Mg/Zn/Ni/K/Na/Cl/Fe...).
+    """
+    fr = (((doc.get("data") or {}).get("fragments") or {}).get("unique"))
+    out = set()
+    if not isinstance(fr, dict):
+        return out
+    import re as _re
+    el_re = _re.compile(r"elements:([^|]+)")
+    metals_like = ("Ca", "Mg", "Zn", "Ni", "K", "Na", "Fe", "Cu", "Co", "Mn",
+                   "Li", "Rb", "Cs", "Sr", "Ba", "Cd", "Hg", "Ag", "Au",
+                   "Cl", "F", "I", "Br", "Al", "Mo", "W", "V", "Ti", "Cr", "Sn", "Pb")
+    for k in fr.keys():
+        kk = str(k)
+        try:
+            elems = el_re.search(kk)
+            if not elems:
+                continue
+            for token in elems.group(1).split(","):
+                if "=" in token:
+                    sym = token.split("=", 1)[0].strip()
+                    if sym in metals_like:
+                        out.add(sym)
+        except Exception:
+            continue
+    return out
+
+
 def scan_entry(eid, root, pattern):
     path = os.path.join(root, str(eid), pattern)
     try:
@@ -216,7 +249,7 @@ def scan_entry(eid, root, pattern):
         "molecules": molecules, "mol_identified": mol_identified,
         "mol_verified": mol_verified,
         "resolvers": resolvers_attempted, "sig_attempts": sig_attempts,
-        "hits": verified_hits(doc), "warnings": warns,
+        "hits": verified_hits(doc), "warnings": warns, "ion_elements": _ion_elements_of(doc),
         "critical": len(doc.get("critical_errors") or []),
         "dl_resolvers": sorted(dl) if dl else [],
         "status_pipeline": (doc.get("pipeline") or {}).get("status"),
@@ -319,6 +352,29 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
                     annotations = [(t, v) for t, vals in gt_map.items() for v in vals]
                     best_by_k = {k: 0.0 for k in KSET}
                     for t, v in annotations:
+                        if t == "inchikey":
+                            ion_present_el = None
+                            try:
+                                from gt_rules import gt_class_for, ion_element
+                                cls = gt_class_for(v)
+                                if cls == "ion":
+                                    el = ion_element(v)
+                                    ion_present_el = (el in (r.get("ion_elements") or set())) if el else False
+                            except Exception:
+                                cls = "organic"
+                            if cls == "ion":
+                                agg_sim_attempt["ion"]["total"] += 1
+                                att_ion = bool((r.get("ion_elements") or set()))
+                                rec = {k: (1.0 if ion_present_el else 0.0) for k in KSET}
+                                rec["_attempted"] = att_ion
+                                if att_ion:
+                                    agg_sim_attempt["ion"]["attempted"] += 1
+                                else:
+                                    agg_sim_attempt["ion"]["no_family"] += 1
+                                sim_agg["per_type"]["ion"].append(rec)
+                                for k in KSET:
+                                    best_by_k[k] = max(best_by_k[k], rec[k])
+                                continue
                         fam = GT_FAMILIES.get(t)
                         fhits = ([h for h in r["hits"]
                                   if any(f in (h[0] or "").upper() for f in fam)][:FAMILY_DEPTH]
