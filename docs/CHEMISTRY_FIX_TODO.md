@@ -130,3 +130,21 @@ Same currency everywhere: identification rescore, verification gate, S7 validati
 - [ ] ChemSpider integration (key available, 1000 tokens; add as CID fallback chain member)
 - [ ] Re-scale workers when PUG stabilizes + config re-enable of disabled resolvers decision
 - [ ] Final full-population skeleton S7 rebaseline (v3 run in flight)
+
+---
+
+## LANDED wave 2 (2026-09-14/15)
+
+- [x] **M9 ion-GT class split** (scripts/gt_rules.py + S7 ion row): ions presence-scored via fragments.unique element summaries (~45% of no_molecule was GT ions; smoke(120): att=70% validated=70%; entry-any @1 96.3->97.2)
+- [x] **F13 average-frame fix** (LoadStrategy.PDB trajectory frame-0; LOADER_STRUCTURE_SOURCE=average rollback; v2.24/v3.104): avg-frame proof entry 3392 sim 0.014 -> instantaneous 1.0; skel_low artifact class
+- [x] **M10b cofactor unblacklist** (ccd.json: ATP/ADP/AMP whitelisted, matches GT keys ZKHQWZAMYRWXGA etc.; proof requeue 5 exemplars in flight)
+- [x] **GT hardening stack complete**: ChEMBL standard_inchi_key poison removed (identical bogus SMILES for unrelated queries!); charged-species keys try -N form; GT harvest 3984/4311 (92%) cached durably; structure matrix fully PUG-independent
+- [x] **True chemistry baseline measured** (signature-level): exact 11.3% / connectivity 15.6% / skel_high 20.6% / no_mol 25.5% / skel_low 23.7% (pre-F13; expect shrinking rework) / unresolved 2.9%
+
+## Remaining (next wave candidates)
+- [ ] **M10a peptide channel**: peptide GTs scored via protein sequence alignment (molecule exists as chain; chemical hash unfit). Design: organic/peptide-class split in metric + sequence-bridge scoring.
+- [ ] Re-run signature-level measurement post-F13 (skel_low expectation: collapse).
+- [ ] Sim v4 final population run with ion-aware + F13 + full alternates (current v4 numbers are pre-M9 era; rerun fresh population when tail completes).
+- [ ] Worker upscale 16 -> 40 (queue tail complete).
+- [ ] ChemSpider token top-up; optional second-tier CID fallback dedicated.
+- [ ] Fold F11 note: classifier-suspect cohorts documented as classification, not bug.
