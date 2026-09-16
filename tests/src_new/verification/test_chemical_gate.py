@@ -195,3 +195,27 @@ def test_chebi_caches_and_reuses(monkeypatch, tmp_path):
     assert f._fetch_chebi("CHEBI:30762") == "OC(=O)c1ccccc1"
     assert f._fetch_chebi("CHEBI:30762") == "OC(=O)c1ccccc1"
     assert calls["n"] == 1
+
+
+def test_high_skeleton_outranks_high_consensus():
+    """F13 rerank: skeleton-proximity now dominates ranking over consensus."""
+    mgr, reg = _mk_manager()
+    # CID-A: high consensus but structurally distant; CID-B: low consensus, correct
+    reg.get_fetcher.return_value.fetch.side_effect = lambda nid, it: (
+        PROPANOL_SMILES if nid == "111" else ETHANOL_SMILES)
+
+    two = {
+        ("111", "PUBCHEM_CID"): {**HIT_GROUP, "consensus_score": 90.0},
+        ("222", "PUBCHEM_CID"): {**HIT_GROUP, "consensus_score": 30.0},
+    }
+    with patch("src_new.verification.manager.collect_hits", return_value=[MagicMock()]), \
+         patch("src_new.verification.manager.deduplicate_and_score", return_value=two):
+        per = mgr.verify_all(_mk_results())
+
+    hits = per["L"]
+    assert len(hits) == 2
+    a = next(h for h in hits if h.identifier == "111")
+    b = next(h for h in hits if h.identifier == "222")
+    assert b.final_confidence > a.final_confidence
+    assert b.skeleton_sim == pytest.approx(1.0)
+    assert not a.is_verified and b.is_verified

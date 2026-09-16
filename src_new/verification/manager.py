@@ -156,6 +156,14 @@ class VerificationManager:
                         # Fetch failed, but we continue
                         pass
                 
+                skeleton_sim = None
+                skeleton_method = None
+                if ident_type in CHEMICAL_IDENT_TYPES:
+                    skeleton_sim, _c_m = _chemical_corroboration(
+                        results, segment, canonical_signature
+                    )
+                    skeleton_method = _c_m if skeleton_sim is not None else None
+
                 # Look up applicable workers
                 workers = self._registry.get_applicable_workers(
                     signature_type, ident_type
@@ -204,6 +212,14 @@ class VerificationManager:
                     similarity_score.normalized_score if similarity_score else 0.0
                 )
                 annotation_component = annotation_score if annotation_score else 0.0
+
+                # Structure-anchored reranking for chemical candidates:
+                # the skeleton-Tanimoto between Molecule and candidate (F7 evidence)
+                # is truth the worker's signature-vs-canonical proxy lacks when
+                # the generated SMILES is corrupted. Raise-only: rescues correct
+                # hits buried in formula floods; never lets junk sink below legacy.
+                if ident_type in CHEMICAL_IDENT_TYPES and skeleton_sim is not None:
+                    similarity_component = max(similarity_component, skeleton_sim * 100.0)
                 
                 # Sanitize NaN/Inf in components
                 if similarity_component is not None and (math.isnan(similarity_component) or math.isinf(similarity_component)):
@@ -234,13 +250,7 @@ class VerificationManager:
                 # F7 chemical gate: identity/candidate hits are NEVER sufficient
                 # for chemical compounds - require skeleton-fingerprint
                 # corroboration between the molecule and the candidate structure.
-                skeleton_sim = None
-                skeleton_method = None
                 if ident_type in CHEMICAL_IDENT_TYPES:
-                    skeleton_sim, _c_method = _chemical_corroboration(
-                        results, segment, canonical_signature
-                    )
-                    skeleton_method = _c_method if skeleton_sim is not None else None
                     has_positive_evidence = (
                         skeleton_sim is not None
                         and skeleton_sim >= SKELF_VERIFY_THRESHOLD
