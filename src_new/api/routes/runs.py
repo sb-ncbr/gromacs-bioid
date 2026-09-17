@@ -244,7 +244,12 @@ async def create_run(
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(initial_results, f, indent=2)
     
-    # Enqueue Celery task with run_id as task_id
+    # Enqueue Celery task with run_id as task_id (UI lane when configured)
+    import os as _os
+    _ui_opts = {}
+    _uiq = _os.environ.get("VALIDATION_UI_QUEUE", "")
+    if _uiq:
+        _ui_opts["queue"] = _uiq
     run_pipeline_task.apply_async(
         task_id=run_id,
         kwargs={
@@ -253,6 +258,7 @@ async def create_run(
             "results_path": str(results_path),
             "config_path": str(config_path) if config_path else None,
         },
+        **_ui_opts,
     )
     
     return RunCreateResponse(
@@ -1276,7 +1282,12 @@ async def rerun_all() -> RerunAllResponse:
         with open(new_results_path, "w", encoding="utf-8") as f:
             json.dump(initial_results, f, indent=2)
         
-        # Enqueue Celery task with run_id as task_id
+        # Enqueue Celery task with run_id as task_id (UI lane when configured)
+        import os as _os
+        _ui_opts = {}
+        _uiq = _os.environ.get("VALIDATION_UI_QUEUE", "")
+        if _uiq:
+            _ui_opts["queue"] = _uiq
         run_pipeline_task.apply_async(
             task_id=new_run_id,
             kwargs={
@@ -1285,6 +1296,7 @@ async def rerun_all() -> RerunAllResponse:
                 "results_path": str(new_results_path),
                 "config_path": str(new_config_path),
             },
+            **_ui_opts,
         )
         
         new_runs.append(RerunRunItem(

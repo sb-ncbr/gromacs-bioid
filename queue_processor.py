@@ -179,20 +179,32 @@ def _process_single_item(db: Session, queue_item: models.ValidationQueue,
     db.add(run)
     db.flush()  # populate run.id
 
-    # Dispatch Celery task
+    # Dispatch Celery task - UI-flagged claims jump to the dedicated ui queue
     try:
         from config import CELERY_BROKER_URL
         from celery import Celery
         celery_app = Celery("validation", broker=CELERY_BROKER_URL)
+        ui_queue = os.environ.get("VALIDATION_UI_QUEUE", "")
+        ui_prefix = os.environ.get("VALIDATION_UI_BATCH_PREFIX", "ui")
+        task_kwargs = {
+            "run_id": run_id,
+            "input_dir": input_dir,
+            "results_path": results_path,
+            "config_path": config_path,
+        }
+        send_opts = {}
+        if ui_queue and queue_item.batch_id and str(queue_item.batch_id).startswith(ui_prefix):
+            send_opts["queue"] = ui_queue
+            route_note = f" -> ui queue {ui_queue}"
+        else:
+            route_note = ""
         task_result = celery_app.send_task(
             "src_new.api.tasks.run_pipeline_task",
-            kwargs={
-                "run_id": run_id,
-                "input_dir": input_dir,
-                "results_path": results_path,
-                "config_path": config_path,
-            },
+            kwargs=task_kwargs,
+            **send_opts,
         )
+        if route_note:
+            logger.info(f"Routed {run_id}{route_note}")
         run.celery_task_id = task_result.id
     except Exception as celery_error:
         # Do NOT strand the item in 'processing': requeue with retry instead
