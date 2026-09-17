@@ -125,3 +125,8 @@ Failure signatures from the Sept-2026 incident (P0-1..P0-6, P1 family), how to d
 
 ### Ion annotations vs organic GT metrics (M9)
 - GT InChIKeys contain ions (Ca/Mg/Zn/Ni/K/Cl) at ~45% of the inchikey 'no molecule visible' class in fresh SSRs usefully wrong: organic structure similarity cannot see them and drags metrics. Ion GT entries must be presence-scored (element evidence in fragments.unique, e.g. `Cl=22`), not structure-scored. Classifier + route lives in scripts/gt_rules.py + S7 routing.
+
+
+### Shared-celery fast lane (UI manual runs)
+- Manual web-submitted runs die in thousands-deep shared-celery backlog; claim loop consumes them but execution FIFO delays hours. Lane built: dedicated `validation.ui.celery` + `bat3-ui-worker`. Activation path: dispatch claims batch_id LIKE 'ui%' AND portal sends endpoint-created tasks with `queue=validation.ui.celery` when `VALIDATION_UI_QUEUE` set.
+- Rollback: `VALIDATION_UI_QUEUE=''` + `kubectl delete deploy bat3-ui-worker`. Campaign untouched by construction.
