@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 
 import logging
 import traceback
@@ -119,6 +120,18 @@ class PipelineExecutor:
             # Iterate over steps in order
             for i, step in enumerate(self.steps):
                 step_id = self._step_id(step)
+                
+                # Restart-resilience: skip stages that already completed successfully.
+                # Long pipeline tasks get killed by environment churn (rollouts,
+                # network resets) and would otherwise redo hours of work from zero
+                # (the "48h zero-results boot loop", resolved 2026-09-18).
+                # Disable via PIPELINE_RESUME_STAGES=0 if full-rerun semantics needed.
+                if os.environ.get("PIPELINE_RESUME_STAGES", "1") != "0":
+                    persisted = (
+                        (self.results_manager._payload.get("tasks") or {}).get(step_id) or {}
+                    ).get("status")
+                    if persisted in ("success", "skipped"):
+                        continue
                 
                 # If a previous step suffered a critical failure, mark this step as SKIPPED
                 if failed_critical:
