@@ -130,3 +130,7 @@ Failure signatures from the Sept-2026 incident (P0-1..P0-6, P1 family), how to d
 ### Shared-celery fast lane (UI manual runs)
 - Manual web-submitted runs die in thousands-deep shared-celery backlog; claim loop consumes them but execution FIFO delays hours. Lane built: dedicated `validation.ui.celery` + `bat3-ui-worker`. Activation path: dispatch claims batch_id LIKE 'ui%' AND portal sends endpoint-created tasks with `queue=validation.ui.celery` when `VALIDATION_UI_QUEUE` set.
 - Rollback: `VALIDATION_UI_QUEUE=''` + `kubectl delete deploy bat3-ui-worker`. Campaign untouched by construction.
+
+### Chronic silent freeze + task boot-loop (serious class)
+- Pattern: celery consumers alive but silent ~30min+; consumers stop registering received tasks; log streams die; rolling restarts temporarily restore. Fixes shipped: keepalive env options for broker sockets, executor resume (PIPELINE_RESUME_STAGES=1 to skip completed stages).
+- Residual open: despite resume on, completions still zero for long windows and celery backlog keeps inflating. Face-off tasks ahead: (a) find where pipeline tasks actually stop before export (stage-level timing), (b) cap intake to drainationally match computation, (c) observe worker thread-/task-level observability for heavy chemistry entries.
