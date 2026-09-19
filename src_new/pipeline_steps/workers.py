@@ -335,8 +335,12 @@ def _generate_signatures_worker(item: tuple) -> dict[str, Any]:
         from ..signatures.snapshot import SegmentSignatureSnapshot
         
         snapshot_dict, config_dict = item
+        deadline_epoch = config_dict.pop("_stage_deadline_epoch", None) if isinstance(config_dict, dict) else None
         snapshot = SegmentSignatureSnapshot(**snapshot_dict)
         config = RunConfig.from_dict(config_dict)
+        if deadline_epoch is not None and __import__("time").time() > deadline_epoch:
+            return {"segment_name": snapshot.segment_name, "generated": {}, "attempted": [],
+                    "errors": [{"generator": "worker", "error": "stage_time_budget exceeded before start"}]}
         
         # Reconstruct mock AtomGroup from snapshot
         mock_fragment = MockAtomGroup(snapshot)
@@ -355,6 +359,9 @@ def _generate_signatures_worker(item: tuple) -> dict[str, Any]:
         errors = []
         
         for generator in generators:
+            if deadline_epoch is not None and __import__("time").time() > deadline_epoch:
+                errors.append({"generator": generator.name, "error": "stage_time_budget exceeded mid-segment"})
+                break
             try:
                 if generator.is_applicable(mock_instance, mock_fragment, mock_facade):
                     attempted.append(generator.name)
@@ -456,8 +463,12 @@ def _identify_molecules_worker(item: tuple) -> dict[str, Any]:
         from ..identification.resolution_manager import IdentifierResolutionManager
         
         fragment_name, signatures_dict, config_dict, sig_type_map = item
+        deadline_epoch = config_dict.pop("_stage_deadline_epoch", None) if isinstance(config_dict, dict) else None
         config = RunConfig.from_dict(config_dict)
-        
+        if deadline_epoch is not None and __import__("time").time() > deadline_epoch:
+            return {"fragment_name": fragment_name, "results": {},
+                    "errors": [{"resolver": "worker", "generator": "", "error": "stage_time_budget exceeded before start"}]}
+
         # Create local instances
         resolvers = get_default_resolvers(config)
         registry = IdentifierRegistry(resolvers)
@@ -470,7 +481,10 @@ def _identify_molecules_worker(item: tuple) -> dict[str, Any]:
         for generator_name, signature in signatures_dict.items():
             if not signature:
                 continue
-            
+            if deadline_epoch is not None and __import__("time").time() > deadline_epoch:
+                errors.append({"resolver": "worker", "generator": generator_name, "error": "stage_time_budget exceeded mid-fragment"})
+                break
+
             # Call resolve directly with local cache
             attempted_path = f"identifiers/{fragment_name}/{generator_name}/attempted"
             
@@ -591,10 +605,11 @@ def _verify_results_worker(item: tuple) -> dict[str, Any]:
         from ..results.results_manager import ResultsManager
         import tempfile
         import os
-        
+
         segment, segment_identifiers_data, config_dict, segment_signatures_data = item
+        deadline_epoch = config_dict.pop("_stage_deadline_epoch", None) if isinstance(config_dict, dict) else None
         config = RunConfig.from_dict(config_dict)
-        
+
         # Create a temporary ResultsManager for this worker
         # This is needed because VerificationManager expects ResultsManager
         with tempfile.NamedTemporaryFile(suffix='.json', delete=False, mode='w') as f:
@@ -618,7 +633,7 @@ def _verify_results_worker(item: tuple) -> dict[str, Any]:
             
             # Create VerificationManager and run verification
             manager = VerificationManager(config)
-            manager.verify_all(temp_manager)
+            manager.verify_all(temp_manager, deadline_epoch=deadline_epoch)
             
             # Extract verified hits
             verified_hits = temp_manager.get_data(f"verification/{segment}/verified_hits", [])

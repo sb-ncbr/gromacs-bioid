@@ -218,6 +218,17 @@ class PipelineExecutor:
                 
                 # Run handler
                 step_result = None
+                # Cooperative per-stage time budget (wave-3 stall fix):
+                # stages check the deadline inside their natural loops and
+                # break early with a 'stage_time_budget' warning instead of
+                # holding a worker slot for hours (postmortem: resolver /
+                # fetch fan-out parked individual stages for 1-4h+ while the
+                # pipeline contract is ~10 min per entry).
+                try:
+                    from ..pipeline_steps import set_stage_budget
+                    set_stage_budget(context, step.id)
+                except Exception:
+                    pass
                 try:
                     handler = getattr(step, 'handler', None)
                     if handler:

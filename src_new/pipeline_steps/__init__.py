@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import time
 from pathlib import Path
 
 from ..executor.task import Task, StepResult
@@ -16,6 +19,71 @@ from ..loader.export_mmcif import export_system_mmcif, export_segment_mmcif
 from ..verification.manager import VerificationManager
 
 logger = logging.getLogger("base")
+
+
+# ---------------------------------------------------------------------------
+# Cooperative per-stage time budget (2026-09-19 stall fix)
+#
+# The pipeline contract is ~10 minutes per entry even for heavy systems
+# (inputs are pre-downloaded). Postmortem evidence: individual compute
+# stages (generate_signatures / identify_molecules / verify_results) parked
+# for 1-4+ HOURS per entry due to resolver/fetch fan-out, dominating the
+# 12h sweeper window and freezing throughput to zero for days.
+#
+# Mechanism: the executor injects a wall-clock deadline into the context
+# before calling each handler (`stage_deadline_epoch`); stage handlers check
+# it inside their natural loops via `_budget_exceeded()` and break early,
+# recording a 'stage_time_budget' warning and continuing. Per-stage budgets
+# (seconds) come from VALIDATION_STAGE_BUDGETS (JSON map), default below;
+# VALIDATION_STAGE_BUDGETS=off disables budgeting.
+# ---------------------------------------------------------------------------
+
+_STAGE_BUDGET_STATE_KEY = "stage_deadline_epoch"
+_STAGE_BUDGET_DEFAULT_S = int(os.environ.get("VALIDATION_STAGE_BUDGET_DEFAULT_S", "900"))
+
+_STAGE_BUDGETS_DEFAULT = {
+    "generate_signatures": 1200,
+    "identify_molecules": 1200,
+    "verify_results": 1200,
+}
+
+
+def _stage_budget_seconds(step_id: str) -> int | None:
+    """Return the budget in seconds for a stage, or None if disabled."""
+    raw = os.environ.get("VALIDATION_STAGE_BUDGETS", "")
+    if raw.strip().lower() == "off":
+        return None
+    try:
+        mapping = json.loads(raw) if raw else {}
+    except Exception:
+        mapping = {}
+    mapping = {**_STAGE_BUDGETS_DEFAULT, **mapping}
+    return int(mapping.get(step_id, _STAGE_BUDGET_DEFAULT_S))
+
+
+def set_stage_budget(context, step_id: str) -> None:
+    """Store this stage's wall-clock deadline in the context (idempotent)."""
+    budget = _stage_budget_seconds(step_id)
+    if budget is None:
+        return
+    try:
+        context.set_value(_STAGE_BUDGET_STATE_KEY, time.time() + budget)
+    except Exception:
+        pass
+
+
+def budget_deadline(context) -> float | None:
+    """Read the active stage deadline from context (None if unset)."""
+    try:
+        return context.get_value(_STAGE_BUDGET_STATE_KEY)
+    except Exception:
+        return None
+
+
+def _budget_exceeded(context) -> bool:
+    """True when the current stage has overrun its wall-clock budget."""
+    dl = budget_deadline(context)
+    return dl is not None and time.time() > dl
 
 
 def _discover_input(context):
@@ -211,15 +279,20 @@ def _generate_signatures(context):
     
     # Convert config to dict for workers
     config_dict = context.config.to_dict()
-    
+    deadline = budget_deadline(context)
+    if deadline is not None:
+        config_dict["_stage_deadline_epoch"] = deadline
+
     # Decide whether to use parallel execution
     use_parallel = (
-        context.config.executor.signatures_parallel and 
+        context.config.executor.signatures_parallel and
         len(snapshots) > 1
     )
-    
+
     max_workers = context.config.executor.n_threads
-    
+
+    results = None
+    budget_hit = False
     if use_parallel:
         # Run in process pool
         items = [(s.__dict__, config_dict) for s in snapshots]
@@ -230,6 +303,10 @@ def _generate_signatures(context):
         generators = get_default_generators(context.config.signatures)
         results = []
         for segment_name in sorted(facade.get_segments()):
+            if _budget_exceeded(context):
+                budget_hit = True
+                logger.warning(f"generate_signatures: stage time budget exceeded at segment {segment_name}; partial output")
+                break
             instance = segment_to_instance.get(segment_name)
             fragment = facade.get_fragment(segment_name)
             if instance is None:
@@ -277,8 +354,14 @@ def _generate_signatures(context):
         if result.get("attempted"):
             context.results.set_data(f"signatures/{segment_name}/attempted", result["attempted"])
     
+    if budget_hit:
+        context.add_warning(
+            "stage_time_budget",
+            "generate_signatures exceeded its time budget; proceeding with partial signatures",
+        )
     return StepResult(
-        summary={"generated": True, "segments": len(snapshots), "signatures": generated_count}
+        summary={"generated": True, "segments": len(snapshots), "signatures": generated_count,
+                 "partial": budget_hit}
     )
 
 
@@ -339,6 +422,16 @@ def _identify_molecules(context):
     
     max_workers = context.config.executor.n_threads
     
+    # Propagate the stage deadline into worker configs
+    deadline = budget_deadline(context)
+    if deadline is not None:
+        items_parallel = [
+            (fn, vs, {**cfg, "_stage_deadline_epoch": deadline} if isinstance(cfg, dict) else cfg, stm)
+            for (fn, vs, cfg, stm) in items_parallel
+        ]
+
+    results = None
+    budget_hit = False
     if use_parallel:
         # Run in thread pool
         results = run_with_thread_pool(max_workers, _identify_molecules_worker, items_parallel)
@@ -357,8 +450,16 @@ def _identify_molecules(context):
 
         results = []
         for fragment_name, valid_sigs in items_serial:
+            if _budget_exceeded(context):
+                budget_hit = True
+                logger.warning(f"identify_molecules: stage time budget exceeded at fragment {fragment_name}; partial output")
+                break
             fragment_result = {"fragment_name": fragment_name, "results": {}, "errors": []}
             for generator_name, signature in valid_sigs.items():
+                if _budget_exceeded(context):
+                    budget_hit = True
+                    logger.warning(f"identify_molecules: stage time budget exceeded at {fragment_name}/{generator_name}; partial output")
+                    break
                 # Collect errors from this resolution
                 resolver_errors = []
                 hits_found = manager.resolve(
@@ -393,8 +494,13 @@ def _identify_molecules(context):
         for path, value in result["results"].items():
             context.results.set_data(path, value)
     
+    if budget_hit:
+        context.add_warning(
+            "stage_time_budget",
+            "identify_molecules exceeded its time budget; proceeding with partial identifications",
+        )
     return StepResult(
-        summary={"identified": True}
+        summary={"identified": True, "partial": budget_hit}
     )
 
 
@@ -416,22 +522,28 @@ def _verify_results(context):
     signatures_data = context.results.get_data('signatures') or {}
     
     # Build work items: (segment, segment_identifiers_data, config_dict, segment_signatures_data)
+    deadline = budget_deadline(context)
     items = []
     for segment in sorted(identifiers_data.keys()):
         segment_data = identifiers_data[segment]
-        items.append((segment, segment_data, context.config.to_dict(), signatures_data.get(segment)))
-    
+        cfg = context.config.to_dict()
+        if deadline is not None:
+            cfg["_stage_deadline_epoch"] = deadline
+        items.append((segment, segment_data, cfg, signatures_data.get(segment)))
+
     if not items:
         return StepResult(summary={"verified": True})
-    
+
     # Decide whether to use parallel execution
     use_parallel = (
-        context.config.executor.verification_parallel and 
+        context.config.executor.verification_parallel and
         len(items) > 1
     )
-    
+
     max_workers = context.config.executor.n_threads
-    
+
+    results = None
+    budget_hit = False
     if use_parallel:
         # Run in thread pool
         results = run_with_thread_pool(max_workers, _verify_results_worker, items)
@@ -439,6 +551,10 @@ def _verify_results(context):
         # Run serially using same worker function
         results = []
         for item in items:
+            if _budget_exceeded(context):
+                budget_hit = True
+                logger.warning(f"verify_results: stage time budget exceeded at segment {item[0]}; partial output")
+                break
             result = _verify_results_worker(item)
             results.append(result)
     
@@ -456,8 +572,13 @@ def _verify_results(context):
             context.add_warning("verification_failed", f"{segment}: {error_msg}")
         
         context.results.set_data(f"verification/{segment}/verified_hits", verified_hits)
-    
-    return StepResult(summary={"verified": True})
+
+    if budget_hit:
+        context.add_warning(
+            "stage_time_budget",
+            "verify_results exceeded its time budget; proceeding with partial verification",
+        )
+    return StepResult(summary={"verified": True, "partial": budget_hit})
 
 
 def _export_results(context):

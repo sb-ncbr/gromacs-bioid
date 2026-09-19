@@ -80,20 +80,29 @@ class VerificationManager:
         self._registry = registry if registry is not None else get_default_registry()
     
     def verify_all(
-        self, 
-        results: ResultsManager
+        self,
+        results: ResultsManager,
+        deadline_epoch: float | None = None,
     ) -> dict[str, list[VerifiedHit]]:
         """Verify all identification hits from the results manager.
-        
+
         Args:
             results: ResultsManager containing identification results to verify.
-            
+            deadline_epoch: Optional wall-clock deadline (time.time() seconds).
+                When exceeded, verification returns the partial results gathered
+                so far instead of burning more time on fetch-bound candidate
+                fan-out (stage-time-budget policy, wave-3 stall fix).
+
         Returns:
             Dict mapping segment name -> list of VerifiedHit objects.
             Each hit has is_verified=True if verification succeeded, False otherwise.
         """
+        import time as _time
         per_segment_results: dict[str, list[VerifiedHit]] = {}
-        
+
+        def _over_budget() -> bool:
+            return deadline_epoch is not None and _time.time() > deadline_epoch
+
         # Get all segment names from identifiers data
         identifiers_data = results.get_data("identifiers")
         if not identifiers_data or not isinstance(identifiers_data, dict):
@@ -102,6 +111,9 @@ class VerificationManager:
         segment_names = list(identifiers_data.keys())
         
         for segment in segment_names:
+            if _over_budget():
+                logger.warning(f"verify_all: deadline exceeded before segment {segment}; returning partial results")
+                return per_segment_results
             # Check if identifiers/{segment}/ exists
             segment_path = f"identifiers/{segment}"
             if not results.data_exists(segment_path):
@@ -138,8 +150,14 @@ class VerificationManager:
                 logger.warning(f"chemical prefetch failed (non-fatal): {warm_exc}")
             
             verified_hits: list[VerifiedHit] = []
-            
+
             for (normalized_id, ident_type), metadata in top_groups:
+                if _over_budget():
+                    logger.warning(
+                        f"verify_all: deadline exceeded mid-segment {segment} "
+                        f"({len(verified_hits)}/{len(top_groups)} verified); returning partial results"
+                    )
+                    return per_segment_results
                 signature = metadata["signature"]
                 signature_type = metadata["signature_type"]
                 consensus_score = metadata["consensus_score"]
