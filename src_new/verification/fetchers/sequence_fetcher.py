@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+
 import requests
 
 from ..base import SignatureFetcher
+from . import rcsb_cache
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +71,9 @@ class SequenceSignatureFetcher(SignatureFetcher):
         # First, fetch entry info to get polymer entity IDs
         entry_url = f"https://data.rcsb.org/rest/v1/core/entry/{pdb_id_lower}"
         try:
-            r = requests.get(entry_url, timeout=10)
-            r.raise_for_status()
+            r = rcsb_cache.get_cached(entry_url, timeout=30)
+            if r is None:
+                return []
             entry_data = r.json()
             
             # Extract polymer entity IDs
@@ -84,8 +87,9 @@ class SequenceSignatureFetcher(SignatureFetcher):
             for entity_id in polymer_entity_ids:
                 entity_url = f"https://data.rcsb.org/rest/v1/core/polymer_entity/{pdb_id_lower}/{entity_id}"
                 try:
-                    r_entity = requests.get(entity_url, timeout=10)
-                    r_entity.raise_for_status()
+                    r_entity = rcsb_cache.get_cached(entity_url, timeout=30)
+                    if r_entity is None:
+                        continue
                     entity_data = r_entity.json()
                     
                     seq = entity_data.get("entity_poly", {}).get("pdbx_seq_one_letter_code_can")
@@ -118,8 +122,9 @@ class SequenceSignatureFetcher(SignatureFetcher):
         
         url = f"https://data.rcsb.org/rest/v1/core/polymer_entity/{pdb_id.lower()}/1"
         try:
-            r = requests.get(url, timeout=10)
-            r.raise_for_status()
+            r = rcsb_cache.get_cached(url, timeout=30)
+            if r is None:
+                return None
             data = r.json()
             seq = data.get("entity_poly", {}).get("pdbx_seq_one_letter_code_can")
             if seq:

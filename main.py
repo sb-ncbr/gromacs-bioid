@@ -2235,6 +2235,12 @@ def periodic_completion_check():
             sweep = sweep_stale_validations(db)
             if any(sweep.values()):
                 logger.info(f"Stale sweep reconciled: {sweep}")
+
+            # NFS-truth settlement: results.json all-stages-done -> complete
+            from queue_processor import settle_by_results_truth
+            truth = settle_by_results_truth(db)
+            if truth > 0:
+                logger.info(f"NFS-truth settle: {truth} completions")
         finally:
             db.close()
     except Exception as e:

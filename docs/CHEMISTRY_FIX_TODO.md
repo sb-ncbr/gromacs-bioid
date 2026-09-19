@@ -148,3 +148,75 @@ Same currency everywhere: identification rescore, verification gate, S7 validati
 - [ ] Worker upscale 16 -> 40 (queue tail complete).
 - [ ] ChemSpider token top-up; optional second-tier CID fallback dedicated.
 - [ ] Fold F11 note: classifier-suspect cohorts documented as classification, not bug.
+
+---
+
+## WAVE 3 — Chemical verification postmortem (investigation 2026-09-18, funnel-measured)
+
+Funnel over 250 sampled inchikey-GT entries (of 7,342, all with results.json):
+S1 skeleton_fp 204/250, own inchi_key 193/250, key==GT exact 43, same-connectivity 44,
+diff-connectivity 106, no-structure 44. Candidates: pools exist 133/250 but similarity-
+neighbor-only; pool_hit(>=0.7 cached-evidence) 11/250; verified chem **2/250**.
+Rejections 8,948: 98% `fingerprint_unavailable`. Wire-fix proofs: 3023C 27 honest
+mismatches, 3139C verified skel=1.0 through production gate.
+
+### Defects + fixes (landed = working tree, uncommitted)
+- [x] **D1 (CRITICAL) — verification wire bug**: `workers.py::_verify_results_worker` built
+      temp ResultsManager with ONLY `identifiers/{seg}`; F7 gate molecule skeleton_fp always
+      None -> 100% fingerprint_unavailable for chemicals since F7 shipped. FIXED: 4-tuple
+      work items carry `signatures/{seg}`; worker sets it on the temp manager
+      (`pipeline_steps/__init__.py` +7/-3, `workers.py` +9/-4; tests 7/7 + 33/33 green).
+- [x] **D2a (HIGH) — inchikey resolver PUG-only + breaker-muted**: exact-identity channel
+      dead (3606: extracted key == GT, pool top 0.692, inchikey section never attempted).
+      FIXED: `fetch_cids_from_inchikey` PUG-first with -N variant, IDSM SPARQL reverse
+      fallback (URI -> CID), soft-fail []; `inchikey_pubchem` removed from
+      `_PUBCHEM_RESOLVERS` breaker set (+breaker test updated).
+- [x] **D3a-c fetcher hazards**: poisoned ChEMBL standard_inchi_key step DELETED from
+      `_fetch_inchikey` (live-proven 2026-09-18); cactus multi-line -> first valid line;
+      `_fetch_inchikey` now cached via `_cache_*_ns('ikey', ...)`; `prefetch_pubchem`
+      digit-only filter (tests 17/17 green).
+- [x] **D4p — silent cache loss root**: `_cached_json()` wrote without makedirs and swallowed
+      OSError; `inchikey_smiles` never in DIRS -> every GT structure re-fetched per run for
+      weeks (NFS parent-mtime proof). FIXED: makedirs + DIRS entry.
+- [x] **D4 — GT structure rebuild**: 2,710/4,311 unique GT keys durably cached in
+      `sim_cache/inchikey_smiles/` (pass1 cactus 1,687; pass2 IDSM mirror +920/cactus +103;
+      remaining 1,593 = ions/obscure/no-registry class, ChemSpider optional ~1k tokens).
+      Persistence now permanent (D4p fix).
+- [ ] **D5 — extraction residue classes**: lipid_shorthand (F11); skel-present-but-sanitization
+      -failed; died-before-signatures. 42% diff-connectivity is the extraction frontier.
+- [ ] **D6 — production boot-loop (S0 blocker)**: 12h sweeper vs >12h tasks (13 runs/entry,
+      fail marks exactly 12h00m apart); celery metas expire in-flight (settle blind; 8,435
+      unlinked settlements overnight); queue completed flat 7,128 >29h; celery ~19.7k;
+      ~6,900/7,438 'processing' entries disk-silent >12h. Priced drivers: RCSB scorer flood
+      (336k fetches/entry over 5 days -> FIXED by S1 below), PairwiseAligner pathology
+      (S2 pending), 12h sweep re-marks + no NFS-truth settle (S3 pending).
+- [x] **S1 — RCSB fetch flood**: new `fetchers/rcsb_cache.py` (sha1-keyed NFS cache,
+      polite transport, `_CachedResponse` shim with `.text`), wired into `pdb_scorer.py`
+      (+ instance memo), `sequence_fetcher.py`, `structure_fetcher.py`. Tests migrated to
+      mock rcsb_cache; scorers 14/14 green.
+- [x] **S1 regression tail**: root cause was NOT the mock targets — S1 had dropped the
+      module's `import requests` while uniprot/ncbi paths still call it -> NameError ->
+      silent None. Fixed by restoring the import; fetchers+scorers 31/31 green.
+- [x] **S2 — aligner guard**: DP-matrix cell cap (25M) + `next(iter(alignments))` in
+      `_compute_alignment_score` (no len/bool materialization -> count-overflow class
+      eliminated); 2 new unit tests; workers 18/18 green.
+- [x] **S3 — NFS-truth settle job**: `settle_by_results_truth` in `queue_processor.py`
+      (head-slice tasks parser, stale-artifact guard via started_at-vs-mtime, warning-as-
+      terminal, env kill-switches; per-item settle preserves batch counters + activity log),
+      wired into `periodic_completion_check` in `main.py`; 9/9 unit tests green.
+
+### Post-fix path
+- [ ] **Offline wired replay (IN FLIGHT 2026-09-18)**: NFS run of 150 candidate entries
+      through the WIRED production gate (patched src_new on NFS at
+      `/data/validation/patched_src/src_new`), GT sims from the rebuilt cache ->
+      `/data/validation/replay_wired250.jsonl` + `.log` -> honest verified-rate +
+      pool-presence table -> then full inchikey-gt replay (7,342) -> S7 recompute.
+- [ ] Redeploy workers with D1+D2a+D3+S1; measure fresh-run verified-chem rate.
+- [ ] Commit this batch (files: pipeline_steps/__init__.py, workers.py, skeletize-adjacent
+      scripts/validation_similarity.py, compound_fetcher.py, inchikey.py resolver,
+      resolution_manager.py, rcsb_cache.py (new), pdb_scorer.py, sequence_fetcher.py,
+      sequence_worker.py, structure_fetcher.py, test files x3, queue_processor.py, main.py,
+      docs/CHEMISTRY_FIX_TODO.md) — exclude foreign WIP (scripts/replay_verification.py
+      untracked origin unknown; .tmp/tasks/chemistry-fix/ stale from 09-12 wave).
+- [ ] Knowns that hold: skeleton_fp + thresholds sound (wire proofs); fetch network healthy;
+      legacy_pattern absent in fresh sample.

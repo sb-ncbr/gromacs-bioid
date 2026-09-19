@@ -102,6 +102,54 @@ class TestSequenceWorker:
         assert score is not None
         assert score.normalized_score < 50.0
     
+    def test_sequence_worker_matrix_cap_skips_alignment(self) -> None:
+        """title: titin-class pairs must not run the DP matrix at all.
+
+        Patch PairwiseAligner to explode if constructed; a pair whose length
+        product exceeds MAX_ALIGN_MATRIX_CELLS must return None without it.
+        """
+        worker = SequenceVerificationWorker()
+        huge_a = "A" * 6000
+        huge_b = "G" * 5000  # 30M cells > 25M cap
+        with patch.object(
+            __import__("src_new.verification.workers.sequence_worker", fromlist=["PairwiseAligner"]),
+            "PairwiseAligner",
+            side_effect=AssertionError("aligner must not be constructed"),
+        ):
+            score = worker._compute_alignment_score(huge_a, huge_b)
+        assert score is None
+
+    def test_sequence_worker_no_count_materialization(self) -> None:
+        """len(alignments) must never be requested (count-overflow pathology)."""
+        worker = SequenceVerificationWorker()
+        seq = "MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF"
+
+        class _ExplodingAlignments:
+            def __len__(self):
+                raise AssertionError("len() must not be materialized")
+
+            def __bool__(self):
+                raise AssertionError("bool() must not be used (triggers len)")
+
+            def __iter__(self):
+                fake = MagicMock()
+                fake.__getitem__ = lambda self_, i: seq if i == 0 else seq
+                yield fake
+
+        with patch(
+            "src_new.verification.workers.sequence_worker.PairwiseAligner"
+        ) as mock_cls:
+            inst = mock_cls.return_value
+            inst.mode = None
+            inst.match_score = None
+            inst.mismatch_score = None
+            inst.open_gap_score = None
+            inst.extend_gap_score = None
+            inst.align.return_value = _ExplodingAlignments()
+            score = worker._compute_alignment_score(seq, seq)
+        assert score is not None
+        assert score.normalized_score >= 99.0
+
     def test_sequence_worker_no_canonical_returns_none(self) -> None:
         """Pass canonical_signature=None -> assert None."""
         worker = SequenceVerificationWorker()

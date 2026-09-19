@@ -31,7 +31,7 @@ from src_new.signatures.skeletize import (
 )
 
 ROOT = os.environ.get("SIM_CACHE_ROOT", "/data/validation/sim_cache")
-DIRS = ("uniprot_seq", "pdb_fasta", "pubchem_fp", "pubchem_smiles", "inchikey_cid", "neg")
+DIRS = ("uniprot_seq", "pdb_fasta", "pubchem_fp", "pubchem_smiles", "inchikey_cid", "inchikey_smiles", "neg")
 try:
     for _d in DIRS:
         os.makedirs(os.path.join(ROOT, _d), exist_ok=True)
@@ -57,6 +57,7 @@ def _cached_json(sub, key, fetcher, ttl_days=0):
         pass
     val = fetcher()
     try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as fh:
             json.dump(val, fh)
     except OSError:

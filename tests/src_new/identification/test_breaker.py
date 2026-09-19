@@ -9,7 +9,7 @@ import src_new.identification.resolution_manager as rm
 
 def _pubchem_resolver():
     r = MagicMock()
-    r.name = "inchikey_pubchem"
+    r.name = "formula_pubchem"
     return r
 
 

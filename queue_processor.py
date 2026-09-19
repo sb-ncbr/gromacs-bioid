@@ -557,6 +557,196 @@ def check_task_completions(
         return 0
 
 
+# ---------------------------------------------------------------------------
+# S3: NFS-truth settlement (queue vs runs split-brain repair)
+#
+# check_task_completions settles strictly from Celery task metas in Redis, but
+# metas expire (~24h) while long pipeline tasks routinely outlive them and the
+# sweeper then marks the run failed and requeues: results.json exists on disk
+# with all stages terminal, yet the queue row churns forever (proven 2026-09-18:
+# completed counter flat >29h while results.json files were being finalized).
+#
+# This janitor settles 'processing' queue rows from the RESULTS FILE itself:
+# every stage success/skipped -> completed. Conservative: it never marks
+# failures (failed-stage rows are left to the sweeper/manual review) and it
+# skips files whose mtime is too fresh (exporter may still be writing).
+#
+# results.json is large (tens of MB), so the stage map is extracted WITHOUT a
+# full json.load: top-level "tasks" sits near the START of the file (observed
+# key order: schema_version, created_at, updated_at, pipeline, tasks, ...,
+# data last) -> read a small HEAD slice; fall back to a TAIL slice in case a
+# future serializer reorders. The object is then brace-matched out of the
+# slice and parsed on its own.
+# ---------------------------------------------------------------------------
+
+RESULTS_TRUTH_ENABLED = os.environ.get("VALIDATION_RESULTS_TRUTH_SETTLE", "1") == "1"
+RESULTS_ROOT = os.environ.get("VALIDATION_RESULTS_ROOT", "/data/validation")
+RESULTS_MIN_AGE_S = int(os.environ.get("VALIDATION_RESULTS_TRUTH_MIN_AGE_S", "900"))
+RESULTS_PER_TICK = int(os.environ.get("VALIDATION_RESULTS_TRUTH_PER_TICK", "400"))
+_HEAD_BYTES = 64 * 1024
+_TAIL_BYTES = 256 * 1024
+
+
+def _extract_tasks_object(blob: str) -> Optional[dict]:
+    """Locate a top-level "tasks" object in a JSON fragment and parse it.
+
+    Brace-matching is string/escape aware. Returns None on any mismatch.
+    """
+    anchor = blob.find('"tasks"')
+    if anchor < 0:
+        return None
+    colon = blob.find(":", anchor)
+    brace_start = blob.find("{", colon)
+    if brace_start < 0:
+        return None
+    depth = 0
+    end = -1
+    in_str = False
+    esc = False
+    for i in range(brace_start, len(blob)):
+        ch = blob[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    if end < 0:
+        return None
+    try:
+        tasks = json.loads(blob[brace_start:end + 1])
+    except Exception:
+        return None
+    return tasks if isinstance(tasks, dict) and tasks else None
+
+
+def _read_results_stage_status(results_path: str) -> Optional[dict]:
+    """Extract {stage_name: status} from a results.json without a full parse.
+
+    Tries the HEAD slice first (tasks block precedes the huge data payload in
+    the observed serialization order), then the TAIL slice as a fallback.
+    Returns None on any failure (missing file, torn write, parse mismatch).
+    Never raises.
+    """
+    try:
+        size = os.path.getsize(results_path)
+        with open(results_path, "rb") as fh:
+            head = fh.read(_HEAD_BYTES).decode("utf-8", errors="ignore")
+            fh.seek(max(0, size - _TAIL_BYTES))
+            tail = fh.read().decode("utf-8", errors="ignore")
+        tasks = _extract_tasks_object(head)
+        if tasks is None:
+            tasks = _extract_tasks_object(tail)
+        if not tasks:
+            return None
+        out = {}
+        for name, blk in tasks.items():
+            if isinstance(blk, dict) and "status" in blk:
+                out[str(name)] = blk["status"]
+        return out or None
+    except Exception:
+        return None
+
+
+def settle_by_results_truth(db: Session) -> int:
+    """Settle oldest 'processing' queue rows from their results.json state.
+
+    All stages success/skipped -> settle completed via _settle_queue_item.
+    Everything else -> leave untouched. Per-item commits; never raises.
+    """
+    if not RESULTS_TRUTH_ENABLED:
+        return 0
+    now = _utcnow()
+    min_started_before = now - timedelta(seconds=RESULTS_MIN_AGE_S)
+    try:
+        items = (
+            db.query(models.ValidationQueue)
+            .filter(models.ValidationQueue.status == "processing")
+            .filter(
+                (models.ValidationQueue.started_at < min_started_before)
+                | (models.ValidationQueue.started_at.is_(None))
+            )
+            .order_by(
+                models.ValidationQueue.started_at.asc().nullsfirst(),
+                models.ValidationQueue.id.asc(),
+            )
+            .limit(RESULTS_PER_TICK)
+            .all()
+        )
+        if not items:
+            return 0
+        settled = 0
+        for queue_item in items:
+            try:
+                run = _resolve_run_for_queue_item(db, queue_item)
+                if not run:
+                    continue
+                # Stale-artifact guard: an all-success results.json written by
+                # an OLD run cycle (e.g. after a requeue-all wave) must not
+                # complete the CURRENT attempt. Require the file to have been
+                # written after this attempt started (600s slack for clock
+                # jitter between DB and NFS). Rows never dispatched (started_at
+                # NULL) always carry old artifacts -> skip.
+                if queue_item.started_at is None:
+                    continue
+                results_path = os.path.join(
+                    RESULTS_ROOT, str(queue_item.entry_id), "results.json"
+                )
+                try:
+                    mtime = os.path.getmtime(results_path)
+                except OSError:
+                    continue
+                if now.timestamp() - mtime < RESULTS_MIN_AGE_S:
+                    # exporter may still be writing this file
+                    continue
+                if mtime < (queue_item.started_at.timestamp() - 600):
+                    # artifact predates this run attempt -> stale truth
+                    continue
+                stages = _read_results_stage_status(results_path)
+                if not stages:
+                    continue
+                if all(s in ("success", "skipped", "warning") for s in stages.values()):
+                    _settle_queue_item(db, queue_item, run, True, "settled via results.json (nfs-truth)")
+                    _update_batch_counters(db, queue_item)
+                    _log_activity_safe(
+                        db,
+                        job_id=queue_item.batch_id or f"validation-{queue_item.entry_id}",
+                        activity_type="validation_completed",
+                        message=f"Validation completed for entry {queue_item.entry_id} (nfs-truth settle)",
+                        severity="info",
+                        details={
+                            "entry_id": queue_item.entry_id,
+                            "bat3_run_id": run.id,
+                            "celery_task_id": run.celery_task_id,
+                            "settle_source": "results_truth",
+                        },
+                    )
+                    db.commit()
+                    settled += 1
+            except Exception as item_error:
+                logger.error(f"nfs-truth settle error for queue item {queue_item.id}: {item_error}")
+                db.rollback()
+                continue
+        if settled:
+            logger.info(f"nfs-truth: settled {settled} completed validations")
+        return settled
+    except Exception as e:
+        logger.error(f"Error in nfs-truth settle: {e}")
+        db.rollback()
+        return 0
+
+
 def sweep_stale_validations(db: Session, stale_hours: int = STALE_HOURS) -> dict:
     """Reconcile zombie state left by expired Celery results / dead workers.
 

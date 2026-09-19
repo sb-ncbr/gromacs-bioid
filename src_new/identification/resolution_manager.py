@@ -20,9 +20,11 @@ logger = logging.getLogger("identifier")
 # ---------------------------------------------------------------------------
 # PubChem circuit breaker (PUG outages): skip pubchem-dependent resolvers
 # while PUG is unhealthy to avoid retry-storm stalls fleet-wide.
+# Note: inchikey_pubchem is now PUG-optional (has IDSM SPARQL fallback) and
+# is therefore excluded from this set.
 # ---------------------------------------------------------------------------
 _PUBCHEM_RESOLVERS = {
-    "inchikey_pubchem", "formula_pubchem", "formula_hfamily",
+    "formula_pubchem", "formula_hfamily",
     "pubchem_struct", "idsm_pubchem", "pubchem",
 }
 _PUG_PROBE_URL = ("https://pubchem.ncbi.nlm.nih.gov/rest/pug/"

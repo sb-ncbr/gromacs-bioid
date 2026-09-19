@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
-import requests
 
 from ..base import SignatureFetcher
+from . import rcsb_cache
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +59,9 @@ class StructureSignatureFetcher(SignatureFetcher):
         
         url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
         try:
-            r = requests.get(url, timeout=15)  # Structure files can be large
-            r.raise_for_status()
+            r = rcsb_cache.get_cached(url, timeout=30)
+            if r is None:
+                return None
             return r.text
         except Exception as e:
             logger.warning(f"PDB {pdb_id} fetch structure failed: {e}")

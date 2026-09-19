@@ -577,8 +577,9 @@ def _verify_results_worker(item: tuple) -> dict[str, Any]:
     """Worker function for parallel verification.
     
     Args:
-        item: Tuple of (segment, segment_identifiers_data, config_dict).
+        item: Tuple of (segment, segment_identifiers_data, config_dict, segment_signatures_data).
               segment_identifiers_data is the data under identifiers/{segment}/.
+              segment_signatures_data is the data under signatures/{segment}/ (or None).
               
     Returns:
         Dict with segment name, verified_hits list, and errors.
@@ -591,7 +592,7 @@ def _verify_results_worker(item: tuple) -> dict[str, Any]:
         import tempfile
         import os
         
-        segment, segment_identifiers_data, config_dict = item
+        segment, segment_identifiers_data, config_dict, segment_signatures_data = item
         config = RunConfig.from_dict(config_dict)
         
         # Create a temporary ResultsManager for this worker
@@ -610,6 +611,10 @@ def _verify_results_worker(item: tuple) -> dict[str, Any]:
             if segment_identifiers_data:
                 for key, value in segment_identifiers_data.items():
                     temp_manager.set_data(f"identifiers/{segment}/{key}", value)
+            
+            # Set up the signatures data for this segment (needed for chemical verification gates)
+            if segment_signatures_data:
+                temp_manager.set_data(f'signatures/{segment}', segment_signatures_data)
             
             # Create VerificationManager and run verification
             manager = VerificationManager(config)

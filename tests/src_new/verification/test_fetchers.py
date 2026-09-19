@@ -75,6 +75,8 @@ class TestSequenceFetcher:
         """Mock FASTA text '>sp|P04637|TEST\nMVLSPADK\n', assert result == 'MVLSPADK'."""
         mock_response = Mock()
         mock_response.text = ">sp|P04637|TEST\nMVLSPADK\n"
+        mock_response.json.return_value = None
+        mock_response.status_code = 200
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
         
@@ -83,13 +85,15 @@ class TestSequenceFetcher:
         
         assert result == "MVLSPADK"
     
-    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    @patch("src_new.verification.fetchers.sequence_fetcher.rcsb_cache.get_cached")
     def test_sequence_fetcher_pdb(self, mock_get) -> None:
         """Mock JSON with {'entity_poly': {'pdbx_seq_one_letter_code_can': 'MVLSPADK\n'}}, assert result == 'MVLSPADK'."""
         mock_response = Mock()
         mock_response.json.return_value = {
             "entity_poly": {"pdbx_seq_one_letter_code_can": "MVLSPADK\n"}
         }
+        mock_response.text = ""
+        mock_response.status_code = 200
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
         
@@ -98,7 +102,7 @@ class TestSequenceFetcher:
         
         assert result == "MVLSPADK"
     
-    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    @patch("src_new.verification.fetchers.sequence_fetcher.rcsb_cache.get_cached")
     def test_sequence_fetcher_alphafold_returns_none(self, mock_get) -> None:
         """AlphaFold ID format should extract UniProt ID and fetch, but we test that malformed IDs return None."""
         fetcher = SequenceSignatureFetcher()
@@ -113,6 +117,8 @@ class TestSequenceFetcher:
         """Mock NCBI protein FASTA for NR_ID."""
         mock_response = Mock()
         mock_response.text = ">gi|12345|ref|NP_001| test protein\nMVLSPADK\n"
+        mock_response.json.return_value = None
+        mock_response.status_code = 200
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
         
@@ -128,6 +134,8 @@ class TestSequenceFetcher:
         """Mock UniProt FASTA for SWISSPROT_ID."""
         mock_response = Mock()
         mock_response.text = ">sp|P04637|TEST Test protein\nMVLSPADK\n"
+        mock_response.json.return_value = None
+        mock_response.status_code = 200
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
         
@@ -141,6 +149,8 @@ class TestSequenceFetcher:
         """Mock NCBI nucleotide FASTA for NT_ID."""
         mock_response = Mock()
         mock_response.text = ">NM_001123 test transcript\nATGCGTACGT\n"
+        mock_response.json.return_value = None
+        mock_response.status_code = 200
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
         
@@ -156,6 +166,8 @@ class TestSequenceFetcher:
         """Mock NCBI nucleotide FASTA for CORE_NT_ID."""
         mock_response = Mock()
         mock_response.text = ">NC_000001 human chromosome\nATGCATGC\n"
+        mock_response.json.return_value = None
+        mock_response.status_code = 200
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
         
@@ -173,7 +185,7 @@ class TestSequenceFetcher:
         assert fetcher.supports("NT_ID") is True
         assert fetcher.supports("CORE_NT_ID") is True
     
-    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    @patch("src_new.verification.fetchers.sequence_fetcher.rcsb_cache.get_cached")
     def test_sequence_fetcher_pdb_entities_multi_entity(self, mock_get) -> None:
         """Test _fetch_pdb_entities with mocked multi-entity PDB response."""
         # Mock entry response with multiple polymer entities
@@ -183,6 +195,8 @@ class TestSequenceFetcher:
                     "polymer_entity_ids": ["1", "2"]
                 }
             },
+            'text': '',
+            'status_code': 200,
             'raise_for_status': lambda self: None
         })()
         
@@ -191,6 +205,8 @@ class TestSequenceFetcher:
             'json': lambda self: {
                 "entity_poly": {"pdbx_seq_one_letter_code_can": "AAAA\n"}
             },
+            'text': '',
+            'status_code': 200,
             'raise_for_status': lambda self: None
         })()
         
@@ -199,6 +215,8 @@ class TestSequenceFetcher:
             'json': lambda self: {
                 "entity_poly": {"pdbx_seq_one_letter_code_can": "MVLSPADKT\n"}
             },
+            'text': '',
+            'status_code': 200,
             'raise_for_status': lambda self: None
         })()
         
@@ -221,7 +239,7 @@ class TestSequenceFetcher:
         assert "AAAA" in sequences
         assert "MVLSPADKT" in sequences
     
-    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    @patch("src_new.verification.fetchers.sequence_fetcher.rcsb_cache.get_cached")
     def test_sequence_fetcher_pdb_entities_empty(self, mock_get) -> None:
         """Test _fetch_pdb_entities when no polymer entities found."""
         # Mock entry response with no polymer entities
@@ -231,6 +249,8 @@ class TestSequenceFetcher:
                     "polymer_entity_ids": []
                 }
             },
+            'text': '',
+            'status_code': 200,
             'raise_for_status': lambda self: None
         })()
         
@@ -241,7 +261,7 @@ class TestSequenceFetcher:
         
         assert sequences == []
     
-    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    @patch("src_new.verification.fetchers.sequence_fetcher.rcsb_cache.get_cached")
     def test_sequence_fetcher_pdb_entities_with_empty_seq(self, mock_get) -> None:
         """Test _fetch_pdb_entities skips entities with empty sequences."""
         # Mock entry response with multiple polymer entities
@@ -251,6 +271,8 @@ class TestSequenceFetcher:
                     "polymer_entity_ids": ["1", "2"]
                 }
             },
+            'text': '',
+            'status_code': 200,
             'raise_for_status': lambda self: None
         })()
         
@@ -259,6 +281,8 @@ class TestSequenceFetcher:
             'json': lambda self: {
                 "entity_poly": {"pdbx_seq_one_letter_code_can": ""}
             },
+            'text': '',
+            'status_code': 200,
             'raise_for_status': lambda self: None
         })()
         
@@ -267,6 +291,8 @@ class TestSequenceFetcher:
             'json': lambda self: {
                 "entity_poly": {"pdbx_seq_one_letter_code_can": "MVLSPADKT\n"}
             },
+            'text': '',
+            'status_code': 200,
             'raise_for_status': lambda self: None
         })()
         
@@ -292,11 +318,13 @@ class TestSequenceFetcher:
 class TestStructureFetcher:
     """Tests for StructureSignatureFetcher."""
     
-    @patch("src_new.verification.fetchers.structure_fetcher.requests.get")
+    @patch("src_new.verification.fetchers.structure_fetcher.rcsb_cache.get_cached")
     def test_structure_fetcher_pdb(self, mock_get, minimal_pdb) -> None:
         """Mock response text containing the minimal PDB fixture, assert result contains 'ATOM'."""
         mock_response = Mock()
         mock_response.text = minimal_pdb
+        mock_response.json.return_value = None
+        mock_response.status_code = 200
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
         
@@ -306,7 +334,7 @@ class TestStructureFetcher:
         assert result is not None
         assert "ATOM" in result
     
-    @patch("src_new.verification.fetchers.structure_fetcher.requests.get")
+    @patch("src_new.verification.fetchers.structure_fetcher.rcsb_cache.get_cached")
     def test_structure_fetcher_alphafold_returns_none(self, mock_get) -> None:
         """ALPHAFOLD_ID returns None."""
         mock_response = Mock()

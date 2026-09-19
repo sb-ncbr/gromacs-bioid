@@ -17,8 +17,8 @@ from src_new.verification.scorers import (
 class TestPDBScorer:
     """Tests for PDBAnnotationScorer."""
     
-    @patch("src_new.verification.scorers.pdb_scorer.requests.get")
-    def test_pdb_scorer_basic(self, mock_get) -> None:
+    @patch("src_new.verification.scorers.pdb_scorer.rcsb_cache.get_cached")
+    def test_pdb_scorer_basic(self, mock_get_cached) -> None:
         """Mock RCSB JSON with resolution, r_free, method. Assert score > 50 and signals non-empty."""
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -30,8 +30,7 @@ class TestPDBScorer:
             "refine": {"ls_rfactor_rfree": 0.25},
             "exptl": [{"method": "X-RAY DIFFRACTION"}]
         }
-        mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+        mock_get_cached.return_value = mock_response
         
         scorer = PDBAnnotationScorer()
         quality = scorer.score("1ABC", "PDB_ID")
@@ -41,11 +40,10 @@ class TestPDBScorer:
         assert len(quality.signals) > 0
         assert quality.database == "pdb"
     
-    @patch("src_new.verification.scorers.pdb_scorer.requests.get")
-    def test_pdb_scorer_failure_returns_zero(self, mock_get) -> None:
-        """Mock raises requests.RequestException. Assert score == 0.0, empty signals."""
-        import requests
-        mock_get.side_effect = requests.RequestException("Connection failed")
+    @patch("src_new.verification.scorers.pdb_scorer.rcsb_cache.get_cached")
+    def test_pdb_scorer_failure_returns_zero(self, mock_get_cached) -> None:
+        """Mock returns None (fetch failure). Assert score == 0.0, empty signals."""
+        mock_get_cached.return_value = None
         
         scorer = PDBAnnotationScorer()
         quality = scorer.score("1ABC", "PDB_ID")

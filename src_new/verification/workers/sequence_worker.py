@@ -25,17 +25,31 @@ class SequenceVerificationWorker(VerificationWorker):
             ident_type in self.SUPPORTED_IDENT_TYPES
         )
     
+    # DP-matrix cell cap for alignment (lenA * lenB). Above this the pairwise
+    # enumeration/matrix gets pathological (titin-vs-titin class pairs were
+    # observed burning hours per call in production; see wave-3 postmortem).
+    # 25M cells covers all sane protein/PDB entity pairs (5k x 5k).
+    MAX_ALIGN_MATRIX_CELLS = 25_000_000
+
     def _compute_alignment_score(self, signature: str, canonical_signature: str) -> VerificationScore | None:
         """Compute alignment score between query and canonical sequence.
-        
+
         Args:
             signature: The query sequence.
             canonical_signature: The canonical/reference sequence.
-            
+
         Returns:
-            VerificationScore or None if alignment fails.
+            VerificationScore or None if alignment fails or is unsafe to attempt.
         """
         try:
+            # Pre-guard: refuse pathological matrix sizes (DP cost + memory).
+            if len(signature) * len(canonical_signature) > self.MAX_ALIGN_MATRIX_CELLS:
+                logger.warning(
+                    f"Sequence alignment skipped: matrix too large "
+                    f"({len(signature)} x {len(canonical_signature)})"
+                )
+                return None
+
             # Use PairwiseAligner with equivalent parameters to old globalms
             # match=2, mismatch=-1, gap_open=-0.5, gap_extend=-0.1
             aligner = PairwiseAligner()
@@ -44,14 +58,23 @@ class SequenceVerificationWorker(VerificationWorker):
             aligner.mismatch_score = -1
             aligner.open_gap_score = -0.5
             aligner.extend_gap_score = -0.1
-            
+
             alignments = aligner.align(signature, canonical_signature)
-            
-            if not alignments:
-                logger.warning(f"No alignment found for sequences of length {len(signature)} and {len(canonical_signature)}")
+
+            # IMPORTANT: take the first optimal alignment via the iterator
+            # WITHOUT materializing len(alignments). For low-complexity /
+            # repetitive sequence pairs the count of optimal alignments
+            # explodes combinatorially ("number of optimal alignments is
+            # larger than 9223372036854775807") and enumeration burns hours.
+            # next(iter(...)) returns the first alignment at DP cost only.
+            try:
+                aln = next(iter(alignments))
+            except StopIteration:
+                logger.warning(
+                    f"No alignment found for sequences of length {len(signature)} "
+                    f"and {len(canonical_signature)}"
+                )
                 return None
-            
-            aln = alignments[0]
             
             # For PairwiseAligner, alignment sequences are accessed via aln[0] and aln[1]
             # These are aligned strings with gaps represented as '-'

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import requests
-
 from ..base import AnnotationQualityScorer
 from ..models import AnnotationQuality
+from ..fetchers import rcsb_cache
 
 
 class PDBAnnotationScorer(AnnotationQualityScorer):
     """Scores annotation quality for PDB entries."""
+
+    def __init__(self):
+        self._memo: dict[str, AnnotationQuality | None] = {}
 
     def supports(self, ident_type: str) -> bool:
         """Check if this scorer supports the given identifier type."""
@@ -32,13 +34,23 @@ class PDBAnnotationScorer(AnnotationQualityScorer):
         # Strip _entity suffix and uppercase
         pdb_id = identifier.split("_")[0].upper()
         
+        # Instance-level memoization for repeated calls
+        memo_key = pdb_id
+        if memo_key in self._memo:
+            return self._memo[memo_key]
+        
         try:
             url = f"https://data.rcsb.org/rest/v1/core/entry/{pdb_id}"
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
+            response = rcsb_cache.get_cached(url, timeout=30)
+            if response is None:
+                result = AnnotationQuality(database="pdb", score=0.0, signals=[])
+                self._memo[memo_key] = result
+                return result
             data = response.json()
         except Exception:
-            return AnnotationQuality(database="pdb", score=0.0, signals=[])
+            result = AnnotationQuality(database="pdb", score=0.0, signals=[])
+            self._memo[memo_key] = result
+            return result
         
         signals = []
         score = 20.0  # Base points for having the entry
@@ -78,8 +90,10 @@ class PDBAnnotationScorer(AnnotationQualityScorer):
             signals.append("polymer_entity_count")
             score += 10.0
         
-        return AnnotationQuality(
+        result = AnnotationQuality(
             database="pdb",
             score=min(score, 100.0),
             signals=signals,
         )
+        self._memo[memo_key] = result
+        return result

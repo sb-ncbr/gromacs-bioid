@@ -412,11 +412,14 @@ def _verify_results(context):
     if not identifiers_data or not isinstance(identifiers_data, dict):
         return StepResult(summary={"verified": True})
     
-    # Build work items: (segment, segment_identifiers_data, config_dict)
+    # Read signatures data once
+    signatures_data = context.results.get_data('signatures') or {}
+    
+    # Build work items: (segment, segment_identifiers_data, config_dict, segment_signatures_data)
     items = []
     for segment in sorted(identifiers_data.keys()):
         segment_data = identifiers_data[segment]
-        items.append((segment, segment_data, context.config.to_dict()))
+        items.append((segment, segment_data, context.config.to_dict(), signatures_data.get(segment)))
     
     if not items:
         return StepResult(summary={"verified": True})

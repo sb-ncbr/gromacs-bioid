@@ -99,7 +99,7 @@ def prefetch_pubchem(cids) -> int:
 
     Returns number of CIDs fetched over HTTP (others were already cached).
     """
-    todo = [str(c) for c in cids if c and _cache_read(str(c)) is None]
+    todo = [str(c) for c in cids if c and str(c).isdigit() and _cache_read(str(c)) is None]
     fetched = 0
     for i in range(0, len(todo), 50):
         chunk = todo[i:i + 50]
@@ -162,15 +162,22 @@ class CompoundSignatureFetcher(SignatureFetcher):
     def _fetch_pubchem(self, cid: str) -> str | None:
         """Fetch SMILES for a PubChem CID, ordered: NFS cache -> PUG -> IDSM
         (ELIXIR-CZ mirrors the PubChem RDF; works while NCBI blocks cluster IP).
+
+        Set VALIDATION_SKIP_PUG=1 to short-circuit the PUG attempt entirely
+        (goes straight to the IDSM mirror). Used while the cluster source-IP
+        is standing-blocked at NCBI: each blocked PUG attempt otherwise costs
+        the full polite backoff budget per candidate (~15-30s), which stalls
+        verification on CID-heavy entries; IDSM answers in ~1-2s.
         """
         cached = _cache_read(str(cid))
         if cached is not None:
             return cached
         smiles = None
-        url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/CanonicalSMILES/TXT"
-        r = _polite_get(url)
-        if r is not None:
-            smiles = r.text.strip() or None
+        if os.environ.get("VALIDATION_SKIP_PUG") != "1":
+            url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/CanonicalSMILES/TXT"
+            r = _polite_get(url)
+            if r is not None:
+                smiles = r.text.strip() or None
         if not smiles:
             smiles = self._fetch_idsm_pubchem(cid)
         if smiles:
@@ -209,39 +216,33 @@ class CompoundSignatureFetcher(SignatureFetcher):
     def _fetch_inchikey(self, ik: str) -> str | None:
         """InChIKey -> canonical SMILES without PubChem (NCBI blocks cluster IP).
 
-        Fallback order: CACTUS (NCI) -> ChEMBL molecule search -> PUG (last
-        resort, may be blocked - soft-failed by polite layer already).
+        Fallback order: CACTUS (NCI) -> PUG (last resort, may be blocked).
         """
         ik = ik.strip()
         if not ik:
             return None
-        # 1) CACTUS
+        cached = _cache_read_ns('ikey', ik)
+        if cached is not None:
+            return cached
+        # 1) CACTUS (multi-line for charged species: take first valid line)
         url1 = f"https://cactus.nci.nih.gov/chemical/structure/{ik}/smiles"
         r = _polite_get(url1)
         if r is not None:
-            smiles = r.text.strip()
-            if smiles and " " not in smiles and "<" not in smiles:
-                return smiles
-        # 2) ChEMBL search
-        url2 = f"https://www.ebi.ac.uk/chembl/api/data/molecule.json?standard_inchi_key={ik}"
+            lines = r.text.strip().splitlines()
+            for line in lines:
+                line = line.strip()
+                if line and " " not in line and "<" not in line:
+                    _cache_write_ns('ikey', ik, line)
+                    return line
+        # 2) PUG (likely blocked; kept as last-resort)
+        url2 = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/inchikey/{ik}/property/CanonicalSMILES/TXT"
         r = _polite_get(url2)
-        if r is not None:
-            try:
-                mols = r.json().get("molecules") or []
-                if mols:
-                    smi = (mols[0].get("molecule_structures") or {}).get("canonical_smiles")
-                    if smi:
-                        return smi
-            except Exception:
-                pass
-        # 3) PUG (likely blocked; kept as last-resort)
-        url3 = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/inchikey/{ik}/property/CanonicalSMILES/TXT"
-        r = _polite_get(url3)
         if r is not None:
             smiles = r.text.strip()
             if smiles:
+                _cache_write_ns('ikey', ik, smiles)
                 return smiles
-        logger.warning(f"InChIKey {ik} unresolved by cactus/chembl/pug")
+        logger.warning(f"InChIKey {ik} unresolved by cactus/pug")
         return None
 
     def _fetch_chembl(self, chembl_id: str) -> str | None:

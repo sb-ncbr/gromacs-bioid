@@ -111,12 +111,61 @@ class InchiKeyResolver(IdentifierResolver):
         return []
 
 
+def _sparql_reverse_lookup(
+    inchikey_variant: str,
+    session: requests.Session,
+) -> list[str]:
+    """IDSM SPARQL reverse lookup for InChIKey -> CID.
+
+    Args:
+        inchikey_variant: InChIKey variant string.
+        session: Requests session with retry logic.
+
+    Returns:
+        List of unique CID strings extracted from PubChem compound URIs.
+        Returns [] on any exception (soft-fail).
+    """
+    import re
+    from urllib.parse import quote
+
+    q = (
+        'SELECT ?c WHERE { '
+        '?c <http://semanticscience.org/resource/SIO_000008> ?d . '
+        '?d a ?t . FILTER(CONTAINS(STR(?t), "InChIKey")) '
+        '?d <http://semanticscience.org/resource/SIO_000300> ?v . '
+        f'FILTER(?v = "{inchikey_variant}") '
+        '}} LIMIT 2'
+    )
+    url = (
+        "https://idsm.elixir-czech.cz/sparql/endpoint/idsm"
+        f"?query={quote(q)}&format=application/sparql-results%2Bjson"
+    )
+
+    try:
+        resp = session.get(url, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        cids: list[str] = []
+        seen: set[str] = set()
+        for b in data.get("results", {}).get("bindings", []):
+            uri = b.get("c", {}).get("value", "")
+            m = re.search(r"/CID(\d+)", uri)
+            if m:
+                cid = m.group(1)
+                if cid not in seen:
+                    seen.add(cid)
+                    cids.append(cid)
+        return cids
+    except Exception:
+        return []
+
+
 def fetch_cids_from_inchikey(
     inchikey: str,
     session: requests.Session,
     config: RunConfig,
 ) -> list[str]:
-    """Fetch PubChem CIDs for an InChIKey via PUG-REST.
+    """Fetch PubChem CIDs for an InChIKey via PUG-REST with IDSM SPARQL fallback.
 
     Args:
         inchikey: InChIKey string (should be uppercase).
@@ -124,26 +173,52 @@ def fetch_cids_from_inchikey(
         config: RunConfig for retry settings.
 
     Returns:
-        List of CID strings.
+        List of CID strings. May be empty. Does not raise for network failures.
 
     Raises:
-        IdentifierResolutionError: If request fails.
+        IdentifierResolutionError: Only for truly malformed usage.
     """
-    url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/inchikey/{inchikey}/cids/txt"
+    # (a) Build query variants: if key ends with '-N' use [key]; else use [key, key[:-1] + 'N']
+    if inchikey.endswith("-N"):
+        variants = [inchikey]
+    else:
+        variants = [inchikey, inchikey[:-1] + "N"]
 
-    try:
-        response = session.get(url, timeout=30)
-        response.raise_for_status()
-        cids_text = response.text.strip()
+    all_cids: list[str] = []
+    seen: set[str] = set()
 
-        if not cids_text or "status" in cids_text.lower():
-            return []
+    for variant in variants:
+        # (b) Try the existing PUG call first
+        url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/inchikey/{variant}/cids/txt"
+        try:
+            response = session.get(url, timeout=30)
+            if response.status_code == 404:
+                # InChIKey not found - try next variant
+                continue
+            response.raise_for_status()
+            cids_text = response.text.strip()
 
-        return [cid.strip() for cid in cids_text.split("\n") if cid.strip().isnumeric()]
-    except requests.HTTPError as exc:
-        if exc.response is not None and exc.response.status_code == 404:
-            # InChIKey not found - return empty, not an error
-            return []
-        raise IdentifierResolutionError(f"[Identifier] PubChem InChIKey lookup failed: {exc}")
-    except Exception as exc:
-        raise IdentifierResolutionError(f"[Identifier] PubChem InChIKey lookup failed: {exc}")
+            if cids_text and "status" not in cids_text.lower():
+                for cid in cids_text.split("\n"):
+                    cid = cid.strip()
+                    if cid.isnumeric() and cid not in seen:
+                        seen.add(cid)
+                        all_cids.append(cid)
+                if all_cids:
+                    return all_cids  # PUG succeeded, return immediately
+        except requests.HTTPError:
+            # Non-404 HTTP error -> fall through to SPARQL
+            pass
+        except Exception:
+            # Other exception -> fall through to SPARQL
+            pass
+
+        # (c) If PUG failed or returned no CIDs, try IDSM SPARQL reverse lookup
+        sparql_cids = _sparql_reverse_lookup(variant, session)
+        for cid in sparql_cids:
+            if cid not in seen:
+                seen.add(cid)
+                all_cids.append(cid)
+
+    # (d) Return the collected CID list (may be empty). Never raise for network failures.
+    return all_cids
