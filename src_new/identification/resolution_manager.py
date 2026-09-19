@@ -121,17 +121,18 @@ class IdentifierResolutionManager:
         return self._cache
     
     def resolve(
-        self, 
-        results: ResultsManager, 
-        segment: str, 
-        signature_generator_name: str, 
+        self,
+        results: ResultsManager,
+        segment: str,
+        signature_generator_name: str,
         signature: str,
         cache: ResolverCache | None = None,
         working_directory: str = "",
         errors: list[dict] | None = None,
+        deadline_epoch: float | None = None,
     ) -> bool:
         """Attempt identity then similarity resolution for one signature.
-        
+
         Args:
             results: ResultsManager to read/write data.
             segment: Fragment/segment name.
@@ -139,10 +140,18 @@ class IdentifierResolutionManager:
             signature: The signature string to resolve.
             cache: Optional ResolverCache instance. If None, uses self.cache.
         errors: Optional list to collect error dicts with resolver/generator info.
-            
+            deadline_epoch: Optional wall-clock deadline (time.time() seconds);
+                when exceeded, no further resolvers are invoked (cooperative
+                stage-time-budget policy, wave-3 stall fix).
+
         Returns:
             True if any hit was found, False otherwise.
         """
+        import time as _time
+
+        def _over_budget() -> bool:
+            return deadline_epoch is not None and _time.time() > deadline_epoch
+
         # Determine signature type from generator name
         if self._signature_type_map is not None:
             signature_type = self._signature_type_map.get(signature_generator_name)
@@ -180,9 +189,13 @@ class IdentifierResolutionManager:
             return (not _pug_up) and (getattr(resolver, "name", "") in _PUBCHEM_RESOLVERS)
 
         for resolver in identity_resolvers:
+            if _over_budget():
+                logger.warning(f"identify: stage deadline exceeded; skipping remaining identity resolvers for {segment}")
+                break
             if _breaker_blocked(resolver):
                 logger.debug(f"Skipping {resolver.name}: PubChem circuit breaker open")
                 continue
+            resolver._stage_deadline_epoch = deadline_epoch
             # Check if resolver is applicable for this specific signature
             if not resolver.is_applicable(signature, signature_type, as_similarity=False):
                 continue
@@ -243,9 +256,13 @@ class IdentifierResolutionManager:
         )
         
         for resolver in similarity_resolvers:
+            if _over_budget():
+                logger.warning(f"identify: stage deadline exceeded; skipping remaining similarity resolvers for {segment}")
+                break
             if _breaker_blocked(resolver):
                 logger.debug(f"Skipping {resolver.name}: PubChem circuit breaker open")
                 continue
+            resolver._stage_deadline_epoch = deadline_epoch
             # Check if resolver is applicable for this specific signature
             if not resolver.is_applicable(signature, signature_type, as_similarity=True):
                 continue

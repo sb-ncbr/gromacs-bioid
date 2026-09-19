@@ -130,6 +130,9 @@ class FormulaHFamilyResolver(IdentifierResolver):
         candidates: list[str] = []
         seen: set[str] = set()
         for delta in range(-self.h_range, self.h_range + 1):
+            if self._over_budget():
+                logger.warning("hfamily: stage deadline exceeded after %d candidates for %s; returning partial", len(candidates), signature)
+                break
             h = h0 + delta
             if h <= 0:
                 continue

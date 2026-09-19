@@ -511,11 +511,14 @@ def _identify_molecules_worker(item: tuple) -> dict[str, Any]:
                 identity_resolvers = registry.get_applicable_resolvers(signature_type, as_similarity=False)
                 
                 for resolver in identity_resolvers:
+                    if deadline_epoch is not None and __import__("time").time() > deadline_epoch:
+                        errors.append({"resolver": "worker", "generator": generator_name, "error": "stage_time_budget exceeded mid-fragment"})
+                        break
                     if not resolver.is_applicable(signature, signature_type, as_similarity=False):
                         continue
-                    
+
                     attempted_resolvers.append(resolver.name)
-                    
+                    resolver._stage_deadline_epoch = deadline_epoch
                     try:
                         result = resolver.resolve(
                             signature=signature,
@@ -544,11 +547,14 @@ def _identify_molecules_worker(item: tuple) -> dict[str, Any]:
                 similarity_resolvers = registry.get_applicable_resolvers(signature_type, as_similarity=True)
                 
                 for resolver in similarity_resolvers:
+                    if deadline_epoch is not None and __import__("time").time() > deadline_epoch:
+                        errors.append({"resolver": "worker", "generator": generator_name, "error": "stage_time_budget exceeded mid-fragment"})
+                        break
                     if not resolver.is_applicable(signature, signature_type, as_similarity=True):
                         continue
-                    
+
                     attempted_resolvers.append(resolver.name)
-                    
+                    resolver._stage_deadline_epoch = deadline_epoch
                     try:
                         result = resolver.resolve(
                             signature=signature,

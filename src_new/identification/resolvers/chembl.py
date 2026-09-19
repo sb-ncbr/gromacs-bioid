@@ -165,7 +165,7 @@ def chembl_fetch_similarity_match(
     try:
         # URL-encode the SMILES string
         encoded_smiles = urllib.parse.quote(smiles, safe='')
-        url = f"https://www.ebi.ac.uk/chembl/api/data/similarity/{encoded_smiles}/{threshold}.json?only=molecule_chembl_id,similarity&limit=1000"
+        url = f"https://www.ebi.ac.uk/chembl/api/data/similarity/{encoded_smiles}/{threshold}.json?only=molecule_chembl_id,similarity&limit=100"
         
         logger.debug(f"Querying ChEMBL REST API: {url}")
         

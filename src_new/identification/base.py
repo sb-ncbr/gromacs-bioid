@@ -52,13 +52,23 @@ class IdentifierResolver(ABC):
     
     def __init__(self, config: RunConfig) -> None:
         """Initialize the resolver with configuration.
-        
+
         Args:
             config: RunConfig instance containing feature toggles.
         """
         self.config = config
         # Read enablement from IdentifiersConfig automatically by name
         self.enabled_identity = getattr(config.identifiers, self.name, True)
+        # Wall-clock deadline for cooperative stage time budgets (set by the
+        # resolution manager between calls; None = no budget). Resolvers with
+        # expensive internal loops (network fan-out) MUST poll _over_budget().
+        self._stage_deadline_epoch: float | None = None
+
+    def _over_budget(self) -> bool:
+        """True when the caller-assigned stage deadline has passed."""
+        import time as _time
+        dl = getattr(self, "_stage_deadline_epoch", None)
+        return dl is not None and _time.time() > dl
         self.enabled_similarity = getattr(config.identifiers, f"{self.name}_similarity", True)
         self._last_resolution_metadata: dict[str, dict] | None = None
         self._last_error: str | None = None

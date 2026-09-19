@@ -470,6 +470,7 @@ def _identify_molecules(context):
                     cache=cache,
                     working_directory=str(context.working_directory),
                     errors=resolver_errors,
+                    deadline_epoch=budget_deadline(context),
                 )
                 # Add resolver errors to fragment_result
                 fragment_result["errors"].extend(resolver_errors)
