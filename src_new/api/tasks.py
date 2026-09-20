@@ -1,6 +1,7 @@
 """Celery tasks for BAT3 pipeline."""
 
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -45,7 +46,18 @@ def run_pipeline_task(
     # Determine run_dir and attach log handlers
     run_dir = thread_input_dir.parent
     log_handlers = setup_run_log_handlers(str(run_dir))
-    
+
+    # SPIN_DEBUG diagnostics (env-gated, no behavior change when unset):
+    # every 120s dump ALL thread stacks to stderr so live-spin capture works
+    # without ptrace (postmortem instrument for the unbounded-compute class).
+    if os.environ.get("SPIN_DEBUG") == "1":
+        try:
+            import faulthandler as _fh
+            _fh.dump_traceback_later(120, repeat=True)
+            print("[SPIN_DEBUG] faulthandler stack dump timer armed (120s)", flush=True)
+        except Exception as _spin_exc:
+            print(f"[SPIN_DEBUG] failed to arm: {_spin_exc}", flush=True)
+
     try:
         # Build tasks
         tasks = build_load_and_export_tasks()

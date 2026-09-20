@@ -106,12 +106,37 @@ class SimpleSmilesGenerator(SignatureGenerator):
         if perceived:
             logger.debug("smiles: bonds perceived from coordinates (%d atoms)", fragment.n_atoms)
         _fix_bond_orders_rdkit(molecule)
-        molecule = Chem.RemoveHs(molecule, sanitize=self._sanitize)
-        
+
+        # Kekulization is the DOCUMENTED unbounded RDKit operation on
+        # pathological molecules (coordinate perception of junk clusters
+        # degenerates valences/skeletons; KeKulize then spins for hours-days
+        # with no log lines). Production freeze root cause (2026-09-20):
+        # smiles on virtual-class fragments hit SanitizeMol full-kekulize and
+        # pinned worker threads indefinitely. Policy: never run kekulization.
+        # RemoveHs runs WITHOUT sanitization; SanitizeMol skips the KEKULIZE
+        # op; MolToSmiles emits without kekule normalization. The resulting
+        # string remains an honest structural string for recognition paths
+        # (we never pass it back into RDKit), and the generator can no
+        # longer hold a slot hostage.
+        try:
+            molecule = Chem.RemoveHs(molecule, sanitize=False)
+        except Exception as exc:
+            logger.warning("smiles: RemoveHs failed (%s), skipping segment molecule", exc)
+            return ""
         if self._sanitize:
-            Chem.SanitizeMol(molecule)
-        
-        return Chem.MolToSmiles(molecule)
+            try:
+                from rdkit.Chem import SanitizeFlags
+                Chem.SanitizeMol(
+                    molecule,
+                    sanitizeOps=SanitizeFlags.SANITIZE_ALL ^ SanitizeFlags.SANITIZE_KEKULIZE,
+                )
+            except Exception as exc:
+                logger.warning("smiles: partial sanitize failed (%s); returning unsanitized string", exc)
+        try:
+            return Chem.MolToSmiles(molecule, kekuleSmiles=False)
+        except Exception as exc:
+            logger.warning("smiles: MolToSmiles failed (%s); returning empty", exc)
+            return ""
 
 
 class SimpleSmilesGeneratorNoSanitize(SimpleSmilesGenerator):
