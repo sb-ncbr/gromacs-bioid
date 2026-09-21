@@ -134,3 +134,20 @@ Failure signatures from the Sept-2026 incident (P0-1..P0-6, P1 family), how to d
 ### Chronic silent freeze + task boot-loop (serious class)
 - Pattern: celery consumers alive but silent ~30min+; consumers stop registering received tasks; log streams die; rolling restarts temporarily restore. Fixes shipped: keepalive env options for broker sockets, executor resume (PIPELINE_RESUME_STAGES=1 to skip completed stages).
 - Residual open: despite resume on, completions still zero for long windows and celery backlog keeps inflating. Face-off tasks ahead: (a) find where pipeline tasks actually stop before export (stage-level timing), (b) cap intake to drainationally match computation, (c) observe worker thread-/task-level observability for heavy chemistry entries.
+
+### R-state tar-pit freeze — NOT a broker freeze (root-caused 2026-09-20, fixed)
+- Signature: pods "Running" + ~1 core CPU burning, but consumers deregister one by one; zero task execution, no crashes, no network errors, log file mtime goes dead hours-ago. Diagnosis: `/proc/1/task/*/stat` — ONE thread `state=R` for hours, utime ~wall-clock, IO counters flat; other threads waiting on futex.
+- Cause class: a single unbounded C-library compute call inside ONE generator on `__v`-class fragments (RDKit kekulization in `smiles.py::Chem.SanitizeMol`; cell-level evidence: `[SPIN] SYSTEM__v4/smiles START` then never DONE; utime pinning ~15h+, utf8 glacier). Killed by smiles kekulization-elimination (partial sanitize + kekuleSmiles=False) in `fix(spin-class)` commit (v2.29/v3.111 lineage). Pods drained normally after.
+- Confounder treasure: broken log-handler cross-wiring makes 4 entries' debug.logs share one writer (looks like "every entry is frozen", actually one stuck per slot).
+
+### Data-loss via child-process isolation timeouts (wave-3.5 self-inflicted, reverted)
+- Pattern: entries complete (stage green) with fully-empty signature/identification/verification blocks; results.log full of `isolated timeout (120s) for segment SYSTEM[__vN]; skipping generators for it`. Splices via: silent `continue` inside the isolation helper returning None.
+- Fix: FULL REVERT (commit `1de6860e0`): no more segment isolation tampering; content regenerated immediately on redeploy (sig 28-47/entry, verified chemistry 73-300 res landing). Lesson: ANY "skip silently if guard trips" mechanism under load becomes a mass data-loss channel; failures must land errors not silent skips.
+
+### Stage-level stall cascade (boot-loop engine, mitigated)
+- Resolvers/verifier fan-out (hundreds per-entry HTTP) parked individual stages 1-4h+, collided with 12h sweeper: every attempt aborted at exactly 12h and re-queued (queue rows all matching CREATE/complete=invalid 12h deltas). Stage state per census: generate_signatures/verify_results/identify each hours-class.
+- Mitigation: cooperative stage deadline at THREE depths (outer loop, verification manager per-segment+per-candidate, resolution-manager/resolver interiors), honest stage_time_budget warnings + partial export; 0 firings since shipped because front stages now cost seconds.
+
+### Split-brain completion counter (nfs-truth janitor, conservative)
+- Runs settled via redis task-meta ONLY (~24h TTL) vs tasks taking longer: queue stuck at completion-flat-days while results.json今天 out to disk. Janitor `settle_by_results_truth` settles those from head-parsed stage map with strict guards (file freshness, started_at vs artifact age, success-skipped-warning terminal set only).
+- Silent note: replay writesverification into results.json on completed entries does NOT interfere (queue row is already complete/settled).

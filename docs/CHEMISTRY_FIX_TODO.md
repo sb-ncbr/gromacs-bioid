@@ -205,18 +205,38 @@ mismatches, 3139C verified skel=1.0 through production gate.
       terminal, env kill-switches; per-item settle preserves batch counters + activity log),
       wired into `periodic_completion_check` in `main.py`; 9/9 unit tests green.
 
-### Post-fix path
-- [ ] **Offline wired replay (IN FLIGHT 2026-09-18)**: NFS run of 150 candidate entries
-      through the WIRED production gate (patched src_new on NFS at
-      `/data/validation/patched_src/src_new`), GT sims from the rebuilt cache ->
-      `/data/validation/replay_wired250.jsonl` + `.log` -> honest verified-rate +
-      pool-presence table -> then full inchikey-gt replay (7,342) -> S7 recompute.
-- [ ] Redeploy workers with D1+D2a+D3+S1; measure fresh-run verified-chem rate.
-- [ ] Commit this batch (files: pipeline_steps/__init__.py, workers.py, skeletize-adjacent
-      scripts/validation_similarity.py, compound_fetcher.py, inchikey.py resolver,
-      resolution_manager.py, rcsb_cache.py (new), pdb_scorer.py, sequence_fetcher.py,
-      sequence_worker.py, structure_fetcher.py, test files x3, queue_processor.py, main.py,
-      docs/CHEMISTRY_FIX_TODO.md) — exclude foreign WIP (scripts/replay_verification.py
-      untracked origin unknown; .tmp/tasks/chemistry-fix/ stale from 09-12 wave).
-- [ ] Knowns that hold: skeleton_fp + thresholds sound (wire proofs); fetch network healthy;
-      legacy_pattern absent in fresh sample.
+### Post-fix path — STATUS (finalized 2026-09-21)
+- [x] **RW250 replay**: fixed gate over 250 persisted entries: 0.8% -> 48.4% entries
+      verified; fetch-fail 98% -> 3.4% (proofs archived at
+      `/data/validation/_ops_archive/session-13-14_2026-09-21/`).
+- [x] **Deployment**: v3.111/v2.30+v2.31/v3.112 rolled on api+3 worker pools;
+      consumers stable 247+ nodes, drain = ~100s/day, celery backlog melted 51k -> 0.
+- [x] **Commit wave**: aea60ae5a (chem wave-3 fixes), 5c361e730 (stage budgets),
+      11080a6e3 (resolver interior deadlines), eefeff9c5 (spin-class root kill),
+      1de6860e0 (isolation revert).
+- [ ] Full inchikey-gt replay (7,342) + S7 recompute (next big measurement).
+- [ ] Requeue scope for isolation-window empty-content entries (decision pending).
+
+## WAVE 3.5/4 — the freeze whodunit + mis-fortune (documented 2026-09-21, accept in full)
+- [x] **Freeze root** (: +100% CPU 15h+, zero IO, generate_signatures): virtual-class
+      fragment hit RDKit kekulization inside `smiles.py::Chem.SanitizeMol`. Proven
+      live under SPIN_DEBUG instrumentation (`SYSTEM__v4/smiles START`, never DONE).
+- [x] **kef-fix (eefeff9c5)**: kekulization eliminated from smiles (partial sanitize
+      minus KEKULIZE, MolToSmiles kekuleSmiles=False); healthy molecules output
+      identical; frozen class proven completing via terminal-verify.
+- [x] **Isolation misfortune + revert (1de6860e0)**: child-process isolation by risky
+      class timed out ~always -> silent signature vaporization en masse (entries
+      completed empty). FULL REVERT authorized + shipped; outcomes on v2.31/v3.112
+      confirm content restored (sigs 28-47, idents 120-41k, verified 73-300 fresh).
+- [x] **Stage budgets** (outer+manager+resolver-interior identity+similarity phases+hfamily+verify):
+      cooperative early-exit with honest stage_time_budget warnings; inert except in
+      actual long-tail stalls (0 firings observed).
+- [x] **Pipeline contract restored**: 2-10s per front stage, verify flows, completions
+      sustained (queue settled ~119 first day, per-minute cadence after fixes).
+- [ ] Follow-up captured (priority order):
+      * quota claim/dispatch equilibrium (claims ~960/h vs sustainable drain) — decision
+        deliberately deferred (drain>intake at scale now).
+      * first full-population wired+chem replay for final S7 meter verdict.
+      * damage-window rows scoping/requeue (signature_isolated_timeout-marked).
+      * name_ccd/glycan/lite channels sizzling metrics (reporting gate only).
+      * ion/peptide classes in metric routing (M10a design, nothing implemented).
