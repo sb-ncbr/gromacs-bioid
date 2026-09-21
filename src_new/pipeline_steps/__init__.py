@@ -301,7 +301,6 @@ def _generate_signatures(context):
         # Direct serial execution: use real objects, skip snapshot reconstruction
         from ..signatures.registry import get_default_generators
         generators = get_default_generators(context.config.signatures)
-        snapshot_by_seg = {s.segment_name: s for s in snapshots}
         results = []
         _spin_dbg = os.environ.get("SPIN_DEBUG") == "1"
         for segment_name in sorted(facade.get_segments()):
@@ -309,25 +308,8 @@ def _generate_signatures(context):
                 budget_hit = True
                 logger.warning(f"generate_signatures: stage time budget exceeded at segment {segment_name}; partial output")
                 break
-            fragment = facade.get_fragment(segment_name)
-
-            # Spin-class enforcement: risky segments (virtual-system classes or
-            # oversized fragments needing coordinate bond perception) run in an
-            # isolated child process with a hard timeout. A hang inside a
-            # library call cannot interrupt a thread - it CAN be terminated
-            # at process level.
-            if ("__v" in segment_name) or (fragment is not None and getattr(fragment, "n_atoms", 0) > 150):
-                snap = snapshot_by_seg.get(segment_name)
-                if snap is not None:
-                    iso_result = _generate_signatures_isolated(
-                        context, snap, config_dict, timeout_s=120
-                    )
-                    if iso_result is None:
-                        continue
-                    results.append(iso_result)
-                    continue
-
             instance = segment_to_instance.get(segment_name)
+            fragment = facade.get_fragment(segment_name)
             if instance is None:
                 continue
             generated = {}
@@ -604,50 +586,6 @@ def _verify_results(context):
             "verify_results exceeded its time budget; proceeding with partial verification",
         )
     return StepResult(summary={"verified": True, "partial": budget_hit})
-
-
-def _generate_signatures_isolated(context, snapshot, config_dict, timeout_s: int):
-    """Run ALL generators for one snapshot in an isolated child process with a
-    hard wall-clock timeout (2026-09-20 spin-class enforcement).
-
-    Why: single-call hangs inside library code (e.g. RDKit kekulization on a
-    pathological perceived molecule) cannot be interrupted from the parent
-    thread. Routing the risky class (virtual-system segments or oversized
-    fragments) through a spawned child lets the parent TERMINATE the child
-    on timeout and continue with the remaining segments instead of holding
-    a worker slot hostage forever.
-
-    Returns the worker result dict, or None on timeout/transport failure.
-    """
-    import multiprocessing as _mp
-
-    def _child(item, queue):
-        from .workers import _generate_signatures_worker
-
-        queue.put(_generate_signatures_worker(item))
-
-    q = _mp.Queue()
-    item = (snapshot.__dict__, config_dict)
-    proc = _mp.Process(target=_child, args=(item, q), daemon=True)
-    proc.start()
-    proc.join(timeout_s)
-    if proc.is_alive():
-        proc.terminate()
-        proc.join(5)
-        segment = getattr(snapshot, "segment_name", "?")
-        logger.warning(
-            "generate_signatures: isolated timeout (%ss) for segment %s; skipping generators for it",
-            timeout_s, segment,
-        )
-        context.add_warning(
-            "signature_isolated_timeout",
-            f"isolated generator run exceeded {timeout_s}s for segment {segment}; skipped",
-        )
-        return None
-    try:
-        return q.get_nowait()
-    except Exception:
-        return None
 
 
 def _export_results(context):
