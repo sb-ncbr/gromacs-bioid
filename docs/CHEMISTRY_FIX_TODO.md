@@ -234,7 +234,15 @@ mismatches, 3139C verified skel=1.0 through production gate.
 - [x] **Pipeline contract restored**: 2-10s per front stage, verify flows, completions
       sustained (queue settled ~119 first day, per-minute cadence after fixes).
 - [ ] Follow-up captured (priority order):
-      * quota claim/dispatch equilibrium (claims ~960/h vs sustainable drain) — decision
+      * **RESUME residue reverify (READY-TO-LAUNCH)**: bug fixed in
+        `scripts/replay_verification.py` (write block was post-loop → only last
+        entry written per batch; now in-loop). Scope: 3,447 conf=0.0/
+        fingerprint_unavailable-residue entries (`/data/validation/residue_entries.txt`).
+        Wave A died at 445/3447 by pod OOM. RESUME: `tail -n +446 residue_entries.txt`
+        split A/B, two pods, `--threads 4`, `VALIDATION_SKIP_PUG=1`. Proven: manual
+        write on entry 2310 → +442 evid-verified persisted.
+      * Then: fresh rank-audit rerun → S7 recompute → metric verdict.
+      * quota claim/dispatch equilibrium (claims ~960/h vs sustainable drain) —
         deliberately deferred (drain>intake at scale now).
       * first full-population wired+chem replay for final S7 meter verdict.
       * damage-window rows scoping/requeue (signature_isolated_timeout-marked).
