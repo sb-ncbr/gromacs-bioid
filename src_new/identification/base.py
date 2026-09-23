@@ -63,15 +63,15 @@ class IdentifierResolver(ABC):
         # resolution manager between calls; None = no budget). Resolvers with
         # expensive internal loops (network fan-out) MUST poll _over_budget().
         self._stage_deadline_epoch: float | None = None
+        self.enabled_similarity = getattr(config.identifiers, f"{self.name}_similarity", True)
+        self._last_resolution_metadata: dict[str, dict] | None = None
+        self._last_error: str | None = None
 
     def _over_budget(self) -> bool:
         """True when the caller-assigned stage deadline has passed."""
         import time as _time
         dl = getattr(self, "_stage_deadline_epoch", None)
         return dl is not None and _time.time() > dl
-        self.enabled_similarity = getattr(config.identifiers, f"{self.name}_similarity", True)
-        self._last_resolution_metadata: dict[str, dict] | None = None
-        self._last_error: str | None = None
     
     def is_applicable(self, signature: str, signature_type: str, as_similarity: bool = False) -> bool:
         """Check if this resolver can resolve the signature.
