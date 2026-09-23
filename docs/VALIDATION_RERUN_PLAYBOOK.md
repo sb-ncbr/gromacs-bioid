@@ -94,10 +94,18 @@ for that entry id — all three tables, or the sweeper/dispatcher resurrects it.
 - results.json all-stages-done rate on fresh files ≈ success rate.
 - Replay waves: `[N/total] SECONDSs` markers advancing.
 
+## 5b. Replay/resume mechanics added 2026-09-23
+
+- **strip_for_reidentify.py** (`scripts/`): flips `tasks.{identify_molecules,verify_results,export_results}.status` to `'failed'` atomically in results.json; executor resume re-executes only those stages on the next natural dispatch (upstream `success` stages stay skipped). This is THE production-native redo for broken identify/verify — do NOT build custom resolver harnesses; resolver DB paths (`databases/`) resolve via CWD inside pods only.
+- After stripping, requeue = queue rows to `queued` + entries to `pending`; dispatcher creates fresh runs (~12/tick). Messages persist in redis db0 across incidents.
+- **Offline-PUBCHEM fallback stack live** (`src_new/identification/resolvers/`): `inchikey_self` (InChIKey signature is itself an identity candidate; no network) + `formula_chembl` (EBI REST exact-formula -> CHEMBL_ID; gated by `identifiers.formula_chembl` in config or `VALIDATION_SKIP_PUG=1`). Production config: enabled in `config_shared.ini`.
+- **Zombie-client freeze class**: after network resets, check `redis-cli client list` idle histogram BEFORE assuming pipeline stall; `CLIENT KILL id` zombies, else `rollout restart` both worker pools (messages persist).
+
 ## 6. Current frontier (post-verdict, 2026-09-23)
 
-- inchikey validated@10 = 19.0%: decomposed into 42% non-covering entries, 7,914
-  unmapped GT pairs (struct-cache coverage), mid-sim pools (mean@10=0.319).
+- inchikey validated@10 = 19.0% purified to an era artifact (PUG block since
+  09-12). Legacy reid wave (3,367) rehabilitates in-flight; success marker:
+  identify-done -> 100% chem candidates. Watch completion + recompute.
 - Rerank = solved (audit: evidence@1 wins everywhere) — do not invest there.
 - Watch-class: rare 2-min 20Gi OOM deaths on the monster topology class.
 - Registry: `/home/tomsko/work/bat3_validation/docs/INCIDENT_REGISTRY_2026-09.md` sessions 1–16.

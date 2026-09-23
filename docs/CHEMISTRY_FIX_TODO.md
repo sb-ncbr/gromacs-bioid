@@ -251,9 +251,29 @@ mismatches, 3139C verified skel=1.0 through production gate.
       inchikey n=5,914 att=58.0% validated@10=19.0%; ion att=51.4% v=34.0% flat;
       pdb validated@10=99.6%; uniprot @10=98.4%; entry-any@10=98.9%; exact ≥1 hit 87.6%.
       Rank audit (n=500 fresh): evidence@1 in ALL covering cases → rerank headroom=0.
+- [x] **Inchikey low-numbers audit RESOLVED (2026-09-23)**: the 19% aggregate is an
+      era artifact driven by the PubChem (PUG) cluster block since 09-12.
+      Producer channel map: `L-seg molecular_formula -> formula_pubchem` was the
+      ONLY ligand-CID enumeration route -> everything first-processed post-block has
+      0 stored hits (3,370 legacy census: 100% attempted-stubs). Rich fresh entries
+      ride pre-block candidate stores; verify chain unaffected (cactus/IDSM live).
+- [x] **Offline-PUBCHEM fallbacks shipped (758d8f22e, images v2.33/v3.114)**:
+      InchiKeySelfResolver (InChIKey signature = identity candidate, no network) +
+      FormulaChEMBLResolver (EBI REST exact-formula; gate identifiers.formula_chembl
+      or VALIDATION_SKIP_PUG=1). 20 tests green. config_shared.ini: formula_chembl:yes
+      + [names] abs NFS paths (ccd.json copied to /data/validation/databases/).
+- [x] **PROOF GATE green 3/3**: 1532 -> 26 verified chem; 1602 -> CID 138805674
+      conf=93 skel=1.0 string-identical to GT; 1682 -> 6 verified chem.
+- [ ] **LEGACY WAVE IN FLIGHT (3,367 entries)**: strip_for_reidentify.py
+      (tasks.{identify,verify,export}.status->'failed') + natural dispatcher requeue;
+      production does identify+verify with new fallbacks. Mid-wave state:
+      identify-done entries carry chem candidates at 100%; verified chem landing;
+      completions ~150-170/h. ETA to full pass: ~14-20h. Then: audit_gap.py re-run +
+      S7 v7 recompute for the public verdict delta.
 - [ ] Follow-up captured (priority order):
-      * inchikey low-numbers audit (NEXT, user-directed): decompose 42% non-covering +
-        7,914 unmapped GT pairs + mean@10=0.319 mid-sim pools.
+      * inchikey audit aftermath: recompute after wave; maps/manual DB sources
+        (never existed; only ccd.json shipped; consider generating or retire paths).
+      * loading-fail class on wave (~6 entries 'No loading strategy' = input-GC).
       * damage-window rows scoping/requeue (signature_isolated_timeout-marked).
       * name_ccd/glycan/lite channels sizzling metrics (reporting gate only).
       * ion/peptide classes in metric routing (M10a design, nothing implemented).

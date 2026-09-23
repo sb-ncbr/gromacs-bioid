@@ -176,3 +176,9 @@ Failure signatures from the Sept-2026 incident (P0-1..P0-6, P1 family), how to d
 ### Task-message loss forensics (kombu redis QoS)
 - Truth order: pod receipts grep → redis `hlen unacked`/`llen celery` → `celery inspect active|reserved` (NOTE: inspect is unreliable under threads pool — returns empty while tasks visibly execute; trust receipts+CPU+stage logs instead) → DB `bat3_runs.celery_task_id` ↔ `celery-task-meta-*` diff.
 - `unacked>0` + `inspect=empty` = orphans from dead consumers; they redeliver at visibility_timeout (~3600s default) but the restore is lossy under fleet churn.
+
+### Zombie celery clients after network resets (freeze-without-failure)
+- **Signature**: `llen celery` big and growing, receipts ≈ 0, run-level "started" high but completions ~0, pods silent (no heartbeat lines for 10+ min), broker `client list` shows tens of connections idle >8000s while unacked ≈ 0-2.
+- **Mechanism**: TCP half-death after network/lb resets: consumers hold dead sockets, broker keeps them registered, BRPOPs never deliver. Celery's own heartbeats stop logging (frozen MainProcess), so it looks like a content stall.
+- **Ops sequence**: 1) `redis-cli client list` idle histogram (fastest detector); 2) `CLIENT KILL id` every zombie (idle>8000) as first aid; 3) if no revival in ~3 min: `kubectl rollout restart deploy` on BOTH worker pools (RollingUpdate, messages persist in redis db0). Expect unacked to jump to ~60 and receipts/completions to resume within minutes.
+- **Claim≫drain note**: dispatcher claims ~960/h bash irrespective of drain capacity: transient celery backlog growth is normal (messages persist); do NOT misread as stall — receipts/completions per minute are the truth meter.
