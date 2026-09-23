@@ -1,13 +1,13 @@
-# BAT3 Validation Status (2026-09-11, post scale-up + chemistry fix)
+# BAT3 Validation Status (2026-09-23, metric verdict + infra hygiene pass)
 
 ## Core Concept
-Current truth for the ceitec-biodata-ns validation deployment. Full-scale run is LIVE and healthy as of 2026-09-10 ~14:20 UTC.
+Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict landed 2026-09-23** (S7 v6): inchikey att=58.0% validated@10=19.0% | pdb @10=99.6% | uniprot @10=98.4% | entry-any-validated@10=98.9%. Infra hardened: swallowed-crash cork (enabled_similarity) fixed, prefetch-stacking OOM cured, fleets 15x20Gi both pools, residue reverify 3,444/3,446 renovated.
 
 ## Key Points
 - **Entries indexed**: 15,185 (14,066 with ground truth: 27,328 signatures = 14,787 UniProt + 12,541 PDB)
 - **Full-scale run**: 1,691/14,622 completed (11.6%); throughput cohort-bound (on-disk wave ~20/min; GB-download wave ~5-8 runs/15min over MDposit bandwidth)
 - **Validation metrics (pilot, hit@K vs GT)**: hit@1 = 0.348, hit@5 = 0.731, hit@10 = 0.811 overall (pdb 0.840); 456 rows in `validation_results`
-- **Images live**: `bat3-worker:v2.25` ×16, `bat3-validation-api:v3.105` api ×1 + validation-worker ×16 (PUG-independent chemistry stack). v3.95(no-suffix) crashes (HEAD Dockerfile poison, fixed). PUG blocks cluster IP since 2026-09-12 (laptop 200 / cluster 503); structure matrix: CID=cache->PUG->IDSM-SPARQL, IK=cactus->chembl->PUG, ChEMBL/CHEBI native; pubchem_struct+formula_pubchem disabled in config_shared.ini `validation-api:v3.95` (no-suffix) CRASHES: HEAD Dockerfile.api had `mv main.py` poison - use v3.95b / fixed snapshot at /tmp/opencode/Dockerfile.api.fixed (line removed in commit 0a3079a79). fsGroupChangePolicy=OnRootMismatch on worker deploys (rollout chown stall fix)
+- **Images live**: `bat3-worker:v2.32` (bat3-worker ×15 + bat3-ui-worker ×2), `bat3-validation-api:v3.113` (validation-api ×1, validation-worker ×15). Worker CLI pins `--pool=threads --concurrency=2 --prefetch-multiplier=1` (+durable celery conf); memory 12Gi/20Gi req/limit. (PUG-independent chemistry stack). v3.95(no-suffix) crashes (HEAD Dockerfile poison, fixed). PUG blocks cluster IP since 2026-09-12 (laptop 200 / cluster 503); structure matrix: CID=cache->PUG->IDSM-SPARQL, IK=cactus->chembl->PUG, ChEMBL/CHEBI native; pubchem_struct+formula_pubchem disabled in config_shared.ini `validation-api:v3.95` (no-suffix) CRASHES: HEAD Dockerfile.api had `mv main.py` poison - use v3.95b / fixed snapshot at /tmp/opencode/Dockerfile.api.fixed (line removed in commit 0a3079a79). fsGroupChangePolicy=OnRootMismatch on worker deploys (rollout chown stall fix)
 - **Worker pools**: uid 1000 everywhere; BOTH consume one default celery queue — ship pipeline-code fixes into BOTH images (v2.15 + v3.92); validation-worker mounts BLAST DBs (P2-17)
 - **Downloader hardened**: taxonomy (terminal `project_not_found`/`no_simulation_files` vs transient `download_failed`), atomic `.part`, size verify, S3 fallback via `mdfind-s3-secret` (mddata bucket; legacy `mddbr_A0001_<file>` layout), `download_report.json` audit per entry
 
@@ -26,6 +26,7 @@ Current truth for the ceitec-biodata-ns validation deployment. Full-scale run is
 - Scale-up: bat3-worker 40 + validation-worker 50 (uid 1000, DBs mounted on both) = ~360 slots; observed ~20/min with on-disk entries
 - REQUEUE-ALL executed after validation-worker DB-mount fix (P2-17 resolved); scorch theory replaced by full reprocessing
 
+- **Ops (2026-09-23 state, verdict sealed)**: queue completed=7,401 rising post-fix; processing ~72; celery=0; S7 v6 stats at `/data/validation/stats_s7_v6.log`; sim_cache GT structures 2,710 keys + 881k cached sim pairs; residue reverify COMPLETE (3,444/3,446); rank audit fresh2: rerank headroom=0 (evidence@1 wins all); docs: rerun playbook at `docs/VALIDATION_RERUN_PLAYBOOK.md`.
 - **Ops (2026-09-21 state, wave-3.5 sealed)**: queue completed=7,389 (+119 new day-of), processing ~1,807, celery backlog **0** (melted 51k in hours), ns-truth+meta settle both firing. Current LIVE images: `bat3-worker:v2.31` (bat3-ee + bat3-ui), `bat3-validation-api:v3.112` (api + validation-worker). Spin-class dead via smiles kekulization-elimination; child-isolation fully reverted (data-loss wave resolved); pipeline contract restored (front stages 2-10s, chem verify flows at 73-300 verified/entry fresh).
 - **Ops (2026-09-18 state)**: queue completed=7,128 flat; processing 7,438; celery backlog 19.6k growing; completed 30m/2h/6h = 0. v2.26/v3.107 (resume) deployed; completions not yet recovering - pattern not solved by resume alone. Active investigation: (a) heavy-task stall pre-export, (b) persistent intake>drain accumulating backlog.
 - **Ops (2026-09-17)**: UI fast lane: `validation.api.celery`? no -- `validation.ui.celery` dedicated (2-replica bat3-ui-worker); manual runs via portal route to it (VALIDATION_UI_QUEUE env); skip shared backlog entirely. Rollback = env='' + delete bat3-ui-worker.

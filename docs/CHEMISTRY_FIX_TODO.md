@@ -233,18 +233,28 @@ mismatches, 3139C verified skel=1.0 through production gate.
       actual long-tail stalls (0 firings observed).
 - [x] **Pipeline contract restored**: 2-10s per front stage, verify flows, completions
       sustained (queue settled ~119 first day, per-minute cadence after fixes).
+- [x] **Residue reverify COMPLETE** (2026-09-22/23, waves A→B2→A3/B4): 3,444/3,446
+      conf=0.0/fingerprint_unavailable-residue entries renovated in place via
+      `scripts/replay_verification.py` (post-loop write-block bug fixed, --threads/--entries-file).
+      Two final entries lost to hung network reads (statistical noise).
+- [x] **Storm era sealed (2026-09-22)**: poison entries 2290/2291/2299 (76.5k-bond
+      non-linear fasta_map class) failed permanently; 84x3 stale claims reclaimed via
+      repo sweep semantics; celery `worker_prefetch_multiplier=1` durable + CLI pins
+      `--concurrency=2 --prefetch-multiplier=1` on both worker pools; fleets
+      redistributed 30×10Gi → 15×20Gi (same budget) under user authorization.
+- [x] **The invisible cork (2026-09-23, commit 2dfd5fdcb)**: `IdentifierResolver.__init__`
+      dead-code-after-return orphan (`enabled_similarity` unset) crashed EVERY
+      `_identify_molecules` step since Sep 20 — swallowed by executor → crash-resume
+      loops: 2,325 results.json touched/12h, 0/400 all-stages-done, completions ~0.
+      Fixed, images v2.32/v3.113, completions resumed immediately.
+- [x] **METRIC VERDICT (2026-09-23, /data/validation/stats_s7_v6.log)**: 15,185 entries:
+      inchikey n=5,914 att=58.0% validated@10=19.0%; ion att=51.4% v=34.0% flat;
+      pdb validated@10=99.6%; uniprot @10=98.4%; entry-any@10=98.9%; exact ≥1 hit 87.6%.
+      Rank audit (n=500 fresh): evidence@1 in ALL covering cases → rerank headroom=0.
 - [ ] Follow-up captured (priority order):
-      * **RESUME residue reverify (READY-TO-LAUNCH)**: bug fixed in
-        `scripts/replay_verification.py` (write block was post-loop → only last
-        entry written per batch; now in-loop). Scope: 3,447 conf=0.0/
-        fingerprint_unavailable-residue entries (`/data/validation/residue_entries.txt`).
-        Wave A died at 445/3447 by pod OOM. RESUME: `tail -n +446 residue_entries.txt`
-        split A/B, two pods, `--threads 4`, `VALIDATION_SKIP_PUG=1`. Proven: manual
-        write on entry 2310 → +442 evid-verified persisted.
-      * Then: fresh rank-audit rerun → S7 recompute → metric verdict.
-      * quota claim/dispatch equilibrium (claims ~960/h vs sustainable drain) —
-        deliberately deferred (drain>intake at scale now).
-      * first full-population wired+chem replay for final S7 meter verdict.
+      * inchikey low-numbers audit (NEXT, user-directed): decompose 42% non-covering +
+        7,914 unmapped GT pairs + mean@10=0.319 mid-sim pools.
       * damage-window rows scoping/requeue (signature_isolated_timeout-marked).
       * name_ccd/glycan/lite channels sizzling metrics (reporting gate only).
       * ion/peptide classes in metric routing (M10a design, nothing implemented).
+      * monster-class OOM nibbling at 20Gi (rare; watch-class, cheap-fail topology guard open).

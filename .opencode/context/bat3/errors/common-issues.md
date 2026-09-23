@@ -151,3 +151,28 @@ Failure signatures from the Sept-2026 incident (P0-1..P0-6, P1 family), how to d
 ### Split-brain completion counter (nfs-truth janitor, conservative)
 - Runs settled via redis task-meta ONLY (~24h TTL) vs tasks taking longer: queue stuck at completion-flat-days while results.json今天 out to disk. Janitor `settle_by_results_truth` settles those from head-parsed stage map with strict guards (file freshness, started_at vs artifact age, success-skipped-warning terminal set only).
 - Silent note: replay writesverification into results.json on completed entries does NOT interfere (queue row is already complete/settled).
+
+### Swallowed-step-crash resume loop (THE invisible cork — deadliest class of Sep 2026)
+- **Signature**: celery receipts flow, workers burn CPU, results.json mtime updates constantly — yet `bat3_runs completed`=0 for days. Diagnostic: scan N recent results.json — if <5% have all-stages-done, you have a swallowed step-crash; the results.json `events` stream literally contains the traceback (grep for `attributeerror`/`unhandled exception in step`).
+- **Instance**: `IdentifierResolver.__init__` — a method insertion left `enabled_similarity = ...` AFTER `return` (dead code); every `_identify_molecules` raised AttributeError; executor caught it → step exception recorded → task exits "fine" → entry resumes → reloads multi-GB universe (minutes) → crashes at the identical step → repeat for DAYS (entry 5290: 12 days). 2,325 files touched/12h, 0/400 complete, queue completed flat.
+- **Root pattern**: stage-budget/feature insertion into the MIDDLE of `__init__` bodies; python never warns. Code-review rule: any edit inserting a method between `__init__` assignments = verify nothing orphaned below.
+- **Fix discipline**: the crash used a resolver ATTRIBUTE — always init attributes on the ABC, never in subclass-only paths (FormulaResolver had none). Commit 2dfd5fdcb, images v2.32/v3.113.
+
+### Celery prefetch-stacking OOM class (threads pool)
+- `--pool=threads --concurrency=N` without `--prefetch-multiplier=1` = up to 4×N buffered tasks per pod; heavy multi-GB pipeline entries stack inside ONE container (10Gi) → OOM; `acks_late` redelivery then ping-pongs the heaviest entries across the fleet ("poison storm" 2026-09-22, 9 pods/1h).
+- Cure (CLI pins + durable `celery_app.py: worker_prefetch_multiplier=1`): `--concurrency=2 --prefetch-multiplier=1`; per-task RAM headroom doubled. RAM sizing under budget: fewer replicas × more Gi (30×10Gi → 15×20Gi, budget unchanged).
+
+### Rollout-during-dispatch vaporization (ops discipline)
+- Rolling worker deployments while a fresh dispatch batch is in flight = task messages die in the visibility_timeout restore (33 unacked → only 6 redelivered, ~27 vaporized). Workers show **0 receipts** with broker `unacked` non-empty, fleet idle, DB rows stuck 'running'.
+- Rules: (1) never roll workers within ~15min of a reclaim/dispatch; (2) combine fix+resource changes into ONE rollout; (3) after any forced rollout: sweep orphans — `queue_processor.sweep_stale_validations(db, stale_hours=1)` (fails runs, requeues queue, resets entries; poison entries must be failed FIRST so sweep skips them).
+
+### Poison-entry class (always-fails-after-heavy-load)
+- ~76.5k-bond systems with no CONECT: MDAnalysis bond-guess (~25s, multi-GB) THEN `fasta_map_protein` always fails ("degree > 2 or 0, sequence is non-linear"). Identify via one OOMing pod's `Task run_pipeline_task[uuid] received` → `bat3_runs.celery_task_id` lookup. Action: fail entry+run+queue permanently with reason, EXCLUDE from requeue sweeps. Cheap-fail topology guard still OPEN (detect non-linear before guessing).
+
+### In-pod nohup job deaths (replay/wave ops)
+- Any kubectl-exec `nohup ... &` job dies with its pod (OOM/rollout). Pattern that works: `setsid nohup env ... python3 TOOL --entries-file F --threads 4 > LOG </dev/null 2>&1 &`; keep list files on NFS; tool counters `[N/total]`; resume = `tail -n +(N+1) FILE > trimmed` and relaunch — idempotent (reverified entries skip fast).
+- Probe traps: `ps` absent in containers (use /proc cmdline scan; NEVER pattern-match your own probe command — use disjoint pattern); heredoc needs `kubectl exec -i`; piping exec output locally breaks on CRLF (base64 in-pod, decode locally).
+
+### Task-message loss forensics (kombu redis QoS)
+- Truth order: pod receipts grep → redis `hlen unacked`/`llen celery` → `celery inspect active|reserved` (NOTE: inspect is unreliable under threads pool — returns empty while tasks visibly execute; trust receipts+CPU+stage logs instead) → DB `bat3_runs.celery_task_id` ↔ `celery-task-meta-*` diff.
+- `unacked>0` + `inspect=empty` = orphans from dead consumers; they redeliver at visibility_timeout (~3600s default) but the restore is lossy under fleet churn.
