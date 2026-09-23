@@ -7,9 +7,9 @@ from .base import IdentifierResolver
 from .resolvers.pubchem import PubChemResolver
 from .resolvers.chembl import ChemblResolver
 from .resolvers.idsm import IDSMResolverPubchem, IDSMResolverChembl, IDSMResolverChebi
-from .resolvers.inchikey import InchiKeyResolver
+from .resolvers.inchikey import InchiKeyResolver, InchiKeySelfResolver
 from .resolvers.hfamily import FormulaHFamilyResolver
-from .resolvers.formula import FormulaResolver
+from .resolvers.formula import FormulaResolver, FormulaChEMBLResolver
 from .resolvers.blast import (
     BLASTResolverPDBAA, BLASTResolverPDBNT, BLASTResolverUNIPROT,
     BLASTResolverNR, BLASTResolverSWISSPROT,
@@ -93,7 +93,15 @@ def get_default_resolvers(config: RunConfig) -> list[IdentifierResolver]:
     resolvers.append(IDSMResolverChembl(config))
     resolvers.append(IDSMResolverChebi(config))
     resolvers.append(InchiKeyResolver(config))
+    # Offline identity pass-through: InChIKey signature is itself a candidate
+    # (verification fetches its structure via cactus chain). PUB-indepedent.
+    resolvers.append(InchiKeySelfResolver(config))
     resolvers.append(FormulaResolver(config))
+    # ChEMBL exact-formula fallback: only meaningful while PubChem is
+    # cluster-blocked; gated on config flag or VALIDATION_SKIP_PUG.
+    import os as _os
+    if getattr(config.identifiers, "formula_chembl", False) or _os.environ.get("VALIDATION_SKIP_PUG"):
+        resolvers.append(FormulaChEMBLResolver(config))
     resolvers.append(FormulaHFamilyResolver(config))
     
     # Phase 3 resolvers (macromolecule identifiers)

@@ -111,6 +111,43 @@ class InchiKeyResolver(IdentifierResolver):
         return []
 
 
+class InchiKeySelfResolver(IdentifierResolver):
+    """Offline identity pass-through: an InChIKey signature is itself the
+    identity candidate (PUB-dead-proof).
+
+    Since 2026-09-12 PubChem is cluster-blocked (503), and the InChIKey->CID
+    reverse lookups (PUG, IDSM thin SPARQL) return nothing from the cluster.
+    But simulation ligand segments already carry the InChIKey itself; making
+    it a first-class identity candidate lets verification fetch its structure
+    via the cactus-first chain (NFS cache -> cactus 200-OK) and judge the exact
+    match vs ground truth without PubChem. Protonation-layer variants are
+    handled downstream by the charged-species (-N first) fetch guideline.
+    """
+
+    name = "inchikey_self"
+    identifier_type = "INCHIKEY"
+    accepted_signatures = ["inchikey"]
+
+    def __init__(self, config: RunConfig) -> None:
+        """No network needed; only config for the enablement flag."""
+        super().__init__(config)
+
+    def _is_applicable(self, signature: str) -> bool:
+        """Validate InChIKey format: 14-10-1 (e.g. BSYNRYMUTXBXSQ-UHFFFAOYSA-N)."""
+        if not isinstance(signature, str):
+            return False
+        parts = signature.strip().split("-")
+        return len(parts) == 3 and len(parts[0]) == 14 and len(parts[1]) == 10 and len(parts[2]) == 1
+
+    def _resolve_identity(self, signature: str, working_directory: str) -> list[str]:
+        """Return the InChIKey itself as the identity candidate."""
+        return [signature.strip().upper()]
+
+    def _resolve_similarity(self, signature: str, working_directory: str) -> list[tuple[str, float]]:
+        """Not applicable (exact identifier)."""
+        return []
+
+
 def _sparql_reverse_lookup(
     inchikey_variant: str,
     session: requests.Session,

@@ -109,6 +109,75 @@ class FormulaResolver(IdentifierResolver):
         return []
 
 
+class FormulaChEMBLResolver(IdentifierResolver):
+    """Molecular formula -> ChEMBL IDs via the ChEMBL EBI REST API.
+
+    Offline-PUG fallback for FormulaResolver: PubChem fastformula has been
+    cluster-blocked (503) since 2026-09-12. ChEMBL's molecule index supports
+    exact full-molecular-formula filtering and stays reachable (200-OK), and
+    the verification fetch chain is ChEMBL-native. System-scale formulas
+    (whole-segment protein water shells) simply 0-hit - cheap pass.
+    """
+
+    name = "formula_chembl"
+    identifier_type = "CHEMBL_ID"
+    accepted_signatures = ["formula"]
+
+    def __init__(self, config: RunConfig) -> None:
+        """Initialize with retry session (pubchem retry settings reused)."""
+        super().__init__(config)
+        self._session = _create_retry_session(
+            retry_attempts=config.pubchem.retry_attempts,
+            retry_delay=config.pubchem.retry_delay_s,
+        )
+
+    def _is_applicable(self, signature: str) -> bool:
+        """Basic formula pattern: element symbols followed by optional numbers."""
+        if not isinstance(signature, str) or not signature:
+            return False
+        return bool(re.match(r"^([A-Z][a-z]?\d*)+$", signature))
+
+    def _resolve_identity(self, signature: str, working_directory: str) -> list[str]:
+        """Resolve molecular formula to ChEMBL IDs via exact lookup."""
+        return fetch_chembl_ids_from_formula(signature.strip(), self._session)
+
+    def _resolve_similarity(self, signature: str, working_directory: str) -> list[tuple[str, float]]:
+        """Not applicable for molecular formula (exact composition)."""
+        return []
+
+
+def fetch_chembl_ids_from_formula(
+    formula: str,
+    session: requests.Session,
+    limit: int = 200,
+) -> list[str]:
+    """Fetch ChEMBL IDs for a molecular formula via the EBI REST API.
+
+    Soft-fails like the PUG variant: 400/404 (bad/absent formula) -> []; other
+    transport errors raise IdentifierResolutionError so attempts are logged.
+    """
+    url = "https://www.ebi.ac.uk/chembl/api/data/molecule.json"
+    params = {"molecule_structures__full_molformula__exact": formula, "limit": str(limit)}
+    try:
+        response = session.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        out: list[str] = []
+        seen: set[str] = set()
+        for m in data.get("molecules", []) or []:
+            cid = (m.get("molecule_chembl_id") or "").strip()
+            if cid and cid not in seen:
+                seen.add(cid)
+                out.append(cid)
+        return out
+    except requests.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code in (400, 404):
+            return []
+        raise IdentifierResolutionError(f"[Identifier] ChEMBL formula lookup failed: {exc}")
+    except Exception as exc:
+        raise IdentifierResolutionError(f"[Identifier] ChEMBL formula lookup failed: {exc}")
+
+
 def fetch_cids_from_formula(
     formula: str,
     session: requests.Session,

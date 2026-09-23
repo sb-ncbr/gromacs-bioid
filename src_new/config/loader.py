@@ -135,6 +135,11 @@ class IdentifiersConfig:
     name_maps_similarity: bool = False
     name_manual: bool = True
     name_manual_similarity: bool = False
+    # Offline-PUG formula fallback (ChEMBL REST exact-formula). Enable in
+    # production config while PubChem is cluster-blocked (503 since 2026-09-12),
+    # or per-run via VALIDATION_SKIP_PUG=1. Default off: zero behavior change
+    # when PUG is healthy.
+    formula_chembl: bool = False
 
 
 @dataclass
