@@ -149,3 +149,30 @@ class TestBuildResume:
         assert PubChemDB(db_path).count() == 2
         stats = build(db_path, smiles_gz, ik_gz, resume=True, workers=1)
         assert stats["rows_written"] == len(_ROWS) - 2 or PubChemDB(db_path).count() == len(_ROWS)
+
+
+class TestThreadSafety:
+    def test_shared_instance_across_threads(self, sample_db: Path) -> None:
+        import threading
+
+        db = PubChemDB(sample_db)
+        errors, results = [], []
+
+        def worker(cid, expect):
+            try:
+                for _ in range(50):
+                    results.append(db.by_cid(cid).smiles == expect)
+                    results.append(db.by_formula("C2H6O", limit=10) != [])
+            except Exception as exc:  # noqa: BLE001 - record, assert after join
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(2, "CCO")),
+                   threading.Thread(target=worker, args=(3, "CC(=O)OC1=CC=CC=C1C(=O)O")),
+                   threading.Thread(target=worker, args=(5, "OCC")),
+                   threading.Thread(target=worker, args=(7, "C1=CC=C(C=C1)C(=O)O"))]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert not errors
+        assert results and all(results)

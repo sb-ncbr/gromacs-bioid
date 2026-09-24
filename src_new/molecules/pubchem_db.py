@@ -27,6 +27,7 @@ import multiprocessing as mp
 import os
 import re
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from typing import Iterator, NamedTuple
@@ -348,12 +349,22 @@ class PubChemDB:
     def __init__(self, db_path: str | Path) -> None:
         self._db_path = Path(db_path)
         self._conn: sqlite3.Connection | None = None
+        # One shared read-only connection per instance; a lock serializes
+        # queries so a single instance is safe across `threads` celery pools
+        # (sqlite rejects cross-thread cursors otherwise). Queries are
+        # sub-millisecond, so contention is invisible. check_same_thread=False
+        # is safe precisely because the lock exists.
+        self._lock = threading.Lock()
 
     def _get_conn(self) -> sqlite3.Connection:
         if self._conn is None:
             uri = f"file:{self._db_path}?mode=ro&immutable=1"
-            self._conn = sqlite3.connect(uri, uri=True)
+            self._conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
         return self._conn
+
+    def _query(self, sql: str, args: tuple) -> list[tuple]:
+        with self._lock:
+            return self._get_conn().execute(sql, args).fetchall()
 
     def exists(self) -> bool:
         """True when the DB file is present (used for auto-degrade wiring)."""
@@ -371,19 +382,19 @@ class PubChemDB:
 
     def by_cid(self, cid: int | str) -> CompoundRow | None:
         """Look up a compound by PubChem CID."""
-        raw = self._get_conn().execute(
+        raw = self._query(
             "SELECT cid, smiles, inchikey, formula_hill, exact_mass FROM compounds WHERE cid=?",
             (int(cid),),
-        ).fetchone()
-        return self._to_row(raw) if raw else None
+        )
+        return self._to_row(raw[0]) if raw else None
 
     def by_inchikey(self, inchikey: str) -> CompoundRow | None:
-        """Look up a compound by full InChIKey."""
-        raw = self._get_conn().execute(
+        """Look up a compound by full InChIKey (lowest-CID row on duplicates)."""
+        raw = self._query(
             "SELECT cid, smiles, inchikey, formula_hill, exact_mass FROM compounds WHERE inchikey=?",
             (inchikey.strip(),),
-        ).fetchone()
-        return self._to_row(raw) if raw else None
+        )
+        return self._to_row(raw[0]) if raw else None
 
     def by_formula(self, formula: str, limit: int = 10) -> list[int]:
         """Formula -> CIDs (ascending, capped like PUG MaxRecords semantics).
@@ -394,15 +405,15 @@ class PubChemDB:
         hill = normalize_formula(formula)
         if not hill:
             return []
-        rows = self._get_conn().execute(
+        rows = self._query(
             "SELECT cid FROM compounds WHERE formula_hill=? ORDER BY cid LIMIT ?",
             (hill, int(limit)),
-        ).fetchall()
+        )
         return [r[0] for r in rows]
 
     def count(self) -> int:
         """Total row count."""
-        return self._get_conn().execute("SELECT COUNT(*) FROM compounds").fetchone()[0]
+        return self._query("SELECT COUNT(*) FROM compounds", ())[0][0]
 
     def __del__(self) -> None:  # pragma: no cover - defensive cleanup
         try:
