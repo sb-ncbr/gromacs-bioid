@@ -19,10 +19,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("identifier")
 
-# Legacy PUG `cids/txt` returned the full match list. 2000 keeps recall on
-# large formula classes while staying orders of magnitude cheaper than the
-# old fetch-every-candidate-from-PUG pattern (verification fetch is local too).
-_LIMIT = 2000
+# Legacy PUG `cids/txt` returned the full match list with no cap (parity for
+# C18H21N3O3S = 8,999; verified 2026-09-24). Mirror-side verification is
+# ~10ms/candidate offline, so we cap at 50k as a pathological-class guardrail
+# only; realistic ligand classes fit entirely. (hfamily keeps its own
+# 200-per-query cap to stay faithful to its PUG history.)
+_LIMIT = 50_000
 
 
 class FormulaLocalResolver(FormulaResolver):
