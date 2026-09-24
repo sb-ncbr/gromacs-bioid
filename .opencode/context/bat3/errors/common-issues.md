@@ -182,3 +182,15 @@ Failure signatures from the Sept-2026 incident (P0-1..P0-6, P1 family), how to d
 - **Mechanism**: TCP half-death after network/lb resets: consumers hold dead sockets, broker keeps them registered, BRPOPs never deliver. Celery's own heartbeats stop logging (frozen MainProcess), so it looks like a content stall.
 - **Ops sequence**: 1) `redis-cli client list` idle histogram (fastest detector); 2) `CLIENT KILL id` every zombie (idle>8000) as first aid; 3) if no revival in ~3 min: `kubectl rollout restart deploy` on BOTH worker pools (RollingUpdate, messages persist in redis db0). Expect unacked to jump to ~60 and receipts/completions to resume within minutes.
 - **Claim≫drain note**: dispatcher claims ~960/h bash irrespective of drain capacity: transient celery backlog growth is normal (messages persist); do NOT misread as stall — receipts/completions per minute are the truth meter.
+
+
+## Wedge class (2026-09-24): consumer stuck IN BRPOP even with client keepalive
+
+Symptoms: unacked ~0-6, llen stable thousands, 0 completions, pods Running, sockets look
+ESTABLISHED, redis client list shows 30 conns cmd=brpop idle~hours. Cause: CERIT network
+reset kills server-side half-flow; NAT answers our TCP keepalive probes so client never
+learns. Server-side fix: `redis-cli CONFIG SET timeout 60` (reaps; verified). Remedy for
+already-wedged processes: `rollout restart` (they don't self-recover). Defensive posture:
+server timeout 60 runtime + deployment-arg persistence TODO + liveness watchdog TODO.
+Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq -c`,
+`redis-cli monitor 20s`, inspect `.active()` worker count vs pods.

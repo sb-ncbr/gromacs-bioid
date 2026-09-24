@@ -101,6 +101,25 @@ for that entry id — all three tables, or the sweeper/dispatcher resurrects it.
 - **Offline-PUBCHEM fallback stack live** (`src_new/identification/resolvers/`): `inchikey_self` (InChIKey signature is itself an identity candidate; no network) + `formula_chembl` (EBI REST exact-formula -> CHEMBL_ID; gated by `identifiers.formula_chembl` in config or `VALIDATION_SKIP_PUG=1`). Production config: enabled in `config_shared.ini`.
 - **Zombie-client freeze class**: after network resets, check `redis-cli client list` idle histogram BEFORE assuming pipeline stall; `CLIENT KILL id` zombies, else `rollout restart` both worker pools (messages persist).
 
+## 5c. Lessons 2026-09-24 (mirror day)
+
+- **Consumer wedge survives client-side keepalive**: after the keepalive rollout,
+  a second CERIT reset wedged workers inside BRPOP on dead half-flows (middlebox
+  keeps them alive client-side). Server-side floor: `redis-cli CONFIG SET timeout 60`
+  reaps idle-blocked clients in 60s (verified 32->2). Wedged workers do NOT
+  self-recover even when their conn is closed - remedy is still `rollout restart`
+  both worker deps. TODO: k8s liveness watchdog (probe = "tasks completed in N min").
+- **celery redis transport is FIFO**: requeued/proof entries wait at the back of
+  the list; for instant proof exec the same code paths in-pod instead of a run.
+- **Requeue-before-drain double-runs**: flipping 'processing' rows while their
+  messages still sit in the list creates duplicate runs on one entry (idempotent
+  stages save correctness, but avoid when possible - flip only 'failed'/'completed').
+- **PubChem mirror ops**: DB at /app/databases/pubchem/current/ (symlink); rebuild
+  via `scripts/download-databases.sh pubchem`; parity via scripts/check_pubchem_parity.py
+  (fixture captured from clean IP); ops CLI scripts/pubchem_lookup.py.
+- **broker timeout 60 is runtime-only** - redis has no persistence; persistence to
+  deployment args is folded into the next planned maintenance (with dispatcher pause).
+
 ## 6. Current frontier (post-verdict, 2026-09-23)
 
 - inchikey validated@10 = 19.0% purified to an era artifact (PUG block since

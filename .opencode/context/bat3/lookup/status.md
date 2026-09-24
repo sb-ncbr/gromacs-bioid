@@ -26,7 +26,7 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
 - Scale-up: bat3-worker 40 + validation-worker 50 (uid 1000, DBs mounted on both) = ~360 slots; observed ~20/min with on-disk entries
 - REQUEUE-ALL executed after validation-worker DB-mount fix (P2-17 resolved); scorch theory replaced by full reprocessing
 
-- **Ops (2026-09-23 late, wave in flight)**: LEGACY reid wave (3,367 entries) running on v2.33/v3.114; strip+requeue mechanics in `scripts/strip_for_reidentify.py`; yield: 100% chem candidates on identify-done, verified chem accumulating; completions ~150-170/h; zombie-celery-client class closed (client-kill + rollout restart cookbook in common-issues). Next: audit_gap re-run + S7 v7 once the bulk lands (target: legacy no-chem 94% -> fresh-era ~19%; S7 v@10 toward fresh 77%).
+- **Ops (2026-09-23 late, wave in flight)**: LEGACY reid wave (3,367 entries) running on v2.40/v3.118; strip+requeue mechanics in `scripts/strip_for_reidentify.py`; yield: 100% chem candidates on identify-done, verified chem accumulating; completions ~150-170/h; zombie-celery-client class closed (client-kill + rollout restart cookbook in common-issues). Next: audit_gap re-run + S7 v7 once the bulk lands (target: legacy no-chem 94% -> fresh-era ~19%; S7 v@10 toward fresh 77%).
 - **Ops (2026-09-23 state, verdict sealed)**: queue completed=7,401 rising post-fix; processing ~72; celery=0; S7 v6 stats at `/data/validation/stats_s7_v6.log`; sim_cache GT structures 2,710 keys + 881k cached sim pairs; residue reverify COMPLETE (3,444/3,446); rank audit fresh2: rerank headroom=0 (evidence@1 wins all); docs: rerun playbook at `docs/VALIDATION_RERUN_PLAYBOOK.md`.
 - **Ops (2026-09-21 state, wave-3.5 sealed)**: queue completed=7,389 (+119 new day-of), processing ~1,807, celery backlog **0** (melted 51k in hours), ns-truth+meta settle both firing. Current LIVE images: `bat3-worker:v2.31` (bat3-ee + bat3-ui), `bat3-validation-api:v3.112` (api + validation-worker). Spin-class dead via smiles kekulization-elimination; child-isolation fully reverted (data-loss wave resolved); pipeline contract restored (front stages 2-10s, chem verify flows at 73-300 verified/entry fresh).
 - **Ops (2026-09-18 state)**: queue completed=7,128 flat; processing 7,438; celery backlog 19.6k growing; completed 30m/2h/6h = 0. v2.26/v3.107 (resume) deployed; completions not yet recovering - pattern not solved by resume alone. Active investigation: (a) heavy-task stall pre-export, (b) persistent intake>drain accumulating backlog.
@@ -48,3 +48,14 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
 - `bat3_validation/docs/INCIDENT_REGISTRY_2026-09.md` — full forensic log (external dir)
 - `ceitec-deployment.md` — live deployment facts
 - `../guides/full-scale-dispatch.md` — runbook (versions updated post-GO)
+
+## 2026-09-24 evening — PubChem mirror LIVE, chemistry re-run phase 1 in flight
+
+- Images: bat3-worker v2.40 / validation-api v3.118 (+ celery keepalive/gossip fixes from v2.34).
+- Local PubChem mirror production: /app/databases/pubchem/current (124.67M CIDs, golden
+  parity 80/81 vs PUG). Identities + verification fetches offline; proof on entry 2188
+  ligand: formula class 5.4ms, GT CID #1, verify fetches 2-6ms.
+- Wave phase 1 re-run launched: 978 requeued (28 failed + 950 completed-in-fallback-era),
+  2,389 processing continue; identify+verify+export refreshing with full mirror coverage.
+- Opera status: redis CONFIG timeout=60 runtime (persist at next maintenance); plan
+  docs/PLAN_PUBCHEM_MIRROR.md Phases 1-4 complete, Phase 5 (cron sync + final docs) open.
