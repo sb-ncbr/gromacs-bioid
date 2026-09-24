@@ -113,7 +113,12 @@ Estimated final size: ~25–40 GB including indexes (~120M rows). RAM during bui
 - [x] Full build ✅ 2026-09-24 (v2.36 image): 120M rows / 62 min total, md5-verified,
       validation passed, atomically activated. Benchmark gate CRUSHED: cold cid 0.4 ms,
       warm p95 ≤ 0.01 ms, big-formula first-hit ≤ 4 ms on NFS — no local caching needed.
-      (v2.37 rebuild in flight: isotope-collapsed formulas per §8 parity finding #1.)
+      (v2.37 isotope rebuild done; v2.38 final build 2026-09-24: 124,665,670 rows,
+      42.5k parse fails (0.034%), IK-matched 124,665,667; **golden parity 80/81** —
+      every formula class set-equal to PUG (incl. isotope/charge probing classes),
+      CID->SMILES equal at connectivity level; sole remaining diff = CID 10138,
+      an upstream PubChem no-structure quirk (PUG JSON property itself returns
+      CanonicalSMILES null). Accepted baseline. Integration deploy = v2.38/v3.116.)
 
 ### Phase 3 — Small-sample + parity tests (1–2 h)
 - [x] `--limit 2000000` mini-build end-to-end ✅ 2026-09-24 (7m27s total; 2M rows/29s build;
@@ -221,9 +226,11 @@ Estimated final size: ~25–40 GB including indexes (~120M rows). RAM during bui
 Measured by `scripts/check_pubchem_parity.py` over `tests/fixtures/pubchem_golden.jsonl`
 (81 capture points; generator `scripts/generate_pubchem_golden.py`):
 
-1. **Isotopes**: PUG fastformula is *isotope-insensitive* — labeled CIDs answer plain-formula
-   queries (e.g. CID 136728936 has PUG formula `C5H5N5O-2`). Mirror now collapses isotopes
-   (`SetIsotope(0)`) before `CalcMolFormula`/mass derivation. Original isotope SMILES kept.
+1. **Isotopes + charge**: PUG fastformula is *isotope-insensitive AND charge-insensitive* —
+   labeled/zwitterionic/dianion CIDs answer plain neutral-formula queries (CID 136728936 has
+   PUG formula `C5H5N5O-2`; CID 19752125 `C20H24O2-2`). Mirror collapses isotopes
+   (`SetIsotope(0)`; RDKit≥2026.03 merges by default) and strips the trailing formal-charge
+   annotation from the index key. Original SMILES preserved verbatim.
 2. **SMILES stereo**: PUG `CanonicalSMILES` is connectivity-only; mirror stores the
    *isomeric* SMILES (superset). Consumers (skeletize layers) are stereo-insensitive by
    design; parity compares at connectivity level (`isomericSmiles=False`) and passes.
