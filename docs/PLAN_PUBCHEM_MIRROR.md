@@ -18,13 +18,13 @@ NOT in scope (explicitly): substructure/similarity search, 2D/3D coordinates, na
 
 ## 1. Data sources (live-verified 2026-09-23)
 
-| File | Role | Size | Notes |
+| File | Role | Size (2026-09-22 build) | Notes |
 |---|---|---|---|
-| `Compound/Extras/CID-SMILES.gz` | CID → isomeric SMILES | **1.49 GB** (HEAD-verified) | tab-separated `CID<TAB>SMILES`, CID-ascending |
-| `Compound/Extras/CID-InChI-Key.gz` | CID → InChIKey | ~2 GB (HEAD-check in script) | same layout, CID-ascending |
-| `Compound/Extras/CID-Mass.gz` | (fallback) exact mass | TBD | only if RDKit-derive fails sanity |
-| `Compound/Extras/CID-IUPAC.gz` | (optional) IUPAC names | TBD | skip unless fetcher contract needs it |
-| `*.md5` sidecars | integrity | tiny | download + verify each |
+| `Compound/Extras/CID-SMILES.gz` | CID → isomeric SMILES | **1.49 GB** | tab-separated `CID<TAB>SMILES`, CID-ascending |
+| `Compound/Extras/CID-InChI-Key.gz` | CID → InChI(Key) | **7.37 GB** (bigger than est. — likely bundles full InChI; builder must **sniff header rows**, take last InChIKey-shaped column) | CID-ascending |
+| `Compound/Extras/CID-Mass.gz` | (fallback) exact mass | 1.39 GB | only if RDKit-derive fails sanity |
+| `Compound/Extras/CID-IUPAC.gz` / `CID-Title.gz` | (optional) names | 1.85 / 1.89 GB | skipped for v1 |
+| `*.md5` sidecars | integrity | 48 B | download + verify each |
 
 Base URL: `https://ftp.ncbi.nlm.nih.gov/pubchem/Compound/Extras/`
 **`CID-Formula.gz` does NOT exist (404, verified)** — molecular formula must be *derived from
@@ -74,19 +74,14 @@ Estimated final size: ~25–40 GB including indexes (~120M rows). RAM during bui
 
 ## 3. Phases & tasks
 
-### Phase 0 — Recon & capacity gate (~30 min) 🚪
-- [ ] HEAD each Extras file; record size + md5 into `SOURCES.md` skeleton.
-- [ ] `df -h` on the databases PVC; require **≥ 80 GB free** else provision extra capacity
-      (else STOP and report — same pattern as `fix-pvc-size.sh`).
-- [ ] **Contract audit** (read `compound_fetcher.py` + `formula.py` + verification manager):
-      enumerate every PUG field consumed (SMILES type, InChIKey, formula, mass, synonyms?),
-      PUG result ordering (`cids/txt` ascending? `MaxRecords` default 10 in our call site),
-      and the exact soft-fail semantics callers rely on (404 → `[]`, 503 → raise).
-      Output: 1-page note pasted into this file under §8.
-- [ ] Confirm Hill-formula convention on golden examples (ATP `C10H16N5O13P3`, heme
-      `C34H32FeN4O4`, salts with `.`-separated components) so RDKit derivation matches PubChem.
+### Phase 0 — Recon & capacity gate (~30 min) 🚪  ✅ DONE 2026-09-24
+- [x] HEAD each Extras file → sizes recorded in §1 (InChI-Key file is 7.37 GB, format sniff required)
+- [x] `df -h` on databases PVC → **70 TB free** — passes
+- [x] Contract audit → §8 (all PUG call sites enumerated, incl. **hfamily** which the
+      first draft missed)
+- [ ] Hill convention → deferred to Phase 3 golden fixture (parity asserts it automatically)
 
-**Gate:** capacity OK + contract written → proceed.
+**Gate: PASSED → Phase 1 cleared.**
 
 ### Phase 1 — Populate script + k8s Job (2–3 h)
 - [ ] `scripts/populate_pubchem_mirror.py` — modeled on `populate_blast_databases.py`:
@@ -138,9 +133,12 @@ Estimated final size: ~25–40 GB including indexes (~120M rows). RAM during bui
       (`name = formula_pubchem_local`, `identifier_type = PUBCHEM_CID`); registered **before**
       `formula_pubchem` in `identification/registry.py`; gated on `[identifiers] formula_local`
       (default **yes**, auto-degrade to PUG chain with one WARN line if DB file missing).
+- [ ] `src_new/identification/resolvers/hfamily.py` — swap its PUG fastformula call to
+      `by_formula` with local-first fallback (audit found this second formula consumer).
 - [ ] `verification/fetchers/compound_fetcher.py` — for CID and INCHIKEY fetch paths:
       local DB first; PUG/eutils only on local miss or DB absent; when mirror present,
-      `VALIDATION_SKIP_PUG=1` becomes fully offline.
+      `VALIDATION_SKIP_PUG=1` becomes fully offline; IDSM/cactus fallback chains can retire
+      for CID/InChIKey (keep code, demote below local).
 - [ ] Update `tests/src_new/identification/test_offline_fallbacks.py` (registration order,
       degrade path); add fetcher local-first tests.
 - [ ] Proof gate (same discipline as v2.33 fallbacks): 3 campaign entries
@@ -176,7 +174,7 @@ Estimated final size: ~25–40 GB including indexes (~120M rows). RAM during bui
 ## 5. Effort & footprint
 
 - Total: **~1 focused day** (P0 0.5h + P1 2.5h + P2 4h + P3 1.5h + P4 3.5h + P5 1h, overlapping).
-- Disk: ~3.5 GB raw .gz (transient) + ~35 GB per version, 2 versions kept → reserve 80 GB.
+- Disk: ~13 GB raw .gz retained per version + ~35 GB DB per version, 2 versions kept → reserve ~100 GB (we have 70 TB).
 - One-time build: ~1–2 h CPU (8 cores) download+index. Weekly sync: seconds when unchanged.
 
 ## 6. Alternatives considered (rejected)
@@ -189,17 +187,39 @@ Estimated final size: ~25–40 GB including indexes (~120M rows). RAM during bui
 | LMDB/KV store | fine, but SQL gives us free filtering/limits and everyone can debug it |
 | eutils-only | stay remote + 10 r/s cap still throttles burst; keep as fallback not foundation |
 
-## 7. Open questions (resolve in Phase 0, write answers here)
+## 7. Open questions
 
-- [ ] Exact field list consumed by verification (SMILES isomeric vs canonical? mass used?) → §8
-- [ ] Does PUG `cids/txt` order ascend by CID and default-limit? (affects `by_formula` LIMIT)
-- [ ] Keep raw .gz per version? (disk cost trivial; provenance value high) → leaning yes
-- [ ] Sync timing vs wave/campaign: build can start immediately; **integration deployment
-      must wait for the legacy wave to finish** (no mid-wave image rolls — session rule)
+- [x] Fields consumed by verification → §8: **SMILES text only** (per identifier). No mass,
+      formula, or synonym fields read from PUG anywhere in the fetch path.
+- [ ] PUG `cids/txt|json` ordering + implicit caps → pinned by the Phase 3 golden fixture
+      (`by_formula` uses `ORDER BY cid LIMIT n`; fixture must include one huge formula).
+- [x] Keep raw .gz per version → **yes** (~13 GB; provenance + rebuild without re-download).
+- [x] Timing → build integrates against wave in background; integration image rolls only
+      when safe (deploy freeze lifted 2026-09-24 for celery fix; mirror image will ride the
+      same rule — roll only between dispatch batches, or with `VALIDATION_DISPATCH_ENABLED=0`).
 
-## 8. Contract notes (filled during Phase 0)
+## 8. Contract notes — PUG consumption map (audited 2026-09-24)
 
-_Pending._
+### Call sites that hit `pubchem.ncbi.nlm.nih.gov/rest/pug`
+
+| # | File | Endpoint | Purpose | Mirror covers? |
+|---|---|---|---|---|
+| 1 | `identification/resolvers/formula.py:200` | `fastformula/{f}/cids/txt` | identify: formula→CIDs | ✅ `by_formula` |
+| 2 | `identification/resolvers/hfamily.py:143` | `fastformula/{f}/cids/JSON?MaxRecords=N` | identify: H-family neighbor formulas (e.g. ±H around `C25H18N4O5`) | ✅ `by_formula` (same query; add resolver task to Phase 4!) |
+| 3 | `identification/resolvers/pubchem.py:193` | `smiles/cids/txt` | identify: fastidentity SMILES→CID | ⚠️ v1 no (needs fastidentity semantics, not string match; InChIKey covers most identity needs) |
+| 4 | `identification/resolvers/pubchem.py:285` | `fastsimilarity_2d/{s}/cids/txt?Threshold=` | identify: similarity candidate generation | ❌ **never in v1** (needs fingerprints; stays remote-by-design, low QPS → future PUG-via-proxy funnel) |
+| 5 | `identification/resolvers/inchikey.py:229` | `inchikey/{ik}/cids/txt` | identify: InChIKey(+variants)→CID | ✅ exact `by_inchikey`; variant queries stay remote (low volume) |
+| 6 | `verification/fetchers/compound_fetcher.py` (`_fetch_pubchem`, `prefetch_pubchem`) | `cid/{cids}/property/CanonicalSMILES` (+TXT) | verify: CID→SMILES | ✅ `by_cid`; IDSM-fallback path retires |
+| 7 | same, `_fetch_inchikey` | `inchikey/{ik}/property/CanonicalSMILES` (cactus first, PUG last-resort) | verify: InChIKey→SMILES | ✅ direct `by_inchikey`→smiles (cactus fallback retired) |
+
+### Fetch-path facts
+- Verification reads **only SMILES strings** back from any source; nothing else consumed.
+- PUG `CanonicalSMILES` == current `ConnectivitySMILES`; `CID-SMILES.gz` publishes the
+  **isomeric** SMILES — superset information. Golden fixture must document any consumer
+  that assumed connectivity-only semantics (skeletize is stereo-insensitive by design).
+- Soft-fail semantics to preserve: `404/400 → []/None`; transport errors raise fail-soft
+  upstream (`IdentifierResolutionError` logged as attempt). Local DB miss ≡ 404.
+- `MaxRecords` values seen: 200 (hfamily `_MAX_RECORDS_PER_QUERY`), none elsewhere.
 
 ---
 
