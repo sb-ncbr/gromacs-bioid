@@ -30,6 +30,16 @@ NAMESPACE=""
 FOLLOW_LOGS=""
 SCALE_WORKER="yes"
 
+# Optional database selector as first positional arg: blast (default) | pubchem
+if [[ "${1:-}" == "pubchem" || "${1:-}" == "blast" ]]; then
+    if [[ "$1" == "pubchem" ]]; then
+        K8S_JOB_MANIFEST="$PROJECT_ROOT/k8s/pubchem-mirror-build-job.yaml"
+        JOB_NAME="bat3-pubchem-mirror-build"
+        SCALE_WORKER="no"  # mirror build is IO/CPU-bound; no worker contention
+    fi
+    shift
+fi
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --namespace|-n)
@@ -45,9 +55,9 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --help|-h)
-            echo "Usage: $0 [--namespace <ns>] [--follow-logs] [--no-scale-worker]"
+            echo "Usage: $0 [blast|pubchem] [--namespace <ns>] [--follow-logs] [--no-scale-worker]"
             echo ""
-            echo "Launch the BLAST database download job on Kubernetes."
+            echo "Launch a database download/build job on Kubernetes (blast or pubchem mirror)."
             echo ""
             echo "Options:"
             echo "  --namespace, -n  Kubernetes namespace (auto-detected from pods if not provided)"
@@ -61,7 +71,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "ERROR: Unknown option: $1"
-            echo "Usage: $0 [--namespace <ns>] [--follow-logs] [--no-scale-worker]"
+            echo "Usage: $0 [blast|pubchem] [--namespace <ns>] [--follow-logs] [--no-scale-worker]"
             echo "Run with --help for more information."
             exit 1
             ;;
@@ -118,7 +128,7 @@ fi
 
 echo ""
 echo "=============================================="
-echo "BLAST Database Download Job Launcher"
+echo "Database Download Job Launcher [$JOB_NAME]"
 echo "=============================================="
 echo "Namespace: $NAMESPACE"
 echo "Job manifest: $K8S_JOB_MANIFEST"
