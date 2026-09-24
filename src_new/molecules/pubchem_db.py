@@ -188,6 +188,16 @@ def build(
     started = time.time()
     workers = workers or min(8, mp.cpu_count() or 1)
 
+    # RDKit emits per-molecule warnings ('not removing hydrogen atom ...') at
+    # a rate that floods job logs on a 120M-row build; parse failures are
+    # still counted and sampled via stats. Silence globally (fork-inherited).
+    try:
+        from rdkit import RDLogger
+
+        RDLogger.DisableLog("rdApp.*")
+    except Exception:  # pragma: no cover - rdkit always present in build image
+        pass
+
     fresh = not db_path.exists()
     state = _read_checkpoint(db_path) if (resume and db_path.exists()) else {"done_upto_cid": 0, "rows_written": 0}
     done_upto = int(state.get("done_upto_cid", 0))
