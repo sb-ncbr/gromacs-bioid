@@ -37,6 +37,10 @@ _BATCH_ROWS = 100_000
 _CHECKPOINT_ROWS = 5_000_000
 _INCHIKEY_RE = re.compile(r"^[A-Z]{14}-[A-Z]{10}-[A-Z]$")
 _FORMULA_PART_RE = re.compile(r"([A-Z][a-z]?)(\d*)")
+# Trailing formal-charge annotation emitted by RDKit CalcMolFormula
+# ('C2H3O2-', 'C7H8N4O2+2', 'C20H24O2-2'). PUG formula search is
+# charge-insensitive, so the index key strips it.
+_CHARGE_SUFFIX_RE = re.compile(r"[+-]+\d*$")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS compounds (
@@ -101,18 +105,22 @@ def _derive_chemistry(batch: list[tuple[int, str]]) -> list[tuple[int, str, str,
         if mol is None:
             out.append((cid, smiles, "", None, False))
             continue
-        # Isotope convention (parity-verified 2026-09-24): PUG fastformula is
-        # isotope-insensitive - labeled compounds (e.g. CID 136728936,
-        # 'C5H5N5O-2') answer to the PLAIN formula query. Collapse isotope
-        # labels before deriving formula/mass so the mirror behaves the same.
-        # The original isomeric/isotope SMILES text is preserved as stored.
+        # Formula convention (parity-verified 2026-09-24): PUG fastformula is
+        # insensitive to BOTH isotopes and formal charge/protonation state
+        # (zwitterion CID 136728936 'C5H5N5O-2' and dianion CID 19752125
+        # 'C20H24O2-2' answer the PLAIN formula queries 'C5H5N5O'/'C20H24O2').
+        # CalcMolFormula merges isotopes by default (rdkit 2026.03) and
+        # appends charge as a trailing '±n' annotation - strip it so the
+        # index key matches the PUG query form. Original SMILES preserved.
         for atom in mol.GetAtoms():
             atom.SetIsotope(0)
+        formula = rdMolDescriptors.CalcMolFormula(mol)
+        formula = _CHARGE_SUFFIX_RE.sub("", formula)
         out.append(
             (
                 cid,
                 smiles,
-                rdMolDescriptors.CalcMolFormula(mol),
+                formula,
                 float(rdMolDescriptors.CalcExactMolWt(mol)),
                 True,
             )

@@ -24,6 +24,7 @@ _ROWS = [
     (6  , "[Na+].[Cl-]", "CCCCCCCCCCCCCC-DDDDDDDDDD-N"),           # salt
     (7, "C1=CC=C(C=C1)C(=O)O", "DDDDDDDDDDDDDD-EEEEEEEEEE-N"),     # benzoic acid
     (8, "[13CH3]CO", "EEEEEEEEEEEEEE-FFFFFFFFFF-N"),              # 13C-labeled ethanol
+    (9, "CC(=O)[O-]", "FFFFFFFFFFFFFF-GGGGGGGGGG-N"),             # acetate (charged)
 ]
 
 _IK_FAKE_INCHI = "InChI=1S/fake"
@@ -81,10 +82,16 @@ class TestReadApi:
         assert row.smiles == "CC(=O)OC1=CC=CC=C1C(=O)O"
         assert row.inchikey == "BSYNRYMUTXBXSQ-UHFFFAOYSA-N"
         assert row.formula_hill == "C9H8O4"
+        assert row.exact_mass == pytest.approx(180.042, abs=1e-3)
         iso = db.by_cid(8)
         assert iso is not None and iso.formula_hill == "C2H6O" and iso.smiles == "[13CH3]CO"
-        assert row.exact_mass == pytest.approx(180.042, abs=1e-3)
         assert db.by_cid(424242) is None
+
+    def test_charged_species_answers_plain_formula(self, sample_db: Path) -> None:
+        # PUG is charge-insensitive (verified: dianion C20H24O2-2 answers C20H24O2)
+        db = PubChemDB(sample_db)
+        assert db.by_cid(9).formula_hill == "C2H3O2"
+        assert db.by_formula("C2H3O2") == [9]
 
     def test_by_cid_missing_inchikey(self, sample_db: Path) -> None:
         db = PubChemDB(sample_db)
