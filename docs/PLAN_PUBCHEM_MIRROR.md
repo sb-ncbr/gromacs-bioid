@@ -84,20 +84,19 @@ Estimated final size: ~25–40 GB including indexes (~120M rows). RAM during bui
 **Gate: PASSED → Phase 1 cleared.**
 
 ### Phase 1 — Populate script + k8s Job (2–3 h)
-- [ ] `scripts/populate_pubchem_mirror.py` — modeled on `populate_blast_databases.py`:
+- [x] `scripts/populate_pubchem_mirror.py` — modeled on `populate_blast_databases.py`:
       manifest-driven (URLs from §1), retries + `Retry-After` etiquette, size+md5 verification,
       staging dir `staging-<ts>`, skip-already-verified files on retry (resumable),
       `--keep-raw`, `--limit N` (sample builds), `--target-dir`.
-- [ ] `k8s/pubchem-mirror-build-job.yaml` — modeled on `blast-db-download-job.yaml`
+- [x] `k8s/pubchem-mirror-build-job.yaml` — modeled on `blast-db-download-job.yaml`
       (worker image, databases PVC at `/app/databases`), higher limits
       (requests 4 CPU/8Gi, limits 8 CPU/32Gi), `activeDeadlineSeconds: 86400`, `backoffLimit: 2`.
-- [ ] Extend `scripts/download-databases.sh` with a `--pubchem` (or `pubchem`) subcommand.
-- [ ] Extend `scripts/validate_databases.py` (or sibling `validate_pubchem_mirror.py`):
-      file presence, sqlite integrity (`PRAGMA integrity_check` on sample pages), row-count
-      sanity vs metadata, symlink points at a valid version.
+- [x] Extend `scripts/download-databases.sh` (`pubchem` selector; skips worker scale-down).
+- [~] Validation lives inside populate (`validate_db`: integrity, row counts, probe CIDs
+      702/2244/5957). External `validate_databases.py` extension: TODO (nice-to-have).
 
 ### Phase 2 — Index build machinery (3–5 h)
-- [ ] `src_new/chemistry/pubchem_db.py`:
+- [x] `src_new/molecules/pubchem_db.py` (location adjusted to existing layout):
   - `build(db_path, smiles_gz, inchikey_gz, limit=None)` — zip-merge the two CID-ascending
     streams (assert monotonic; tolerate rows missing on one side, count them).
   - RDKit per row: `MolFromSmiles` → `CalcMolFormula` (Hill) + `ExactMolWt`; parse failures
@@ -110,35 +109,35 @@ Estimated final size: ~25–40 GB including indexes (~120M rows). RAM during bui
   - Read API: `class PubChemDB: by_cid(cid) -> Row|None; by_inchikey(ik) -> cid|None;
     by_formula(hill, limit=10) -> list[int]`; open with `mode=ro&immutable=1`,
     per-process connection (no shared handles across fork).
-- [ ] Config knobs: `[pubchem] local_db_path = /app/databases/pubchem/current/pubchem.sqlite`.
-- [ ] Full build run on the Job; benchmark gate (from a validation-worker pod, cold + warm):
-      `by_cid` p95 < 20 ms warm; `by_formula('C6H12O6')` p95 < 150 ms over NFS; else report
-      before integrating (NFS fallback: optional node-local copy step — decide only with data).
+- [x] Config knobs: `[pubchem] local_db_path` (default `/app/databases/pubchem/current/pubchem.sqlite`).
+- [x] Full build ✅ 2026-09-24 (v2.36 image): 120M rows / 62 min total, md5-verified,
+      validation passed, atomically activated. Benchmark gate CRUSHED: cold cid 0.4 ms,
+      warm p95 ≤ 0.01 ms, big-formula first-hit ≤ 4 ms on NFS — no local caching needed.
+      (v2.37 rebuild in flight: isotope-collapsed formulas per §8 parity finding #1.)
 
 ### Phase 3 — Small-sample + parity tests (1–2 h)
-- [ ] `--limit 2000000` mini-build end-to-end (proves pipeline in minutes, not hours).
-- [ ] Golden parity fixture (capture on workstation where PUG is clean):
-      `tests/fixtures/pubchem_golden.jsonl` — 50 formulas (water, ethanol, ATP, heme,
-      camphors, metal complexes, salts with components, an absurd formula → `[]`),
-      20 InChIKeys, 20 CIDs, each with captured PUG response. Assert set-equality vs local DB
-      (order-insensitive; limit semantics per contract). **Any systematic mismatch →
-      §8 contract doc updated + decision recorded; never silently patched.**
-- [ ] `tests/src_new/chemistry/test_pubchem_db.py` — synthetic 20-row fixture DB built in tmp,
-      no network, no NFS; covers build edge cases (bad SMILES, missing inchikey, limit semantics).
+- [x] `--limit 2000000` mini-build end-to-end ✅ 2026-09-24 (7m27s total; 2M rows/29s build;
+      30 parse fails, IK-matched 2M/2M; probes verified cid 702/formula/inchikey ground truth)
+- [x] Golden parity fixture ✅ 2026-09-24: `tests/fixtures/pubchem_golden.jsonl`
+      (50 formulas incl. huge classes C6H12O6→1721, 12 InChIKeys, 20 CIDs; 75×200/6×404)
+      + generator/checker scripts. First run on full build: 40 formula diffs → all 409
+      missing traced to isotope class → fixed, codified in §8; rerun pending on v2.37 build.
+      **No mismatch silently patched** — each class documented with measured evidence.
+- [x] `tests/src_new/molecules/test_pubchem_db.py` — synthetic 8-row fixture (bad SMILES,
+      missing inchikey, mixture, salt, isotope, limit/order semantics); 19 tests.
 - [ ] `scripts/pubchem_lookup.py --formula C2H6O | --cid 702 | --inchikey ...` ops CLI
       (the debugging tool we wished we had during the audit).
 
 ### Phase 4 — BAT3 integration (3–4 h)
-- [ ] `src_new/identification/resolvers/formula_local.py` — `FormulaLocalResolver`
-      (`name = formula_pubchem_local`, `identifier_type = PUBCHEM_CID`); registered **before**
-      `formula_pubchem` in `identification/registry.py`; gated on `[identifiers] formula_local`
-      (default **yes**, auto-degrade to PUG chain with one WARN line if DB file missing).
-- [ ] `src_new/identification/resolvers/hfamily.py` — swap its PUG fastformula call to
-      `by_formula` with local-first fallback (audit found this second formula consumer).
-- [ ] `verification/fetchers/compound_fetcher.py` — for CID and INCHIKEY fetch paths:
-      local DB first; PUG/eutils only on local miss or DB absent; when mirror present,
-      `VALIDATION_SKIP_PUG=1` becomes fully offline; IDSM/cactus fallback chains can retire
-      for CID/InChIKey (keep code, demote below local).
+- [x] `src_new/identification/resolvers/formula_local.py` — `FormulaLocalResolver`
+      registered before `formula_pubchem`, gated on `[identifiers] formula_local` (default on)
+      + DB presence (WARN+degrade otherwise).
+- [x] `src_new/identification/resolvers/hfamily.py` — local-first per-variant queries.
+- [x] `identification/resolvers/inchikey.py` — local exact-key step precedes PUG/IDSM.
+- [x] `verification/fetchers/compound_fetcher.py` — CID/InChIKEY fetch + prefetch:
+      cache → mirror → (PUG|IDSM|cactus) chain preserved as fallback; SKIP_PUG now fully offline.
+- [x] 10 integration tests (`tests/src_new/identification/test_pubchem_local.py`):
+      no-network proofs, registry order, degrade path; 63/63 incl. neighbors green.
 - [ ] Update `tests/src_new/identification/test_offline_fallbacks.py` (registration order,
       degrade path); add fetcher local-first tests.
 - [ ] Proof gate (same discipline as v2.33 fallbacks): 3 campaign entries
@@ -214,12 +213,25 @@ Estimated final size: ~25–40 GB including indexes (~120M rows). RAM during bui
 
 ### Fetch-path facts
 - Verification reads **only SMILES strings** back from any source; nothing else consumed.
-- PUG `CanonicalSMILES` == current `ConnectivitySMILES`; `CID-SMILES.gz` publishes the
-  **isomeric** SMILES — superset information. Golden fixture must document any consumer
-  that assumed connectivity-only semantics (skeletize is stereo-insensitive by design).
 - Soft-fail semantics to preserve: `404/400 → []/None`; transport errors raise fail-soft
   upstream (`IdentifierResolutionError` logged as attempt). Local DB miss ≡ 404.
 - `MaxRecords` values seen: 200 (hfamily `_MAX_RECORDS_PER_QUERY`), none elsewhere.
+
+### Parity findings (golden fixture vs 120M-row build, 2026-09-24)
+Measured by `scripts/check_pubchem_parity.py` over `tests/fixtures/pubchem_golden.jsonl`
+(81 capture points; generator `scripts/generate_pubchem_golden.py`):
+
+1. **Isotopes**: PUG fastformula is *isotope-insensitive* — labeled CIDs answer plain-formula
+   queries (e.g. CID 136728936 has PUG formula `C5H5N5O-2`). Mirror now collapses isotopes
+   (`SetIsotope(0)`) before `CalcMolFormula`/mass derivation. Original isotope SMILES kept.
+2. **SMILES stereo**: PUG `CanonicalSMILES` is connectivity-only; mirror stores the
+   *isomeric* SMILES (superset). Consumers (skeletize layers) are stereo-insensitive by
+   design; parity compares at connectivity level (`isomericSmiles=False`) and passes.
+3. **InChIKey is not unique** in PubChem (water: CIDs 962 + 22247451 share a key).
+   `by_inchikey` returns the lowest-CID row; verification equality is unaffected.
+4. **Upstream quirk class**: CID 10138 — PUG property returns null CanonicalSMILES while
+   legacy TXT endpoint once returned text; size ~1 per fixture. Mirror soft-fails like PUG-null.
+5. `extra=0` in all formula diffs — mirror never invents CIDs (clean subset property).
 
 ---
 
