@@ -142,3 +142,22 @@ class TestFetcherLocalFirst:
         assert compound_fetcher.prefetch_pubchem(["2", "3", "7"]) == 0  # nothing left for HTTP
         fetcher = compound_fetcher.CompoundSignatureFetcher()
         assert fetcher.fetch("7", "PUBCHEM_CID") == "C1=CC=C(C=C1)C(=O)O"
+
+
+class TestOpsCLI:
+    def test_pubchem_lookup_modes(self, mirror_db: Path) -> None:
+        import subprocess
+        import sys
+
+        cli = ["scripts/pubchem_lookup.py", "--db", str(mirror_db)]
+        r = subprocess.run([sys.executable, *cli, "--cid", "3"], capture_output=True, text=True)
+        assert r.returncode == 0 and "BSYNRYMUTXBXSQ-UHFFFAOYSA-N" in r.stdout
+        r = subprocess.run([sys.executable, *cli, "--formula", "C2H6O"], capture_output=True, text=True)
+        assert r.stdout.startswith("2\tCCO")
+        r = subprocess.run([sys.executable, *cli, "--inchikey", "LFQSCWFLJHTTHZ-UHFFFAOYSA-N"],
+                           capture_output=True, text=True)
+        assert r.returncode == 0 and "cid=2" in r.stdout
+        r = subprocess.run([sys.executable, *cli, "--stats"], capture_output=True, text=True)
+        assert "rows: 3" in r.stdout
+        r = subprocess.run([sys.executable, *cli, "--cid", "999999"], capture_output=True, text=True)
+        assert r.returncode == 1 and "not found" in r.stdout
