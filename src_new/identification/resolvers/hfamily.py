@@ -86,6 +86,19 @@ class FormulaHFamilyResolver(IdentifierResolver):
             retry_delay=config.pubchem.retry_delay_s,
         )
         self.h_range = getattr(config.pubchem, "hfamily_h_range", _H_RANGE_DEFAULT)
+        # Local PubChem mirror: serves the per-variant fastformula lookups
+        # without network (same 200-per-query cap as the PUG JSON call).
+        self._local_db = None
+        local_path = getattr(config.pubchem, "local_db_path", "")
+        if local_path:
+            try:
+                from ...molecules.pubchem_db import PubChemDB
+
+                db = PubChemDB(local_path)
+                if db.exists():
+                    self._local_db = db
+            except Exception:
+                self._local_db = None
 
     def _is_applicable(self, signature: str) -> bool:
         try:
@@ -139,10 +152,16 @@ class FormulaHFamilyResolver(IdentifierResolver):
             variant = dict(parts)
             variant["H"] = h
             formula = _hill(variant)
-            data = self._pug_get(
-                f"/compound/fastformula/{formula}/cids/JSON?MaxRecords={_MAX_RECORDS_PER_QUERY}"
-            )
-            cids = (data or {}).get("IdentifierList", {}).get("CID") or []
+            if self._local_db is not None:
+                try:
+                    cids = list(self._local_db.by_formula(formula, limit=_MAX_RECORDS_PER_QUERY))
+                except Exception:
+                    cids = []
+            else:
+                data = self._pug_get(
+                    f"/compound/fastformula/{formula}/cids/JSON?MaxRecords={_MAX_RECORDS_PER_QUERY}"
+                )
+                cids = (data or {}).get("IdentifierList", {}).get("CID") or []
             for cid in cids:
                 scid = str(cid)
                 if scid not in seen:

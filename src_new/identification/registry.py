@@ -96,6 +96,21 @@ def get_default_resolvers(config: RunConfig) -> list[IdentifierResolver]:
     # Offline identity pass-through: InChIKey signature is itself a candidate
     # (verification fetches its structure via cactus chain). PUB-indepedent.
     resolvers.append(InchiKeySelfResolver(config))
+    # Local PubChem mirror (formula -> CIDs): primary formula channel when the
+    # built DB is present; degrades silently to the PUG/ChEMBL chain otherwise.
+    if getattr(config.identifiers, "formula_local", True):
+        from .resolvers.formula_local import FormulaLocalResolver
+        from ..molecules.pubchem_db import PubChemDB as _PubChemDB
+
+        _local_path = getattr(config.pubchem, "local_db_path", "")
+        if _local_path and _PubChemDB(_local_path).exists():
+            resolvers.append(FormulaLocalResolver(config))
+        else:
+            import logging as _logging
+
+            _logging.getLogger("identifier").warning(
+                "formula_local enabled but mirror DB missing at %r; PUG chain in use", _local_path
+            )
     resolvers.append(FormulaResolver(config))
     # ChEMBL exact-formula fallback: only meaningful while PubChem is
     # cluster-blocked; gated on config flag or VALIDATION_SKIP_PUG.

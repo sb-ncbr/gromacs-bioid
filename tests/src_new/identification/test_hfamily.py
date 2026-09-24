@@ -25,6 +25,7 @@ def _resolver():
     import requests
     r._session = requests.Session()
     r._session._hf_retry_attempts = 2
+    r._local_db = None  # mirror handle is normally set in __init__; stub stays PUG-path
     r._session._hf_retry_delay = 0.0
     r.h_range = 2
     return r

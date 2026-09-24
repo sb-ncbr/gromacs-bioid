@@ -20,6 +20,34 @@ _SIM_CACHE = "/data/validation/sim_cache/pubchem_smiles"
 _MIN_INTERVAL_S = 0.34         # keep the whole pipeline under PubChem's ~3 rps
 _last_request_ts = 0.0
 
+_LOCAL_DB = None
+_LOCAL_DB_READY = False
+
+
+def _local_db():
+    """Lazy per-process handle to the local PubChem mirror (None when absent).
+
+    Path override: PUBCHEM_LOCAL_DB env var (tests, staging).
+    """
+    global _LOCAL_DB, _LOCAL_DB_READY
+    if not _LOCAL_DB_READY:
+        path = os.environ.get(
+            "PUBCHEM_LOCAL_DB", "/app/databases/pubchem/current/pubchem.sqlite"
+        )
+        try:
+            from ...molecules.pubchem_db import PubChemDB
+
+            db = PubChemDB(path)
+            if db.exists():
+                _LOCAL_DB = db
+                logger.info(f"PubChem local mirror active: {path}")
+            else:
+                logger.info(f"PubChem local mirror DB not present: {path}")
+        except Exception as exc:
+            logger.warning(f"PubChem local mirror unavailable: {exc}")
+        _LOCAL_DB_READY = True
+    return _LOCAL_DB
+
 
 def _cache_path(cid: str) -> str:
     return os.path.join(_SIM_CACHE, hashlib.sha1(f"cid:{cid}".encode()).hexdigest()[:24] + ".json")
@@ -100,6 +128,20 @@ def prefetch_pubchem(cids) -> int:
     Returns number of CIDs fetched over HTTP (others were already cached).
     """
     todo = [str(c) for c in cids if c and str(c).isdigit() and _cache_read(str(c)) is None]
+    # Local mirror resolves most CIDs offline; only true misses go over HTTP.
+    db = _local_db()
+    if db is not None and todo:
+        still_todo = []
+        for c in todo:
+            try:
+                row = db.by_cid(c)
+            except Exception:
+                row = None
+            if row is not None:
+                _cache_write(str(c), row.smiles)
+            else:
+                still_todo.append(c)
+        todo = still_todo
     fetched = 0
     for i in range(0, len(todo), 50):
         chunk = todo[i:i + 50]
@@ -160,7 +202,7 @@ class CompoundSignatureFetcher(SignatureFetcher):
             return None
     
     def _fetch_pubchem(self, cid: str) -> str | None:
-        """Fetch SMILES for a PubChem CID, ordered: NFS cache -> PUG -> IDSM
+        """Fetch SMILES for a PubChem CID, ordered: NFS cache -> local mirror -> PUG -> IDSM
         (ELIXIR-CZ mirrors the PubChem RDF; works while NCBI blocks cluster IP).
 
         Set VALIDATION_SKIP_PUG=1 to short-circuit the PUG attempt entirely
@@ -173,7 +215,15 @@ class CompoundSignatureFetcher(SignatureFetcher):
         if cached is not None:
             return cached
         smiles = None
-        if os.environ.get("VALIDATION_SKIP_PUG") != "1":
+        db = _local_db()
+        if db is not None:
+            try:
+                row = db.by_cid(str(cid))
+                if row is not None:
+                    smiles = row.smiles
+            except Exception as exc:
+                logger.warning(f"local mirror by_cid({cid}) failed: {exc}")
+        if not smiles and os.environ.get("VALIDATION_SKIP_PUG") != "1":
             url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/CanonicalSMILES/TXT"
             r = _polite_get(url)
             if r is not None:
@@ -224,6 +274,16 @@ class CompoundSignatureFetcher(SignatureFetcher):
         cached = _cache_read_ns('ikey', ik)
         if cached is not None:
             return cached
+        # 0) Local PubChem mirror (exact full-key lookup, no network)
+        db = _local_db()
+        if db is not None:
+            try:
+                row = db.by_inchikey(ik)
+                if row is not None and row.smiles:
+                    _cache_write_ns('ikey', ik, row.smiles)
+                    return row.smiles
+            except Exception as exc:
+                logger.warning(f"local mirror by_inchikey({ik}) failed: {exc}")
         # 1) CACTUS (multi-line for charged species: take first valid line)
         url1 = f"https://cactus.nci.nih.gov/chemical/structure/{ik}/smiles"
         r = _polite_get(url1)

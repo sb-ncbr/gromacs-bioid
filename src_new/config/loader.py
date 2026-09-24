@@ -140,6 +140,10 @@ class IdentifiersConfig:
     # or per-run via VALIDATION_SKIP_PUG=1. Default off: zero behavior change
     # when PUG is healthy.
     formula_chembl: bool = False
+    # Local PubChem mirror (formula/CID/InChIKey lookups from on-PVC SQLite;
+    # docs/PLAN_PUBCHEM_MIRROR.md). Default on: auto-degrades with one warning
+    # when the DB file is absent at pubchem.local_db_path.
+    formula_local: bool = True
 
 
 @dataclass
@@ -182,6 +186,9 @@ class PubchemConfig:
     similarity_threshold: int = 95
     retry_attempts: int = 1
     retry_delay_s: int = 10
+    # Local PubChem mirror SQLite (docs/PLAN_PUBCHEM_MIRROR.md); the 'current'
+    # symlink is swapped atomically by the build job.
+    local_db_path: str = "/app/databases/pubchem/current/pubchem.sqlite"
 
 
 @dataclass

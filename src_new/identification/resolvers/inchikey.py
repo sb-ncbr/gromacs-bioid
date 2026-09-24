@@ -225,6 +225,22 @@ def fetch_cids_from_inchikey(
     seen: set[str] = set()
 
     for variant in variants:
+        # (a.5) Local PubChem mirror: exact full-key lookup, no network.
+        try:
+            from ...molecules.pubchem_db import PubChemDB
+
+            local_path = getattr(config.pubchem, "local_db_path", "")
+            if local_path:
+                row = PubChemDB(local_path).by_inchikey(variant)
+                if row is not None:
+                    scid = str(row.cid)
+                    if scid not in seen:
+                        seen.add(scid)
+                        all_cids.append(scid)
+                        return all_cids  # local hit: same early-return as PUG
+        except Exception:
+            pass  # any local-mirror trouble -> fall through to network chain
+
         # (b) Try the existing PUG call first
         url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/inchikey/{variant}/cids/txt"
         try:
