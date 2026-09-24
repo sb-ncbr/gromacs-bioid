@@ -278,3 +278,27 @@ mismatches, 3139C verified skel=1.0 through production gate.
       * name_ccd/glycan/lite channels sizzling metrics (reporting gate only).
       * ion/peptide classes in metric routing (M10a design, nothing implemented).
       * monster-class OOM nibbling at 20Gi (rare; watch-class, cheap-fail topology guard open).
+
+
+## NEXT (post-mirror, opened 2026-09-24 evening)
+
+Wave phase-1 re-run (3,367 legacy, mirror-backed) launched ~15:05 UTC; first cohort
+flushing. In order:
+
+1. **Monitor phase 1** to bulk completion (completions/hr, wedge incidents, sweep cycles).
+   Note: entries pre-dating first requeue may double-run (documented trap; benign - stages
+   are idempotent, both runs converge on same results.json state).
+2. **Phase 2 scoping**: re-run /data/validation/audit_gap.py; select entries completed in
+   the fallback era with zero/weak chem candidates for re-strip+requeue (full-campaign
+   chemistry refresh per 2026-09-24 decision: nearly all post-Sep-12 chemistry was degraded).
+3. **S7 v7**: campaign_stats.py --full --sim when bulk lands (expect inchikey validated@10
+   toward/above fresh-era ~77% with 100% formula-channel coverage).
+4. **Ops persistence**: redis `timeout 60` -> deployment args (needs redis restart; do
+   inside a dispatcher-paused maintenance); worker liveness watchdog vs wedge class
+   (probe: completions in last N min); delete /app/databases/pubchem-sample + old build jobs.
+5. **Mirror lifecycle leftovers (PLAN_PUBCHEM_MIRROR Phase 5)**: weekly sync CronJob
+   (md5-driven), rollback runbook, docs/PUBCHEM_DATABASE.md, load-bearing noise:
+   SERVER_CLOSED_CONNECTION_ERROR churn from timeout=60 on gossip conns (watch; if noisy,
+   revisit timeout or segregate broker db).
+6. **Stretch**: maps/manual name DBs source-or-retire; cheap-fail non-linear topology guard
+   (poison class 2290/2291/2299); signatures_timeout_s config field unimplemented.
