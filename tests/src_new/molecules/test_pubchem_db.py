@@ -23,6 +23,7 @@ _ROWS = [
     (5, "OCC", "BBBBBBBBBBBBBB-CCCCCCCCCC-O"),                      # ethanol, other string
     (6  , "[Na+].[Cl-]", "CCCCCCCCCCCCCC-DDDDDDDDDD-N"),           # salt
     (7, "C1=CC=C(C=C1)C(=O)O", "DDDDDDDDDDDDDD-EEEEEEEEEE-N"),     # benzoic acid
+    (8, "[13CH3]CO", "EEEEEEEEEEEEEE-FFFFFFFFFF-N"),              # 13C-labeled ethanol
 ]
 
 _IK_FAKE_INCHI = "InChI=1S/fake"
@@ -80,6 +81,8 @@ class TestReadApi:
         assert row.smiles == "CC(=O)OC1=CC=CC=C1C(=O)O"
         assert row.inchikey == "BSYNRYMUTXBXSQ-UHFFFAOYSA-N"
         assert row.formula_hill == "C9H8O4"
+        iso = db.by_cid(8)
+        assert iso is not None and iso.formula_hill == "C2H6O" and iso.smiles == "[13CH3]CO"
         assert row.exact_mass == pytest.approx(180.042, abs=1e-3)
         assert db.by_cid(424242) is None
 
@@ -105,8 +108,10 @@ class TestReadApi:
 
     def test_by_formula_limit_and_order(self, sample_db: Path) -> None:
         db = PubChemDB(sample_db)
-        # cid 2 ('CCO') and cid 5 ('OCC') are the same molecule -> same formula
-        assert db.by_formula("C2H6O", limit=10) == [2, 5]
+        # cid 2 ('CCO') and cid 5 ('OCC') are the same molecule -> same formula;
+        # cid 8 is isotope-labeled ethanol - PUG semantics are
+        # isotope-insensitive, so it answers under the plain formula too
+        assert db.by_formula("C2H6O", limit=10) == [2, 5, 8]
         assert db.by_formula("C2H6O", limit=1) == [2]
 
     def test_unparseable_smiles_kept_for_cid_lookup(self, sample_db: Path) -> None:

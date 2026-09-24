@@ -101,6 +101,13 @@ def _derive_chemistry(batch: list[tuple[int, str]]) -> list[tuple[int, str, str,
         if mol is None:
             out.append((cid, smiles, "", None, False))
             continue
+        # Isotope convention (parity-verified 2026-09-24): PUG fastformula is
+        # isotope-insensitive - labeled compounds (e.g. CID 136728936,
+        # 'C5H5N5O-2') answer to the PLAIN formula query. Collapse isotope
+        # labels before deriving formula/mass so the mirror behaves the same.
+        # The original isomeric/isotope SMILES text is preserved as stored.
+        for atom in mol.GetAtoms():
+            atom.SetIsotope(0)
         out.append(
             (
                 cid,
