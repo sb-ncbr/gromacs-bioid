@@ -158,10 +158,74 @@ class TestPubChemScorer:
         
         scorer = PubChemAnnotationScorer()
         quality = scorer.score("962", "PUBCHEM_CID")
-        
+
         assert quality is not None
         assert quality.score > 0.0
         assert quality.database == "pubchem"
+
+
+class TestPubChemScorerLocalMirror:
+    """Local-mirror annotation path (2026-09-25 spin-class fix)."""
+
+    def _stub_db(self, row):
+        db = Mock()
+        db.by_cid.return_value = row
+        return db
+
+    def test_mirror_hit_scores_70_without_http(self, monkeypatch) -> None:
+        from src_new.molecules.pubchem_db import CompoundRow
+        from src_new.verification.scorers import pubchem_scorer as mod
+
+        row = CompoundRow(cid=962, smiles="O", inchikey="X" * 27,
+                          formula_hill="H2O", exact_mass=18.0106)
+        monkeypatch.setattr(mod, "_local_db", lambda: self._stub_db(row))
+
+        with patch.object(mod.requests, "get") as mock_get:
+            quality = PubChemAnnotationScorer().score("962", "PUBCHEM_CID")
+
+        mock_get.assert_not_called()
+        assert quality is not None
+        assert quality.score == 70.0
+        assert set(quality.signals) == {
+            "canonical_smiles", "isomeric_smiles", "molecular_formula",
+        }
+
+    def test_mirror_miss_falls_back_to_pug(self, monkeypatch) -> None:
+        from src_new.verification.scorers import pubchem_scorer as mod
+
+        monkeypatch.setattr(mod, "_local_db", lambda: self._stub_db(None))
+
+        props_response = Mock()
+        props_response.json.return_value = {
+            "PropertyTable": {"Properties": [{
+                "CanonicalSMILES": "O", "IsomericSMILES": "O",
+                "IUPACName": "oxidane", "MolecularFormula": "H2O",
+            }]}
+        }
+        props_response.raise_for_status = Mock()
+        synonyms_response = Mock()
+        synonyms_response.json.return_value = {
+            "InformationList": {"Information": [{"Synonym": ["water"]}]}
+        }
+        synonyms_response.raise_for_status = Mock()
+
+        with patch.object(mod.requests, "get",
+                          side_effect=[props_response, synonyms_response]):
+            quality = PubChemAnnotationScorer().score("962", "PUBCHEM_CID")
+
+        assert quality is not None
+        assert quality.score == 100.0
+
+    def test_no_mirror_and_pug_down_scores_zero(self, monkeypatch) -> None:
+        from src_new.verification.scorers import pubchem_scorer as mod
+
+        monkeypatch.setattr(mod, "_local_db", lambda: None)
+        with patch.object(mod.requests, "get", side_effect=Exception("banned")):
+            quality = PubChemAnnotationScorer().score("962", "PUBCHEM_CID")
+
+        assert quality is not None
+        assert quality.score == 0.0
+        assert quality.signals == []
 
 
 class TestChemblScorer:
