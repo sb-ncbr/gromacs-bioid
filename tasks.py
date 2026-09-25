@@ -6,6 +6,7 @@ from pathlib import Path
 from celery import Celery
 
 from src_new.config.loader import CELERY_BROKER_URL, DATABASE_URL
+from src_new.celery_app import redis_broker_transport_opts
 
 # Initialize Celery app
 celery = Celery("validation", broker=CELERY_BROKER_URL)
@@ -19,6 +20,12 @@ celery.conf.update(
     enable_utc=True,
     task_always_eager=False,  # Queue tasks to Redis, don't run locally
     task_ignore_result=False,  # Store task results
+    # 2026-09-25 wedge-class hardening: bounds broker READS only, never task
+    # execution; see redis_broker_transport_opts docstring. This app (the
+    # validation worker fleet) previously had NO transport hardening at all.
+    broker_connection_retry=True,
+    broker_connection_retry_on_startup=True,
+    broker_transport_options=redis_broker_transport_opts(),
 )
 
 

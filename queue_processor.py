@@ -183,7 +183,12 @@ def _process_single_item(db: Session, queue_item: models.ValidationQueue,
     try:
         from config import CELERY_BROKER_URL
         from celery import Celery
-        celery_app = Celery("validation", broker=CELERY_BROKER_URL)
+        from src_new.celery_app import redis_broker_transport_opts
+        celery_app = Celery(
+            "validation",
+            broker=CELERY_BROKER_URL,
+            broker_transport_options=redis_broker_transport_opts(),
+        )
         ui_queue = os.environ.get("VALIDATION_UI_QUEUE", "")
         ui_prefix = os.environ.get("VALIDATION_UI_BATCH_PREFIX", "ui")
         task_kwargs = {
