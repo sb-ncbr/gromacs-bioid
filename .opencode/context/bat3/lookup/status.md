@@ -49,6 +49,33 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
 - `ceitec-deployment.md` — live deployment facts
 - `../guides/full-scale-dispatch.md` — runbook (versions updated post-GO)
 
+## 2026-09-25 late — wedge CLASS hardened + spin-class root-caused and FIXED
+
+- Fleets: `bat3-worker:v2.42` (bat3-ceitec ×15, bat3-ui ×2), `bat3-validation-api:v3.120`
+  (validation-api ×1, validation-worker ×15). Commits aeced4bfb (broker hardening) +
+  7196cd45c (verify annotation offline).
+- Campaign: 5,897/15,185 completed (38.8%); bursty drain (~262/h cheap cohort, ~15/h heavy,
+  ~56/h sustained average); ~9.3k remaining ≈ week-scale at current rate. 4 failed (3 poison
+  + 1 download). Zero new failure classes since v3.120.
+- Broker wedge (consumer stuck in BRPOP after CERIT resets): closed architecturally. Shared
+  redis_broker_transport_opts() on ALL celery apps; socket_timeout bounds reads only (big
+  simulations never interrupted — user constraint); visibility_timeout=6h kills the
+  same-entry duplicate-run channel for long tasks. Detection lesson: ping/inspect lies under
+  saturation — trust per-pod log freshness + kubectl top CPU + redis drain.
+- Spin class: entries spun 3-6h at 100% CPU with zero logs inside verify; root = per-candidate
+  PUG annotation HTTP (2×timeout=10s × up to verify_top_n=100 × fragments) against banned
+  egress — NOT RDKit fingerprint math. Proven: SPIN_DEBUG dumps at pubchem_scorer.py:78;
+  isolated .apply() repro. Fix: annotation scorer reads local mirror first (70-cap score),
+  PUG fallback 3s timeouts. Acid: 7277 done in 215s (was 5h+), 0 HTTP. 32 fenced entries
+  cheap-failed then requeued post-deploy (0 re-fences; they drain via FIFO position ~2.6k-16k).
+- Ops facts: container names worker/ui-worker/api per deployment; psql heredoc needs
+  `kubectl exec -i`; pod /tmp wiped per rollout (repro dirs die with pods); ephemeral debug
+  containers RBAC-blocked; redis timeout 60 still runtime-only (persist TODO); celery list
+  position lookup: `redis-cli lrange celery 0 -1 | grep <task_uuid>`.
+- Next: drain at ~56/h → S7 v7 stats when bulk lands; audit_gap phase-2 (post-mirror weak
+  chem requeue); leftovers: watchdog CronJob (Layer-2), TZ skew (bat3/ui pods log +02:00 vs
+  validation UTC), redis args persistence, strip/replay ops scripts now committed.
+
 ## 2026-09-24 evening — PubChem mirror LIVE, chemistry re-run phase 1 in flight
 
 - Images: bat3-worker v2.40 / validation-api v3.118 (+ celery keepalive/gossip fixes from v2.34).

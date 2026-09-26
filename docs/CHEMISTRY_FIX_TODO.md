@@ -282,23 +282,31 @@ mismatches, 3139C verified skel=1.0 through production gate.
 
 ## NEXT (post-mirror, opened 2026-09-24 evening)
 
-Wave phase-1 re-run (3,367 legacy, mirror-backed) launched ~15:05 UTC; first cohort
-flushing. In order:
+NEXT (2026-09-25 post-spin-fix)
 
-1. **Monitor phase 1** to bulk completion (completions/hr, wedge incidents, sweep cycles).
-   Note: entries pre-dating first requeue may double-run (documented trap; benign - stages
-   are idempotent, both runs converge on same results.json state).
-2. **Phase 2 scoping**: re-run /data/validation/audit_gap.py; select entries completed in
-   the fallback era with zero/weak chem candidates for re-strip+requeue (full-campaign
-   chemistry refresh per 2026-09-24 decision: nearly all post-Sep-12 chemistry was degraded).
-3. **S7 v7**: campaign_stats.py --full --sim when bulk lands (expect inchikey validated@10
-   toward/above fresh-era ~77% with 100% formula-channel coverage).
-4. **Ops persistence**: redis `timeout 60` -> deployment args (needs redis restart; do
-   inside a dispatcher-paused maintenance); worker liveness watchdog vs wedge class
-   (probe: completions in last N min); delete /app/databases/pubchem-sample + old build jobs.
-5. **Mirror lifecycle leftovers (PLAN_PUBCHEM_MIRROR Phase 5)**: weekly sync CronJob
-   (md5-driven), rollback runbook, docs/PUBCHEM_DATABASE.md, load-bearing noise:
-   SERVER_CLOSED_CONNECTION_ERROR churn from timeout=60 on gossip conns (watch; if noisy,
-   revisit timeout or segregate broker db).
-6. **Stretch**: maps/manual name DBs source-or-retire; cheap-fail non-linear topology guard
-   (poison class 2290/2291/2299); signatures_timeout_s config field unimplemented.
+Spin class RESOLVED (root: per-candidate PUG annotation HTTP stall; fix 7196cd45c,
+mirror-first annotation on v2.42/v3.120; acid test 7277: 5h+ -> 215s). Broker wedge class
+hardened (aeced4bfb; no recurrence since v2.41/v3.119). Campaign draining at ~56/h bursty
+average (cheap cohorts flush; protein entries now finish ~2-3h instead of never).
+Mechanics reference: playbook §7 + common-issues.md spin resolution entries.
+
+In order:
+
+1. **Drain monitor**: completion bursts every <=3h + zero stuck_cpu_spin re-fences +
+   zero new failure classes. The 32-entry fence cohort drains via FIFO (queue position
+   was 2.6k-16k); no surgery needed. Optional capacity lever: more validation-worker
+   replicas (config-only) once a full heavy-day rate is known.
+2. **S7 v7**: campaign_stats.py --full --sim once bulk lands (inchikey validated@10
+   expect toward/above fresh-era ~77%; entry completes already at 38.8%+).
+3. **Phase 2 scoping**: audit_gap.py on post-mirror completions; requeue only entries
+   whose NEW chemistry still shows zero/weak candidates (most fallback-era was flushed
+   by phase-1 + failed-mass requeues on 2026-09-24/25: 978 + 4,040 + 32 cohort).
+4. **Ops persistence**: redis `timeout 60` -> deployment args (dispatcher-paused
+   maintenance); Layer-2 watchdog CronJob (detection multi-signal per common-issues:
+   ping lies under saturation); TZ align bat3/ui worker pods to UTC; cleanup
+   /app/databases/pubchem-sample + old build jobs.
+5. **Mirror lifecycle (Phase 5)**: weekly sync CronJob (md5-driven), rollback runbook,
+   docs/PUBCHEM_DATABASE.md; watch SERVER_CLOSED_CONNECTION_ERROR churn (benign so far).
+6. **Stretch**: maps/manual name DBs source-or-retire; cheap-fail non-linear topology
+   guard (poison trio); signatures_timeout_s config field unimplemented; verify-side
+   remaining cost = RDKit fingerprints only (bounded; top_n=100 left as-is on purpose).

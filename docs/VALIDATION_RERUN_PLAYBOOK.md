@@ -128,3 +128,38 @@ for that entry id — all three tables, or the sweeper/dispatcher resurrects it.
 - Rerank = solved (audit: evidence@1 wins everywhere) — do not invest there.
 - Watch-class: rare 2-min 20Gi OOM deaths on the monster topology class.
 - Registry: `/home/tomsko/work/bat3_validation/docs/INCIDENT_REGISTRY_2026-09.md` sessions 1–16.
+
+## 7. CPU-hot log-silent stall ("spin class", resolved 2026-09-25)
+
+Symptoms: every pod ~1000m CPU, zero log lines for hours, completions 0, entry dirs not
+written. NOT a broker wedge (that one is CPU-idle) — distinguish with `kubectl top pods`.
+
+Diagnose:
+1. Per-pod last-log: `for p in $(kubectl get pods -n ceitec-biodata-ns --no-headers | awk '/^validation-worker-/{print $1}'); do kubectl logs -n ceitec-biodata-ns $p --tail=1 --timestamps | awk '{print substr($1,1,16)}'; done` (note TZ: bat3/ui log +02:00, validation UTC).
+2. Which entries a pod holds: `ls -l /proc/1/fd | grep -oE '/data/validation/[0-9]+/'` in-pod.
+3. Reproduce isolated (kills nothing): copy run dir to `/tmp/repro<ID>`, then in-pod:
+   `SPIN_DEBUG=1 timeout 900 python3 -c "from src_new.api.tasks import run_pipeline_task; run_pipeline_task.apply(kwargs=dict(run_id='repro<ID>', input_dir='/tmp/repro<ID>/input', results_path='/tmp/repro<ID>/results.json', config_path='/data/validation/config_shared.ini'))"`
+   faulthandler dumps all thread stacks every 120s; the repeated frame = the loop.
+
+Fix-era facts (2026-09-25): root was per-candidate PUG annotation HTTP in
+`PubChemAnnotationScorer` (2 × timeout=10s × ≤verify_top_n=100 × fragments) — images
+v2.42/v3.120 score from the local mirror first (commit 7196cd45c). Canonical stuck entry
+7277: 5h+ → 215s, zero PUG HTTP.
+
+Fence/requeue pattern (multi-entry stalls):
+- Cheap-fail queue+entry+run with a signature string (`stuck_cpu_spin: ...`) so the sweeper
+  skips them; THEN restart workers (restart alone only re-deals the same FIFO).
+- After the code fix rolls: `UPDATE validation_queue SET status='queued'... WHERE
+  last_error LIKE 'stuck_cpu_spin%'` + mddb → pending; fenced set becomes the acid cohort.
+
+Broker wedge companion: layer-1 transport hardening (aeced4bfb, v2.41/v3.119) shares
+`redis_broker_transport_opts()` across all apps — reads bounded, tasks never time-limited,
+visibility_timeout=6h. Wedge class has not recurred since. Detection truth-meter order:
+pod log freshness → kubectl top CPU → DB completion histogram → (never: inspect ping
+under saturation; it lies).
+
+Queue position forensics: `redis-cli lrange celery 0 -1 > dump; grep -n <celery_task_uuid> dump`
+= FIFO position; dispatcher claims → LPUSH tail, workers BRPOP head. Attribution gap:
+redelivered old messages complete under their ORIGINAL bat3_runs row; a queue row flips
+only when ITS linked run finishes — transiently makes "completions happen" without queue
+movement. `psql` over kubectl exec needs `-i` for heredocs.

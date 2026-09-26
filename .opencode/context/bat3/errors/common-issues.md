@@ -194,3 +194,42 @@ already-wedged processes: `rollout restart` (they don't self-recover). Defensive
 server timeout 60 runtime + deployment-arg persistence TODO + liveness watchdog TODO.
 Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq -c`,
 `redis-cli monitor 20s`, inspect `.active()` worker count vs pods.
+
+## Wedge class RESOLUTION (2026-09-25, commit aeced4bfb, images v2.41/v3.119)
+- Root-mech fix: shared `redis_broker_transport_opts()` in `src_new/celery_app.py` now used by
+  ALL THREE Celery constructions (bat3 app, root `tasks.py` validation app — which had NO
+  transport hardening at all — and the queue_processor producer). `socket_timeout=180` bounds
+  blocking broker READS (BRPOP) only — never task execution; `retry_on_timeout=True` absorbs
+  transients and still surfaces dead flows on retry-write; `visibility_timeout=6h` so a long
+  task never causes its prefetched neighbour to redeliver mid-flight (same-entry duplicates);
+  `broker_connection_retry(_on_startup)=True`. Server-side `timeout 60` stays as-is.
+- Detection caveats learned: celery broadcast ping/inspect is UNRELIABLE under saturation
+  (busy workers don't answer; 2/32 responders observed while running 1,367 completions/h).
+  Use instead: per-pod log freshness (`kubectl logs --tail=1 --timestamps`), `kubectl top
+  pods` (~1000m per active pipeline thread), DB completion histograms, redis list drain.
+- Wedge watches since deploy: zero; benign `SERVER_CLOSED_CONNECTION_ERROR` churn = redis
+  reaping idle gossip conns, consumers reconnect (that IS the self-heal path working).
+
+## Spin class (2026-09-25): verify-stage per-candidate PUG annotation stall (CPU-hot, log-silent)
+- **Signature**: pods at ~1000m CPU for 3-6h+ with ZERO log lines, no completions, entry dirs
+  not written; /proc fds show 1-2 entries × results.{log,debug.log} open; whole fleet
+  degrades to ~15 concurrent and no success lines. Triggered by entries whose verify loop
+  iterates (up to verify_top_n=100) candidates: 2 PUG HTTP calls per CID with `timeout=10s`
+  against the rate-limiting NCBI blackhole = unbounded silent wall-clock per fragment.
+- **Evidence pattern (reusable)**: `SPIN_DEBUG=1` env in `run_pipeline_task` (pre-existing,
+  commit eefeff9c5) arms `faulthandler.dump_traceback_later(120, repeat=True)`; reproduce
+  isolated via `.apply()` against a copied run dir (`/tmp/repro<ID>`); consecutive dumps
+  pinned the frame at `verification/scorers/pubchem_scorer.py:78`.
+- **Resolution** (commit 7196cd45c, images v2.42/v3.120): `PubChemAnnotationScorer` reads the
+  local PubChem mirror FIRST (`_local_db()`, PUBCHEM_LOCAL_DB override; ~1ms offline;
+  mirror-path max score 70 vs PUG 100 — no IUPAC/synonyms offline), PUG fallback kept with
+  timeouts cut 10s→3s. Acid test: canonical stuck entry 7277 completed identify+verify+export
+  in 215s (was 5h+), zero PUG HTTP. Zero re-fences after.
+- **Ops playbook that worked**: fence spinning entries (cheap-fail queue+entry+run with
+  `stuck_cpu_spin` reason, 32 rows) BEFORE worker restart so the sweeper skips them; fleet
+  restart only frees slots temporarily — the celery list re-deals the same poison FIFO;
+  after the code fix deploys, requeue the fenced set with last_error LIKE pattern to prove.
+- **Residual**: per-pod ~1 active pipeline thread (prefetch=1×2 QoS shape under threads pool)
+  is capacity, not a bug; `verify_top_n 100→20` NOT needed post-fix (verify is economical
+  offline). Queue-completion attribution gap: old redelivered run_ids complete under their
+  ORIGINAL bat3_runs rows — queue rows flip only when their LINKED new run finishes.

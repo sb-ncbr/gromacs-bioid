@@ -21,7 +21,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: pubchem-mirror-build
-          image: "cerit.io/tomsko/bat3-worker:v2.35"
+          image: "cerit.io/tomsko/bat3-worker:v2.38"
           imagePullPolicy: IfNotPresent
           command:
             - python
