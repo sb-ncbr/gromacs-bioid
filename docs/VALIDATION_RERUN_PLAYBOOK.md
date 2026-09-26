@@ -163,3 +163,19 @@ Queue position forensics: `redis-cli lrange celery 0 -1 > dump; grep -n <celery_
 redelivered old messages complete under their ORIGINAL bat3_runs row; a queue row flips
 only when ITS linked run finishes — transiently makes "completions happen" without queue
 movement. `psql` over kubectl exec needs `-i` for heredocs.
+
+## 8. Live spin observability + intermediate audits (2026-09-26)
+
+- SPIN_DEBUG=1 fleet-wide (validation-worker): `[SPIN] <frag>/<generator> START|DONE Ns`
+  markers in kubectl logs. Stall = START without DONE; a pod's *current* entries come from
+  `ls -l /proc/1/fd | grep -oE '/data/validation/[0-9]+/'`; its fine-grained stream is
+  `/data/validation/<id>/results.debug.log` (stdout shows only MainProcess).
+- faulthandler dumps (2nd SPIN_DEBUG half) fire only if NO task starts for 120s —
+  design intent; on churning pods use [SPIN] markers instead.
+- Intermediate audit (derisks long drains): in validation-worker pod
+  `nohup env DATABASE_URL=... python3 /data/validation/campaign_stats.py --full --sim
+  --sim-budget 150000 --threads 4 --json-out /data/validation/stats_s7_v6_5.json
+  > /data/validation/stats_s7_v6_5.log 2>&1 &` (~2h, 4 threads gentle; tee off GREP for
+  sections past the RDKit warning storm). Section order: scan -> S1..S6 -> S7 last.
+- v6.5 anchors: inchikey att 84.8% / validated@10 44.2% (mid-drain), pdb 99.6, uniprot
+  98.2, entry-any 99.0, ion 34.4 (open). For v6 baseline see stats_s7_v6.log.

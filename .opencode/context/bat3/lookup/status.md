@@ -49,6 +49,29 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
 - `ceitec-deployment.md` — live deployment facts
 - `../guides/full-scale-dispatch.md` — runbook (versions updated post-GO)
 
+## 2026-09-26 — intermediate audit v6.5 confirms recovery; spin observability upgraded
+
+- Campaign: 5,897/15,185 (38.8%); drain bursty (cheap flushes 262/h, heavy cohorts every
+  <=3h); celery list ~20.8k (drain<feed is ordering, not illness). 4 failed (3 poison + 1
+  download). Zero re-fences since spin fix.
+- **S7 v6.5 (intermediate, all completed-so-far)**: inchikey att 58.0%->84.8%,
+  validated@10 19.0%->44.2% (fresh-era anchor ~77%, trajectory on course for v7);
+  pdb 99.6%@10 | uniprot 98.2%@10 hold; entry-any 99.0%; weak frontier = ion class
+  (34.4%@10, att 51.4%). Artifacts: /data/validation/stats_s7_v6_5.{log,json}; 60,386
+  new sim pairs on top of 901k cache; run = --full --sim --sim-budget 150000 (~2h).
+- Spin observability: SPIN_DEBUG=1 enabled fleet-wide on validation-worker (pre-built
+  instrumentation). KEY toolkit: per-generator [SPIN] START/DONE markers (eefeff9c5) in
+  kubectl logs — a stall names itself as START-without-DONE. Caveat: faulthandler
+  dump_traceback_later re-arms per task start; cheap churn suppresses dumps by design.
+- Residual spin SIBLING (compute-side, annotation-free): entries 9189-class sat >15h
+  CPU-hot/logless with virtual-minority->non-strict-sequence->mini3di tail. Post-restart
+  fleet shows healthy generator-level churn; no localized frame yet (next 15h-silent pod:
+  check its results.debug.log tail + unmatched [SPIN] START).
+- signature_isolated_timeout x3,996 in S6 = eefeff9c5 120s child-isolation catching
+  generator timeouts at scale (pre-existing insurance, quietly active).
+- Mirror annotation score cap 70 (no IUPAC/synonyms) shifts absolute confidence slightly
+  vs PUG era by design; hit@K metrics unaffected.
+
 ## 2026-09-25 late — wedge CLASS hardened + spin-class root-caused and FIXED
 
 - Fleets: `bat3-worker:v2.42` (bat3-ceitec ×15, bat3-ui ×2), `bat3-validation-api:v3.120`

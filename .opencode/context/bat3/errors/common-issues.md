@@ -233,3 +233,19 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
   is capacity, not a bug; `verify_top_n 100→20` NOT needed post-fix (verify is economical
   offline). Queue-completion attribution gap: old redelivered run_ids complete under their
   ORIGINAL bat3_runs rows — queue rows flip only when their LINKED new run finishes.
+
+### Spin-class observability (2026-09-26 upgrade) + residual sibling
+- `SPIN_DEBUG=1` now fleet-wide on validation-worker: per-generator `[SPIN] START/DONE`
+  markers stream in kubectl logs (eefeff9c5 instrumentation) — hung generator = START
+  with no DONE, names itself live. faulthandler dumps re-arm per task start (churn
+  suppresses them by design; markers are the reliable signal).
+- Sibling variant seen once (entries 9189/9190, >15h CPU-hot logless, virtual-minority->
+  non-strict-sequence tail): a compute-side loop independent of the annotation stall. Not
+  yet localized; detection = per-pod results.debug.log tail + unmatched [SPIN] START.
+  If it recurs at scale: fence the entry (cheap-fail pattern), isolate-repro with
+  SPIN_DEBUG, extend eefeff9c5 child-isolation to the named generator path.
+- Intermediate audits derisk long drains: `campaign_stats.py --full --sim
+  --sim-budget 150000 --json-out ...` in-pod nohup (~2h; 901k pair cache warm).
+  v6.5 verdict pre-full-drain: inchikey 19.0%->44.2% validated@10, att 84.8%.
+- `signature_isolated_timeout` x3996 in S6 log = generator child-isolation guard
+  firing normally at scale; count is expected, not alarming.

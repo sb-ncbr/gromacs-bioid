@@ -282,7 +282,12 @@ mismatches, 3139C verified skel=1.0 through production gate.
 
 ## NEXT (post-mirror, opened 2026-09-24 evening)
 
-NEXT (2026-09-25 post-spin-fix)
+NEXT (2026-09-26, post v6.5 intermediate audit)
+
+Intermediate audit CONFIRMED recovery trajectory (inchikey validated@10 19.0% -> 44.2%
+mid-drain; att 84.8%; pdb/uniprot hold ~99/98). Spin observability upgraded (SPIN_DEBUG
+fleet-wide + [SPIN] generator markers). One open spin-sibling case noted (9189-class;
+not yet localized).
 
 Spin class RESOLVED (root: per-candidate PUG annotation HTTP stall; fix 7196cd45c,
 mirror-first annotation on v2.42/v3.120; acid test 7277: 5h+ -> 215s). Broker wedge class
