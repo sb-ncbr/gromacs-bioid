@@ -87,7 +87,9 @@ class FormulaHFamilyResolver(IdentifierResolver):
         )
         self.h_range = getattr(config.pubchem, "hfamily_h_range", _H_RANGE_DEFAULT)
         # Local PubChem mirror: serves the per-variant fastformula lookups
-        # without network (same 200-per-query cap as the PUG JSON call).
+        # without network. Local lookups are free, so caps rise far beyond the
+        # PUG etiquette caps (200/query, 500 total) to actually cover big
+        # isomer families; the verification-window rerank (F14) bounds cost.
         self._local_db = None
         local_path = getattr(config.pubchem, "local_db_path", "")
         if local_path:
@@ -99,6 +101,19 @@ class FormulaHFamilyResolver(IdentifierResolver):
                     self._local_db = db
             except Exception:
                 self._local_db = None
+        self._local_per_query = int(
+            getattr(config.pubchem, "hfamily_local_max_per_query", 5000))
+        self._local_max_total = int(
+            getattr(config.pubchem, "hfamily_local_max_total", 25000))
+
+    def offline_capable(self) -> bool:
+        """True when the resolver can serve fully offline (local mirror).
+
+        The PubChem circuit breaker (resolution_manager) consults this before
+        skipping the resolver: the local backend needs no NCBI access, so the
+        ban-era breaker must not blind the H-family channel.
+        """
+        return self._local_db is not None
 
     def _is_applicable(self, signature: str) -> bool:
         try:
@@ -142,6 +157,7 @@ class FormulaHFamilyResolver(IdentifierResolver):
 
         candidates: list[str] = []
         seen: set[str] = set()
+        total_cap = self._local_max_total if self._local_db is not None else _MAX_TOTAL_CANDIDATES
         for delta in range(-self.h_range, self.h_range + 1):
             if self._over_budget():
                 logger.warning("hfamily: stage deadline exceeded after %d candidates for %s; returning partial", len(candidates), signature)
@@ -154,7 +170,7 @@ class FormulaHFamilyResolver(IdentifierResolver):
             formula = _hill(variant)
             if self._local_db is not None:
                 try:
-                    cids = list(self._local_db.by_formula(formula, limit=_MAX_RECORDS_PER_QUERY))
+                    cids = list(self._local_db.by_formula(formula, limit=self._local_per_query))
                 except Exception:
                     cids = []
             else:
@@ -167,9 +183,9 @@ class FormulaHFamilyResolver(IdentifierResolver):
                 if scid not in seen:
                     seen.add(scid)
                     candidates.append(scid)
-                    if len(candidates) >= _MAX_TOTAL_CANDIDATES:
+                    if len(candidates) >= total_cap:
                         break
-            if len(candidates) >= _MAX_TOTAL_CANDIDATES:
+            if len(candidates) >= total_cap:
                 logger.warning("hfamily: candidate cap hit for %s", signature)
                 break
         # flat candidate score; the F7 verification gate does structural rescoring

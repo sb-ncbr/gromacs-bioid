@@ -315,3 +315,100 @@ In order:
 6. **Stretch**: maps/manual name DBs source-or-retire; cheap-fail non-linear topology
    guard (poison trio); signatures_timeout_s config field unimplemented; verify-side
    remaining cost = RDKit fingerprints only (bounded; top_n=100 left as-is on purpose).
+
+
+## WAVE 5 — gt_absent anatomy + candidate-window fixes (audit 2026-09-26)
+
+### Audit findings (evidence-based, liveness-filtered)
+
+**A. The v6.5 headline was measurement noise, not chemistry.** S7 scanners counted
+annotations from *stale* results.json of claimed-but-unfinished entries
+(5,347 of 7,342 GT-inch entries are `processing`; their files are legacy
+failed/partial contents, e.g. load_failed from the Sep-10 era). Liveness filter
+(`load_simulation==success && verify_results==success`) reconciles exactly
+(4,866 deepest=analyze_universe etc. ≈ DB counts). On LIVE completions:
+inchikey organic att=99.3%, validated@1=65.1%, @10=75.2% (n=1,732);
+ion validated=72.1% (n=840). v6.5 said 44.2%/34.4% — systematically depressed.
+Fix in protocol: any future S7 scan must require verify_results success.
+
+**B. gt_absent is candidate plumbing, not compound absence.** Of 341 live
+organic annotations with best candidate sim <0.5 (only ~14/341 = true absence):
+- 261 (77%) = GT compound present in sim (segment skeleton-FP vs GT = 1.0
+  verified on 2451/2447/2164), in mirror, formula resolvers ran — yet no
+  structurally-correct candidate reached the window. Split:
+  - **C2 protonation frame: 163 (62%)** — fragment formula = sim protonation
+    state (e.g. C15H13ClN3O), GT lives under another frame (C15H12ClN3O);
+    exact-formula families structurally cannot intersect. H±4 bridge
+    (`formula_hfamily`) EXISTS with a local-mirror backend but is SKIPPED: it
+    sits in     `_PUBCHEM_RESOLVERS` (resolution_manager) and the PUG breaker has
+    been open since the 2026-09-24 NCBI blacklist. (Confirmed: formula_hfamily
+    absent from attempted resolvers on the matched segments of C2 entries.)
+  - **C1 structure-blind window: 92 (35%)** — GT connectivity IS in the
+    fragment's exact formula family, but `verify_top_n=100` is cut on
+    consensus_score (identity-typed formula candidates ALL at 100). GT's first
+    CID rank: median 3,097, p90 11,694, max 25,395. Only 1/92 within 100.
+- 53 GT-unresolvable InChIKeys (MDDBR-side metadata gap; report-only),
+  12 pair-cache zero poison (PUG-era LookupError cached as sim=0.0),
+  6 heavy-formula extraction artifacts.
+- Ion residual: presence evidence is incidental (segment element listings);
+  structural metals (Zn-class, n=847 GT ions) under-detected; atom signature
+  fired 2x in 14.6k entries. (Defer: separate dive.)
+
+Artifacts: /data/validation/audit_chem_ion.json, audit_gt_absent.json,
+audit_gt_absent_rows.jsonl (scripts in-repo .tmp/, pipeline untouched).
+
+### Fix entries
+
+- [ ] **F13 — Ungate local H-family from the PUG breaker**
+  - `resolution_manager._PUBCHEM_RESOLVERS`: `formula_hfamily` must not be
+    skipped when its local backend is active (offline path; the PUG fallback
+    inside the resolver stays breaker-gated). Declare offline capability on
+    the resolver (e.g. `offline_capable_when_local_db()`), breaker consults it.
+  - Local-mode caps rise to rescue-sized: per-variant 200→5,000 and total
+    500→25,000 (config `pubchem.hfamily_local_max_per_query/_max_total`;
+    PUG path keeps legacy 200/500). Families are index lookups; cost is the
+    F14 reranker's, bounded there.
+
+- [ ] **F14 — Skeleton-aware rerank before the `verify_top_n` window**
+  - `manager.verify_all`: after dedup+consensus sort, before `[:verify_top_n]`,
+    if the segment has a molecule skeleton_fp and #chemical groups > top_n:
+    compute skeleton Tanimoto (skelfp:v1 vs segment signature) for chemical
+    candidates from mirror-local structures (CID: fetchers' local path;
+    INCHIKEY: mirror exact→block-range fetch, see F15), then re-order:
+    if ANY chemical skel ≥ SKELF_VERIFY_THRESHOLD (0.7), chem groups sort by
+    (skel desc, consensus desc); else legacy consensus order EXACTLY
+    (raise-only: uninformative/corrupt molecule skeleton changes nothing;
+    random-junk skel on 2048-bit Morgan r2 ~0.1-0.4, arch-anchors:
+    formula-mate 0.19, prodrug 0.58).
+  - Non-chemical groups keep legacy ordering; final merged order preserves
+    them relative-positionally (protein hits untouched; window mix changes
+    only among chemical groups).
+  - Budget guardrails: config `verification.verify_rerank_max_candidates`
+    (default 25,000; beyond → legacy order + warning), honors `_over_budget`;
+    per-CID skeleton sims memoized per segment; log rerank size + duration.
+  - No change to verdict logic/thresholds: F7 gate semantics unchanged; the
+    window just stops being a lottery.
+
+- [ ] **F15 — Mirror block-range structure fetch for INCHIKEY candidates**
+  - `compound_fetcher`: INCHIKEY exact-miss → block-range local lookup
+    (first 27-char block prefix via indexed range scan), fixes self-inchi
+    variant dead ends (2164-class: fragment IK is a stereo/H variant absent
+    from mirror exact index but present under block).
+
+### Acceptance + validation plan
+- Unit tests: rerank ordering properties (GT-block rises in 4855-family mock;
+  raise-only no-skel-≥0.7 → byte-identical legacy order; non-chem untouched;
+  cap → legacy+log); hfamily local caps + breaker exclusion; F15 block fetch.
+- Offline replays (pod, no PUG): 2451 (C1) → verified hit with skeleton
+  sim≥0.7 and GT-block CID top-ranked; 2447 (C2: hfamily union feeds, F14
+  ranks) expect the C15H12ClN3O/GT-block CID verified; 2164 (F15) expect
+  self-inchi structure fetched and gate evaluated (verified or honest
+  fingerprint_mismatch with skeleton present — not fingerprint_unavailable).
+- Staged: bump v2.43/v3.121, roll validation-worker; acid-test 2-3 sandboxed
+  entries via run_pipeline_task.apply() first (copy dirs to /tmp first).
+- Metric watch: post-fix cohort audit re-run (same liveness-filtered scripts);
+  expectation: gt_absent C1+C2 mass (~255 ann ≈ 24% of live organic failure
+  mass) collapses toward ~0; inchikey live @10 75.2% → toward 90% on the
+  fixed cohort; pdb/uniprot metrics unchanged (rerank does not touch them).
+- Watch: rerank worst-case latency (25k × ~0.5ms ≈ 15s/segment worst),
+  no new wedge/spin signatures (runbooks in playbook §7/§8).

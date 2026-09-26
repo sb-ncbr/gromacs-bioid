@@ -109,3 +109,22 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
   2,389 processing continue; identify+verify+export refreshing with full mirror coverage.
 - Opera status: redis CONFIG timeout=60 runtime (persist at next maintenance); plan
   docs/PLAN_PUBCHEM_MIRROR.md Phases 1-4 complete, Phase 5 (cron sync + final docs) open.
+
+## 2026-09-26 late — inchikey-gap audit: numbers were noise, plumbing was the gap
+
+- **Metric correction**: v6.5 S7 (44.2%/34.4%) was polluted by stale results.json of
+  5,347 processing entries (legacy failed/partial contents counted). Liveness-filtered
+  audit on completed runs: **inchikey organic att=99.3%, validated@10=75.2%, @1=65.1%;
+  ion validated 72.1%** (matches fresh-era anchor). Any S7 must liveness-filter
+  (load_simulation+verify_results success). See common-issues "Metrics trap".
+- **gt_absent anatomy** (341 live annotations): 77% present-in-sim-but-windowed-out
+  (163 protonation-frame family miss + 92 consensus-blind top-100 cut, median CID rank
+  3,097, formula candidates identity-typed at consensus 100), 53 GT keys unresolvable,
+  12 pair-cache zero poison, ~14 true absence. Proofs: entries 2451/2447/2164.
+- **Root bugs found**: `formula_hfamily` local backend exists but is skipped by the PUG
+  circuit breaker (listed in _PUBCHEM_RESOLVERS); verify_top_n cut is structure-blind
+  for chem candidates. Fixes designed: F13/F14/F15 in docs/CHEMISTRY_FIX_TODO.md WAVE 5 —
+  awaiting user approval to implement.
+- Audit artifacts: /data/validation/audit_chem_ion.json, audit_gt_absent{.json,_rows.jsonl};
+  scripts .tmp/audit_*.py (reusable for post-fix cohort).
+- Campaign: drain continues on v2.42/v3.120 (~40% complete); no new failure classes.

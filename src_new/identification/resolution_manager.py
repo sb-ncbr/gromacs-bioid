@@ -57,6 +57,30 @@ def pubchem_breaker_active() -> bool:
     return not _pubchem_healthy()
 
 
+def _breaker_blocked(resolver, pug_up: bool) -> bool:
+    """Whether the PubChem circuit breaker should skip this resolver.
+
+    Resolvers listed in _PUBCHEM_RESOLVERS are skipped while PUG is
+    unhealthy UNLESS the resolver declares it can serve fully offline
+    (offline_capable() == True, e.g. the local PubChem mirror backend).
+    The H-family local backend is the canonical case: the 2026-09-24 NCBI
+    blacklist left the breaker permanently open, which otherwise blinds a
+    channel that needs no network at all.
+    """
+    if pug_up:
+        return False
+    if getattr(resolver, "name", "") not in _PUBCHEM_RESOLVERS:
+        return False
+    check_offline = getattr(resolver, "offline_capable", None)
+    if callable(check_offline):
+        try:
+            if check_offline():
+                return False
+        except Exception:
+            pass
+    return True
+
+
 _CANONICAL_SIGNATURE_TYPES: dict[str, str] = {
     "smiles": "smiles",
     "smiles_not_sanitized": "smiles",
@@ -185,14 +209,14 @@ class IdentifierResolutionManager:
         
         _pug_up = _pubchem_healthy()
 
-        def _breaker_blocked(resolver) -> bool:
-            return (not _pug_up) and (getattr(resolver, "name", "") in _PUBCHEM_RESOLVERS)
+        def _blocked(resolver) -> bool:
+            return _breaker_blocked(resolver, _pug_up)
 
         for resolver in identity_resolvers:
             if _over_budget():
                 logger.warning(f"identify: stage deadline exceeded; skipping remaining identity resolvers for {segment}")
                 break
-            if _breaker_blocked(resolver):
+            if _blocked(resolver):
                 logger.debug(f"Skipping {resolver.name}: PubChem circuit breaker open")
                 continue
             resolver._stage_deadline_epoch = deadline_epoch
@@ -259,7 +283,7 @@ class IdentifierResolutionManager:
             if _over_budget():
                 logger.warning(f"identify: stage deadline exceeded; skipping remaining similarity resolvers for {segment}")
                 break
-            if _breaker_blocked(resolver):
+            if _blocked(resolver):
                 logger.debug(f"Skipping {resolver.name}: PubChem circuit breaker open")
                 continue
             resolver._stage_deadline_epoch = deadline_epoch

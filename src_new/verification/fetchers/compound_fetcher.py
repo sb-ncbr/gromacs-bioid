@@ -282,6 +282,13 @@ class CompoundSignatureFetcher(SignatureFetcher):
                 if row is not None and row.smiles:
                     _cache_write_ns('ikey', ik, row.smiles)
                     return row.smiles
+                # Stereo/protonation variant of a mirrored compound: same
+                # connectivity block resolves its structure offline (skeleton
+                # comparisons are stereo/H-insensitive by design).
+                row = db.by_inchikey_block(ik)
+                if row is not None and row.smiles:
+                    _cache_write_ns('ikey', ik, row.smiles)
+                    return row.smiles
             except Exception as exc:
                 logger.warning(f"local mirror by_inchikey({ik}) failed: {exc}")
         # 1) CACTUS (multi-line for charged species: take first valid line)

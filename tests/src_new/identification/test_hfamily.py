@@ -78,3 +78,66 @@ def test_404_yields_no_candidates(monkeypatch):
     r = _resolver()
     monkeypatch.setattr(r, "_pug_get", lambda path: None)
     assert r._resolve_similarity("C9H9N", "/tmp") == []
+
+
+class TestHFamilyLocalBackend:
+    """F13: local mirror caps replace the PUG etiquette caps (200/500)."""
+
+    def _local_resolver(self, per_query, total):
+        r = _resolver()
+        r._local_db = MagicMock()
+        r._local_per_query = per_query
+        r._local_max_total = total
+        return r
+
+    def test_offline_capability_flag(self):
+        r = _resolver()
+        r._local_db = None
+        # offline_capable defined on the class; _resolver() builds via __new__
+        from src_new.identification.resolvers.hfamily import FormulaHFamilyResolver
+        assert FormulaHFamilyResolver.offline_capable(r) is False
+        r._local_db = MagicMock()
+        assert FormulaHFamilyResolver.offline_capable(r) is True
+
+    def test_local_caps_replace_pug_caps(self):
+        db = MagicMock()
+        db.by_formula = MagicMock(side_effect=lambda formula, limit: list(range(limit)))
+        r = self._local_resolver(per_query=5000, total=25000)
+        r._local_db = db
+        seen_limits = []
+        def capture(formula, limit):
+            seen_limits.append(limit)
+            return list(range(limit))
+        r._local_db.by_formula = capture
+        hits = r._resolve_similarity("C5H6N2O2", "/tmp")
+        # 9 H-variants (h_range=2 -> 5 variants) each capped at local per-query,
+        # none of the PUG constants (200/500) may appear
+        assert "500" not in str(type(hits))
+        assert all(l == 5000 for l in seen_limits)
+        # dedupe across variants keeps every unique cid (all lists identical here)
+        assert len(hits) == 5000
+
+    def test_local_total_cap_bounds_union(self):
+        r = self._local_resolver(per_query=5000, total=600)
+        counts = {"n": 0}
+        def gen(formula, limit):
+            counts["n"] += 1
+            base = counts["n"] * 100000
+            return list(range(base, base + limit))
+        r._local_db.by_formula = gen
+        hits = r._resolve_similarity("C5H6N2O2", "/tmp")
+        assert len(hits) == 600
+
+    def test_pug_path_keeps_legacy_caps(self, monkeypatch):
+        r = _resolver()  # _local_db is None -> PUG path
+        calls = []
+        class Resp:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self):
+                return {"IdentifierList": {"CID": list(range(1, 1000))}}
+        monkeypatch.setattr(r._session, "get", lambda *a, **k: (calls.append(a) or Resp()))
+        hits = r._resolve_similarity("C5H6N2O2", "/tmp")
+        # PUG path: per-query MaxRecords=200 constant, total capped at 500
+        assert "MaxRecords=200" in calls[0][0]
+        assert len(hits) == 500

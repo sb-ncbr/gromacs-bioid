@@ -388,6 +388,25 @@ class PubChemDB:
         )
         return self._to_row(raw[0]) if raw else None
 
+    def by_inchikey_block(self, inchikey: str) -> CompoundRow | None:
+        """InChIKey connectivity-block (first block) lookup, lowest CID wins.
+
+        Finds stereo/protonation variants of the queried compound: the mirror
+        keys rows by full InChIKey, so an exact miss for a variant key can
+        still resolve the shared connectivity block. Used as an offline
+        fallback for structure fetches (skeleton comparisons are
+        stereo/H-insensitive by design).
+        """
+        block = (inchikey or "").strip().upper().split("-")[0]
+        if not block:
+            return None
+        raw = self._query(
+            "SELECT cid, smiles, inchikey, formula_hill, exact_mass FROM compounds "
+            "WHERE inchikey >= ? AND inchikey < ? ORDER BY inchikey, cid LIMIT 1",
+            (block, block + chr(0x7F)),
+        )
+        return self._to_row(raw[0]) if raw else None
+
     def by_inchikey(self, inchikey: str) -> CompoundRow | None:
         """Look up a compound by full InChIKey (lowest-CID row on duplicates)."""
         raw = self._query(

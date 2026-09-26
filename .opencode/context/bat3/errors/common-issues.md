@@ -249,3 +249,15 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
   v6.5 verdict pre-full-drain: inchikey 19.0%->44.2% validated@10, att 84.8%.
 - `signature_isolated_timeout` x3996 in S6 log = generator child-isolation guard
   firing normally at scale; count is expected, not alarming.
+## Metrics trap (2026-09-26): stale-file denominator pollution in S7 audits
+- **Symptom**: S7 numbers look catastrophic (inchikey 44%, ion 34%) while live code is healthy.
+- **Root**: `campaign_stats.py` NFS scan reads EVERY results.json with hits — including stale files of `processing` entries (claimed but not re-finished), which still hold legacy failed/partial contents (Sep-10 load_failed, bug-era partials). 5,347/7,342 GT-inch entries were in that state mid-drain.
+- **Liveness filter (correct protocol)**: score an entry's annotations only when `tasks.load_simulation==success && tasks.verify_results==success` in results.json (or queue status completed with fresh mtime). With it, v6.5-era data resolves to inchikey @10 ≈ 75.2%, ion ≈ 72.1% — matching the fresh-era ~77% anchor.
+- Rule: **never interpret S7 over an unfiltered NFS pile**; also expect `critical_errors` inside results.json to be CUMULATIVE across attempts (not current-state truth; tasks status is).
+
+## gt_absent anatomy (2026-09-26): candidate plumbing, not absence
+- Live `gt_absent` (best candidate sim <0.5, n=341) breaks down: 77% "present-but-windowed-out" (261), 16% GT-unresolvable keys, 4% cache poison, 4% true absence.
+- **C2 (62%)**: protonation frame — fragment formula ≠ GT's PubChem frame (H differs); exact-formula lookup can't bridge. `formula_hfamily` has a local-mirror backend but is SKIPPED by the PUG circuit breaker (`_PUBCHEM_RESOLVERS` in resolution_manager) since the 2026-09-24 blacklist.
+- **C1 (35%)**: formula-family floods (median ~3k isomer-mates) vs `verify_top_n=100` cut on consensus_score; formula candidates are identity-typed (consensus 100 each), so the cut is a structural lottery. GT-block CID median rank 3,097.
+- Fixes = F13 (ungate local hfamily + raise local caps) + F14 (skeleton-aware rerank of chemical window before top_n, raise-only when any skel≥0.7 else byte-identical legacy) + F15 (mirror block-range fetch for INCHIKEY self-variants). Design+acceptance: docs/CHEMISTRY_FIX_TODO.md "WAVE 5".
+- Audit artifacts: /data/validation/audit_chem_ion.json, audit_gt_absent.json(+rows.jsonl); scripts .tmp/audit_chem_ion.py, .tmp/audit_gt_absent.py (liveness-filtered; reusable for post-fix cohort measurement).

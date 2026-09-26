@@ -189,6 +189,12 @@ class PubchemConfig:
     # Local PubChem mirror SQLite (docs/PLAN_PUBCHEM_MIRROR.md); the 'current'
     # symlink is swapped atomically by the build job.
     local_db_path: str = "/app/databases/pubchem/current/pubchem.sqlite"
+    # H-family (protonation neighborhood) candidate caps for the LOCAL mirror
+    # backend: lookups are free offline, so these replace the PUG etiquette
+    # caps (200/variant, 500 total) to cover big isomer families. The F14
+    # verification-window rerank bounds the downstream cost.
+    hfamily_local_max_per_query: int = 5000
+    hfamily_local_max_total: int = 25000
 
 
 @dataclass
@@ -245,6 +251,10 @@ class VerificationConfig:
     annotation_weight: float = 0.2
     tm_score_threshold: float = 0.5
     min_final_confidence: float = 0.0
+    # F14: skeleton-aware rerank of chemical candidates before the verify_top_n
+    # window cut. Above this many chemical candidates in a segment, rerank is
+    # skipped (legacy consensus order kept) to bound worst-case cost.
+    verify_rerank_max_candidates: int = 25000
 
 
 
