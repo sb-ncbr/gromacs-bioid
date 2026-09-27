@@ -359,7 +359,13 @@ audit_gt_absent_rows.jsonl (scripts in-repo .tmp/, pipeline untouched).
 
 ### Fix entries
 
-- [ ] **F13 — Ungate local H-family from the PUG breaker**
+- [x] **F13 — Ungate local H-family from the PUG breaker**
+  (DONE 2026-09-26, commit 5af0ef4f6, v2.43/v3.121 fleet-wide. Breaker honors
+  `offline_capable()`; local caps 5000/25000 (config). Acid 2447: GT-block CID
+  rank1/skel 1.0 through the protonation frame.)
+  - Follow-up queued: hfamily local-db handle is init-once-per-process; if the
+    mirror is briefly unreachable at worker start that instance silently
+    degrades to the PUG path. Lazy-retry like fetchers' _local_db().
   - `resolution_manager._PUBCHEM_RESOLVERS`: `formula_hfamily` must not be
     skipped when its local backend is active (offline path; the PUG fallback
     inside the resolver stays breaker-gated). Declare offline capability on
@@ -369,7 +375,15 @@ audit_gt_absent_rows.jsonl (scripts in-repo .tmp/, pipeline untouched).
     PUG path keeps legacy 200/500). Families are index lookups; cost is the
     F14 reranker's, bounded there.
 
-- [ ] **F14 — Skeleton-aware rerank before the `verify_top_n` window**
+- [x] **F14 — Skeleton-aware rerank before the `verify_top_n` window**
+  (DONE 2026-09-26, commit 5af0ef4f6, v2.43/v3.121. Raise-only ordering with
+  byte-identical legacy fallback; non-chem positions preserved;
+  cap 25k->60k via config_shared.ini (2026-09-27). Acid 2451: GT CID rank1
+  verified skel 1.0 (was absent from a 4,855-family). Cohort audit 2026-09-27,
+  890 post-v3.121 completions: validated@10 75.2% -> 87.1%, @1 65.1 -> 68.9,
+  gt_absent 19.6% -> 7.3% (=within ~3pts of the ~4% true-absence floor).)
+  - Follow-up queued: precomputed skeleton FPs in the mirror build cycle
+    (rerank becomes ~10x cheaper: 32k-pool 16min -> ~2min).
   - `manager.verify_all`: after dedup+consensus sort, before `[:verify_top_n]`,
     if the segment has a molecule skeleton_fp and #chemical groups > top_n:
     compute skeleton Tanimoto (skelfp:v1 vs segment signature) for chemical
@@ -389,7 +403,24 @@ audit_gt_absent_rows.jsonl (scripts in-repo .tmp/, pipeline untouched).
   - No change to verdict logic/thresholds: F7 gate semantics unchanged; the
     window just stops being a lottery.
 
-- [ ] **F15 — Mirror block-range structure fetch for INCHIKEY candidates**
+- [x] **F15 — Mirror block-range structure fetch for INCHIKEY candidates**
+  (DONE 2026-09-26, commit 5af0ef4f6. by_inchikey_block indexed range +
+  fetcher fallback. Acid 2164: hfamily 176 candidates; both GT-block CIDs
+  verified skel 1.0. fingerprint_unavailable class collapsed
+  (21 vs 486 pre-fix in failing top10 rejections).)
+
+- [ ] **F16 (open) — Persistent pair-cache zero-poison purge**: sim_cache
+  pairs.jsonl rows written as sim=0.0 from LookupError during the PUG-ban era
+  (v6.5 counted 9,763 unmapped). Drop/recompute those rows before S7 v7 so
+  stale zeros stop zeroing pairs whose structures now resolve offline.
+
+- [ ] **Ion channel deep-dive (open)**: post-fix cohort ion validated 61.7%
+  (was 72.1% pre-fix live; likely cohort composition, evidence path untouched).
+  Presence channel is incidental (segment element listings; structural metals
+  like Zn-class under-detected; atom signatures fired 2x/14.6k). Options:
+  metrics-only GT-delta reporting, or a real presence channel (signatures for
+  metal residues; attribute ions in/lost from segment clusters). Audit when
+  the general cohort drains.
   - `compound_fetcher`: INCHIKEY exact-miss → block-range local lookup
     (first 27-char block prefix via indexed range scan), fixes self-inchi
     variant dead ends (2164-class: fragment IK is a stereo/H variant absent

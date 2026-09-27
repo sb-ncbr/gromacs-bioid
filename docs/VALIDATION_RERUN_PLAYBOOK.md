@@ -179,3 +179,25 @@ movement. `psql` over kubectl exec needs `-i` for heredocs.
   sections past the RDKit warning storm). Section order: scan -> S1..S6 -> S7 last.
 - v6.5 anchors: inchikey att 84.8% / validated@10 44.2% (mid-drain), pdb 99.6, uniprot
   98.2, entry-any 99.0, ion 34.4 (open). For v6 baseline see stats_s7_v6.log.
+
+## 9. Metrics protocol: liveness filtering (2026-09-26/27, MANDATORY for S7 v7+)
+
+**Raw NFS scans of results.json are untrustworthy denominators.** Entries in
+queue state `processing` hold stale failed/partial files from legacy attempts
+(sweeper/example: entry 1830 retained a Sep-10 load_failed doc while claimed).
+v6.5 counted them and depressed chemistry metrics by ~30pts (44.2% vs 75.2%).
+
+Rules:
+- Score an entry's annotations ONLY when, in its CURRENT results.json,
+  `tasks.load_simulation.status == 'success' && tasks.verify_results.status
+  == 'success'` (or DB queue says completed with fresh mtime for that entry).
+- Treat `critical_errors` inside results.json as CUMULATE history across
+  attempts, never as current-state truth; tasks statuses are the truth.
+- Expect mid-campaign reconciliation: audit's "excluded" counts by deepest
+  stage should match DB status buckets (processing vs completed). Values
+  should agree within tens.
+- Reference implementations: .tmp/audit_chem_ion.py (outcome taxonomy),
+  .tmp/audit_gt_absent.py (per-cause drilling). Patch campaign_stats.py with
+  the same filter before S7 v7 so the headline protocol is fixed, not bolted.
+- Artifacts this wave: /data/validation/audit_chem_ion.json (pre-fix live),
+  audit_chem_ion_postf14.json (post-v3.121 cohort), audit_gt_absent.json(+rows).

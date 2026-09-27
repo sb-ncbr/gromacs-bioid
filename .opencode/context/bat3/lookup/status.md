@@ -128,3 +128,18 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
 - Audit artifacts: /data/validation/audit_chem_ion.json, audit_gt_absent{.json,_rows.jsonl};
   scripts .tmp/audit_*.py (reusable for post-fix cohort).
 - Campaign: drain continues on v2.42/v3.120 (~40% complete); no new failure classes.
+
+## 2026-09-27 — WAVE 5 landed: cohort re-audit confirms chemistry fixed
+
+- Fleet: v2.43/v3.121 (F13+F14+F15, commit 5af0ef4f6). verify_rerank_max_candidates
+  25000 -> 60000 in config_shared.ini (config-only; cap skips were pre-config instances).
+- Post-v3.121 cohort audit (890 completions, 765 organic ann, liveness clean):
+  **inchikey validated@10 75.2% -> 87.1%, @1 65.1% -> 68.9%; gt_absent 19.6% -> 7.3%
+  (floor ~4%)**; no_family 0.3%; pair-cache poison over (322 unmapped / 24,098 fresh).
+- Ion class 61.7% on this cohort (was 72.1% pre-fix live): likely cohort composition
+  (chemistry-era backlog, metal-cofactor dense); untouched evidence path; watch on the
+  general cohort, next audit target if persistent.
+- Campaign: 10,003 completed (65.9%), rate ~18/h during heavy rerank cohorts (expected
+  latency price), 0 new failures, 0 re-fences. Next: final drain -> S7 v7 (liveness-
+  filtered) -> phase-2 audit_gap -> ops leftovers (watchdog, redis args, TZ, mirror
+  Phase 5). Perf follow-up queued: precomputed skeleton FPs in mirror build.
