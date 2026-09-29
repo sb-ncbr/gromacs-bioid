@@ -261,3 +261,55 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
 - **C1 (35%)**: formula-family floods (median ~3k isomer-mates) vs `verify_top_n=100` cut on consensus_score; formula candidates are identity-typed (consensus 100 each), so the cut is a structural lottery. GT-block CID median rank 3,097.
 - Fixes = F13 (ungate local hfamily + raise local caps) + F14 (skeleton-aware rerank of chemical window before top_n, raise-only when any skel≥0.7 else byte-identical legacy) + F15 (mirror block-range fetch for INCHIKEY self-variants). Design+acceptance: docs/CHEMISTRY_FIX_TODO.md "WAVE 5".
 - Audit artifacts: /data/validation/audit_chem_ion.json, audit_gt_absent.json(+rows.jsonl); scripts .tmp/audit_chem_ion.py, .tmp/audit_gt_absent.py (liveness-filtered; reusable for post-fix cohort measurement).
+
+## smiles canonicalization spin class (2026-09-27): MolToSmiles on junk cage/ring clusters
+- **Signature**: pod ~1 core CPU-hot for hours, last log line always `[SPIN] <seg>/<gen>
+  START` (never DONE) on virtual `SYSTEM__vN` fragments; entries redeliver (visibility
+  6h) and re-stick FRESH workers — waves capture 30-50% of the fleet in worse episodes.
+- **Root**: RDKit canonical SMILES ranking on small dense fused-ring/cage junk from
+  virtual-minority SYSTEM fragments. NOT size-correlated (4,247-atom systems poisoned),
+  hits both `smiles` and `smiles_not_sanitized` (canonicalization shared). Sibling stages
+  `selfies`/`inchi_key` spin on the same fragments. 2026-09-20 kekulize fix excluded
+  KEKULIZE ops only; MolToSmiles canonicalization itself was the residual sibling all
+  along (this IS the "9189-class", now localized).
+- **Parallel class**: hung external HTTP with no timeout (cactus.nci.nih.gov 10.4h,
+  uniprot FASTA fetches, PUG fastsimilarity POSTs) — tails end at urllib3 "Starting new
+  HTTPS connection" hours old.
+- **Mitigation (no app-code change)**: fence-watchdog `/tmp/fence_watchdog_v2.py` on
+  validation-api (10-min cycles): live `processing` entries whose results.debug.log tail
+  is stale `[SPIN] ... START` (>30 min) or stale HTTP-connect (>75 min) → UPDATE queue
+  `failed/quarantined` + append `/data/validation/quarantine_smiles_spin_2026-09-27.txt`
+  + LREM every redis celery message for listed entries. Corpus file = single source of
+  truth (re-read each cycle). Manual reaper = delete pods stuck on fenced entries.
+- **Fix-to-come (F17)**: subprocess-isolated generator budget (child killed on overrun;
+  NO per-thread timeouts — that class of patch broke before). ~420 quarantined entries
+  preserved on NFS as the regression corpus; replay them after the fix ships.
+- py-spy unattributable in these pods (uid 1000, no SYS_PTRACE). faulthandler SPIN_DEBUG
+  never arms: celery `LoggingProxy` has no `fileno` (silent except at task end).
+
+## Kombu zombie pods (2026-09-28): silent consumers after dead broker flows
+- Pods alive, ~0 CPU, last log = `missed heartbeat`/`sync with`/"Restoring N
+  unacknowledged" 7-20h stale. Consumer threads dead; celery never picks new work.
+  Sept-24/25 wedge-class surviving without restarts. Detection: per-pod last-log age +
+  `kubectl top` 0-300m. Fix: plain `kubectl delete pod` (Deployment recreates healthy).
+
+## RS quota coexistence trap (2026-09-28/29): scale/patch ordering deadlocks rollouts
+- Sequence `kubectl scale N` + `kubectl patch resources` lets the OLD-shape ReplicaSet
+  claim quota first; the new RS's creation then fails quota admission (FailedCreate,
+  NOT Pending — pods never appear), rollout stalls ("progress deadline exceeded"), and
+  the controller simultaneously balloons the old RS's desired count proportionally.
+- **Fix**: `kubectl scale rs <old-shape> --replicas=0` → quota frees → new RS takes the
+  fleet in one wave. Losing running jobs this way is safe under celery visibility
+  (messages restore, stages resume from results.json). Watch quota math on BOTH request
+  and limit sides during double-count windows.
+
+## Duplicates-as-refresh (2026-09-28): the redis backlog is a legitimate recompute fleet
+- entries completed pre-F13/F14/F15 hold pre-fix results; their duplicate backlog
+  messages (~31k) re-execute the FULL pipeline with fixed code and rewrite results.json
+  (proof: 6533 re-ran every stage 19:20 while DB row showed yesterday's completion).
+- Purging "duplicate" messages would have destroyed the cohort-wide refresh. Correct
+  gauges: rows-completed = first-time claim coverage; **llen = refresh progress**.
+- Re-runs do NOT update queue rows (max(completed_at) freezes once all rows touched).
+- results.json is REWRITTEN in place → mid-flight files are PARTIAL for hours → any
+  stats pass must liveness-filter (tasks.load_simulation==success && verify_results
+  ==success) or risk counting partial states (same class as the v6.5 metrics trap).

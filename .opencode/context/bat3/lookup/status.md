@@ -143,3 +143,39 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
   latency price), 0 new failures, 0 re-fences. Next: final drain -> S7 v7 (liveness-
   filtered) -> phase-2 audit_gap -> ops leftovers (watchdog, redis args, TZ, mirror
   Phase 5). Perf follow-up queued: precomputed skeleton FPs in mirror build.
+
+## 2026-09-27/29 — smiles-canonicalization storm: fence-watchdog era + fleet redistribution
+
+- **New freeze class (localized)**: RDKit `MolToSmiles` canonicalization spins forever on
+  small dense cage/ring junk clusters produced for virtual `SYSTEM__vN` fragments.
+  NOT size-correlated (4,247-atom systems poison same as 161k); hits `smiles` AND
+  `smiles_not_sanitized`; siblings later surfaced at `selfies`/`inchi_key` stages;
+  third variant = hung external HTTP (cactus.nci.nih.gov 10.4h, uniprot/PUG calls with
+  no timeout). Signature: `[SPIN] <seg>/<gen> START`, zero DONE, pod ~1 core CPU-hot.
+- **Mitigation shipped (ops-only, no app code)**: three manual waves (50/99/96 fenced)
+  then the **fence-watchdog** (`/tmp/fence_watchdog_v2.py` on validation-api, 10-min
+  cycles): any `[SPIN] START` tail >30 min or HTTP-connect tail >75 min among live
+  `processing` entries → fence to `failed/quarantined`, append NFS file
+  `/data/validation/quarantine_smiles_spin_2026-09-27.txt`, inline-LREM all listed
+  entries' celery messages. Corpus ≈ 420 (2% of campaign) — PRESERVED as the regression
+  suite for the future fix. Also reaped ~18 kombu-zombie pods (7-20h silent, heartbeat/
+  sync tails, zero CPU) — classic dead broker flows (Sept-24 class, no restart).
+- **Duplicates-as-refresh insight (user-confirmed by repro)**: the ~31k redis backlog is
+  NOT parasitic. Re-runs re-execute the FULL stage chain and rewrite results.json with
+  post-F13/F14/F15 code (proof: entry 6533, first completed 09-27, full re-computation
+  09-28). Purge proposal rejected; true campaign finish = backlog llen → 0, not rows =
+  100%. rows max(completed_at) freezes once all rows touched (re-runs don't move rows).
+  results.json is PARTIAL while rewritten mid-flight → S7 v7 must liveness-filter.
+- **Fleet redistribution (user-directed)**: 15 → 48 → 96 (24/48 Gi) → 192 pods
+  (1c/16-32Gi, CPU res held 192) → 492 → final **164 pods × (3c req/4c lim, 16 Gi req/
+  24 Gi lim)** = **492 cores reserved** (+300 user-ordered). Observed: pods ≈ 1 compute
+  thread each (max ~1 core despite 2-thread config) — per-pod single-core reality drove
+  the sizing. RAM live ≈ 6-7% of reservation (reservation = monster OOM insurance only).
+- **Campaign (2026-09-29 10:00 UTC)**: rows 13,854/14,624 (94.7%), 354 first-time
+  monsters grinding (~few/h); **backlog 10.6k and draining ~600-1000/h → ETA tonight –
+  Oct 1 early**. Zero data corruption; every terminated job resumes via celery
+  visibility + results.json resume.
+- **Next**: drain → S7 v7 (liveness-filtered, mandatory) → phase-2 audit_gap → fix design
+  (F17 subprocess-isolated generator budget; corpus ready) → fence replay of ~420 →
+  ion deep-dive → ops leftovers. See common-issues: "smiles canonicalization spin",
+  "RS quota coexistence trap", "duplicates-as-refresh".

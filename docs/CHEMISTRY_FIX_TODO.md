@@ -443,3 +443,45 @@ audit_gt_absent_rows.jsonl (scripts in-repo .tmp/, pipeline untouched).
   fixed cohort; pdb/uniprot metrics unchanged (rerank does not touch them).
 - Watch: rerank worst-case latency (25k × ~0.5ms ≈ 15s/segment worst),
   no new wedge/spin signatures (runbooks in playbook §7/§8).
+
+## WAVE 6 — generator-budget isolation + external HTTP timeouts (OPEN, designed 2026-09-29)
+
+Context: WAVE 5 (F13/14/15) landed and reclaimed the chemistry path; the campaign's
+remaining ~2% are hostage to compute-side spins of a NEW class, fully localized this
+week. Fence-watchdog currently holds them out of the fleet (ops-only mitigation);
+~420 entries preserved as the regression corpus
+(`/data/validation/quarantine_smiles_spin_2026-09-27.txt`).
+
+### F17 — subprocess-isolated generator budget (DESIGN, unimplemented)
+- **Root**: `MolToSmiles` canonicalization spins unboundedly on small dense cage/ring
+  junk clusters from virtual `SYSTEM__vN` fragments (both `smiles` and
+  `smiles_not_sanitized`; same fragments also stall `selfies` / `inchi_key`). The
+  2026-09-20 policy excluded KEKULIZE only. NOT size-predictable: 4,247-atom systems
+  hit it — size-based skipping is provably wrong.
+- **Design constraint (explicit user ruling)**: NO per-generator/thread timeouts or
+  signal tricks — that class of patch broke production before. The safe primitive is
+  a **subprocess**: run the RDKit-derive stage for a fragment in a spawned child with
+  a wall-clock budget; on overrun the parent KILLS the child (no threads, no signals,
+  no shared state), records `smiles_timeout`/`generator_timeout` as an honest failure
+  signature, and the pipeline continues with the remaining generators. Deterministic,
+  testable, bounded blast radius.
+- **Secondary hardening**: cheap pre-check (atom/ring size) may SKIP the obviously
+  hopeless fragments to save child-spawn cost, but the child budget is the guarantee,
+  the pre-check is an optimization only.
+- **Test corpus**: the ~420 quarantined entries (thus the fence list is a FEATURE —
+  replay set, not grime). Each must end with `*_timeout` signatures instead of a
+  frozen thread.
+- **Watch out**: faulthandler path is broken in celery workers (LoggingProxy lacks
+  fileno) — the isolation child must do its own logging; do not rely on SPIN_DEBUG
+  dumps for child debugging.
+
+### F18 — external HTTP hard timeouts (unimplemented)
+- Paths still calling out without any timeout: cactus.nci.nih.gov resolution,
+  uniprot FASTA fetch, PUG fastsimilarity fallback remnants. Observed hangs up to
+  10.4h holding worker slots. Fix = explicit connect+read timeouts + fail-soft on ALL
+  external HTTP in identification/verification; mirror/local sources are never touched.
+
+### Replay plan (after F17/F18 ship)
+1. Requeue the ~420 quarantined entries (last_error LIKE 'quarantined%').
+2. Watchdog stays armed (already generator-generic).
+3. Expect: no `[SPIN] ... START` older than its budget anywhere in the fleet.
