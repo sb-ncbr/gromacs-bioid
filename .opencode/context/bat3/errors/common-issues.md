@@ -313,3 +313,39 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
 - results.json is REWRITTEN in place → mid-flight files are PARTIAL for hours → any
   stats pass must liveness-filter (tasks.load_simulation==success && verify_results
   ==success) or risk counting partial states (same class as the v6.5 metrics trap).
+
+## Molecule-type stomp class (2026-09-30): composition fallback overwrote polymer verdicts
+
+- `extract_molecule_instance`: the element-composition fallback (lipid/
+  carbohydrate/small-molecule) ran UNCONDITIONALLY after flag-based typing.
+  DNA has C/O ~2.4, inside the lipid 1-3 band -> segment flagged
+  is_nucleic=true but instance stamped LIPID -> `lipid_shorthand`
+  signature emitted for DNA strands. Water/ion were equally stompable to
+  small_molecule. Found via Phase-7 E2E signature inventory diff.
+- Fix (bfc077fdb): fallback runs only for UNKNOWN. Lesson: a block whose
+  comment says "non-polymer classification" must CODE that guard; atom
+  heuristics are fallbacks, never overrides.
+
+## nginx upstream landmine + mutable-tag trap + .dockerignore silent-drop (2026-09-30 rollout)
+
+- nginx resolves `proxy_pass` hostnames ONLY at startup. A pod whose API
+  service was renamed after it started can run for months on a cached
+  resolution; ANY restart then fails with "host not found in upstream"
+  and looks like a fresh-code regression (frontend crashloop class).
+  Always diff conf upstreams vs live `kubectl get svc` before rolling.
+- Mutable `latest` tags make rollback impossible: `rollout undo` re-pulls
+  the mutated tag under imagePullPolicy: Always. Tag immutably (or record
+  digests before push: the old digest survives orphaned in the registry).
+- `.dockerignore` silently dropped `**/deploy/**` from build contexts;
+  builds reported success while the conf COPY failed -> pushing stale
+  digests. After every docker build: verify the digest CHANGED and run an
+  in-image functional gate before pushing.
+
+## FE/metal vdw radii poison global bond guessing (known, deferred)
+
+- MDA DefaultGuesser raises on unknown vdw types (FE in HEM, other metals),
+  aborting guess_bonds for the ENTIRE universe -> whole topology-less sim
+  bondless -> map-based FASTA dead metalloprotein-wide, silent except one
+  warning. User ruling (2026-09-30): known story; metal radii alone will
+  not fix it. Deferred to a later wave (likely per-region guessing or
+  guesser hardening).

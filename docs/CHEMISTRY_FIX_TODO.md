@@ -485,3 +485,66 @@ week. Fence-watchdog currently holds them out of the fleet (ops-only mitigation)
 1. Requeue the ~420 quarantined entries (last_error LIKE 'quarantined%').
 2. Watchdog stays armed (already generator-generic).
 3. Expect: no `[SPIN] ... START` older than its budget anywhere in the fleet.
+
+## WAVE 7 — Enhanced Nucleic Acid Recognition (ENAR) (DONE 2026-09-30)
+
+Motivation: DNA/RNA-focused analysis showed fragile NA recognition (hard 80%
+gate on an enumerated resname table) and missing NA sequence/structure
+signature coverage in several input shapes. PyMOL research (Selector.cpp)
+gave the model: pattern-based resname folding + structure-based
+sugar-phosphate fingerprint fallback, C4' guide atom (C3' fallback, PNA).
+
+**Commits**: 0920eebaa, eb88b0302, b0afcc035, f32b907a3, cc93741c6, bfc077fdb
+(+deploy fix 9f98d8e45). **Images**: bat3-worker:v2.44, bat3-validation-api:v3.122
+(fleet-wide 2026-09-30), bat3-frontend:latest rebuilt.
+
+Shipped changes:
+- **A1/A2 recognition tiers** behind `enhanced_nucleic_acid_recognition`
+  (default on: code, config.ini `[signatures]`, config_shared.ini, UI defaults).
+  Tier-1 = legacy 80-entry table UNION liberal normalizer (D- prefix, [3|5]
+  terminal codes DA3/RG5-class); tier-2 = structural sugar-phosphate
+  fingerprint (O3'/C3'/C4'/C5'/O5') in the 0.3-0.8 band REQUIRING a
+  cross-residue phosphodiester bond, so cofactors (CoA 3'-phosphate, ATP,
+  NAD, FAD, free nucleotides) can never promote. Audit fields
+  `na_detection` / `na_structural_promotions` land in results.json.
+- **B1** resname_to_one_letter consults the normalizer; modified bases keep
+  the designed 'X' degradation (BLAST sanitizer -> N).
+- **B2** fasta_resname_nucleic fires exactly when map-based cannot (bondless
+  atomistic NA coverage hole closed; gates provably complementary, no
+  double production).
+- **B3** map-based sequence extraction anchor parameterization; NA passes
+  anchor=None (methionine heuristic inapplicable); protein byte-identical.
+- **B4** pdb_backbone_*_nucleic emits the real C4' guide atom per residue at
+  real coordinates/element (was: centroid pseudo-atom mislabeled "CA").
+  Protein path byte-preserved (selector=None).
+- **Gate fix**: pdb_nucleic generators required NOT-multi-atom residues
+  (CG-only) -> atomistic DNA/RNA never produced PDB signatures at all;
+  restriction dropped for NA, CG preserved.
+- **C1** nucleotide verification scores all four orientation senses
+  {q, rev(q), comp(q), revcomp(q)} (+RNA pair when U present) and takes the
+  max: provably never below forward-only scoring. Fixture-proven
+  68.42 -> 100.00 on a real reversed BFS output. Protein untouched
+  (gated by signature_type, plumbed through VerificationWorker.verify).
+- **Molecule-type anti-stomp**: element-composition fallback (lipid/carbo/
+  small-mol) now runs only for UNKNOWN. DNA (C/O ~2.4, inside lipid band)
+  was stamped LIPID and even emitted lipid_shorthand signatures; water/ion
+  were equally stompable. Found by E2E, fixed before rollout.
+
+Empirical basis (before each merge): fixtures from tmp/Cyt_c-DNA.pdb
+(tests/fixtures/nucleic/*; protein+HEM+DNA duplex with DA3/DG5/DC3/DT5
+terminals). Both 16-nt strand sequences recovered verbatim via the real
+loader path AND via raw bondless PDB; C4' coords == source atoms; ON/OFF
+toggle parity on the canary; in-image ENAR gates passed post-build; old
+image proven tolerant of the new config key.
+
+Deployment notes: surge rollout (maxSurge=1, maxUnavailable=0) swept the
+164-pod validation-worker in ~15 min; in-flight monsters recovered via
+celery visibility + results.json resume as designed. fence-watchdogs live
+in the API pod /tmp -> must be relaunched after every API roll (done).
+config_shared.ini backup at .bak-20260930.
+
+Open follow-ups: unwrap.py divergent NA classifier reconciliation; CHARMM
+three-letter base names + PNA names in tier tables; blast.py embedded table
+dedup; DNA-vs-RNA typing metadata (descoped, trivial add); parameterize
+frontend nginx upstream per helm release (envsubst). FE/metal vdw poisoning
+of global bond guessing: known story, deferred (see common-issues).

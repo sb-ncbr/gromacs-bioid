@@ -179,3 +179,24 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
   (F17 subprocess-isolated generator budget; corpus ready) → fence replay of ~420 →
   ion deep-dive → ops leftovers. See common-issues: "smiles canonicalization spin",
   "RS quota coexistence trap", "duplicates-as-refresh".
+
+## 2026-09-30 — WAVE 7 (ENAR) shipped fleet-wide; campaign fully terminal
+
+- Nucleic-acid recognition hardened end-to-end behind
+  `enhanced_nucleic_acid_recognition` (default on: code, config.ini,
+  config_shared.ini, UI defaults). See CHEMISTRY_FIX_TODO WAVE 7 for the full
+  change list (A1/A2 tiered recognition w/ cross-residue phosphodiester
+  guard, B1-B4 sequences+backbone, C1 orientation-aware verification,
+  molecule-type anti-stomp). Commits 0920eebaa..bfc077fdb + 9f98d8e45.
+- Images live: bat3-worker:v2.44 (×15 ceitec +×2 ui), bat3-validation-api:v3.122
+  (validation-worker ×164 + validation-api), frontend rebuilt (nginx landmine
+  defused, see common-issues). Watchdogs relaunched on new API pod (v2+v1).
+- Campaign (14,624): **ALL terminal** — 13,857 completed + 767 failed.
+  Refresh backlog drained naturally pre-rollout (~22h tail). Failed anatomy:
+  334 corrupt inputs ("No loading strategy", e.g. entry 9754: topology 11.5k
+  atoms vs trajectory 30 atoms = truncated download), ~420 smiles-spin
+  quarantined (F17 corpus, q=437 current), poison/others ~13.
+- Next: (a) triage 334 corrupt entries (re-download feasibility), (b) S7 v7
+  liveness-filtered on the completed set + phase-2 audit_gap, (c) F17
+  subprocess generator budget -> replay ~420, (d) ops leftovers (FE bond-guess
+  known, frontend nginx param per release, unwrap classifier reconciliation).
