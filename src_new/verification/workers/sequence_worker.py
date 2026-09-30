@@ -9,6 +9,7 @@ from Bio.Align import PairwiseAligner
 from ..base import VerificationWorker
 from ..models import VerificationScore
 from ..fetchers.sequence_fetcher import SequenceSignatureFetcher
+from ...molecules.nucleic_acid import sequence_orientation_variants
 
 logger = logging.getLogger(__name__)
 
@@ -104,12 +105,35 @@ class SequenceVerificationWorker(VerificationWorker):
             logger.warning(f"Sequence alignment failed: {e}")
             return None
     
+    def _score_best_orientation(
+        self, signature: str, canonical_signature: str, try_revcomp: bool
+    ) -> VerificationScore | None:
+        """Best alignment score over orientation variants.
+
+        For nucleotide queries (try_revcomp), all four orientation senses
+        are scored and the maximum wins; the result is therefore never
+        lower than forward-only scoring (no-regression property). For
+        proteins the input is scored unchanged.
+        """
+        variants = (
+            sequence_orientation_variants(signature) if try_revcomp else [signature]
+        )
+        best: VerificationScore | None = None
+        for variant in variants:
+            score = self._compute_alignment_score(variant, canonical_signature)
+            if score is not None and (
+                best is None or score.normalized_score > best.normalized_score
+            ):
+                best = score
+        return best
+
     def verify(
         self,
         signature: str,
         identifier: str,
         ident_type: str,
         canonical_signature: str | None = None,
+        signature_type: str | None = None,
     ) -> VerificationScore | None:
         """Verify a sequence hit by comparing using global alignment.
         
@@ -129,30 +153,36 @@ class SequenceVerificationWorker(VerificationWorker):
         # Cannot verify without canonical sequence
         if canonical_signature is None:
             return None
-        
+
+        # Wave-7 C1: duplex NA orientation is unconstrained at generation
+        # time, so nucleotide queries score all orientation variants.
+        try_revcomp = (
+            signature_type is not None and "nucleotide" in signature_type.lower()
+        )
+
         try:
             # For PDB_ID, try all polymer entities and pick the best match
             if ident_type == "PDB_ID":
                 fetcher = SequenceSignatureFetcher()
                 entity_sequences = fetcher._fetch_pdb_entities(identifier)
-                
+
                 # Include the provided canonical_signature as fallback
                 candidate_sequences = list(entity_sequences)
                 if canonical_signature not in candidate_sequences:
                     candidate_sequences.append(canonical_signature)
-                
+
                 # Try each candidate and pick the best score
                 best_score: VerificationScore | None = None
                 for candidate_seq in candidate_sequences:
-                    score = self._compute_alignment_score(signature, candidate_seq)
+                    score = self._score_best_orientation(signature, candidate_seq, try_revcomp)
                     if score is not None:
                         if best_score is None or score.normalized_score > best_score.normalized_score:
                             best_score = score
-                
+
                 return best_score
-            
+
             # For non-PDB identifiers, use single canonical sequence
-            return self._compute_alignment_score(signature, canonical_signature)
+            return self._score_best_orientation(signature, canonical_signature, try_revcomp)
             
         except Exception as e:
             logger.warning(f"Sequence verification failed: {e}")

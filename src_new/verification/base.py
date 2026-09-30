@@ -25,15 +25,19 @@ class VerificationWorker(ABC):
         identifier: str,
         ident_type: str,
         canonical_signature: str | None = None,
+        signature_type: str | None = None,
     ) -> VerificationScore | None:
         """Verify a hit by comparing simulation signature against canonical signature.
-        
+
         Args:
             signature: The signature extracted from simulation.
             identifier: The identifier (e.g., database ID).
             ident_type: The type of identifier (e.g., "PUBCHEM_CID").
             canonical_signature: Optional pre-fetched canonical signature for comparison.
-        
+            signature_type: Optional canonical signature type (e.g.,
+                "residue_sequence_nucleotide"); only the sequence worker
+                uses it (wave-7 orientation handling). Others ignore it.
+
         Returns:
             VerificationScore if verification was performed, None if not applicable.
             Non-verification is a normal outcome, not an error.

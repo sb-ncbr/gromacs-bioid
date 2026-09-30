@@ -253,7 +253,7 @@ class VerificationManager:
                 if workers:
                     for worker in workers:
                         try:
-                            score = worker.verify(signature, normalized_id, ident_type, canonical_signature)
+                            score = worker.verify(signature, normalized_id, ident_type, canonical_signature, signature_type=signature_type)
                             if score is not None:
                                 similarity_score = score
                                 break

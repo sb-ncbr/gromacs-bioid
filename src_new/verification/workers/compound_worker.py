@@ -32,6 +32,7 @@ class CompoundVerificationWorker(VerificationWorker):
         identifier: str,
         ident_type: str,
         canonical_signature: str | None = None,
+        signature_type: str | None = None,
     ) -> VerificationScore | None:
         """Verify a compound hit by comparing SMILES using multi-fingerprint similarity.
         

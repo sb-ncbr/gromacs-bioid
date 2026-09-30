@@ -138,6 +138,48 @@ def has_cross_residue_phosphodiester(fragment: AtomGroup) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# sequence orientation variants (wave-7 C1)
+# ---------------------------------------------------------------------------
+
+# Map-based sequence extraction walks the bond graph from an arbitrary end,
+# so the emitted strand direction is unconstrained; reference databases may
+# hold the complement strand for duplex NA. Verification therefore scores
+# all four orientation senses {q, rev(q), comp(q), revcomp(q)} and takes
+# the maximum - provably never worse than forward-only scoring.
+
+# DNA complement: A<->T, G<->C, U->A (tolerated in DNA), X/N passthrough
+_COMPLEMENT_DNA = str.maketrans("ACGTUNX", "TGCAANX")
+
+# RNA complement: A<->U, G<->C, T->A (tolerated in RNA), X/N passthrough
+_COMPLEMENT_RNA = str.maketrans("ACGTUNX", "UGCAANX")
+
+
+def sequence_orientation_variants(sequence: str) -> list[str]:
+    """Orientation variants of an NA query sequence for verification.
+
+    Returns a de-duplicated list of up to 4 DNA-alphabet variants plus the
+    RNA complement pair when U is present (or up to 6 total). The original
+    sequence is always first.
+    """
+    seq = sequence.upper().strip()
+    variants: list[str] = [seq]
+
+    def _add(v: str) -> None:
+        if v not in variants:
+            variants.append(v)
+
+    comp_dna = seq.translate(_COMPLEMENT_DNA)
+    _add(seq[::-1])
+    _add(comp_dna)
+    _add(comp_dna[::-1])  # reverse-complement (DNA)
+    if "U" in seq:
+        comp_rna = seq.translate(_COMPLEMENT_RNA)
+        _add(comp_rna)
+        _add(comp_rna[::-1])  # reverse-complement (RNA)
+    return variants
+
+
+# ---------------------------------------------------------------------------
 # backbone trace atom selection (wave-7 B4)
 # ---------------------------------------------------------------------------
 
