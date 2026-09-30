@@ -12,6 +12,11 @@ from ..config.loader import RunConfig
 from ..input.models import LoadDecision
 from ..loader.repair import RepairReport
 from ..molecules.instances import MoleculeInstance, MoleculeType
+from ..molecules.nucleic_acid import (
+    has_cross_residue_phosphodiester,
+    normalize_nucleic_resname,
+    residue_has_sugar_phosphate,
+)
 from ..results.results_manager import ResultsManager
 
 logger = logging.getLogger("base")
@@ -61,6 +66,11 @@ class SegmentProperties:
     bond_count_fragment: int = 0
     molecule_count: int = 0
     flags: dict[str, bool] = field(default_factory=dict)
+    # Enhanced nucleic acid recognition audit trail (wave-7):
+    # "name" = tier-1 resname match, "structure" = tier-2 structural probe,
+    # "legacy_*" = enhanced mode disabled, "none" = not nucleic.
+    na_detection: str = "none"
+    na_structural_promotions: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -70,6 +80,8 @@ class SegmentProperties:
             "bond_count_total": self.bond_count_total,
             "bond_count_fragment": self.bond_count_fragment,
             "molecule_count": self.molecule_count,
+            "na_detection": self.na_detection,
+            "na_structural_promotions": self.na_structural_promotions,
             **self.flags,
         }
 
@@ -81,6 +93,13 @@ class LoadedUniverse:
     MoleculeInstance objects for downstream deduplication.
     """
     
+    # Enhanced nucleic acid recognition thresholds (wave-7). The acceptance
+    # fraction keeps its historic 0.8 semantics (atom-resname weighted).
+    # Segments with less than probe_floor tier-1 coverage are never probed
+    # structurally (pure-ligand systems must not pay or risk false hits).
+    _NA_ACCEPTANCE = 0.8
+    _NA_STRUCTURAL_PROBE_FLOOR = 0.3
+
     def __init__(
         self,
         universe: Universe,
@@ -88,12 +107,14 @@ class LoadedUniverse:
         repair_report: RepairReport,
         results: ResultsManager | None = None,
         filter_segments: set[str] | None = None,
+        enhanced_nucleic_recognition: bool = True,
     ):
         self.universe = universe
         self.decision = decision
         self.repair_report = repair_report
         self.results = results
         self.filter_segments = filter_segments or set()
+        self.enhanced_nucleic_recognition = enhanced_nucleic_recognition
         self._segments: set[str] = set()
         self._segment_properties: dict[str, SegmentProperties] = {}
         self._analyze()
@@ -166,13 +187,22 @@ class LoadedUniverse:
                 props.residue_count = len(fragment.residues)
             
             # Compute flags using the same representative fragment
-            props.flags = self._compute_flags(selected, fragment)
+            props.flags, na_meta = self._compute_flags(selected, fragment)
+            props.na_detection = na_meta["na_detection"]
+            props.na_structural_promotions = na_meta["na_structural_promotions"]
             
             self._segment_properties[segment_name] = props
     
-    def _compute_flags(self, selected: AtomGroup, representative: AtomGroup | None) -> dict[str, bool]:
-        """Compute boolean flags for a segment."""
+    def _compute_flags(
+        self, selected: AtomGroup, representative: AtomGroup | None
+    ) -> tuple[dict[str, bool], dict[str, Any]]:
+        """Compute boolean flags for a segment.
+
+        Returns: (flags, na_meta) where na_meta carries the wave-7 nucleic
+        acid detection audit trail.
+        """
         flags = {}
+        na_meta = {"na_detection": "none", "na_structural_promotions": 0}
         
         # HAS_ELEMENTS: all non-empty
         if hasattr(selected.atoms, 'elements'):
@@ -219,17 +249,15 @@ class LoadedUniverse:
         else:
             flags[SegmentProperty.IS_PROTEIN.value] = False
         
-        # IS_NUCLEIC (use 80% threshold like _is_polymer_segment)
-        if hasattr(selected.atoms, 'resnames'):
-            resnames = selected.atoms.resnames
-            known_count = sum(
-                1 for rn in resnames if rn.upper() in KNOWN_NUCLEIC_ACIDS_CODES
-            )
-            flags[SegmentProperty.IS_NUCLEIC.value] = (
-                len(resnames) > 0 and known_count / len(resnames) >= 0.8
-            )
-        else:
-            flags[SegmentProperty.IS_NUCLEIC.value] = False
+        # IS_NUCLEIC (80% atom-resname threshold; wave-7 two-tier logic)
+        is_nucleic, na_detection, na_promotions = self._classify_nucleic(
+            selected, representative
+        )
+        flags[SegmentProperty.IS_NUCLEIC.value] = is_nucleic
+        na_meta = {
+            "na_detection": na_detection,
+            "na_structural_promotions": na_promotions,
+        }
         
         # HAS_MULTI_ATOM_RESIDUES
         if representative is not None:
@@ -238,8 +266,83 @@ class LoadedUniverse:
             )
         else:
             flags[SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value] = False
-        
-        return flags
+
+        return flags, na_meta
+
+    def _classify_nucleic(
+        self, selected: AtomGroup, representative: AtomGroup | None
+    ) -> tuple[bool, str, int]:
+        """Classify a segment as nucleic acid (wave-7).
+
+        Two modes:
+          - enhanced_nucleic_recognition=False: bit-for-bit legacy behavior
+            (closed KNOWN_NUCLEIC_ACIDS_CODES table, 80% atom-resname gate).
+          - True (default): tier-1 liberal resname normalization; if the
+            80% gate is missed but coverage beats the probe floor, a tier-2
+            structural probe promotes residues with the full sugar-phosphate
+            fingerprint - but only when a mandatory cross-residue
+            phosphodiester bond exists in the representative fragment, so
+            cofactors (CoA, ATP, NAD, FAD, free nucleotides) can never be
+            promoted. Bondless fragments simply cannot promote (graceful).
+
+        Returns: (is_nucleic, detection_tier, promoted_resname_count).
+        """
+        if not hasattr(selected.atoms, "resnames"):
+            return False, "none", 0
+
+        resnames = selected.atoms.resnames
+        atom_total = len(resnames)
+        if atom_total == 0:
+            return False, "none", 0
+
+        if not self.enhanced_nucleic_recognition:
+            known_count = sum(
+                1 for rn in resnames if rn.upper() in KNOWN_NUCLEIC_ACIDS_CODES
+            )
+            verdict = known_count / atom_total >= self._NA_ACCEPTANCE
+            return verdict, ("legacy_name" if verdict else "none"), 0
+
+        # Tier 1 must be a strict SUPERSET of the legacy table: the live
+        # src.constants table already covers terminal codes and many modified
+        # bases (PSU, H2U, 5MC, ...). The normalizer adds the long tail the
+        # table cannot enumerate. Union -> no behavior regression possible.
+        known_count = sum(
+            1
+            for rn in resnames
+            if rn.upper() in KNOWN_NUCLEIC_ACIDS_CODES
+            or normalize_nucleic_resname(rn) is not None
+        )
+        tier1_fraction = known_count / atom_total
+        if tier1_fraction >= self._NA_ACCEPTANCE:
+            return True, "name", 0
+
+        if tier1_fraction < self._NA_STRUCTURAL_PROBE_FLOOR or representative is None:
+            return False, "none", 0
+
+        # Tier-2 structural probe: mandatory phosphodiester linkage guard.
+        if not has_cross_residue_phosphodiester(representative):
+            return False, "none", 0
+
+        fingerprint_cache: dict[str, bool] = {}
+        promoted_atoms = 0
+        for residue in representative.residues:
+            resname = residue.resname.strip().upper()
+            if (
+                resname in KNOWN_NUCLEIC_ACIDS_CODES
+                or normalize_nucleic_resname(resname) is not None
+            ):
+                continue
+            verdict = fingerprint_cache.get(resname)
+            if verdict is None:
+                verdict = residue_has_sugar_phosphate(list(residue.atoms.names))
+                fingerprint_cache[resname] = verdict
+            if verdict:
+                promoted_atoms += len(residue.atoms)
+
+        if (known_count + promoted_atoms) / atom_total >= self._NA_ACCEPTANCE:
+            promotions = sum(1 for v in fingerprint_cache.values() if v)
+            return True, "structure", promotions
+        return False, "none", 0
     
     def _record_summary(self) -> None:
         """Record summary data to results manager."""

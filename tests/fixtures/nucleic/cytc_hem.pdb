@@ -1,0 +1,83 @@
+HEADER    
+TITLE     MDANALYSIS FRAME 0: Created by PDBWriter
+CRYST1    1.000    1.000    1.000  90.00  90.00  90.00 P 1           1
+REMARK     285 UNITARY VALUES FOR THE UNIT CELL AUTOMATICALLY SET
+REMARK     285 BY MDANALYSIS PDBWRITER BECAUSE UNIT CELL INFORMATION
+REMARK     285 WAS MISSING.
+REMARK     285 PROTEIN DATA BANK CONVENTIONS REQUIRE THAT
+REMARK     285 CRYST1 RECORD IS INCLUDED, BUT THE VALUES ON
+REMARK     285 THIS RECORD ARE MEANINGLESS.
+ATOM      1 FE   HEM B 105      -2.464   4.859   0.166  1.00  0.00      B       
+ATOM      2  NA  HEM B 105      -2.296   3.177   1.248  1.00  0.00      B       
+ATOM      3  C1A HEM B 105      -2.792   3.021   2.525  1.00  0.00      B       
+ATOM      4  C2A HEM B 105      -2.608   1.627   2.840  1.00  0.00      B       
+ATOM      5  CAA HEM B 105      -3.338   0.967   3.968  1.00  0.00      B       
+ATOM      6 1HP7 HEM B 105      -3.591   0.042   3.461  1.00  0.00      B       
+ATOM      7 2HP7 HEM B 105      -4.123   1.606   4.379  1.00  0.00      B       
+ATOM      8  CBA HEM B 105      -2.377   0.580   5.101  1.00  0.00      B       
+ATOM      9 3HP7 HEM B 105      -1.816   1.491   5.307  1.00  0.00      B       
+ATOM     10 4HP7 HEM B 105      -1.701  -0.192   4.735  1.00  0.00      B       
+ATOM     11  CGA HEM B 105      -2.913   0.130   6.446  1.00  0.00      B       
+ATOM     12  O1A HEM B 105      -4.161   0.117   6.495  1.00  0.00      B       
+ATOM     13  O2A HEM B 105      -2.137   0.042   7.426  1.00  0.00      B       
+ATOM     14  C3A HEM B 105      -1.685   1.108   1.994  1.00  0.00      B       
+ATOM     15  CMA HEM B 105      -1.044  -0.255   1.978  1.00  0.00      B       
+ATOM     16 1HM8 HEM B 105      -0.180  -0.273   1.322  1.00  0.00      B       
+ATOM     17 2HM8 HEM B 105      -0.828  -0.675   2.965  1.00  0.00      B       
+ATOM     18 3HM8 HEM B 105      -1.870  -0.909   1.702  1.00  0.00      B       
+ATOM     19  C4A HEM B 105      -1.555   2.058   0.910  1.00  0.00      B       
+ATOM     20  CHB HEM B 105      -0.840   1.837  -0.270  1.00  0.00      B       
+ATOM     21  HDM HEM B 105      -0.139   1.031  -0.492  1.00  0.00      B       
+ATOM     22  C1B HEM B 105      -0.861   2.732  -1.335  1.00  0.00      B       
+ATOM     23  NB  HEM B 105      -1.485   3.967  -1.339  1.00  0.00      B       
+ATOM     24  C2B HEM B 105      -0.092   2.566  -2.546  1.00  0.00      B       
+ATOM     25  CMB HEM B 105       0.933   1.541  -2.904  1.00  0.00      B       
+ATOM     26 1HM1 HEM B 105       1.029   1.427  -3.987  1.00  0.00      B       
+ATOM     27 2HM1 HEM B 105       1.871   1.920  -2.504  1.00  0.00      B       
+ATOM     28 3HM1 HEM B 105       0.727   0.558  -2.494  1.00  0.00      B       
+ATOM     29  C3B HEM B 105      -0.607   3.438  -3.448  1.00  0.00      B       
+ATOM     30  CAB HEM B 105      -0.414   3.466  -4.944  1.00  0.00      B       
+ATOM     31  HV2 HEM B 105       0.123   4.269  -5.439  1.00  0.00      B       
+ATOM     32  CBB HEM B 105      -0.788   2.468  -5.753  1.00  0.00      B       
+ATOM     33 2HVC HEM B 105      -1.261   1.574  -5.377  1.00  0.00      B       
+ATOM     34 2HVT HEM B 105      -0.440   2.574  -6.773  1.00  0.00      B       
+ATOM     35  C4B HEM B 105      -1.347   4.392  -2.655  1.00  0.00      B       
+ATOM     36  CHC HEM B 105      -1.834   5.582  -3.171  1.00  0.00      B       
+ATOM     37  HAM HEM B 105      -1.702   5.719  -4.246  1.00  0.00      B       
+ATOM     38  C1C HEM B 105      -2.274   6.640  -2.382  1.00  0.00      B       
+ATOM     39  NC  HEM B 105      -2.510   6.476  -1.024  1.00  0.00      B       
+ATOM     40  C2C HEM B 105      -2.574   7.996  -2.766  1.00  0.00      B       
+ATOM     41  CMC HEM B 105      -2.420   8.552  -4.147  1.00  0.00      B       
+ATOM     42 1HM3 HEM B 105      -3.139   9.359  -4.296  1.00  0.00      B       
+ATOM     43 2HM3 HEM B 105      -1.413   8.993  -4.134  1.00  0.00      B       
+ATOM     44 3HM3 HEM B 105      -2.343   7.764  -4.899  1.00  0.00      B       
+ATOM     45  C3C HEM B 105      -2.965   8.693  -1.670  1.00  0.00      B       
+ATOM     46  CAC HEM B 105      -3.310  10.153  -1.567  1.00  0.00      B       
+ATOM     47  HV4 HEM B 105      -2.453  10.778  -1.406  1.00  0.00      B       
+ATOM     48  CBC HEM B 105      -4.560  10.535  -1.855  1.00  0.00      B       
+ATOM     49 4HVC HEM B 105      -5.377   9.869  -2.067  1.00  0.00      B       
+ATOM     50 4HVT HEM B 105      -4.795  11.591  -1.950  1.00  0.00      B       
+ATOM     51  C4C HEM B 105      -3.028   7.697  -0.612  1.00  0.00      B       
+ATOM     52  CHD HEM B 105      -3.550   8.026   0.625  1.00  0.00      B       
+ATOM     53  HBM HEM B 105      -3.720   9.093   0.786  1.00  0.00      B       
+ATOM     54  C1D HEM B 105      -3.687   7.146   1.691  1.00  0.00      B       
+ATOM     55  ND  HEM B 105      -3.357   5.800   1.703  1.00  0.00      B       
+ATOM     56  C2D HEM B 105      -4.276   7.426   2.986  1.00  0.00      B       
+ATOM     57  CMD HEM B 105      -4.842   8.770   3.336  1.00  0.00      B       
+ATOM     58 1HM5 HEM B 105      -4.181   9.598   3.088  1.00  0.00      B       
+ATOM     59 2HM5 HEM B 105      -5.669   8.891   2.642  1.00  0.00      B       
+ATOM     60 3HM5 HEM B 105      -5.095   8.772   4.402  1.00  0.00      B       
+ATOM     61  C3D HEM B 105      -4.354   6.307   3.748  1.00  0.00      B       
+ATOM     62  C4D HEM B 105      -3.704   5.301   2.946  1.00  0.00      B       
+ATOM     63  CHA HEM B 105      -3.445   3.980   3.302  1.00  0.00      B       
+ATOM     64  HGM HEM B 105      -3.737   3.716   4.317  1.00  0.00      B       
+ATOM     65  CAD HEM B 105      -4.971   5.984   5.082  1.00  0.00      B       
+ATOM     66 1HP6 HEM B 105      -5.198   6.911   5.607  1.00  0.00      B       
+ATOM     67 2HP6 HEM B 105      -4.190   5.552   5.710  1.00  0.00      B       
+ATOM     68  CBD HEM B 105      -6.192   5.081   5.124  1.00  0.00      B       
+ATOM     69 3HP6 HEM B 105      -6.020   3.997   5.071  1.00  0.00      B       
+ATOM     70 4HP6 HEM B 105      -6.851   5.247   4.274  1.00  0.00      B       
+ATOM     71  CGD HEM B 105      -7.078   5.289   6.349  1.00  0.00      B       
+ATOM     72  O1D HEM B 105      -6.576   5.715   7.412  1.00  0.00      B       
+ATOM     73  O2D HEM B 105      -8.311   5.128   6.302  1.00  0.00      B       
+END

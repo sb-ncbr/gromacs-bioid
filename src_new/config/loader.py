@@ -92,6 +92,12 @@ class SignaturesConfig:
     lipid_shorthand: bool = True
     glycan_composition: bool = True
     mmcif: bool = True
+    # Enhanced nucleic acid recognition (wave-7): liberal resname patterns
+    # (D- deoxy prefix, [3|5] terminal codes such as DA3/RG5) plus a
+    # structural sugar-phosphate fallback guarded by a mandatory
+    # cross-residue phosphodiester bond. Default on; set to "no" to restore
+    # bit-for-bit pre-wave-7 classification semantics.
+    enhanced_nucleic_acid_recognition: bool = True
 
 
 @dataclass

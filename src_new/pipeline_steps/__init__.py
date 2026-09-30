@@ -212,6 +212,9 @@ def _analyze_universe(context):
         decision=decision,
         repair_report=report,
         results=context.results,
+        enhanced_nucleic_recognition=(
+            context.config.signatures.enhanced_nucleic_acid_recognition
+        ),
     )
 
     store = FragmentStore(facade, context.results)
