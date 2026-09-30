@@ -55,6 +55,9 @@ const MINIMAL_DEFAULT_CONFIG = {
         fasta_map_nucleic: true,
         fasta_resname_protein: true,
         fasta_resname_nucleic: true,
+        // Wave-7: enhanced nucleic acid recognition (terminal codes +
+        // structural sugar-phosphate fallback with phosphodiester guard)
+        enhanced_nucleic_acid_recognition: true,
         pdb_protein: true,
         pdb_nucleic: true,
         pdb_not_sanitized_protein: true,
