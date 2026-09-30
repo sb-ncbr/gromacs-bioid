@@ -11,6 +11,7 @@ from MDAnalysis import AtomGroup
 from ...config.loader import SignaturesConfig
 from ...molecules.instances import MoleculeInstance
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty, KNOWN_RESIDUE_CODES, KNOWN_NUCLEIC_ACIDS_CODES
+from ...molecules.nucleic_acid import normalize_nucleic_resname
 from ..base import SignatureGenerator
 
 logger = logging.getLogger("base")
@@ -61,10 +62,10 @@ class MapFastaGeneratorNucleotide(SignatureGenerator):
     
     name = "fasta_map_nucleic"
     signature_type = "residue_sequence_nucleotide"
-    
+
     def __init__(self, config: SignaturesConfig) -> None:
         super().__init__(config)
-    
+
     def _is_applicable(
         self,
         instance: MoleculeInstance,
@@ -73,27 +74,29 @@ class MapFastaGeneratorNucleotide(SignatureGenerator):
     ) -> bool:
         segment_name = fragment.segids[0] if len(fragment.segids) > 0 else ""
         props = facade.get_segment_properties(segment_name)
-        
+
         if not props.flags.get(SegmentProperty.IS_NUCLEIC.value, False):
             return False
         if not props.flags.get(SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value, False):
             return False
-        
+
         # Map-based approach requires bond data to build adjacency matrix
         # Without bonds, fasta_resname_nucleic can still produce a sequence
         has_bonds = hasattr(fragment, 'bonds') and hasattr(fragment.bonds, 'indices') and len(fragment.bonds.indices) > 0
         if not has_bonds:
             return False
-        
+
         return True
-    
+
     def _generate(
         self,
         instance: MoleculeInstance,
         fragment: AtomGroup,
         facade: LoadedUniverse,
     ) -> str:
-        return fragment_to_protseq_map_based(fragment, self.config)
+        # anchor=None: 'M' cannot occur in the nucleic alphabet, so the
+        # methionine-anchor branch is dead weight here (wave-7 B3).
+        return fragment_to_protseq_map_based(fragment, self.config, anchor=None)
 
 
 class ResnameFastaGeneratorProtein(SignatureGenerator):
@@ -129,14 +132,22 @@ class ResnameFastaGeneratorProtein(SignatureGenerator):
 
 
 class ResnameFastaGeneratorNucleotide(SignatureGenerator):
-    """FASTA generator for nucleic acids using resname-based approach."""
-    
+    """FASTA generator for nucleic acids using resname-based approach.
+
+    Fallback role (wave-7 B2): fires whenever the map-based generator
+    cannot - coarse-grained (single-atom-residue) NA as before, and now
+    also atomistic NA fragments WITHOUT bonds, which previously produced
+    no sequence signature at all. Never double-fires: the map-based
+    generator requires bonds, this one stays silent when bonds exist and
+    residues are multi-atom (the exact map-based applicability condition).
+    """
+
     name = "fasta_resname_nucleic"
     signature_type = "residue_sequence_nucleotide"
-    
+
     def __init__(self, config: SignaturesConfig) -> None:
         super().__init__(config)
-    
+
     def _is_applicable(
         self,
         instance: MoleculeInstance,
@@ -145,11 +156,18 @@ class ResnameFastaGeneratorNucleotide(SignatureGenerator):
     ) -> bool:
         segment_name = fragment.segids[0] if len(fragment.segids) > 0 else ""
         props = facade.get_segment_properties(segment_name)
-        
-        return (
-            props.flags.get(SegmentProperty.IS_NUCLEIC.value, False)
-            and not props.flags.get(SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value, False)
+
+        if not props.flags.get(SegmentProperty.IS_NUCLEIC.value, False):
+            return False
+
+        multi_atom = props.flags.get(SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value, False)
+        has_bonds = (
+            hasattr(fragment, 'bonds')
+            and hasattr(fragment.bonds, 'indices')
+            and len(fragment.bonds.indices) > 0
         )
+        # Applicable exactly when the map-based generator is not.
+        return not multi_atom or not has_bonds
     
     def _generate(
         self,
@@ -162,12 +180,17 @@ class ResnameFastaGeneratorNucleotide(SignatureGenerator):
 
 def resname_to_one_letter(resname: str) -> str:
     """Transform residue name to one-letter representation.
-    
-    Bug fix: Corrected mappings for sN, sQ, sE.
+
+    Wave-7: the nucleic normalizer runs first (D- prefix, [3|5] terminal
+    codes), then the legacy tables. Bug fix retained: sN/sQ/sE mappings.
     """
     if len(resname) == 1:
         return resname.upper()
-    
+
+    base = normalize_nucleic_resname(resname)
+    if base is not None:
+        return base
+
     if resname.upper() in KNOWN_NUCLEIC_ACIDS_CODES:
         return KNOWN_NUCLEIC_ACIDS_CODES[resname.upper()]
     
@@ -206,11 +229,22 @@ def fragment_to_protseq_resname_based(fragment: AtomGroup) -> str:
         raise
 
 
-def fragment_to_protseq_map_based(fragment: AtomGroup, config: SignaturesConfig) -> str:
-    """Extract sequence using graph-based approach."""
+def fragment_to_protseq_map_based(
+    fragment: AtomGroup, config: SignaturesConfig, anchor: str | None = "M"
+) -> str:
+    """Extract sequence using graph-based approach.
+
+    Args:
+        anchor: one-letter code of the preferred path-start residue.
+            "M" (methionine) is the biologically meaningful anchor for
+            proteins. Pass None for nucleic acids: 'M' can never occur in
+            the NA alphabet, so the anchor branch is dead weight there;
+            disabling it makes the nucleic path explicit and skips the
+            empty-anchor scan. Control flow for proteins is unchanged.
+    """
     prot_sign_allow_partial_seq = config.fasta_map_determine_sequence_partial_mode
     prot_sign_strict_mode = config.fasta_map_determine_sequence_strict_mode
-    
+
     (
         atom_indices_to_index,
         atom_adjacency_matrix,
@@ -218,17 +252,17 @@ def fragment_to_protseq_map_based(fragment: AtomGroup, config: SignaturesConfig)
         residue_indices_to_index,
         residue_adjacency_matrix,
     ) = _fragment_to_protein_mk_adjacency_matrices(fragment)
-    
+
     _fragment_to_protein_sequence_verify_sequentiality(
         residue_adjacency_matrix, atom_adjacency_matrix
     )
-    
-    methionine_indices, non_methionine_indices = _split_residue_indices_methionine(
-        residue_indices_to_code
+
+    anchor_indices, non_anchor_indices = _split_residue_indices_methionine(
+        residue_indices_to_code, anchor=anchor
     )
-    
+
     methionine_sequences = _find_longest_sequences_bfs(
-        methionine_indices, residue_adjacency_matrix, residue_indices_to_index, residue_indices_to_code
+        anchor_indices, residue_adjacency_matrix, residue_indices_to_index, residue_indices_to_code
     )
     if sel := _filter_sequences(
         methionine_sequences, require=lambda seq: len(seq) == len(residue_indices_to_code)
@@ -244,7 +278,7 @@ def fragment_to_protseq_map_based(fragment: AtomGroup, config: SignaturesConfig)
         cant_determine_err(prot_sign_strict_mode, prot_sign_allow_partial_seq)
     
     non_methionine_sequences = _find_longest_sequences_bfs(
-        non_methionine_indices, residue_adjacency_matrix, residue_indices_to_index, residue_indices_to_code
+        non_anchor_indices, residue_adjacency_matrix, residue_indices_to_index, residue_indices_to_code
     )
     if sel := _filter_sequences(
         non_methionine_sequences, require=lambda seq: len(seq) == len(residue_indices_to_code)
@@ -410,13 +444,18 @@ def _bfs_extract_longest_paths(
 
 
 def _split_residue_indices_methionine(
-    residues: dict[int, str]
+    residues: dict[int, str], anchor: str | None = "M"
 ) -> tuple[set[int], set[int]]:
-    """Split residue indices into methionine and non-methionine."""
+    """Split residue indices into anchor and non-anchor residue.
+
+    Defaults to methionine (protein path start). With ``anchor=None``
+    (nucleic acids) the anchor set is always empty, so only the generic
+    longest-path branch runs - matching the effective NA control flow.
+    """
     is_methionine = set()
     not_methionine = set()
     for residue_id, residue_code in residues.items():
-        if residue_code == "M":
+        if anchor is not None and residue_code == anchor:
             is_methionine.add(residue_id)
         else:
             not_methionine.add(residue_id)
