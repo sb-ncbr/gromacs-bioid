@@ -15,6 +15,7 @@ from MDAnalysis import AtomGroup
 
 from ...config.loader import SignaturesConfig
 from ...molecules.instances import MoleculeInstance
+from ...molecules.nucleic_acid import select_na_backbone_atom
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 from ..base import SignatureGenerator
 
@@ -74,10 +75,13 @@ class PDBGenerator(SignatureGenerator):
             ):
                 return False
         else:
-            if (
-                not props.flags.get(SegmentProperty.IS_NUCLEIC.value, False)
-                or props.flags.get(SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value, False)
-            ):
+            # Wave-7: atomistic NA rejected here before (multi-atom == the
+            # vast majority of DNA/RNA simulations) -> pdb_nucleic never
+            # fired for them, defeating PDB structure search for NA. The
+            # multi-atom restriction is dropped: coarse-grained (single-
+            # atom residue) NA keeps working as before, atomistic NA gains
+            # full/backbone PDB signatures.
+            if not props.flags.get(SegmentProperty.IS_NUCLEIC.value, False):
                 return False
         
         # If not backbone-only, need elements
@@ -96,7 +100,16 @@ class PDBGenerator(SignatureGenerator):
         fragment: AtomGroup,
         facade: LoadedUniverse,
     ) -> str:
-        pdb = fragment_to_pdb(fragment, self._backbone_only)
+        # Wave-7 B4: nucleic backbone trace uses the real guide atom
+        # (C4' -> C3' -> P, PyMOL parity) at REAL coordinates instead of a
+        # per-residue centroid pseudo-atom. Protein behavior is unchanged
+        # (selector stays None).
+        selector = (
+            select_na_backbone_atom
+            if (self._backbone_only and self._is_nucleotide)
+            else None
+        )
+        pdb = fragment_to_pdb(fragment, self._backbone_only, backbone_selector=selector)
         if self._sanitize:
             temp_dir = tempfile.gettempdir()
             if not verify_pdb(pdb, temp_dir):
@@ -160,24 +173,44 @@ class PDBBackboneGeneratorNoSanitizeNucleic(PDBGenerator):
         super().__init__(config, backbone_only=True, sanitize=False, is_nucleotide=True)
 
 
-def fragment_to_pdb(fragment: AtomGroup, only_backbone: bool) -> str:
-    """Convert fragment to PDB string using various techniques."""
+def fragment_to_pdb(
+    fragment: AtomGroup,
+    only_backbone: bool,
+    backbone_selector=None,
+) -> str:
+    """Convert fragment to PDB string using various techniques.
+
+    Args:
+        backbone_selector: optional callable(residue_atoms) -> Atom picking
+            the real backbone-tracing atom per residue (wave-7, nucleic
+            acids). None preserves legacy pseudo-atom behavior exactly.
+    """
     try:
-        return fragment_to_pdb_biopython(fragment, only_backbone)
+        return fragment_to_pdb_biopython(fragment, only_backbone, backbone_selector)
     except Exception:
         pass
-    
+
     try:
-        return fragment_to_pdb_direct(fragment, only_backbone, include_bonds=True)
+        return fragment_to_pdb_direct(fragment, only_backbone, include_bonds=True,
+                                      backbone_selector=backbone_selector)
     except Exception:
         pass
-    
+
     try:
-        return fragment_to_pdb_direct(fragment, only_backbone, include_bonds=False)
+        return fragment_to_pdb_direct(fragment, only_backbone, include_bonds=False,
+                                      backbone_selector=backbone_selector)
     except Exception:
         pass
-    
+
     raise RuntimeError("Unable to generate PDB signature")
+
+
+def _na_backbone_element(name: str) -> str:
+    """Derive a PDB element from a backbone atom name (fallback when the
+    topology carries no elements: backbone mode does not gate on elements).
+    """
+    stripped = name.replace("'", "").replace("*", "").strip()
+    return stripped[0].upper() if stripped else "C"
 
 
 def verify_pdb(pdb: str, temp_directory: str) -> bool:
@@ -207,32 +240,55 @@ def verify_pdb(pdb: str, temp_directory: str) -> bool:
             pass
 
 
-def fragment_to_pdb_biopython(fragment: AtomGroup, only_backbone: bool) -> str:
+def fragment_to_pdb_biopython(
+    fragment: AtomGroup, only_backbone: bool, backbone_selector=None
+) -> str:
     """Generate PDB string using Biopython.
-    
+
     Bug fix: Use 1-based sequential serial numbers instead of mapping original IDs.
+    Wave-7: with backbone_selector, emits the real guide atom per residue
+    (real coordinates/element) instead of the centroid pseudo-atom.
     """
     structure = Structure.Structure("export")
     model = Model.Model(0)
     chain = Chain.Chain("A")
-    
+
     for resid, resname in zip(fragment.residues.resnums, fragment.residues.resnames):
         atoms = fragment.select_atoms(f"resid {resid}")
         residue = Residue.Residue((" ", resid, " "), resname, "")
-        
+
         if only_backbone:
-            mean_position = np.array(atoms.atoms.positions, dtype=float)
-            # Use 1-based serial number
-            atom = Atom.Atom(
-                atoms.atoms.names[0],
-                np.array(mean_position.mean(axis=0)),
-                1.0,
-                1.0,
-                " ",
-                "CA",
-                resid + 1,
-                "C"
+            selected = (
+                backbone_selector(atoms.atoms) if backbone_selector is not None else None
             )
+            if selected is not None:
+                try:
+                    element = str(selected.element).strip().upper()
+                except Exception:
+                    element = ""
+                atom = Atom.Atom(
+                    selected.name,
+                    np.array(selected.position, dtype=float),
+                    1.0,
+                    1.0,
+                    " ",
+                    selected.name,
+                    resid + 1,
+                    element or _na_backbone_element(selected.name),
+                )
+            else:
+                mean_position = np.array(atoms.atoms.positions, dtype=float)
+                # Use 1-based serial number
+                atom = Atom.Atom(
+                    atoms.atoms.names[0],
+                    np.array(mean_position.mean(axis=0)),
+                    1.0,
+                    1.0,
+                    " ",
+                    "CA",
+                    resid + 1,
+                    "C"
+                )
             residue.add(atom)
         else:
             for i in range(len(atoms)):
@@ -327,34 +383,59 @@ def fragment_to_pdb_direct(
     fragment: AtomGroup,
     only_backbone: bool,
     include_bonds: bool,
+    backbone_selector=None,
 ) -> str:
     """Convert fragment to PDB string directly."""
     from io import StringIO
-    
+
     processed_residues = set()
     fd = StringIO()
-    
+
     fd.write("HEADER    export\n")
-    
-    for atom_i in range(fragment.n_atoms):
-        if only_backbone:
-            if fragment.atoms.resindices[atom_i] in processed_residues:
-                continue
-            else:
-                processed_residues.add(fragment.atoms.resindices[atom_i])
-        
-        fd.write(
-            _pdb_atom_line(
-                fragment.atoms.ids[atom_i],
-                fragment.atoms.names[atom_i],
-                fragment.atoms.elements[atom_i] if not only_backbone else "C",
-                fragment.atoms.resnames[atom_i],
-                fragment.atoms.resindices[atom_i],
-                float(fragment.atoms.positions[atom_i][0]),
-                float(fragment.atoms.positions[atom_i][1]),
-                float(fragment.atoms.positions[atom_i][2]),
-            ) + "\n"
-        )
+
+    if only_backbone and backbone_selector is not None:
+        # Wave-7: real guide atom per residue at real coordinates
+        # (nucleic backbone trace). Selector returning None falls back to
+        # the legacy first-atom choice for that residue.
+        for residue in fragment.residues:
+            selected = backbone_selector(residue.atoms)
+            atom = selected if selected is not None else residue.atoms[0]
+            try:
+                serial = int(atom.id)
+            except Exception:
+                serial = int(atom.index) + 1
+            fd.write(
+                _pdb_atom_line(
+                    serial,
+                    atom.name,
+                    _na_backbone_element(atom.name),
+                    residue.resname,
+                    residue.resindex,
+                    float(atom.position[0]),
+                    float(atom.position[1]),
+                    float(atom.position[2]),
+                ) + "\n"
+            )
+    else:
+        for atom_i in range(fragment.n_atoms):
+            if only_backbone:
+                if fragment.atoms.resindices[atom_i] in processed_residues:
+                    continue
+                else:
+                    processed_residues.add(fragment.atoms.resindices[atom_i])
+
+            fd.write(
+                _pdb_atom_line(
+                    fragment.atoms.ids[atom_i],
+                    fragment.atoms.names[atom_i],
+                    fragment.atoms.elements[atom_i] if not only_backbone else "C",
+                    fragment.atoms.resnames[atom_i],
+                    fragment.atoms.resindices[atom_i],
+                    float(fragment.atoms.positions[atom_i][0]),
+                    float(fragment.atoms.positions[atom_i][1]),
+                    float(fragment.atoms.positions[atom_i][2]),
+                ) + "\n"
+            )
     
     if include_bonds:
         conns = defaultdict(set)
