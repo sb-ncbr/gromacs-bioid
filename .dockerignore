@@ -52,6 +52,8 @@ docker-compose*
 
 # Old deployment files
 **/deploy/**
+!deploy/nginx-frontend.conf
+!deploy/nginx-validation-ui.conf
 *.sh
 
 # Misc
