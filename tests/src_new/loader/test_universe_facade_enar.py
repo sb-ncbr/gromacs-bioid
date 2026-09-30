@@ -34,7 +34,7 @@ def _mk_decision() -> LoadDecision:
     )
 
 
-def _mk_universe(resnames, atom_names_per_res, bonds=None, segid="X"):
+def _mk_universe(resnames, atom_names_per_res, bonds=None, segid="X", elements=None):
     """Synthetic universe: explicit per-residue atom names and bonds."""
     atom_resindex, names = [], []
     for i, anames in enumerate(atom_names_per_res):
@@ -45,9 +45,15 @@ def _mk_universe(resnames, atom_names_per_res, bonds=None, segid="X"):
                            atom_resindex=atom_resindex, trajectory=True)
     u.add_TopologyAttr("names", names)
     u.add_TopologyAttr("resids", list(range(1, n_res + 1)))
+    u.add_TopologyAttr("resnums", list(range(1, n_res + 1)))
     u.add_TopologyAttr("resnames", resnames)
     u.add_TopologyAttr("segids", [segid])
-    u.load_new(np.zeros((len(names), 3), dtype=np.float32), format="memory")
+    if elements is not None:
+        u.add_TopologyAttr("elements", elements)
+    try:
+        u.load_new(np.zeros((len(names), 3), dtype=np.float32), format="memory")
+    except IndexError:
+        pass  # MDAnalysis single-atom quirk: positions default to zeros anyway
     if bonds:
         u.add_TopologyAttr("bonds", bonds)
     return u
@@ -219,3 +225,43 @@ class TestProbeFloor:
         assert not props["is_nucleic"]
         assert props["na_detection"] == "none"
         assert props["na_structural_promotions"] == 0
+
+
+class TestMoleculeTypeNotStomped:
+    """wave-7 fix: element-composition fallback (lipid/carbo/small-mol)
+    must never overwrite PROTEIN/NUCLEIC/ION/WATER verdicts.
+
+    Pre-fix: DNA (C/O ~2.4, in the lipid 1-3 band) was stamped LIPID and
+    even emitted lipid_shorthand signatures on the Cyt_c-DNA fixture.
+    """
+
+    def _instance_type(self, resnames, atoms, segid="X", elements=None):
+        u = _mk_universe(resnames, atoms, segid=segid, elements=elements)
+        dec = LoadDecision(input_kind=InputKind.GROMACS, selected_strategy="tpr_only",
+                           topology_files=[Path("dummy.tpr")])
+        facade = LoadedUniverse(universe=u, decision=dec,
+                                repair_report=RepairReport(), results=None)
+        return facade.extract_molecule_instance(segid).molecule_type
+
+    def test_nucleic_type_not_stomped_to_lipid(self):
+        # DNA-like C/O-rich composition that lands in the lipid band
+        mtype = self._instance_type(["DA"] * 4, [_SUGAR_NAMES] * 4)
+        assert mtype.value == "nucleic"
+
+    def test_water_type_preserved(self):
+        mtype = self._instance_type(["SOL"], [["O", "H1", "H2"]], segid="SOLSEG")
+        assert mtype.value == "water"
+
+    def test_ion_type_preserved(self):
+        mtype = self._instance_type(["NA"], [["NA"]])
+        assert mtype.value == "ion"
+
+    def test_unknown_ligand_still_gets_lipid(self):
+        # lipid-heuristic composition on a non-polymer residue still works
+        mtype = self._instance_type(["LIP"], [["C"] * 12 + ["O"] * 6],
+                                    elements=["C"] * 12 + ["O"] * 6)
+        assert mtype.value == "lipid"
+
+    def test_unknown_small_molecule_still_small(self):
+        mtype = self._instance_type(["LIG"], [["C", "C"]])
+        assert mtype.value == "small_molecule"

@@ -530,27 +530,32 @@ class LoadedUniverse:
             for elem in fragment.atoms.elements:
                 if elem:
                     composition[elem] = composition.get(elem, 0) + 1
-        
-        # Non-protein/nucleic classification using element composition
+
+        # Non-protein/nucleic classification using element composition.
+        # Wave-7 fix: this block must only run as a fallback - previously it
+        # overwrote PROTEIN/NUCLEIC verdicts whenever C/O heuristics matched
+        # (DNA C/O ~= 2.4 hit the lipid band -> nucleic instances were
+        # stamped LIPID and even emitted lipid_shorthand signatures).
         # Count C and O atoms from element_composition
         atom_c_cnt = composition.get("C", 0)
         atom_o_cnt = composition.get("O", 0)
-        
-        # Lipid detection: >10 C, >4 O, C/O ratio between 1 and 3
-        if atom_c_cnt > 10 and atom_o_cnt > 4:
-            c_o_ratio = atom_c_cnt / atom_o_cnt if atom_o_cnt > 0 else float('inf')
-            if 1.0 < c_o_ratio < 3.0:
-                mtype = MoleculeType.LIPID
-        
-        # Carbohydrate detection: >5 C, >4 O, C/O ratio > 2
-        elif atom_c_cnt > 5 and atom_o_cnt > 4:
-            c_o_ratio = atom_c_cnt / atom_o_cnt if atom_o_cnt > 0 else float('inf')
-            if c_o_ratio > 2.0:
-                mtype = MoleculeType.CARBOHYDRATE
-        
-        # Small molecule detection: not any of the above, atom_count > 1
-        elif props.atom_count_fragment > 1:
-            mtype = MoleculeType.SMALL_MOLECULE
+
+        if mtype == MoleculeType.UNKNOWN:
+            # Lipid detection: >10 C, >4 O, C/O ratio between 1 and 3
+            if atom_c_cnt > 10 and atom_o_cnt > 4:
+                c_o_ratio = atom_c_cnt / atom_o_cnt if atom_o_cnt > 0 else float('inf')
+                if 1.0 < c_o_ratio < 3.0:
+                    mtype = MoleculeType.LIPID
+
+            # Carbohydrate detection: >5 C, >4 O, C/O ratio > 2
+            elif atom_c_cnt > 5 and atom_o_cnt > 4:
+                c_o_ratio = atom_c_cnt / atom_o_cnt if atom_o_cnt > 0 else float('inf')
+                if c_o_ratio > 2.0:
+                    mtype = MoleculeType.CARBOHYDRATE
+
+            # Small molecule detection: not any of the above, atom_count > 1
+            elif props.atom_count_fragment > 1:
+                mtype = MoleculeType.SMALL_MOLECULE
         
         return MoleculeInstance(
             instance_id=f"mol_{segment_name}",
