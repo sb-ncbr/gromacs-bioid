@@ -202,3 +202,7 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+
+# ui rework: python-era patterns collided with frontend tree
+!ui/src/lib/
+!ui/src/lib/**
