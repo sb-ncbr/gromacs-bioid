@@ -167,8 +167,9 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
               </Alert>
             )
           ) : (
+            <div className="max-h-[420px] overflow-y-auto rounded-md border border-border">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_var(--border)]">
                 <TableRow>
                   <TableHead className="w-12" />
                   <TableHead>Name</TableHead>
@@ -244,6 +245,7 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
                 })}
               </TableBody>
             </Table>
+            </div>
           )}
 
           {onExport && hits.length > 0 && (
