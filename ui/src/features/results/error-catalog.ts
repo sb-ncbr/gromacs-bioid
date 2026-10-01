@@ -1,7 +1,7 @@
 /**
  * Error catalog → plain-language copy binding.
  *
- * Source of truth: .tmp/tasks/ui-rework/errors/error-catalog.json (planner-owned).
+ * Source of truth: .tmp/tasks/ui-rework/errors/error-catalog.json v2 (planner-owned).
  * The worker emits `code` + `details` (and `step_id`) on warnings and
  * critical errors; this module maps each code to audience-safe copy and knows
  * which detail keys are worth surfacing. Unknown codes fall back to a friendly
@@ -24,6 +24,100 @@ export interface CatalogCode {
   user_action: string | null;
   details_show: string[];
   raw_error_map?: Record<string, string>;
+}
+
+/**
+ * Human-readable names for resolver identifiers (v2 catalog, 21 entries).
+ * Used to translate internal resolver keys into plain-language descriptions.
+ */
+export const RESOLVER_HUMAN_NAMES: Record<string, string> = {
+  blast_nr_protein: "BLAST search of the NR protein database",
+  blast_pdb_protein: "protein structure search in PDB",
+  blast_pdb_nucleic: "nucleic structure search in PDB",
+  blast_uniprot: "BLAST search of UniProt",
+  blast_swissprot_protein: "BLAST search of Swiss-Prot",
+  pdb_struct_protein: "protein structure similarity search in PDB",
+  pdb_struct_nucleotide: "nucleotide structure similarity search in PDB",
+  alphafind_struct: "AlphaFind structure similarity search",
+  chembl_struct: "ChEMBL chemical database search",
+  pubchem_struct: "PubChem chemical database search",
+  idsm_pubchem: "PubChem similarity search",
+  idsm_chembl: "ChEMBL similarity search",
+  idsm_chebi: "ChEBI similarity search",
+  formula_pubchem: "PubChem formula search",
+  formula_pubchem_local: "PubChem formula search (local mirror)",
+  formula_chembl: "ChEMBL formula search",
+  formula_hfamily: "formula search (host-guest family)",
+  mmcif_struct: "mmCIF structure search",
+  name_ccd: "ligand name lookup (CCD)",
+  name_maps: "name lookup",
+  name_manual: "manual name lookup",
+};
+
+/**
+ * Translate a resolver key to its human-readable name.
+ * Falls back to the raw resolver name if not in the map.
+ */
+export function resolverHumanName(resolver?: string | null): string {
+  if (!resolver) return "a search";
+  return RESOLVER_HUMAN_NAMES[resolver] ?? resolver;
+}
+
+/**
+ * Parse a resolver failure message of the form:
+ *   "{resolver} ({generator}): {error}"
+ * Returns extracted parts; empty strings if the format doesn't match.
+ */
+export function parseResolverMessage(message: string): {
+  resolver: string;
+  generator: string;
+  error: string;
+} {
+  const m = message.match(/^\s*([\w-]+)\s*\(([^)]*)\)\s*:\s*(.*)$/s);
+  if (!m) return { resolver: "", generator: "", error: message };
+  return { resolver: m[1], generator: m[2], error: m[3].trim() };
+}
+
+/**
+ * Parse a signature generator failure message of the form:
+ *   "{generator}: {error}"
+ */
+export function parseGeneratorMessage(message: string): {
+  generator: string;
+  error: string;
+} {
+  const m = message.match(/^\s*([\w-]+)\s*:\s*(.*)$/s);
+  if (!m) return { generator: "", error: message };
+  return { generator: m[1], error: m[2].trim() };
+}
+
+/**
+ * Determine a human-readable reason from the raw error message by
+ * substring-matching against the raw_error_map (case-insensitive).
+ * Falls back to "did not finish".
+ */
+export function reasonHumanName(
+  error: string | null | undefined,
+  rawErrorMap?: Record<string, string>,
+): string {
+  if (!error || !rawErrorMap) return "did not finish";
+  const lowerError = error.toLowerCase();
+  for (const [pattern, label] of Object.entries(rawErrorMap)) {
+    if (lowerError.includes(pattern.toLowerCase())) return label;
+  }
+  return "did not finish";
+}
+
+/**
+ * Sanitize a technical detail string by stripping /app/... filesystem paths
+ * so internal paths are never rendered in the UI.
+ */
+export function sanitizeTechnicalDetail(message: string | null | undefined): string {
+  if (!message) return "";
+  return message
+    .replace(/\/app\/[^\s"'`)\]<>]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** The 5 canonical pipeline stage groups (order = display order). */
@@ -79,10 +173,10 @@ export const CATALOG_CODES: CatalogCode[] = [
   },
   {
     code: "signature_generator_failed",
-    kind: "warning",
+    kind: "info",
     stage: "signatures",
-    user_title: "One signature could not be generated",
-    user_what: "The {generator_human} signature could not be generated for this molecule. Other signatures were still used.",
+    user_title: "A signature was skipped",
+    user_what: "The {generator_human} signature does not apply to this molecule, so it was skipped. This is expected by design - other signatures were still generated and used.",
     user_action: null,
     details_show: ["generator_human"],
   },
@@ -90,11 +184,15 @@ export const CATALOG_CODES: CatalogCode[] = [
     code: "identifier_resolver_failed",
     kind: "warning",
     stage: "identify",
-    user_title: "A search service did not respond",
-    user_what: "The {resolver} search could not run, so some matches may be missing.",
-    user_action: "Often temporary — try re-running later; contact us if it persists.",
-    details_show: ["resolver"],
-    raw_error_map: { "file is not a database": "search database temporarily unavailable" },
+    user_title: "A search did not finish",
+    user_what: "The {resolver_human} did not complete ({reason_human}), so some matches may be missing.",
+    user_action: "Usually nothing is wrong with your data. You can re-run the annotation for a complete search.",
+    details_show: ["resolver_human", "reason_human"],
+    raw_error_map: {
+      "file is not a database": "temporarily unavailable",
+      "timed out": "took too long and was stopped",
+      "BLAST timed out": "took too long and was stopped",
+    },
   },
   {
     code: "verification_failed",

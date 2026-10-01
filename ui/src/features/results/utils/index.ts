@@ -26,3 +26,4 @@ export {
   downloadBlob,
   exportFilename,
 } from "./export";
+export { deriveInputFiles } from "./input-files";

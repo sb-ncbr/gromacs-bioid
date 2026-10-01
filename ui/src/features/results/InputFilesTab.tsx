@@ -16,9 +16,10 @@ import {
   Skeleton,
   TooltipProvider,
 } from "@e-infra/design-system";
-import { Check, Download, FileText, X } from "lucide-react";
+import { Download, FileText, X } from "lucide-react";
 import { endpoints } from "../../lib/api/client";
 import type { LoadingInfoResponse } from "./hooks";
+import { deriveInputFiles } from "./utils/input-files";
 
 interface InputFilesTabProps {
   runId: string;
@@ -56,11 +57,47 @@ function LogLinks({ runId }: { runId: string }) {
 
 const InputFilesTab: React.FC<InputFilesTabProps> = ({ runId, loading, inputFiles, files }) => {
   const fileSet = new Set(files);
-  const inputEntries = inputFiles ? Object.entries(inputFiles) : [];
   const hasConfig = files.includes("config.ini");
+
+  // Input file paths: prefer status.pipeline.input_files keys, else derive from files list
+  const inputPaths: string[] = inputFiles
+    ? Object.keys(inputFiles)
+    : deriveInputFiles(files);
+
+  // Attempts: only show those with a non-empty error message
+  const failedAttempts = loading?.attempts?.filter((a) => a.error && a.error.trim() !== "") ?? [];
 
   return (
     <div className="space-y-4">
+      {/* Uploaded input — prominent zone at top */}
+      <Card className="border-[#2E7D32]/40 bg-[#2E7D32]/5">
+        <CardHeader>
+          <CardTitle className="text-[#1b5e20]">Uploaded input</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {inputPaths.length === 0 ? (
+            <p className="text-sm text-text-muted">No input files recorded.</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {inputPaths.map((path) => (
+                <li key={path} className="flex items-center gap-2 text-sm">
+                  <a
+                    href={fileUrl(runId, path)}
+                    download
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 font-mono text-xs text-[#2E7D32] transition-colors hover:bg-[#2E7D32]/10"
+                  >
+                    <Download size={13} aria-hidden className="shrink-0" />
+                    {path}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Loading strategy card + attempts */}
       <Card>
         <CardHeader>
@@ -69,38 +106,38 @@ const InputFilesTab: React.FC<InputFilesTabProps> = ({ runId, loading, inputFile
         <CardContent className="space-y-3">
           {loading ? (
             <>
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="font-medium text-text-heading">
-                  Strategy: {loading.final_strategy ?? loading.selected_strategy ?? "—"}
-                </span>
-                {loading.input_kind && (
-                  <Badge variant="outline">{loading.input_kind}</Badge>
-                )}
-                {loading.success ? (
-                  <Badge variant="secondary">Loaded successfully</Badge>
-                ) : (
+              {loading.success ? (
+                <p className="text-base font-semibold text-green-700">
+                  Loaded successfully with {loading.final_strategy ?? loading.selected_strategy ?? "unknown strategy"}
+                </p>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="font-medium text-text-heading">
+                    Strategy: {loading.final_strategy ?? loading.selected_strategy ?? "—"}
+                  </span>
                   <Badge className="border-transparent bg-red-100 text-red-800">Load failed</Badge>
-                )}
-              </div>
+                </div>
+              )}
+              {loading.input_kind && (
+                <Badge variant="outline">{loading.input_kind}</Badge>
+              )}
               {loading.topology_files && loading.topology_files.length > 0 && (
                 <p className="text-xs text-text-muted">
                   Topology files: {loading.topology_files.join(", ")}
                 </p>
               )}
-              {Array.isArray(loading.attempts) && loading.attempts.length > 0 && (
+              {failedAttempts.length > 0 && (
                 <div>
                   <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
                     Attempts
                   </h4>
                   <ul className="space-y-1">
-                    {loading.attempts.map((a, i) => (
-                      <li key={i} className="flex items-center gap-2 text-sm">
-                        {a.success ? (
-                          <Check size={15} className="shrink-0 text-green-600" aria-label="Succeeded" />
-                        ) : (
-                          <X size={15} className="shrink-0 text-red-600" aria-label="Failed" />
-                        )}
-                        <span className="font-mono text-xs">{a.strategy}</span>
+                    {failedAttempts.map((a, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-text-muted">
+                        <X size={15} className="mt-0.5 shrink-0 text-red-600" aria-label="Failed" />
+                        <span>
+                          Tried <span className="font-mono text-xs">{a.strategy}</span>: {a.error}
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -121,38 +158,6 @@ const InputFilesTab: React.FC<InputFilesTabProps> = ({ runId, loading, inputFile
             </>
           ) : (
             <Skeleton className="h-16 w-full" />
-          )}
-        </CardContent>
-      </Card>
-
-      {/* INPUT files — highlighted section */}
-      <Card className="border-[#2E7D32]/40 bg-[#2E7D32]/5">
-        <CardHeader>
-          <CardTitle className="text-[#1b5e20]">Input files</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {inputEntries.length === 0 ? (
-            <p className="text-sm text-text-muted">No input files recorded.</p>
-          ) : (
-            <ul className="space-y-1">
-              {inputEntries.map(([key, value]) => (
-                <li key={key} className="flex flex-wrap items-baseline gap-2 text-sm">
-                  <span className="w-32 shrink-0 text-text-muted">{key}</span>
-                  {fileSet.has(value) ? (
-                    <a
-                      href={fileUrl(runId, value)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="break-all font-mono text-xs text-[#2E7D32] hover:underline"
-                    >
-                      {value}
-                    </a>
-                  ) : (
-                    <span className="break-all font-mono text-xs">{value}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
           )}
         </CardContent>
       </Card>
@@ -205,7 +210,7 @@ const InputFilesTab: React.FC<InputFilesTabProps> = ({ runId, loading, inputFile
                   <li className="text-sm text-text-muted">No files listed.</li>
                 )}
                 {files.map((f) => (
-                  <li key={f} className="text-sm">
+                  <li key={f} className="flex items-center gap-2 text-sm">
                     <a
                       href={fileUrl(runId, f)}
                       target="_blank"
@@ -213,6 +218,14 @@ const InputFilesTab: React.FC<InputFilesTabProps> = ({ runId, loading, inputFile
                       className="break-all font-mono text-xs text-[#2E7D32] hover:underline"
                     >
                       {f}
+                    </a>
+                    <a
+                      href={fileUrl(runId, f)}
+                      download
+                      aria-label={`Download ${f}`}
+                      className="shrink-0 rounded p-1 text-text-muted transition-colors hover:bg-[#2E7D32]/10 hover:text-[#2E7D32]"
+                    >
+                      <Download size={14} aria-hidden />
                     </a>
                   </li>
                 ))}
