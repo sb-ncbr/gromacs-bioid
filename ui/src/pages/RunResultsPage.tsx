@@ -139,6 +139,14 @@ export default function RunResultsPage() {
   }, [tab, pendingAnchor]);
 
   /* ---------- Initial loading ---------- */
+  // Copy-run-id feedback (hooks must precede early returns).
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(runId).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [runId]);
   if (statusQ.isPending) {
     return (
       <div className="mx-auto max-w-6xl space-y-6 p-6">
@@ -181,13 +189,6 @@ export default function RunResultsPage() {
       : pStatus === "failed"
         ? "border-transparent bg-red-100 text-red-800"
         : "";
-  const [copied, setCopied] = useState(false);
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(runId).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [runId]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
