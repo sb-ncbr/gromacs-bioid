@@ -34,3 +34,10 @@
 - Commits: d957b4767 hooks (adaptive polling), b85339cba page assembly, 8162fc26d warnings panel+catalog copy, 8978e166e tabs, 9277b37c8 molstar single-plugin + 25s watchdog -> static PNG fallback -> gray "Structural data not available".
 - Image bat3-frontend:w4 (sha256:e42cb9f7e986) from clean worktree 9277b37c8. Bundle smoke: results UI strings present.
 - Remaining: WS7 ingress deep-link fix; then 4-run visual suite with user.
+
+## 2026-10-01 WS7 deep-link fix + w5 deploy ✅ BUG KILLED
+- Cause chain: ingress /runs->api AND nginx-frontend /runs->api. Fix both: ingress now /api,/files,/health,/docs,/openapi.json -> api, / -> web; nginx-frontend reduced to SPA fallback + /api + /files proxies.
+- Applied: ingress-ws7-fixed.yaml (backup of old: backups/ingress-pre-rework.yaml). Chart template updated for posterity (bat3-chart/templates/ingress.yaml).
+- Image bat3-frontend:w5 (sha256:89405826231d).
+- Matrix: /runs/<id> 200 text/html (was JSON) | /api/v1/* JSON | /health JSON | /openapi.json JSON | / HTML. API surface at host root is GONE by design (SPA routes); clients use /api/v1.
+- Rollback: re-apply backups/ingress-pre-rework.yaml + set web image bat3-frontend:legacy-pre-rework (nginx conf inside image matches old behavior).

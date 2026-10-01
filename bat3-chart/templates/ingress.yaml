@@ -17,40 +17,19 @@ spec:
     - host: {{ .Values.ingress.host }}
       http:
         paths:
-          - path: /runs
+          # API surface lives exclusively under /api (v1 alias); everything else is the SPA
+          {{- range $p := list "/api" "/files" "/health" "/docs" "/openapi.json" }}
+          - path: {{ $p }}
             pathType: Prefix
             backend:
               service:
-                name: {{ include "bat3.fullname" . }}-api
-                port: { number: {{ .Values.service.api.port | default 8000 }} }
-          - path: /files
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ include "bat3.fullname" . }}-api
-                port: { number: {{ .Values.service.api.port | default 8000 }} }
-          - path: /health
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ include "bat3.fullname" . }}-api
-                port: { number: {{ .Values.service.api.port | default 8000 }} }
-          - path: /docs
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ include "bat3.fullname" . }}-api
-                port: { number: {{ .Values.service.api.port | default 8000 }} }
-          - path: /openapi.json
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ include "bat3.fullname" . }}-api
-                port: { number: {{ .Values.service.api.port | default 8000 }} }
+                name: {{ include "bat3.fullname" $ }}-api
+                port: { number: {{ $.Values.service.api.port | default 8000 }} }
+          {{- end }}
           - path: /
             pathType: Prefix
             backend:
               service:
                 name: {{ include "bat3.fullname" . }}-web
-                port: { number: {{ .Values.service.web.port | default 8081 }} }
+                port: { number: {{ .Values.service.web.port | default 8081 }} }}
 {{- end }}
