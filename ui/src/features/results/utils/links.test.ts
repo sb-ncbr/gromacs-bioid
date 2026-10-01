@@ -36,6 +36,24 @@ describe("buildDatabaseUrl", () => {
     expect(buildDatabaseUrl("UNIPROT_ID", "P12345")).toBe("https://www.uniprot.org/uniprotkb/P12345");
   });
 
+  it("builds SwissProt URL (uniprotkb)", () => {
+    expect(buildDatabaseUrl("SWISSPROT_ID", "P12345")).toBe(
+      "https://www.uniprot.org/uniprotkb/P12345",
+    );
+    expect(buildDatabaseUrl("SWISSPROT", "Q99999")).toBe(
+      "https://www.uniprot.org/uniprotkb/Q99999",
+    );
+  });
+
+  it("builds InChIKey URL (PubChem query, URL-encoded)", () => {
+    expect(buildDatabaseUrl("INCHIKEY", "HIVGVRKSHHAJKI-UHFFFAOYSA-N")).toBe(
+      "https://pubchem.ncbi.nlm.nih.gov/#query=HIVGVRKSHHAJKI-UHFFFAOYSA-N",
+    );
+    expect(buildDatabaseUrl("INCHI_KEY", "A-B/C")).toBe(
+      "https://pubchem.ncbi.nlm.nih.gov/#query=A-B%2FC",
+    );
+  });
+
   it("builds ChEMBL URL with prefix", () => {
     expect(buildDatabaseUrl("CHEMBL_ID", "4303682")).toBe(
       "https://www.ebi.ac.uk/chembl/explore/compound/CHEMBL4303682",

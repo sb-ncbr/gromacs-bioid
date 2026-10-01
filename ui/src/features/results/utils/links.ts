@@ -15,6 +15,7 @@ const BASE_URLS = {
   uniprot: "https://www.uniprot.org/uniprotkb/",
   alphafold: "https://alphafold.ebi.ac.uk/entry/",
   pubchem: "https://pubchem.ncbi.nlm.nih.gov/compound/",
+  pubchemQuery: "https://pubchem.ncbi.nlm.nih.gov/#query=",
   chembl: "https://www.ebi.ac.uk/chembl/explore/compound/",
   chebi: "https://www.ebi.ac.uk/chebi/searchId.do?chebiId=CHEBI:",
   ccd: "https://www.wwpdb.org/data/ccd/",
@@ -52,7 +53,13 @@ export function buildDatabaseUrl(
     case "UNIPROT_ID":
     case "UNIPROT":
     case "UNIPROTKB":
-      return `${BASE_URLS.uniprot}${id.toUpperCase()}`;
+    case "SWISSPROT_ID":
+    case "SWISSPROT":
+    case "SWISS-PROT":
+      return `${BASE_URLS.uniprot}${id}`;
+    case "INCHIKEY":
+    case "INCHI_KEY":
+      return `${BASE_URLS.pubchemQuery}${encodeURIComponent(id)}`;
     case "CHEMBL_ID":
     case "CHEMBL":
       return `${BASE_URLS.chembl}${ensureChemblPrefix(id)}`;
