@@ -235,5 +235,21 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
   analyze_universe (ion fix); (B) pubchem_db coverability probe of the 479
   (buckets: not-in-mirror / first-block-only / not-proposed); (C) F17 subprocess
   generator budget + replay of 437 (fleet-wide image first, watchdog-quiet gate).
+- **Task B coverability probe DONE** (`.tmp/coverability_probe.py`, in-worker
+  run; hard-gated metric regen matched v8 anchors EXACTLY: 5,784/5,768,
+  56.3/85.8/90.6). Authoritative v8 failing set = **541 rows / 341 unique iks**
+  (supersedes the 479 projection-era number). Buckets: GT_NOT_IN_MIRROR 130 ·
+  FIRST_BLOCK_ONLY 25 · IN_MIRROR__NOT_PROPOSED 264 (171 boxchem = requeue
+  class; 129 with >=0.7 analog in-window) · IN_MIRROR__SURFACED_BUT_LOST 122
+  (81 with >=0.7 in-window). Frame: raw **90.6** (5,784) · excl-uncoverable
+  92.7 (5,654) · excl-uncoverable+variant 93.1 (5,629) — ~6.7pp of the gap is
+  pipeline-recoverable (386 rows; 210 already have a >=0.7 candidate in-window,
+  i.e. ranking/verification work not retrieval). Phantom hunt: +1 annotation
+  was MY replication bug (official S7 `if r["hits"]` empty-hits guard); v8
+  numbers stand unrevised. Artifacts: coverability_probe.json,
+  coverability_rows.jsonl, residual_failing_rows_v8.jsonl,
+  coverability_ik_cache.json, coverability_classes.json (+drift) on NFS.
 - Open besides: 334 corrupt download triage; phase-2 audit_gap; FE bond-guess
   (deferred); zombie-PID exit-hang pattern (harmless, reap on pod touches).
+  Next per plan: F19 design review (ion channel), then F17 design review;
+  optional F-residual ranking wave from the 386-row recovery class.

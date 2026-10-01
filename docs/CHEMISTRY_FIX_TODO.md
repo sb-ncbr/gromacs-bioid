@@ -580,6 +580,49 @@ of global bond guessing: known story, deferred (see common-issues).
   chemistry at all), rest are variant-layer (salt/stereo/protonation changes
   first-block-ok/full-key-miss) and gate-band stragglers. Honest ceiling ~93-94;
   we are at 90.6 @10 — residual is content, not pipeline.
+- **Authoritative recount (Task B, 2026-10-01 evening)**: the 479 came from the
+  pre-v8 PROJECTION failing set (649) minus flips-to-pass (170); reconciling
+  reverse flips against the official v8 metric gives **541 failing rows**
+  (residual_failing_rows_v8.jsonl). Bucket anatomy below supersedes the 479
+  framing wherever they disagree.
+
+### Task B — coverability probe of the residual (DONE 2026-10-01, read-only)
+
+- **Method**: regenerated the AUTHORITATIVE v8 failing set (official
+  verified_hits/_fid_key + family window 50/fallback 25 + 0.7 gate replicated
+  verbatim; HARD reconciliation gate vs campaign_stats_v8.json S7 anchors:
+  annotations 5,784, attempted 5,768, 56.3/85.8/90.6 — all matched exactly),
+  then resolved each of the 541 unique failing inchikeys against the local
+  PubChem mirror via PubChemDB (by_inchikey / by_inchikey_block + variant
+  counts, the pipeline's own access path), cross-checked gt_compound_map.json
+  (0 mismatches) and box chemistry.
+- **Buckets (541 rows, 341 unique iks)**:
+  - **GT_NOT_IN_MIRROR 130** (24%) — uncoverable by construction; GT compounds
+    the mirror doesn't register (62 in no-chem boxes). Disclosed, not fixable.
+  - **FIRST_BLOCK_ONLY 25** (4.6%) — variant layer; only salt/stereo/protonation
+    siblings exist (variant depth median 2, max 138); 15 already have a >=0.7
+    analog in-window.
+  - **IN_MIRROR__NOT_PROPOSED 264** (49%) — true pipeline gap: GT in mirror,
+    never surfaced in results.json. 171 in chem-bearing boxes = requeue-candidate
+    class; 129 have a >=0.7 skeleton analog buried at rank >10.
+  - **IN_MIRROR__SURFACED_BUT_LOST 122** (23%) — full key appears in
+    results.json but lost before window top-10; 81 with >=0.7 analog in-window.
+- **Reporting frame (raw + normalized, always together)**: raw 90.6% @10
+  (n=5,784) · excl NOT_IN_MIRROR 92.7% (n=5,654) · excl uncoverable+variant
+  93.1% (n=5,629). Of the 9.4pp gap: ~2.2pp bibliographic, ~0.4pp variant-layer,
+  **~6.7pp (386 rows) pipeline-recoverable** — 210 of them already have a
+  >=0.7 candidate sitting in the window (ranking/verification work, not
+  retrieval: feeds the F-residual follow-up wave).
+- **Phantom lesson** (metric replication): official S7 counts annotations only
+  for entries with NON-EMPTY verified hits (`if r["hits"]` guard). A shadow
+  implementation missing that guard produces +1 annotation with zero validated
+  delta (5,785 vs 5,784). Replicate ALL guards when shadowing the metric.
+- **Artifact set** (/data/validation/): coverability_probe.json (aggregates +
+  10 examples/bucket), coverability_rows.jsonl (541 enriched rows),
+  residual_failing_rows_v8.jsonl (authoritative failing set),
+  coverability_ik_cache.json (mirror resolutions), coverability_classes.json +
+  coverability_class_drift.json (4,311 GT-key classifications; 186 mirror-vs-web
+  disagreements — web-chain classification nondeterminism, see common-issues).
 
 ### NEXT proposed tasks (specced, awaiting scheduling; full specs in
 ### .tmp/TASKS_next_wave.md 2026-10-01; promote into this doc when scheduled)
@@ -590,13 +633,10 @@ of global bond guessing: known story, deferred (see common-issues).
   protein x642. Audit-first (detection rule from data), GT-blind detection,
   free-ion regression gate ~100%. Target: attempted 52% -> >90%, close the
   per-element table toward free ions.
-- **B — pubchem_db coverability probe of the 479** (read-only, hours): bucket
-  every residual GT ik via the SAME pubchem_db mirror path as the pipeline:
-  NOT_IN_MIRROR (uncoverable, disclosed) / FIRST_BLOCK_ONLY (variant layer) /
-  NOT_PROPOSED (true pipeline gap, requeue candidates). Cross-check
-  gt_compound_map.json + box-has-chem. Output per-annotation JSONL + aggregates;
-  raw and coverable-normalized numbers ALWAYS printed together (no denominator
-  games). This unlocks the final honest reporting frame.
+- **B — coverability probe: DONE (2026-10-01)** — see "Task B" section above.
+  Follow-up unlocked: 386-row pipeline-recoverable class (210 with >=0.7
+  in-window candidate) becomes the F-residual ranking-wave input;
+  IN_MIRROR__NOT_PROPOSED 171 boxchem rows = requeue candidates.
 - **C — F17 generator-budget subprocess isolation + 437 replay** (WAVE 6 spec
   stands; added evidence: signature_isolated_timeout x3,320 in S6 means an
   isolation path EXISTS — step 0 is auditing why MolToSmiles spin bypassed it;

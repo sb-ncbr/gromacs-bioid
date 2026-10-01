@@ -378,6 +378,30 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
 - unmapped count is informative (mirrors mirror coverage: v7 2269 -> v8 25
   after gcs/inchikey_smiles caches grew).
 
+## Shadowing the S7 metric: empty-hits guard + web-chain classification (2026-10-01)
+
+- Official campaign_stats.py counts GT annotations ONLY for entries with
+  NON-EMPTY verified hits (`if sim_engine is not None and r["hits"]:` guards
+  the whole S7 loop, ions included). A shadow re-implementation missing that
+  guard counts one extra annotation per empty-hits entry WITH ZERO validated
+  delta — manifested as a 5,785-vs-5,784 "phantom" that reproduced every pct
+  anchor only after exclusion. When replicating the metric for hard-gated
+  regen, replicate ALL guards (liveness, hits-non-empty, family windows,
+  fallback, gates) verbatim — residual_anatomy2 had it right
+  (`if r and r["hits"]`), the first coverability draft didn't.
+- `gt_rules.gt_class_for` resolves inchikey->SMILES via a WEB chain
+  (cactus -> pug -> chemspider -> idsm; only POSITIVE results cached in
+  NFS sim_cache/inchikey_smiles). Behavior is POD-DEPENDENT: the API pod's
+  egress fails fast (sub-second), so v7/v8 ran classification in seconds;
+  worker pods egress for real, so ~160 uncached GT keys cost full timeout
+  chains (~300-450s) and fetches that fail there are retried EVERY run
+  (negatives never cached). Classification can therefore flip ion<->organic
+  between pods/runs on network weather. Deterministic pattern (used by the
+  coverability probe): cache-warm verdict where an NFS cache entry exists
+  (same sha1 path, no fetch), else MIRROR-FIRST (PubChemDB.by_inchikey ->
+  skeletize.from_smiles -> same ion rule) — 4,311 keys in ~45s offline.
+  Never run web-dependent classification/sim-resolution cold from worker pods.
+
 ## FE/metal vdw radii poison global bond guessing (known, deferred)
 
 - MDA DefaultGuesser raises on unknown vdw types (FE in HEM, other metals),
