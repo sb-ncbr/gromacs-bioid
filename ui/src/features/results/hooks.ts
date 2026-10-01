@@ -155,11 +155,20 @@ export function useRunStatus(runId?: string): UseQueryResult<RunStatusResponse> 
   });
 }
 
+/**
+ * Run summary. The live summary may carry the user-supplied `run_name`
+ * (set at submit time) which the generated baseline schema predates — hence
+ * the additive optional field, still fully typed (no `any`).
+ */
+export type RunSummaryWithTitle = RunSummaryResponse & {
+  run_name?: string | null;
+};
+
 /** Static run summary (title, counts). Fetched once; no polling. */
-export function useRunSummary(runId?: string): UseQueryResult<RunSummaryResponse> {
+export function useRunSummary(runId?: string): UseQueryResult<RunSummaryWithTitle> {
   return useQuery({
     queryKey: ["runSummary", runId],
-    queryFn: () => api.get<RunSummaryResponse>(endpoints.run(runId!)),
+    queryFn: () => api.get<RunSummaryWithTitle>(endpoints.run(runId!)),
     enabled: !!runId,
     staleTime: 30_000,
     retry: 1,
