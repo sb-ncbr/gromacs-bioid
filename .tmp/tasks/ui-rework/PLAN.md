@@ -24,8 +24,8 @@ Thinking/planning/QA/copy: **kimi-k3** · Implementation: **qwen3.8-27b** (preci
 - [x] UI backup (tag + tarball)
 - [x] Live openapi baseline → contracts/openapi-live-baseline.json (43 paths)
 - [x] Fixtures (30 files) → fixtures/
-- [ ] WS5: worker error/warning catalog → errors/error-catalog.json + copy deck (blocks WS4 copy)
-- [ ] WS5: molecule-type vocabulary from worker (icon map truth)
+- [x] WS5: worker error/warning catalog → errors/error-catalog.json (16 codes)
+- [x] WS5: molecule-type vocabulary → 8 types incl. water/unknown
 
 ### WS1 Scaffold & shell (Coder A, qwen3.8-27b) — GATE for Coder B integration
 - [ ] New ui: Vite + React 19 + TS strict, Tailwind v4, @e-infra/design-system@0.1.9 pinned
