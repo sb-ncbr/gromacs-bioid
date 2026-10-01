@@ -341,6 +341,43 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
   digests. After every docker build: verify the digest CHANGED and run an
   in-image functional gate before pushing.
 
+## Long stats processes: zombie exit-hang + OOM from raw retention (2026-09-30/10-01)
+
+- campaign_stats.py full runs (and the audit cousin) complete ALL work then hang
+  as Z-state zombies; pod PID 1 doesn't reap. Outputs are complete and valid
+  (JSON verified parseable) — SIGKILL is safe and required before any sentinel
+  gated on /proc/PID can proceed. Do NOT sentinel on liveness of a PID that may
+  already be a zombie; sentinel on the artifact.
+- OOM kill (exit 137) pattern in ad-hoc audit scripts: keeping raw results.json
+  text (or big parsed docs) in per-entry dicts across ~13k entries blows pod
+  memory. Compute any raw-text-derived booleans INSIDE the parse frame and drop
+  the raw string immediately. Moderate thread counts (16) also keep RSS sane.
+
+## Metric ordering: skeleton ties make @10 a noisy metric (2026-10-01)
+
+- Verified chemical hits frequently form tie clusters of 12+ candidates at
+  skeleton_sim=1.0 (isomer/salt/family clusters). Within a tie, sim-to-GT
+  varies 0.01->1.0 — GT-specific score separated from entry-molecule fidelity.
+  Any rank-based cutoff (@10) then moves +-1-2pp purely on tie-break order
+  (projection-stable 88.5 vs official identifier-tie 90.6 measured; flip
+  dissection: 147 tie_reposition + 23 window_membership of 649 flips).
+- Consequences: quote ONE canonical ordering (we canonicalized identifier-asc
+  in campaign_stats.py patched _fid_key); prefer depth-invariant frames (@15,
+  in-window) for cross-run comparisons; UI shows stored order verbatim — ties
+  are presentation, not ranking errors.
+
+## SimEngine cache mechanics (2026-09-30/10-01)
+
+- SimEngine(budget=0) computes ONLY cache hits? No — budget counts NEW pair
+  computations; budget=0 still ALLOWS them (observed 29k-66k "new_pairs" across
+  budget=0 runs). pairs.jsonl (NFS) is the shared accumulative cache; every
+  run enriches it (~1.107M pairs at v8). Concurrent sim runs = contention +
+  interrupting a run loses NOTHING except time (pairs idempotent).
+- First run over the cohort is slow (v7: 8,582s wall, mo104 cached pairs);
+  cache-warm reruns are ~700s for the same 13,324 entries.
+- unmapped count is informative (mirrors mirror coverage: v7 2269 -> v8 25
+  after gcs/inchikey_smiles caches grew).
+
 ## FE/metal vdw radii poison global bond guessing (known, deferred)
 
 - MDA DefaultGuesser raises on unknown vdw types (FE in HEM, other metals),

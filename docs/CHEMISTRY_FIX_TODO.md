@@ -548,3 +548,59 @@ three-letter base names + PNA names in tier tables; blast.py embedded table
 dedup; DNA-vs-RNA typing metadata (descoped, trivial add); parameterize
 frontend nginx upstream per helm release (envsubst). FE/metal vdw poisoning
 of global bond guessing: known story, deferred (see common-issues).
+
+## WAVE 8 — fidelity-first hit ordering + statistics-led decomposition (2026-10-01)
+
+### F16 — fidelity-first presentation ordering (DONE, commit 811ddb55e)
+- **Root**: verified chemical hits were stored in candidate-processing order
+  and ranked by `final_confidence` (provenance-weighted) — audit 2026-09-30
+  showed 12.3% of organic GT annotations (499/4,053) with their identity/
+  in-band hit at rank 11-50 (engine_miss_identity: sim=1.0 at rank 12-37!).
+  Retrieval solved, chemistry 96.8%-present — the deficit lived in ORDER.
+- **Fix (ordering-only)**: stable repartition of each segment's verified_hits:
+  [verified CHEMICAL hits, sorted (-skeleton_sim, -final_confidence, identifier,
+  ident_type)] + [everything else, legacy relative order]. No gate/threshold/
+  score change. Deterministic tie-break chain per UI contract (backend owns
+  ranking, UI displays verbatim; verified flag is a column, never a sort key).
+- **Projection-first validation**: `rerank_projection.py` replayed A_conf
+  == v7 to the decimal, then B_fidelity => @5 82.5/@10 88.5 (0.7) with flip
+  accounting +226/-10. Landed only after projection matched design claim.
+- **v8 official** (campaign_stats.py metric aligned to same key, .bak-pre-fidelity):
+  inchikey @5/@10 **85.8/90.6** (0.7), @10 87.9 (0.9), entry-any 99.5%;
+  pdb/uniprot bit-identical. Flip dissection (flip_dissection.json): delta vs
+  projection = 147 tie_reposition + 23 window_membership = skeleton tie-cluster
+  noise, NOT rule drift. Rank cutoffs carry ±1-2pp tie sensitivity; quote v8,
+  and prefer depth-invariant frames (@15: 91.1 ge0.7; in-window ~94) in prose.
+
+### Audit-derived residual anatomy (the "why not 95%+ with proteins" answer)
+- Proteins: GT is self-referential (annotation FROM the structure in the box),
+  ranked space tiny, sequence identity exact-ish => ~99% is the natural level.
+- Inchikeys: GT is bibliographic. 479/5,784 still fail @10 post-F16:
+  273 have the GT skeleton NOWHERE in the entry (63 boxes have no small-molecule
+  chemistry at all), rest are variant-layer (salt/stereo/protonation changes
+  first-block-ok/full-key-miss) and gate-band stragglers. Honest ceiling ~93-94;
+  we are at 90.6 @10 — residual is content, not pipeline.
+
+### NEXT proposed tasks (specced, awaiting scheduling; full specs in
+### .tmp/TASKS_next_wave.md 2026-10-01; promote into this doc when scheduled)
+- **A — F19 coordinated-metal awareness (ion channel)**: make analyze_universe
+  emit bound-metal species (element + coordination context) so coordinated
+  Zn/Mg/Ca/Fe/Ni are visible to the ion path. Evidence: ion validated 48.4%
+  overall but Zn 27.1% (n=591) vs free Cl/K/Na ~100%; no_metals frag type =
+  protein x642. Audit-first (detection rule from data), GT-blind detection,
+  free-ion regression gate ~100%. Target: attempted 52% -> >90%, close the
+  per-element table toward free ions.
+- **B — pubchem_db coverability probe of the 479** (read-only, hours): bucket
+  every residual GT ik via the SAME pubchem_db mirror path as the pipeline:
+  NOT_IN_MIRROR (uncoverable, disclosed) / FIRST_BLOCK_ONLY (variant layer) /
+  NOT_PROPOSED (true pipeline gap, requeue candidates). Cross-check
+  gt_compound_map.json + box-has-chem. Output per-annotation JSONL + aggregates;
+  raw and coverable-normalized numbers ALWAYS printed together (no denominator
+  games). This unlocks the final honest reporting frame.
+- **C — F17 generator-budget subprocess isolation + 437 replay** (WAVE 6 spec
+  stands; added evidence: signature_isolated_timeout x3,320 in S6 means an
+  isolation path EXISTS — step 0 is auditing why MolToSmiles spin bypassed it;
+  spawn-not-fork; subprocess per segment (not per generator) to bound spawn
+  overhead; F18 HTTP timeouts folded into the same wrapper; 437-strong
+  quarantine corpus is the regression test; replay only after fixed image is
+  fleet-wide, acceptance = watchdog quiet + deterministic `*_timeout` outcomes).

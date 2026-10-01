@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -39,9 +39,10 @@ const SignatureDialog: React.FC<SignatureDialogProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    if (!open) setCopied(false);
-  }, [open]);
+  const handleOpenChange = (next: boolean) => {
+    if (!next) setCopied(false);
+    onOpenChange(next);
+  };
 
   const human = signatureName(generator);
   const group = signatureGroup(generator);
@@ -73,7 +74,7 @@ const SignatureDialog: React.FC<SignatureDialogProps> = ({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <div className="flex items-center gap-2 flex-wrap">

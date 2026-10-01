@@ -200,3 +200,40 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
   liveness-filtered on the completed set + phase-2 audit_gap, (c) F17
   subprocess generator budget -> replay ~420, (d) ops leftovers (FE bond-guess
   known, frontend nginx param per release, unwrap classifier reconciliation).
+
+## 2026-10-01 — campaign statistics arc complete: S7 v7/v8, audits, F16 shipped
+
+- **S7 v7** (liveness-filtered per playbook §9; patch `.tmp/patch_stats_liveness.py`
+  on NFS `campaign_stats.py`, bak-pre-v7): 13,324 live entries, 1,299 not-live
+  skipped, 119,666 new pairs. S7: pdb 97.2/99.0/**99.6** · uniprot 94.2/97.2/**98.2**
+  · inchikey 53.4/75.6/**84.8** · ion 35.1@all (att 52.2% only) · entry-any 99.4%@10.
+- **Audits** (`.tmp/audit_chem_ion.py`, POST_F14=1, 4,641-entry cohort): organic
+  misses are RANKING losses (engine_miss_identity 275 sim=1.0 at rank 12-37 +
+  band_buried 224), not retrieval — window has gate-verified candidate for 96.8%.
+  Ion misses are DETECTION losses: protein-coordinated metals invisible
+  (no_metals frag type: protein x642; Zn n=591 validated 27.1% vs Cl/K/Na ~100%).
+- **F16 fidelity-first ordering** (commit 811ddb55e, this repo:
+  `src_new/verification/manager.py` + 6 tests, 16/16 green): verified chem hits
+  sorted skeleton-fidelity-first in stored order; deterministic tie-break chain
+  per UI relay (skel desc -> conf desc -> identifier asc -> type asc; UI displays
+  verbatim). Projection-validated BEFORE landing (rerank_projection.json).
+- **S7 v8 official** (`campaign_stats_v8.json`): inchikey @5/@10 **85.8/90.6** (0.7),
+  entry-any 99.5%@10; pdb/uniprot bit-identical expected, tie-break noise only.
+  Flip dissection vs projection (flip_dissection.json): 170/649 projected-fail
+  rows pass under v8 — 147 tie_reposition + 23 window_membership = within
+  tie-cluster noise, NOT a rule change. **@10 is tie-sensitive ±1-2pp; quote v8.**
+- **Residual truth**: 479 organic annotations still fail @10 (residual_failing_rows.jsonl);
+  273 have the GT skeleton nowhere in the entry (63 pure-protein boxes) = content
+  floor; rest = variant-layer (salt/stereo/protonation) + gate-band stragglers.
+- **Inchikey-vs-proteins explained** (user Q): proteins self-referential GT in
+  the box + tiny ranked space; inchikey GT is bibliographic — presence empirical,
+  candidates self-discovered among hundreds, Tanimoto analog continuum, and
+  confidence-order loss = the residual. Ceiling ~=93-94% window coverage; we sit at
+  90.6 @10 / ~94 in-window of the honest frame.
+- **Next-wave specs** (`.tmp/TASKS_next_wave.md`, to be promoted into
+  CHEMISTRY_FIX_TODO WAVE 8): (A) F19 coordinated-metal awareness in
+  analyze_universe (ion fix); (B) pubchem_db coverability probe of the 479
+  (buckets: not-in-mirror / first-block-only / not-proposed); (C) F17 subprocess
+  generator budget + replay of 437 (fleet-wide image first, watchdog-quiet gate).
+- Open besides: 334 corrupt download triage; phase-2 audit_gap; FE bond-guess
+  (deferred); zombie-PID exit-hang pattern (harmless, reap on pod touches).

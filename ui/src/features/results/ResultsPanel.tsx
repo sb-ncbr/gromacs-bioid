@@ -1,4 +1,4 @@
-import React from "react";
+import React, { createElement } from "react";
 import {
   Card,
   CardHeader,
@@ -108,7 +108,6 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
   const hits = presentHits(verification?.hits);
   const failedResolvers: ResolverErrorItem[] = identifiers?.failed_resolvers || [];
   const best = bestConfidence(hits);
-  const TypeIcon = iconFor(molecule?.type);
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -118,7 +117,7 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
             <CardTitle className="text-lg">Segment: {segment}</CardTitle>
             {molecule?.type && (
               <Badge variant="outline" className="gap-1">
-                <TypeIcon size={13} aria-hidden /> {molecule.type}
+                {createElement(iconFor(molecule.type), { size: 13, "aria-hidden": true })} {molecule.type}
               </Badge>
             )}
             {molecule?.atom_count != null && (
