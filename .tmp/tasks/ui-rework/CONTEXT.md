@@ -46,3 +46,8 @@ Database base URLs: PDB→https://www.rcsb.org/structure/, UniProt→https://www
 
 ## Model routing
 Coder tasks tagged [27b] (scaffold, API, nginx, typed client) vs [flash] (components, tabs, ports). Planner (kimi) owns reviews, copy deck, error catalog, openapi diffs.
+
+## Commit policy (insurance)
+- Coders: commit after EVERY completed deliverable, repo style `scope: short message` (e.g. `ui: scaffold vite+tailwind+design-system`). Never commit broken build/typecheck. Never `git add -A` untargeted — stage only your files.
+- Planner: commits coordination artifacts per wave; creates git tag at each passed GATE (`ui-rework-w1`, `ui-rework-w2`, ...) so any state is restorable. Deploy only from committed state.
+- Deployed image tags are unique per wave (no `:latest` recycling during rework).
