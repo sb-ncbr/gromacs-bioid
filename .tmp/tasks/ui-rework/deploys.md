@@ -22,3 +22,9 @@
 - Live: frontpage upload flow (dropzone, config dialog, fast mode, run name) + IP-bound recents (mine=1) + rerun/delete dialogs. Results page: still stub (B-wave pending).
 - E2E smoke run: POST /api/v1/runs 1CRN.pdb → run 89fe2c7b-8c2c-426a-9f02-a235b74232e7, success <10s, type_counts {protein:1}; ?mine=1 returned exactly 1 (IP binding works); queue state transitions queued→running observed.
 - KNOWN remaining: deep-link /runs/<id> direct-entry → JSON (WS7 ingress fix, next infra wave).
+
+## 2026-10-01 W3 theme + B-wave1 components deploy ✅
+- 746a782e1 green theme: setup.css :root is UNLAYERED purple → DS custom_setup (layered) can never win. Fix: unlayered html[data-theme=custom] full token override (brand, ramps 50-950, heading, focus, charts) - beats :root by specificity, cascade-proof.
+- 6708cc453 lint gate fixes (B-wave1 now lint/typecheck/test/build all green, 86 tests).
+- Image bat3-frontend:w3 (sha256:e9d91f5b26e1) from clean worktree 6708cc453. Live css verified: #2e7d32 present, data-theme=custom in bundle.
+- Includes B-wave1 components (TaskBar, MoleculeSelector, ResultsPanel, SignatureDialog, utils) - not page-wired yet; B-wave2 (integration, adaptive polling) running now.
