@@ -56,12 +56,12 @@ const SEVERITY_RANK: Record<Severity, number> = {
   completed: 1,
 };
 
-const SEVERITY_STYLES: Record<Severity, { dot: string; label: string }> = {
-  completed: { dot: "bg-green-500", label: "Completed" },
-  running: { dot: "bg-blue-500 animate-pulse", label: "Running" },
-  warning: { dot: "bg-orange-500", label: "Warning" },
-  failed: { dot: "bg-red-500", label: "Failed" },
-  pending: { dot: "bg-gray-400", label: "Pending" },
+const SEVERITY_STYLES: Record<Severity, { dot: string; ring: string; label: string }> = {
+  completed: { dot: "bg-green-500", ring: "ring-green-400", label: "Completed" },
+  running: { dot: "bg-blue-500 animate-pulse", ring: "ring-blue-400", label: "Running" },
+  warning: { dot: "bg-orange-500", ring: "ring-orange-400", label: "Warning" },
+  failed: { dot: "bg-red-500", ring: "ring-red-400", label: "Failed" },
+  pending: { dot: "bg-gray-400", ring: "", label: "Pending" },
 };
 
 function taskSeverity(status: string): Severity {
