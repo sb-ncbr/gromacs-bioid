@@ -173,7 +173,7 @@ export default function RunResultsPage() {
     );
   }
 
-  const displayTitle = summaryQ.data?.run_name?.trim() || runId.slice(0, 8);
+  const displayTitle = summaryQ.data?.run_name?.trim() || "Annotation results";
   const badgeVariant = pStatus === "failed" ? "error" : pStatus === "success" ? "default" : "outline";
   const badgeClassName =
     pStatus === "success"
@@ -181,16 +181,44 @@ export default function RunResultsPage() {
       : pStatus === "failed"
         ? "border-transparent bg-red-100 text-red-800"
         : "";
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(runId).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [runId]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
       {/* Title */}
-      <header className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold text-text-heading">{displayTitle}</h1>
-        <Badge variant={badgeVariant} className={badgeClassName}>
-          {pStatus ?? "loading"}
-        </Badge>
-        <span className="font-mono text-xs text-text-muted">{runId.slice(0, 8)}…</span>
+      <header>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold text-text-heading">{displayTitle}</h1>
+          <Badge variant={badgeVariant} className={badgeClassName}>
+            {pStatus ?? "loading"}
+          </Badge>
+        </div>
+        <div className="mt-1 flex items-center gap-2">
+          <span className="font-mono text-xs text-text-muted">{runId}</span>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="rounded p-0.5 text-text-muted transition-colors hover:text-text-heading"
+            title={copied ? "Copied!" : "Copy run ID"}
+            aria-label={copied ? "Copied" : "Copy run ID to clipboard"}
+          >
+            {copied ? (
+              <svg className="h-3.5 w-3.5 text-green-600" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M8 3a1 1 0 000 2H2a1 1 0 000 2h2v7a1 1 0 001 1h12a1 1 0 001-1V7h1a1 1 0 100-2h-4v-2a1 1 0 00-1-1H8z" />
+              </svg>
+            )}
+          </button>
+        </div>
       </header>
 
       {/* TaskBar */}
