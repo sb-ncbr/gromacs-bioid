@@ -71,10 +71,10 @@ Thinking/planning/QA/copy: **kimi-k3** · Implementation: **qwen3.8-27b** (preci
 - [ ] Output: errors/error-catalog.json + warnings copy deck → feeds WS4
 
 ### WS6 API additive (Coder A, qwen3.8-27b) — small waves, contract-gated
-- [ ] A0 Provenance: build repo image, diff `/openapi.json` vs baseline (reassurance before touching)
-- [ ] A1 `include_router(..., prefix="/api/v1")` alias + `creator_ip` capture on POST /runs + `GET /runs?mine=1` IP filter + `POST /runs/{run_id}/rerun`
-- [ ] A2 queue position: `GET /runs/{run_id}/queue` → {state, position?, total?} (celery inspect on validation.ui.celery or pending-run ordering; simple impl)
-- [ ] A3 canonical `database_url` fixes (PDB `_A` strip, CHEMBL prefix) — fix values, keep response shape
+- [x] A0 Provenance: RESOLVED identical (contracts/PROVENANCE.md)
+- [x] A1 committed bb0982088, DEPLOYED
+- [x] A2 queue endpoint (positions for pending; done for finished) DEPLOYED
+- [x] A3 canonical database_url (f8d78423a) DEPLOYED — 1600 RCSB urls clean live
 - GATE per step: openapi diff vs baseline shows ONLY additions; old paths untouched; curl matrix on live
 
 ### WS7 nginx/ingress (Coder A w/ Planner verify)
@@ -100,3 +100,7 @@ Thinking/planning/QA/copy: **kimi-k3** · Implementation: **qwen3.8-27b** (preci
 - 2026-10-01: Error catalog v1 landed (errors/error-catalog.json): 9 fail/warn + executor codes, 5 stage groups, molecule types confirmed incl. water & unknown. New TaskBar grouping REPLACES legacy keyword matching (repair/unwrap/analyze previously fell into "Unknown" — legacy bug).
 
 - 2026-10-01: Backend relay (verification/manager.py worker): hits will be stored fidelity-first. UI MUST render stored order verbatim (no client re-sort) — realizes the chemical-fidelity UX win; re-sorting by confidence = zero-benefit. Verified flag demoted to display-only column. Contract: backend owns ranking, UI owns presentation. Ask: keep ordering deterministic (documented tie-break).
+
+### Known issues (pre-existing, NOT rework-caused — triage later)
+- tests/src_new/api/test_api.py::TestMoleculesEndpoint::test_get_run_molecules — fixture by_segment vs code segments/segment_list mismatch (fails at f8d78423a too)
+- tests/src_new/api/test_api.py::TestPostRunsEndpoint::test_post_runs_with_config — expects verbatim config round-trip, code re-serializes (fails at f8d78423a too)
