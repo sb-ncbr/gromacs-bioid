@@ -41,3 +41,8 @@
 - Image bat3-frontend:w5 (sha256:89405826231d).
 - Matrix: /runs/<id> 200 text/html (was JSON) | /api/v1/* JSON | /health JSON | /openapi.json JSON | / HTML. API surface at host root is GONE by design (SPA routes); clients use /api/v1.
 - Rollback: re-apply backups/ingress-pre-rework.yaml + set web image bat3-frontend:legacy-pre-rework (nginx conf inside image matches old behavior).
+
+## 2026-10-01 B1 fix-forward wave deployed ✅ (api ui-rework-b1 + ui w6)
+- All 6 groups: header fallback+uuid, taskbar, molstar context (0.02 + element colors), swissprot/inchikey links (API+UI), loading/input/files correctness, warnings v2 (info demotion + humanized resolvers + sanitized technical detail). Bonus: rules-of-hooks crash-risk fix. Tests: 98/98.
+- Live verified: SWISSPROT 6/6 uniprot links; INCHIKEY pubchem-query link; deep-link 200; site 200.
+- INCIDENT 2026-10-01 (~2min site down): masked exit codes via `| tail` chains let kubectl set image to nonexistent :w6 -> ImagePullBackOff w/ Recreate strategy. Rolled back to w5 immediately. LESSONS (now enforced): (1) set -o pipefail in deploy chains, (2) pre-flight docker image inspect before set image, (3) worktree stale registrations cleaned via prune/remove, (4) rollout timeout => immediate rollback check. Also: agent session death #4 (15min in); G5+G6 finished by planner from disk salvage.
