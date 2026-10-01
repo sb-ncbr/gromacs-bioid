@@ -1,0 +1,54 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    field.cattle.io/publicEndpoints: '[{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/runs","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/files","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/health","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/docs","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/openapi.json","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-web","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/","allNodes":false}]'
+    kubernetes.io/tls-acme: 'true'
+    meta.helm.sh/release-name: bat3-ceitec
+    meta.helm.sh/release-namespace: ceitec-biodata-ns
+    nginx.ingress.kubernetes.io/proxy-body-size: 128M
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  name: bat3-ceitec-bat3-ingress
+  namespace: ceitec-biodata-ns
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: bioid-ceitec.dyn.cloud.e-infra.cz
+    http:
+      paths:
+      - backend:
+          service: &id001
+            name: bat3-ceitec-bat3-api
+            port:
+              number: 8000
+        path: /api
+        pathType: Prefix
+      - backend:
+          service: *id001
+        path: /files
+        pathType: Prefix
+      - backend:
+          service: *id001
+        path: /health
+        pathType: Prefix
+      - backend:
+          service: *id001
+        path: /docs
+        pathType: Prefix
+      - backend:
+          service: *id001
+        path: /openapi.json
+        pathType: Prefix
+      - backend:
+          service:
+            name: bat3-ceitec-bat3-web
+            port:
+              number: 8081
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - bioid-ceitec.dyn.cloud.e-infra.cz
+    secretName: bioid-ceitec-d-bat3-ceitec-bat3-tls
