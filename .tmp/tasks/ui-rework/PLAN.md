@@ -49,7 +49,7 @@ Thinking/planning/QA/copy: **kimi-k3** · Implementation: **qwen3.8-27b** (preci
 - [ ] TaskBar: 4-state steps (ok/info/warning/failed), precise per-step info (task summaries as chips), click → Warnings tab anchor. Canonical 5 steps w/ member-task tooltips; fallback to raw task list when mapping unknown.
 - [ ] Run title = run_name (fallback short id); queued state shows **queue position** chip (WS6-A2)
 - [ ] MoleculeSelector: type icons (protein, nucleic, lipid, carbohydrate, **water/solvent own category**, ion, small molecule, other), segment label + counts
-- [ ] ResultsPanel: `Segment: X` title; type chip; atoms/residues; best-confidence bar; **verification-only table**: ✓/✗ (+ⓘ rejection) · human name (browser lookup, truncated w/ tooltip; cache) · identifier w/ FIXED link · type/db (muted) · similarity · confidence; sort verified→confidence→similarity
+- [ ] ResultsPanel: `Segment: X` title; type chip; atoms/residues; best-confidence bar; **verification-only table**: ✓/✗ (+ⓘ rejection) · human name (browser lookup, truncated w/ tooltip; cache) · identifier w/ FIXED link · type/db (muted) · similarity · confidence; order = API stored order VERBATIM (fidelity-first, backend-owned; NO client re-sort; ✓/✗ = column only)
 - [ ] Mol*: single plugin instance; per-segment MVS swap; 25s timeout → PNG fallback `/files/{id}/render/system.png`; no mmcif → gray "Structural data not available"
 - [ ] Link fixes (mirror API fixes): PDB strip chain suffix `_A`; CHEMBL ensure `CHEMBL` prefix; verified clickable for all hit types
 - GATE: no polling storms (status-driven refetch only); 4 reference runs reviewed visually
