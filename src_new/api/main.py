@@ -51,10 +51,17 @@ app.add_middleware(
 )
 
 app.include_router(runs_router, prefix="/runs", tags=["runs"])
+app.include_router(runs_router, prefix="/api/v1/runs", tags=["runs"])
 
 
 @app.get("/health")
 async def health_check():
+    return {"status": "healthy"}
+
+
+@app.get("/api/v1/health")
+async def api_v1_health():
+    """Health check for the /api/v1 namespace."""
     return {"status": "healthy"}
 
 

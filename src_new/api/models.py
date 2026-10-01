@@ -223,6 +223,14 @@ class RunCreateResponse(BaseModel):
     results_url: str = Field(..., description="URL to check run status")
 
 
+class RunQueueResponse(BaseModel):
+    """Response model for a run's queue position."""
+
+    state: str = Field(..., description="Queued, running, or done")
+    position: Optional[int] = Field(None, description="Position in the pending queue when queued")
+    ahead: Optional[int] = Field(None, description="Number of queued runs ahead of this run")
+
+
 class RunListItem(BaseModel):
     """Summary of a run for list view."""
 
@@ -231,6 +239,7 @@ class RunListItem(BaseModel):
     created_at: str = Field(..., description="ISO 8601 timestamp when run was created")
     input_kind: Optional[str] = Field(None, description="Type of input data")
     run_name: Optional[str] = Field(None, description="Custom run name")
+    creator_ip: Optional[str] = Field(None, description="IP address of the request that created this run")
 
 
 class RunListResponse(BaseModel):

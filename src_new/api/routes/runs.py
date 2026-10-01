@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, Query
 from fastapi.responses import PlainTextResponse
 
 from ..models import (
@@ -45,6 +45,7 @@ from ..models import (
     RunCreateResponse,
     RunListItem,
     RunListResponse,
+    RunQueueResponse,
     RunSummaryResponse,
 )
 from ..utils import build_database_url
@@ -80,6 +81,23 @@ async def get_parallel_default_config():
 def get_runs_dir() -> Path:
     """Get the runs directory from environment or default."""
     return Path(os.environ.get("BAT3_RUNS_DIR", "./runs"))
+
+
+def _requester_ip(request: Request) -> Optional[str]:
+    """Return the requester's IP address.
+
+    Uses the first (left-most, i.e. originating) hop of the X-Forwarded-For
+    header when present, falling back to the direct client host. Returns
+    ``None`` when no client information is available.
+    """
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        first_hop = xff.split(",")[0].strip()
+        if first_hop:
+            return first_hop
+    if request.client and request.client.host:
+        return request.client.host
+    return None
 
 
 def load_results_json(run_id: str) -> Dict[str, Any]:
@@ -135,6 +153,7 @@ def resolve_artifact_paths(artifacts_dict: Dict[str, Any], run_id: str) -> Dict[
 
 @router.post("", response_model=RunCreateResponse)
 async def create_run(
+    request: Request,
     files: List[UploadFile],
     config_file: Optional[UploadFile] = None,
     config_json: Optional[str] = Form(None),
@@ -229,6 +248,13 @@ async def create_run(
         config_path = run_dir / "config.ini"
         config.to_ini_path(config_path)
     
+    # Extract creator IP: first hop of X-Forwarded-For, fallback to client.host
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        creator_ip = xff.split(",")[0].strip()
+    else:
+        creator_ip = request.client.host if request.client else None
+
     # Create results manager and write initial "queued" status
     results_path = run_dir / "results.json"
     initial_results = {
@@ -241,6 +267,8 @@ async def create_run(
     }
     if run_name:
         initial_results["pipeline"]["run_name"] = run_name
+    if creator_ip:
+        initial_results["pipeline"]["creator_ip"] = creator_ip
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(initial_results, f, indent=2)
     
@@ -270,22 +298,32 @@ async def create_run(
 
 
 @router.get("", response_model=RunListResponse)
-async def list_runs() -> RunListResponse:
-    """List all runs with basic metadata."""
+async def list_runs(request: Request, mine: int = Query(0)) -> RunListResponse:
+    """List all runs with basic metadata.
+
+    When ``mine=1``, only runs whose ``creator_ip`` matches the current
+    requester's IP are returned (default behavior is unchanged).
+    """
     runs_dir = get_runs_dir()
-    
+
     if not runs_dir.exists():
         return RunListResponse(runs=[])
-    
+
+    requester_ip = None
+    if mine:
+        requester_ip = _requester_ip(request)
+        if requester_ip is None:
+            return RunListResponse(runs=[])
+
     runs = []
     for entry in runs_dir.iterdir():
         if not entry.is_dir():
             continue
-        
+
         results_path = entry / "results.json"
         if not results_path.exists():
             continue
-        
+
         try:
             # Retry once on ESTALE
             data = None
@@ -299,21 +337,26 @@ async def list_runs() -> RunListResponse:
                         time.sleep(0.1)
                         continue
                     raise
-            
+
             pipeline_data = data.get("pipeline", {})
             created_at = data.get("created_at", "")
-            
+            creator_ip = pipeline_data.get("creator_ip")
+
+            if mine and creator_ip != requester_ip:
+                continue
+
             runs.append(RunListItem(
                 run_id=entry.name,
                 status=pipeline_data.get("status", "unknown"),
                 created_at=created_at,
                 input_kind=pipeline_data.get("input_kind"),
                 run_name=pipeline_data.get("run_name"),
+                creator_ip=creator_ip,
             ))
         except (json.JSONDecodeError, IOError):
             # Skip malformed results files
             continue
-    
+
     return RunListResponse(runs=runs)
 
 @router.delete("/{run_id}")
@@ -1191,118 +1234,237 @@ async def download_ca_only_pdb(
     return PlainTextResponse(pdb_content, media_type="chemical/x-pdb")
 
 
+def _create_single_rerun(old_run_dir: Path) -> Optional[str]:
+    """Create a new run reusing the input and config of an existing run.
+
+    Copies input files and config.ini (or writes the default config) into a
+    fresh run directory, writes an initial queued results.json, and enqueues
+    a new Celery pipeline task.
+
+    Args:
+        old_run_dir: Path to the existing run directory to re-run.
+
+    Returns:
+        The new run id, or None if the run cannot be re-run (missing
+        results.json or missing/empty input directory).
+    """
+    from src_new.config.loader import RunConfig
+
+    old_run_id = old_run_dir.name
+    old_results_path = old_run_dir / "results.json"
+    old_input_dir = old_run_dir / "input"
+    old_config_path = old_run_dir / "config.ini"
+
+    # Skip if results.json doesn't exist
+    if not old_results_path.exists():
+        return None
+
+    # Skip if input directory doesn't exist or is empty
+    if not old_input_dir.exists() or not any(old_input_dir.iterdir()):
+        return None
+
+    # Read old results to get run_name
+    try:
+        with open(old_results_path, "r", encoding="utf-8") as f:
+            old_data = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return None
+
+    old_run_name = old_data.get("pipeline", {}).get("run_name")
+
+    # Generate new run ID
+    new_run_id = str(uuid.uuid4())
+    new_run_dir = get_runs_dir() / new_run_id
+    new_input_dir = new_run_dir / "input"
+
+    # Create new run directory structure
+    new_input_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy input files
+    for file in old_input_dir.iterdir():
+        if file.is_file():
+            shutil.copy2(str(file), str(new_input_dir / file.name))
+
+    # Handle config: copy old or write default
+    new_config_path = new_run_dir / "config.ini"
+    if old_config_path.exists():
+        shutil.copy2(str(old_config_path), str(new_config_path))
+    else:
+        config = RunConfig.from_default_ini()
+        config.to_ini_path(new_config_path)
+
+    # Write new results.json
+    new_results_path = new_run_dir / "results.json"
+    initial_results = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "pipeline": {
+            "name": "BAT3",
+            "status": "queued",
+            "run_id": new_run_id,
+        },
+    }
+    if old_run_name:
+        initial_results["pipeline"]["run_name"] = f"{old_run_name} (re-run)"
+
+    with open(new_results_path, "w", encoding="utf-8") as f:
+        json.dump(initial_results, f, indent=2)
+
+    # Enqueue Celery task with run_id as task_id (UI lane when configured)
+    _ui_opts = {}
+    _uiq = os.environ.get("VALIDATION_UI_QUEUE", "")
+    if _uiq:
+        _ui_opts["queue"] = _uiq
+    run_pipeline_task.apply_async(
+        task_id=new_run_id,
+        kwargs={
+            "run_id": new_run_id,
+            "input_dir": str(new_input_dir),
+            "results_path": str(new_results_path),
+            "config_path": str(new_config_path),
+        },
+        **_ui_opts,
+    )
+
+    return new_run_id
+
+
 @router.post("/rerun-all", response_model=RerunAllResponse)
 async def rerun_all() -> RerunAllResponse:
     """
     Re-run all existing runs by copying their input files and config into new run directories.
-    
+
     For each existing run:
     - Copies input files from old run to new run directory
     - Copies config.ini if it exists, otherwise uses default config
     - Creates a new results.json with queued status
     - Enqueues a new Celery pipeline task
-    
+
     Old runs are not modified or deleted.
-    
+
     Returns:
         RerunAllResponse with list of new runs, skipped runs, and count
     """
-    from src_new.config.loader import RunConfig
-    
     runs_dir = get_runs_dir()
     new_runs: List[RerunRunItem] = []
     skipped: List[str] = []
-    
+
     if not runs_dir.exists():
         return RerunAllResponse(new_runs=[], skipped=[], count=0)
-    
+
     for entry in runs_dir.iterdir():
         if not entry.is_dir():
             continue
-        
+
         old_run_id = entry.name
-        old_results_path = entry / "results.json"
-        old_input_dir = entry / "input"
-        old_config_path = entry / "config.ini"
-        
-        # Skip if results.json doesn't exist
-        if not old_results_path.exists():
+        new_run_id = _create_single_rerun(entry)
+        if new_run_id is None:
             skipped.append(old_run_id)
-            continue
-        
-        # Skip if input directory doesn't exist or is empty
-        if not old_input_dir.exists() or not any(old_input_dir.iterdir()):
-            skipped.append(old_run_id)
-            continue
-        
-        # Read old results to get run_name
-        try:
-            with open(old_results_path, "r", encoding="utf-8") as f:
-                old_data = json.load(f)
-        except (json.JSONDecodeError, IOError):
-            skipped.append(old_run_id)
-            continue
-        
-        old_run_name = old_data.get("pipeline", {}).get("run_name")
-        
-        # Generate new run ID
-        new_run_id = str(uuid.uuid4())
-        new_run_dir = runs_dir / new_run_id
-        new_input_dir = new_run_dir / "input"
-        
-        # Create new run directory structure
-        new_input_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Copy input files
-        for file in old_input_dir.iterdir():
-            if file.is_file():
-                shutil.copy2(str(file), str(new_input_dir / file.name))
-        
-        # Handle config: copy old or write default
-        new_config_path = new_run_dir / "config.ini"
-        if old_config_path.exists():
-            shutil.copy2(str(old_config_path), str(new_config_path))
         else:
-            config = RunConfig.from_default_ini()
-            config.to_ini_path(new_config_path)
-        
-        # Write new results.json
-        new_results_path = new_run_dir / "results.json"
-        initial_results = {
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "pipeline": {
-                "name": "BAT3",
-                "status": "queued",
-                "run_id": new_run_id,
-            },
-        }
-        if old_run_name:
-            initial_results["pipeline"]["run_name"] = f"{old_run_name} (re-run)"
-        
-        with open(new_results_path, "w", encoding="utf-8") as f:
-            json.dump(initial_results, f, indent=2)
-        
-        # Enqueue Celery task with run_id as task_id (UI lane when configured)
-        import os as _os
-        _ui_opts = {}
-        _uiq = _os.environ.get("VALIDATION_UI_QUEUE", "")
-        if _uiq:
-            _ui_opts["queue"] = _uiq
-        run_pipeline_task.apply_async(
-            task_id=new_run_id,
-            kwargs={
-                "run_id": new_run_id,
-                "input_dir": str(new_input_dir),
-                "results_path": str(new_results_path),
-                "config_path": str(new_config_path),
-            },
-            **_ui_opts,
-        )
-        
-        new_runs.append(RerunRunItem(
-            new_run_id=new_run_id,
-            old_run_id=old_run_id,
-            status="queued",
-        ))
-    
+            new_runs.append(RerunRunItem(
+                new_run_id=new_run_id,
+                old_run_id=old_run_id,
+                status="queued",
+            ))
+
     return RerunAllResponse(new_runs=new_runs, skipped=skipped, count=len(new_runs))
+
+
+@router.post("/{run_id}/rerun", response_model=RunCreateResponse)
+async def rerun_single_run(run_id: str) -> RunCreateResponse:
+    """
+    Re-run a single existing run by copying its input files and config into a
+    new run directory and enqueuing a new Celery pipeline task.
+
+    The original run is not modified or deleted.
+
+    Args:
+        run_id: The identifier of the run to re-run.
+
+    Returns:
+        RunCreateResponse for the newly queued run.
+
+    Raises:
+        404: If the run or its input directory is missing.
+    """
+    runs_dir = get_runs_dir()
+    old_run_dir = runs_dir / run_id
+
+    if not old_run_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+
+    new_run_id = _create_single_rerun(old_run_dir)
+    if new_run_id is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Run '{run_id}' has no input files to re-run",
+        )
+
+    return RunCreateResponse(
+        run_id=new_run_id,
+        status="queued",
+        message=f"Run {new_run_id} queued successfully",
+        results_url=f"/runs/{new_run_id}/status",
+    )
+
+
+def _queue_state_for(run_data: Dict[str, Any]) -> str:
+    """Derive queue state from results.json: queued | running | done.
+
+    A run is "queued" while its run dir exists but results.json has no
+    started marker yet (pipeline.started_at missing — same derivation the
+    status endpoint uses via pipeline.status/started_at). Once started,
+    "running" while pipeline.status == "running"; terminal statuses
+    (success/failed/cancelled/...) map to "done".
+    """
+    pipeline = run_data.get("pipeline", {})
+    if not pipeline.get("started_at"):
+        return "queued"
+    if pipeline.get("status") == "running":
+        return "running"
+    return "done"
+
+
+@router.get("/{run_id}/queue", response_model=RunQueueResponse)
+async def get_run_queue(run_id: str) -> RunQueueResponse:
+    """Queue state for a single run.
+
+    Returns:
+        state: queued | running | done
+        position: 1-based position among queued runs ordered by created_at
+                  (queued runs only; null otherwise)
+        ahead: number of queued runs ahead of this run (null otherwise)
+
+    Raises:
+        404: If run not found.
+    """
+    data = load_results_json(run_id)
+    state = _queue_state_for(data)
+
+    position: Optional[int] = None
+    ahead: Optional[int] = None
+    if state == "queued":
+        runs_dir = get_runs_dir()
+        queued: List[tuple] = []
+        for entry in runs_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            results_path = entry / "results.json"
+            if not results_path.exists():
+                continue
+            try:
+                with open(results_path, "r", encoding="utf-8") as f:
+                    entry_data = json.load(f)
+            except (json.JSONDecodeError, IOError, OSError):
+                continue
+            if _queue_state_for(entry_data) != "queued":
+                continue
+            queued.append((entry_data.get("created_at") or "", entry.name))
+        queued.sort(key=lambda item: item[0])
+        for idx, (_created, rid) in enumerate(queued, start=1):
+            if rid == run_id:
+                position = idx
+                break
+        if position is not None:
+            ahead = position - 1
+
+    return RunQueueResponse(state=state, position=position, ahead=ahead)
