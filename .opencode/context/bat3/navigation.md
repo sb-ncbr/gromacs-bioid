@@ -5,7 +5,7 @@ Quick entry point to all BAT3 context files. Use this to find verification comma
 
 ## Key Points
 - **Status check**: `lookup/status.md` — current numbers + deployment state (2026-09-10, post-incident)
-- **Live deployment**: `lookup/ceitec-deployment.md` — images, mounts, paths, gotchas (NOT the stale deployment docs)
+- **Live deployment**: `lookup/ceitec-deployment.md` — images (UI: production-v1, API: ui-rework-b1), mounts, paths, ingress routing, gotchas
 - **Debug issues**: `errors/common-issues.md` — incident failure signatures P0-1..P0-6 + P1 family
 - **Reprocess/score**: `guides/validation-reprocessing.md`
 - **Upgrade safely**: `guides/safe-helm-upgrade.md` (kubectl-set drift)
@@ -25,6 +25,7 @@ Quick entry point to all BAT3 context files. Use this to find verification comma
 | Index MDDBR | `guides/indexing-mddbr.md` |
 | Incident error signatures | `errors/common-issues.md` |
 | Code layout (3 api copies) | `concepts/code-layout.md` |
+| Web UI (post-rework) | `concepts/bioid-ui.md` + `docs/BIOID_UI.md` |
 | Example run | `examples/run-batch.md` |
 | What is BAT3 | `concepts/bat3.md` |
 | Validation pipeline | `concepts/validation.md` |

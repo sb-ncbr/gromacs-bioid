@@ -5,14 +5,14 @@ Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-0
 
 ## Cluster / Access
 - Kubeconfig context: `kuba-cluster` (namespace-scoped user; `kubectl get nodes` forbidden = normal)
-- Namespace: `ceitec-biodata-ns`; Ingress hosts: `bioid-ceitec.dyn.cloud.e-infra.cz`, `bat3-validation.dyn.cloud.e-infra.cz` (NOT `bioid-validation` as docs claim)
+- Namespace: `ceitec-biodata-ns`; Ingress hosts: `bioid-ceitec.dyn.cloud.e-infra.cz` (SPA on /, API on /api+/files+/health+/docs+/openapi.json; /runs/* deep-links are SPA routes since ui-rework WS7), `bat3-validation.dyn.cloud.e-infra.cz`
 
 ## Components & Images (pinned)
 | Deploy | Replicas | Image | Notes |
 |---|---|---|---|
 | bat3-ceitec-bat3-worker | 40 | `cerit.io/tomsko/bat3-worker:v2.15` | helm values drift (kubectl scale); uid 1000; req 2CPU/6Gi lim 4/10Gi |
-| bat3-ceitec-bat3-api | 1 | `bat3-api:latest` | helm |
-| bat3-ceitec-bat3-web | 1 | `bat3-frontend:latest` | helm |
+| bat3-ceitec-bat3-api | 1 | `bat3-api:ui-rework-b1` | additive /api/v1 layer (mine=1, rerun, queue, canonical urls) |
+| bat3-ceitec-bat3-web | 1 | `bat3-frontend:production-v1` | REWRITTEN UI (React19/Tailwind/e-infra-DS); legacy backup tag `:legacy-pre-rework` |
 | validation-api | 1 | `bat3-validation-api:v3.92` | `uvicorn main:app`; env: VALIDATION_DISPATCH_ENABLED (gate), VALIDATION_DISPATCH_CONCURRENCY=24, VALIDATION_INTAKE_WORKERS=16, VALIDATION_STALE_HOURS=3, MDFIND_S3_* from mdfind-s3-secret |
 | validation-worker | 50 | `bat3-validation-api:v3.92` | celery threads×4; uid 1000; **req 1CPU/6Gi lim 4CPU/10Gi (since OOM incident 2026-09-11)**; mounts databases+runs+validation-data; shares the default `celery` queue with bat3-worker |
 | validation-ui | 1 | `bat3-validation-ui:latest` | |
@@ -40,3 +40,10 @@ Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-0
 ## Reference
 - `../../deployments/ceitec-biodata/overview.md` (stale on some points)
 - `../guides/safe-helm-upgrade.md`
+
+
+## UI Rework Facts (2026-10-01, production)
+- UI source: `ui/` (NOT deprecated `web/`). Prod guide: `docs/BIOID_UI.md`. Rollback: `bat3-frontend:legacy-pre-rework`, git tags `ui-rework-w1..w8`, `ui-production-v1`.
+- nginx-frontend: SPA fallback + proxy ONLY `/api` and `/files` → `bat3-ceitec-bat3-api:8000`; old per-path proxies removed (deploy/nginx-frontend.conf).
+- UI image/tag discipline: build from clean worktree only; unique tags per wave; never recycle `:latest`.
+- Old UI drift tag `:ui1` retired via provenance diff (source ≡ live, FULL DOCUMENT identical).

@@ -410,3 +410,25 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
   warning. User ruling (2026-09-30): known story; metal radii alone will
   not fix it. Deferred to a later wave (likely per-region guessing or
   guesser hardening).
+
+## P2 family: UI-rework era landmines (2026-10-01)
+
+## P2-1: Files build locally, missing in clean tree (.gitignore collision)
+- Signature: local typecheck/tests pass; docker/worktree build fails "Cannot find module"; `git log -- <file>` empty
+- Cause: python-era `.gitignore` `lib/` matched `ui/src/lib/`; similar: history-tracked `ui/node_modules`, `ui/dist`
+- Fix: path-scoped negations at end of `.gitignore`; purge index (`git rm -r --cached`); verify via `git ls-tree -r HEAD -- ui/`
+
+## P2-2: Design-system custom theme silently ignored (purple persists)
+- Signature: `data-theme="custom"` + seed vars set, UI still DS default purple
+- Cause: `@e-infra/design-system@0.1.9` `setup.css` declares theme at UNLAYERED `:root`; `custom_setup.css` is `@layer`-wrapped (layered always loses)
+- Fix: override tokens UNLAYERED on `html[data-theme="custom"]` (specificity > :root). Reported upstream candidate.
+
+## P2-3: kubectl set image with nonexistent tag (outage)
+- Signature: rollout timeout, ImagePullBackOff, Recreate strategy killed old pod first
+- Cause: `cmd | tail` masked exit codes in deploy chain; no image preflight
+- Fix: `set -o pipefail`, `docker image inspect` check before `set image`, timeout ⇒ immediate rollback to last good tag
+
+## P2-4: Long headless opencode agent sessions die silently
+- Signature: log EOF mid-task, no result block, uncommitted partial edits; ~15–60 min runtime
+- Cause: gateway stream drop (also triggered by client network resets)
+- Fix: per-deliverable commit discipline; resume with explicit done/remaining state; inspect disk salvage before relaunch. flash-next model additionally stalls (0 edits) — use qwen3.8-27b for long briefs
