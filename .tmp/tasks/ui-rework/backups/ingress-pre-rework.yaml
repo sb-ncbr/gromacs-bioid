@@ -1,0 +1,74 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    field.cattle.io/publicEndpoints: '[{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/runs","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/files","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/health","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/docs","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/openapi.json","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-web","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/","allNodes":false}]'
+    kubernetes.io/tls-acme: "true"
+    meta.helm.sh/release-name: bat3-ceitec
+    meta.helm.sh/release-namespace: ceitec-biodata-ns
+    nginx.ingress.kubernetes.io/proxy-body-size: 128M
+  creationTimestamp: "2026-07-30T10:05:48Z"
+  generation: 1
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  name: bat3-ceitec-bat3-ingress
+  namespace: ceitec-biodata-ns
+  resourceVersion: "4912616015"
+  uid: 42b8fefe-9d69-42f1-841c-4d1017d9e982
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: bioid-ceitec.dyn.cloud.e-infra.cz
+    http:
+      paths:
+      - backend:
+          service:
+            name: bat3-ceitec-bat3-api
+            port:
+              number: 8000
+        path: /runs
+        pathType: Prefix
+      - backend:
+          service:
+            name: bat3-ceitec-bat3-api
+            port:
+              number: 8000
+        path: /files
+        pathType: Prefix
+      - backend:
+          service:
+            name: bat3-ceitec-bat3-api
+            port:
+              number: 8000
+        path: /health
+        pathType: Prefix
+      - backend:
+          service:
+            name: bat3-ceitec-bat3-api
+            port:
+              number: 8000
+        path: /docs
+        pathType: Prefix
+      - backend:
+          service:
+            name: bat3-ceitec-bat3-api
+            port:
+              number: 8000
+        path: /openapi.json
+        pathType: Prefix
+      - backend:
+          service:
+            name: bat3-ceitec-bat3-web
+            port:
+              number: 8081
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - bioid-ceitec.dyn.cloud.e-infra.cz
+    secretName: bioid-ceitec-d-bat3-ceitec-bat3-tls
+status:
+  loadBalancer:
+    ingress:
+    - hostname: kuba-pub.cerit-sc.cz

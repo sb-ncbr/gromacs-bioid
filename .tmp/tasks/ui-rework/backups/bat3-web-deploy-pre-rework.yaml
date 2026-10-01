@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "3"
+    field.cattle.io/publicEndpoints: '[{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-web","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/","allNodes":false}]'
+    meta.helm.sh/release-name: bat3-ceitec
+    meta.helm.sh/release-namespace: ceitec-biodata-ns
+  creationTimestamp: "2026-07-30T10:05:48Z"
+  generation: 4
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  name: bat3-ceitec-bat3-web
+  namespace: ceitec-biodata-ns
+  resourceVersion: "5201269932"
+  uid: 7e10bfe2-ca13-41f3-b9be-696fc045fab9
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: bat3-ceitec-bat3-web
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: "2026-09-30T13:16:37+02:00"
+      labels:
+        app: bat3-ceitec-bat3-web
+    spec:
+      containers:
+      - image: cerit.io/tomsko/bat3-frontend:latest
+        imagePullPolicy: Always
+        name: web
+        ports:
+        - containerPort: 8081
+          name: frontend-web
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsUser: 1000
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2026-09-30T11:17:32Z"
+    lastUpdateTime: "2026-09-30T11:17:32Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2026-07-30T10:05:48Z"
+    lastUpdateTime: "2026-09-30T11:17:32Z"
+    message: ReplicaSet "bat3-ceitec-bat3-web-b64b78f6c" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  observedGeneration: 4
+  readyReplicas: 1
+  replicas: 1
+  terminatingReplicas: 0
+  updatedReplicas: 1
