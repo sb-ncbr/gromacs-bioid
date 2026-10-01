@@ -16,3 +16,9 @@
 - Live smoke: /api/v1/health 200 ✅ · /api/v1/runs list ✅ · legacy /runs 200 ✅ · ?mine=1 200 ✅ · rerun fake-id → clean 404 ✅ · queue finished-run → done ✅ · **links: 1,600 RCSB URLs on bce4a0fa, broken_suffix=0** ✅
 - Fixtures identifiers/verification for bce4a0fa refreshed to post-fix truth.
 - Live now: /api/v1 alias, creator_ip on new runs, ?mine=1, /runs/{id}/rerun, /runs/{id}/queue, canonical database_url.
+
+## 2026-10-01 W2 frontpage deploy ✅
+- Image: cerit.io/tomsko/bat3-frontend:w2 (sha256:d1aa8440f1f1) ← built from CLEAN WORKTREE at ac00189eb (worktree builds are mandatory since .gitignore-collision incident)
+- Live: frontpage upload flow (dropzone, config dialog, fast mode, run name) + IP-bound recents (mine=1) + rerun/delete dialogs. Results page: still stub (B-wave pending).
+- E2E smoke run: POST /api/v1/runs 1CRN.pdb → run 89fe2c7b-8c2c-426a-9f02-a235b74232e7, success <10s, type_counts {protein:1}; ?mine=1 returned exactly 1 (IP binding works); queue state transitions queued→running observed.
+- KNOWN remaining: deep-link /runs/<id> direct-entry → JSON (WS7 ingress fix, next infra wave).

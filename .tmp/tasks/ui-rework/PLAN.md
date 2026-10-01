@@ -104,3 +104,6 @@ Thinking/planning/QA/copy: **kimi-k3** · Implementation: **qwen3.8-27b** (preci
 ### Known issues (pre-existing, NOT rework-caused — triage later)
 - tests/src_new/api/test_api.py::TestMoleculesEndpoint::test_get_run_molecules — fixture by_segment vs code segments/segment_list mismatch (fails at f8d78423a too)
 - tests/src_new/api/test_api.py::TestPostRunsEndpoint::test_post_runs_with_config — expects verbatim config round-trip, code re-serializes (fails at f8d78423a too)
+
+- 2026-10-01: MODEL ROUTING LESSON - qwen3.8-flash-next stalled (1206 lines, 0 edits, 25min silent) on long agentic brief; killed, relaunched as qwen3.8-27b. 27b is the reliable coder until flash proves otherwise.
+- 2026-10-01: LANDMINE FIX - python-era .gitignore "lib/" silently ignored ui/src/lib; legacy history tracked node_modules(53k)+dist; purged from index, negation rules appended. Worktree builds (clean-tree truth) are now mandatory for all deploys.
