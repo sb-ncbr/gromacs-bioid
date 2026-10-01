@@ -91,5 +91,25 @@ class TestOtherTypes:
             "https://alphafold.ebi.ac.uk/entry/A0A123"
         )
 
+    def test_swissprot_id(self):
+        assert build_database_url("P12345", "SWISSPROT_ID") == (
+            "https://www.uniprot.org/uniprotkb/P12345"
+        )
+
+    def test_swissprot_id_lowercase_type(self):
+        assert build_database_url("Q99999", "swissprot_id") == (
+            "https://www.uniprot.org/uniprotkb/Q99999"
+        )
+
+    def test_inchikey(self):
+        assert build_database_url("HIVGVRKSHHAJKI-UHFFFAOYSA-N", "INCHIKEY") == (
+            "https://pubchem.ncbi.nlm.nih.gov/#query=HIVGVRKSHHAJKI-UHFFFAOYSA-N"
+        )
+
+    def test_inchi_key_variant(self):
+        assert build_database_url("HIVGVRKSHHAJKI-UHFFFAOYSA-N", "INCHI_KEY") == (
+            "https://pubchem.ncbi.nlm.nih.gov/#query=HIVGVRKSHHAJKI-UHFFFAOYSA-N"
+        )
+
     def test_unknown_type(self):
         assert build_database_url("ABC", "SOME_UNKNOWN_TYPE") is None

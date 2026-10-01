@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Optional
+from urllib.parse import quote
 
 # PDB identifiers are a 4-character residue/structure code optionally followed
 # by a chain suffix (e.g. "1HRC_A"). Only the 4-character code is a valid
@@ -72,6 +73,10 @@ def build_database_url(identifier: Optional[str], ident_type: Optional[str]) -> 
         return f"https://www.rcsb.org/structure/{normalized}"
     if ident_upper == "UNIPROT_ID":
         return f"https://www.uniprot.org/uniprotkb/{identifier}"
+    if ident_upper in ("SWISSPROT_ID", "SWISS-PROT", "SWISSPROT"):
+        return f"https://www.uniprot.org/uniprotkb/{identifier}"
+    if ident_upper in ("INCHIKEY", "INCHI_KEY"):
+        return f"https://pubchem.ncbi.nlm.nih.gov/#query={quote(identifier, safe='')}"
     if ident_upper in ("PUBCHEM_CID", "PUBCHEM"):
         return f"https://pubchem.ncbi.nlm.nih.gov/compound/{identifier}"
     if ident_upper in ("CHEMBL_ID", "CHEMBL"):
