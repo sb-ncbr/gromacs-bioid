@@ -3,10 +3,73 @@
 @import "@e-infra/design-system/custom_setup.css";
 @source "../node_modules/@e-infra/design-system/dist";
 
-@layer base {
-  [data-theme="custom"] {
-    --brand-primary: #2e7d32;
-    --brand-secondary: #1b5e20;
-    --brand-tertiary: #e8f5e9;
-  }
+/*
+ * BioID green theme.
+ * setup.css declares its purple default theme at UNLAYERED :root, which beats
+ * every @layer rule (incl. the DS custom_setup mechanism). We therefore
+ * override the full token surface unlayered on html[data-theme="custom"]
+ * (higher specificity than :root) — guaranteed win regardless of bundler order.
+ */
+html[data-theme="custom"] {
+  /* Brand */
+  --primary: #2e7d32;
+  --primary-foreground: #ffffff;
+  --secondary: #1b5e20;
+  --secondary-foreground: #ffffff;
+  --tertiary: #e8f5e9;
+  --tertiary-foreground: #17351a;
+
+  /* Text */
+  --text-heading: #1b5e20;
+
+  /* Borders */
+  --border-focus: #2e7d32;
+
+  /* Charts */
+  --chart-1: #1b5e20;
+  --chart-2: #43a047;
+  --chart-3: #8bc34a;
+  --chart-4: #26a69a;
+  --chart-5: #ffb300;
+  --chart-6: #e67e73;
+  --chart-7: #546e7a;
+
+  /* Primary ramp (seed at 600) */
+  --color-primary-50: #e8f5e9;
+  --color-primary-100: #c8e6c9;
+  --color-primary-200: #a5d6a7;
+  --color-primary-300: #81c784;
+  --color-primary-400: #66bb6a;
+  --color-primary-500: #4caf50;
+  --color-primary-600: #2e7d32;
+  --color-primary-700: #27652c;
+  --color-primary-800: #1b5e20;
+  --color-primary-900: #124016;
+  --color-primary-950: #0a290d;
+
+  /* Secondary ramp (seed at 600) */
+  --color-secondary-50: #e0efe1;
+  --color-secondary-100: #c2e0c4;
+  --color-secondary-200: #97c89b;
+  --color-secondary-300: #6cae71;
+  --color-secondary-400: #4a964f;
+  --color-secondary-500: #2f7c34;
+  --color-secondary-600: #1b5e20;
+  --color-secondary-700: #164e1a;
+  --color-secondary-800: #113d14;
+  --color-secondary-900: #0b2a0d;
+  --color-secondary-950: #061806;
+
+  /* Tertiary ramp (seed at 200) */
+  --color-tertiary-50: #f4faf4;
+  --color-tertiary-100: #edf7ee;
+  --color-tertiary-200: #e8f5e9;
+  --color-tertiary-300: #d3ecd5;
+  --color-tertiary-400: #b8dfbc;
+  --color-tertiary-500: #98cf9e;
+  --color-tertiary-600: #6fb877;
+  --color-tertiary-700: #4d9a57;
+  --color-tertiary-800: #38804b;
+  --color-tertiary-900: #245c34;
+  --color-tertiary-950: #123a20;
 }
