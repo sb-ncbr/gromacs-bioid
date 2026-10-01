@@ -1,0 +1,278 @@
+{
+ "status": {
+  "run_id": "4964c437-7d7d-43c9-af65-0af5d74dea11",
+  "pipeline": {
+   "run_id": "4964c437-7d7d-43c9-af65-0af5d74dea11",
+   "pipeline_name": "BAT3",
+   "status": "failed",
+   "started_at": "2026-09-22T07:19:00.593169+00:00",
+   "finished_at": "2026-09-22T07:19:06.738027+00:00",
+   "input_kind": "gromacs",
+   "input_files": null,
+   "metadata": {
+    "working_directory": "/app/runs/4964c437-7d7d-43c9-af65-0af5d74dea11/input",
+    "output_directory": "/app/runs/4964c437-7d7d-43c9-af65-0af5d74dea11"
+   }
+  },
+  "tasks": [
+   {
+    "task_id": "discover_input",
+    "name": "Discover Input",
+    "status": "success",
+    "started_at": "2026-09-22T07:19:00.609076+00:00",
+    "finished_at": "2026-09-22T07:19:00.659583+00:00",
+    "summary": {
+     "discovered": true,
+     "input_kind": "gromacs"
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "load_simulation",
+    "name": "Load Simulation",
+    "status": "success",
+    "started_at": "2026-09-22T07:19:00.664684+00:00",
+    "finished_at": "2026-09-22T07:19:00.989844+00:00",
+    "summary": {
+     "loaded": true,
+     "strategy": "gromacs_tpr"
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "repair_topology",
+    "name": "Repair Topology",
+    "status": "success",
+    "started_at": "2026-09-22T07:19:00.995522+00:00",
+    "finished_at": "2026-09-22T07:19:01.117480+00:00",
+    "summary": {
+     "repaired": true,
+     "elements_guessed": 0,
+     "masses_guessed": 956,
+     "names_fixed": 0,
+     "bonds_guessed": 0,
+     "warnings": []
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "unwrap_periodic_boundaries",
+    "name": "Unwrap Periodic Boundaries",
+    "status": "warning",
+    "started_at": "2026-09-22T07:19:01.122627+00:00",
+    "finished_at": "2026-09-22T07:19:01.181517+00:00",
+    "summary": {
+     "unwrapped": false,
+     "jumps_detected": false
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "analyze_universe",
+    "name": "Analyze Universe",
+    "status": "success",
+    "started_at": "2026-09-22T07:19:01.189876+00:00",
+    "finished_at": "2026-09-22T07:19:01.530333+00:00",
+    "summary": {
+     "analyzed": true,
+     "segments": 1,
+     "unique_molecules": 1,
+     "total_fragments": 1
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "generate_signatures",
+    "name": "Generate Signatures",
+    "status": "success",
+    "started_at": "2026-09-22T07:19:01.537429+00:00",
+    "finished_at": "2026-09-22T07:19:02.955106+00:00",
+    "summary": {
+     "generated": true,
+     "segments": 1,
+     "signatures": 15,
+     "partial": false
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "identify_molecules",
+    "name": "Identify Molecules",
+    "status": "failed",
+    "started_at": "2026-09-22T07:19:02.965177+00:00",
+    "finished_at": "2026-09-22T07:19:06.673686+00:00",
+    "summary": {},
+    "artifacts": []
+   },
+   {
+    "task_id": "verify_results",
+    "name": "Verify Results",
+    "status": "skipped",
+    "started_at": null,
+    "finished_at": null,
+    "summary": {},
+    "artifacts": []
+   },
+   {
+    "task_id": "export_results",
+    "name": "Export Results",
+    "status": "skipped",
+    "started_at": null,
+    "finished_at": null,
+    "summary": {},
+    "artifacts": []
+   }
+  ],
+  "warnings": [
+   {
+    "code": "pbc_unwrap_failed",
+    "message": "Periodic boundary unwrapping failed: No box information available. You can set dimensions using 'atomgroup.dimensions='",
+    "step_id": "unwrap_periodic_boundaries",
+    "details": {},
+    "recorded_at": "2026-09-22T07:19:01.168576+00:00"
+   }
+  ],
+  "critical_errors": [
+   {
+    "code": "unhandled_exception",
+    "message": "'FormulaResolver' object has no attribute 'enabled_similarity'",
+    "step_id": "identify_molecules",
+    "details": {},
+    "critical": true,
+    "exception_type": "AttributeError",
+    "recorded_at": "2026-09-22T07:19:06.661907+00:00"
+   },
+   {
+    "code": "pipeline_execution_failed",
+    "message": "'FormulaResolver' object has no attribute 'enabled_similarity'",
+    "step_id": null,
+    "details": {},
+    "critical": true,
+    "exception_type": "AttributeError",
+    "recorded_at": "2026-09-22T07:19:06.718027+00:00"
+   }
+  ],
+  "events": [
+   {
+    "kind": "step_start",
+    "timestamp": "2026-09-22T07:19:00.614380+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "discover_input"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-09-22T07:19:00.654619+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "discover_input"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-09-22T07:19:00.669996+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "load_simulation"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-09-22T07:19:00.984485+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "load_simulation"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-09-22T07:19:01.002250+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "repair_topology"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-09-22T07:19:01.009470+00:00",
+    "level": "INFO",
+    "message": "Guessed masses for 956 atoms",
+    "task_id": "repair_topology"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-09-22T07:19:01.108654+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "repair_topology"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-09-22T07:19:01.132621+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "unwrap_periodic_boundaries"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-09-22T07:19:01.153206+00:00",
+    "level": "WARNING",
+    "message": "Unwrap with reference='com' failed: No box information available. You can set dimensions using 'atomgroup.dimensions=', retrying with reference=None",
+    "task_id": "unwrap_periodic_boundaries"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-09-22T07:19:01.175654+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "unwrap_periodic_boundaries"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-09-22T07:19:01.196920+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "analyze_universe"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-09-22T07:19:01.522716+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "analyze_universe"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-09-22T07:19:01.544626+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "generate_signatures"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-09-22T07:19:02.257550+00:00",
+    "level": "WARNING",
+    "message": "mini3di not available, skipping 3Di generation",
+    "task_id": "generate_signatures"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-09-22T07:19:02.939430+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "generate_signatures"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-09-22T07:19:02.975155+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "identify_molecules"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-09-22T07:19:06.649802+00:00",
+    "level": "ERROR",
+    "message": "Unhandled exception in step identify_molecules:\\nTraceback (most recent call last):\n  File \"/app/src_new/executor/executor.py\", line 235, in run\n    step_result = handler(context)\n                  ^^^^^^^^^^^^^^^^\n  File \"/app/src_new/pipeline_steps/__init__.py\", line 471, in _identify_molecules\n    hits_found = manager.resolve(\n                 ^^^^^^^^^^^^^^^^\n  File \"/app/src_new/identification/resolution_manager.py\", line 253, in resolve\n    similarity_resolvers = self._registry.get_applicable_resolvers(\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/app/src_new/identification/registry.py\", line 64, in get_applicable_resolvers\n    if not resolver.enabled_similarity:\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'FormulaResolver' object has no attribute 'enabled_similarity'\n",
+    "task_id": "identify_molecules"
+   }
+  ],
+  "updated_at": "2026-09-22T07:19:06.738040+00:00"
+ }
+}

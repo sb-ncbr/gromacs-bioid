@@ -1,0 +1,1686 @@
+{
+ "status": {
+  "run_id": "a524e039-a890-4dc7-9b09-cf4317395d17",
+  "pipeline": {
+   "run_id": "a524e039-a890-4dc7-9b09-cf4317395d17",
+   "pipeline_name": "BAT3",
+   "status": "success",
+   "started_at": "2026-10-01T09:47:06.343528+00:00",
+   "finished_at": "2026-10-01T09:47:19.960964+00:00",
+   "input_kind": "pdb",
+   "input_files": null,
+   "metadata": {
+    "working_directory": "/app/runs/a524e039-a890-4dc7-9b09-cf4317395d17/input",
+    "output_directory": "/app/runs/a524e039-a890-4dc7-9b09-cf4317395d17"
+   }
+  },
+  "tasks": [
+   {
+    "task_id": "discover_input",
+    "name": "Discover Input",
+    "status": "success",
+    "started_at": "2026-10-01T09:47:06.566512+00:00",
+    "finished_at": "2026-10-01T09:47:06.786100+00:00",
+    "summary": {
+     "discovered": true,
+     "input_kind": "pdb"
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "load_simulation",
+    "name": "Load Simulation",
+    "status": "success",
+    "started_at": "2026-10-01T09:47:06.805142+00:00",
+    "finished_at": "2026-10-01T09:47:07.149899+00:00",
+    "summary": {
+     "loaded": true,
+     "strategy": "pdb"
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "repair_topology",
+    "name": "Repair Topology",
+    "status": "warning",
+    "started_at": "2026-10-01T09:47:07.167886+00:00",
+    "finished_at": "2026-10-01T09:47:07.635818+00:00",
+    "summary": {
+     "repaired": true,
+     "elements_guessed": 2760,
+     "masses_guessed": 0,
+     "names_fixed": 0,
+     "bonds_guessed": 0,
+     "warnings": []
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "unwrap_periodic_boundaries",
+    "name": "Unwrap Periodic Boundaries",
+    "status": "warning",
+    "started_at": "2026-10-01T09:47:07.665840+00:00",
+    "finished_at": "2026-10-01T09:47:07.994906+00:00",
+    "summary": {
+     "unwrapped": false,
+     "jumps_detected": false
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "analyze_universe",
+    "name": "Analyze Universe",
+    "status": "success",
+    "started_at": "2026-10-01T09:47:08.024786+00:00",
+    "finished_at": "2026-10-01T09:47:08.797359+00:00",
+    "summary": {
+     "analyzed": true,
+     "segments": 4,
+     "unique_molecules": 4,
+     "total_fragments": 0
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "generate_signatures",
+    "name": "Generate Signatures",
+    "status": "warning",
+    "started_at": "2026-10-01T09:47:08.814611+00:00",
+    "finished_at": "2026-10-01T09:47:11.140448+00:00",
+    "summary": {
+     "generated": true,
+     "segments": 4,
+     "signatures": 41,
+     "partial": false
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "identify_molecules",
+    "name": "Identify Molecules",
+    "status": "warning",
+    "started_at": "2026-10-01T09:47:11.165180+00:00",
+    "finished_at": "2026-10-01T09:47:18.504992+00:00",
+    "summary": {
+     "identified": true,
+     "partial": false
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "verify_results",
+    "name": "Verify Results",
+    "status": "success",
+    "started_at": "2026-10-01T09:47:18.556277+00:00",
+    "finished_at": "2026-10-01T09:47:18.818566+00:00",
+    "summary": {
+     "verified": true,
+     "partial": false
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "export_results",
+    "name": "Export Results",
+    "status": "success",
+    "started_at": "2026-10-01T09:47:18.855925+00:00",
+    "finished_at": "2026-10-01T09:47:19.928878+00:00",
+    "summary": {
+     "exported": true,
+     "files_exported": 5
+    },
+    "artifacts": []
+   }
+  ],
+  "warnings": [
+   {
+    "code": "insufficient_bonds",
+    "message": "Bond topology appears insufficient (0 bonds for 2760 atoms). Molecule detection and signature generation will likely fail. Consider enabling 'guess_missing_bonds' in the loader configuration.",
+    "step_id": "repair_topology",
+    "details": {
+     "bond_count": 0,
+     "atom_count": 2760
+    },
+    "recorded_at": "2026-10-01T09:47:07.388536+00:00"
+   },
+   {
+    "code": "pbc_unwrap_failed",
+    "message": "Periodic boundary unwrapping failed: AtomGroup.unwrap() not available; this AtomGroup lacks defined bonds. To resolve this, you can either:\n1. Guess the bonds at universe creation using `guess_bonds = True`, or\n2. Create a universe using a topology format where bonds are pre-defined.",
+    "step_id": "unwrap_periodic_boundaries",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:07.943777+00:00"
+   },
+   {
+    "code": "signature_generator_failed",
+    "message": "smiles: Generation returned None",
+    "step_id": "generate_signatures",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:10.159045+00:00"
+   },
+   {
+    "code": "signature_generator_failed",
+    "message": "smiles_not_sanitized: Generation returned None",
+    "step_id": "generate_signatures",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:10.181010+00:00"
+   },
+   {
+    "code": "signature_generator_failed",
+    "message": "skeleton_fp: Generation returned None",
+    "step_id": "generate_signatures",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:10.209069+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem_local (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.300144+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.330195+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_hfamily (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.357890+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem_local (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.386706+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.413290+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_chembl (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.459966+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_hfamily (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.487465+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_pdb_protein (fasta_resname_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.512740+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_uniprot (fasta_resname_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.546056+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_nr_protein (fasta_resname_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.574794+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_swissprot_protein (fasta_resname_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.607475+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_pdb_protein (fasta_resname_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.641684+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_uniprot (fasta_resname_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.694188+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_nr_protein (fasta_resname_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.726256+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_swissprot_protein (fasta_resname_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.795140+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_protein (pdb_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.830010+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_protein (pdb_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.911224+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_protein (pdb_not_sanitized_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:13.963130+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_protein (pdb_not_sanitized_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.050872+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_protein (pdb_backbone_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.126974+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_protein (pdb_backbone_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.209937+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_protein (pdb_backbone_not_sanitized_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.249981+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_protein (pdb_backbone_not_sanitized_protein): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.292226+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_protein (topology_less_pdb): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.331255+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (topology_less_pdb): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.373772+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_protein (topology_less_pdb): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.411104+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (topology_less_pdb): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.445978+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "alphafind_struct (ca_only_pdb): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.488939+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "alphafind_struct (ca_only_pdb): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.517912+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "mmcif_struct (mmcif): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.556543+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "mmcif_struct (mmcif): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.592315+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.626371+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.659352+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.686862+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.718111+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.751106+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.789503+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.821519+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.851890+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.878553+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.911462+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.948818+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:14.987422+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem_local (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.025378+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.061940+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_hfamily (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.092274+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem_local (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.125938+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.165866+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_chembl (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.210698+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_hfamily (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.248669+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (resname): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.283782+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (resname): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.316224+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (resname): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.350712+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (resname): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.376208+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (resname): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.403159+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (resname): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.431072+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "mmcif_struct (mmcif): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.466883+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "mmcif_struct (mmcif): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.502559+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.528074+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.572296+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.606340+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.641889+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.672544+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.710469+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.741133+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.774246+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.814525+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.842324+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.876900+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.907546+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem_local (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.928183+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.951996+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_hfamily (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:15.980970+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem_local (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.004551+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.039889+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_chembl (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.066052+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_hfamily (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.094240+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_pdb_nucleic (fasta_resname_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.124256+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_core_nt (fasta_resname_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.153138+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_nt (fasta_resname_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.184798+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_pdb_nucleic (fasta_resname_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.215235+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_core_nt (fasta_resname_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.246667+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_nt (fasta_resname_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.273493+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.298522+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.326945+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_not_sanitized_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.360387+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_not_sanitized_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.391527+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_backbone_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.419155+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_backbone_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.450026+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_backbone_not_sanitized_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.481815+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_backbone_not_sanitized_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.574868+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_protein (topology_less_pdb): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.616415+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (topology_less_pdb): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.651602+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_protein (topology_less_pdb): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.685458+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (topology_less_pdb): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.723280+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "mmcif_struct (mmcif): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.757709+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "mmcif_struct (mmcif): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.788129+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.822384+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.857714+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.887532+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.920966+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.960050+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:16.987741+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.015950+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.052059+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.077297+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.107525+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.136215+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.170997+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem_local (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.202315+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.232351+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_hfamily (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.273050+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem_local (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.305036+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_pubchem (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.332632+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_chembl (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.364875+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "formula_hfamily (molecular_formula): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.393874+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_pdb_nucleic (fasta_resname_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.421396+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_core_nt (fasta_resname_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.463900+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_nt (fasta_resname_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.503190+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_pdb_nucleic (fasta_resname_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.532170+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_core_nt (fasta_resname_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.563328+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "blast_nt (fasta_resname_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.594965+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.625903+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.663637+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_not_sanitized_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.686087+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_not_sanitized_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.714582+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_backbone_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.747780+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_backbone_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.777810+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_backbone_not_sanitized_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.806500+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (pdb_backbone_not_sanitized_nucleic): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.832983+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_protein (topology_less_pdb): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.858332+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (topology_less_pdb): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.887214+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_protein (topology_less_pdb): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.921363+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "pdb_struct_nucleotide (topology_less_pdb): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.963726+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "mmcif_struct (mmcif): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:17.999109+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "mmcif_struct (mmcif): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:18.033793+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:18.067231+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:18.097218+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:18.128851+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:18.166706+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:18.212768+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_chain): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:18.244472+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:18.274899+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:18.307585+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:18.357123+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_ccd (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:18.386097+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_maps (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:18.423821+00:00"
+   },
+   {
+    "code": "identifier_resolver_failed",
+    "message": "name_manual (name_molecule): file is not a database",
+    "step_id": "identify_molecules",
+    "details": {},
+    "recorded_at": "2026-10-01T09:47:18.452370+00:00"
+   }
+  ],
+  "critical_errors": [],
+  "events": [
+   {
+    "kind": "step_start",
+    "timestamp": "2026-10-01T09:47:06.593288+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "discover_input"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-10-01T09:47:06.700195+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "discover_input"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-10-01T09:47:06.929748+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "load_simulation"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-10-01T09:47:07.135615+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "load_simulation"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-10-01T09:47:07.193321+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "repair_topology"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-10-01T09:47:07.219265+00:00",
+    "level": "INFO",
+    "message": "Guessed elements for 2760 atoms",
+    "task_id": "repair_topology"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-10-01T09:47:07.616988+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "repair_topology"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-10-01T09:47:07.682951+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "unwrap_periodic_boundaries"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-10-01T09:47:07.806621+00:00",
+    "level": "WARNING",
+    "message": "Bond guessing for unwrap failed: vdw radii for types: FE. These can be defined manually using the keyword 'vdwradii'",
+    "task_id": "unwrap_periodic_boundaries"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-10-01T09:47:07.830695+00:00",
+    "level": "WARNING",
+    "message": "Unwrap with reference='com' failed: AtomGroup.unwrap() not available; this AtomGroup lacks defined bonds. To resolve this, you can either:\n1. Guess the bonds at universe creation using `guess_bonds = True`, or\n2. Create a universe using a topology format where bonds are pre-defined., retrying with reference=None",
+    "task_id": "unwrap_periodic_boundaries"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-10-01T09:47:07.967977+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "unwrap_periodic_boundaries"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-10-01T09:47:08.171161+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "analyze_universe"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-10-01T09:47:08.779794+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "analyze_universe"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-10-01T09:47:08.834455+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "generate_signatures"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-10-01T09:47:09.117344+00:00",
+    "level": "WARNING",
+    "message": "mini3di not available, skipping 3Di generation",
+    "task_id": "generate_signatures"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-10-01T09:47:09.498090+00:00",
+    "level": "ERROR",
+    "message": "Signature generation failed for smiles: Final molecular charge (0) does not match input (-3); could not find valid bond ordering",
+    "task_id": "generate_signatures"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-10-01T09:47:09.520532+00:00",
+    "level": "ERROR",
+    "message": "Signature generation failed for smiles_not_sanitized: Final molecular charge (0) does not match input (-3); could not find valid bond ordering",
+    "task_id": "generate_signatures"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-10-01T09:47:11.102746+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "generate_signatures"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-10-01T09:47:11.190346+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "identify_molecules"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-10-01T09:47:18.480184+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "identify_molecules"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-10-01T09:47:18.595359+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "verify_results"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-10-01T09:47:18.793983+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "verify_results"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-10-01T09:47:18.888119+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "export_results"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-10-01T09:47:19.115367+00:00",
+    "level": "INFO",
+    "message": "Exported whole-system mmCIF to /app/runs/a524e039-a890-4dc7-9b09-cf4317395d17/system.mmcif",
+    "task_id": "export_results"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-10-01T09:47:19.251133+00:00",
+    "level": "INFO",
+    "message": "Exported segment 'D' mmCIF to /app/runs/a524e039-a890-4dc7-9b09-cf4317395d17/D.mmcif",
+    "task_id": "export_results"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-10-01T09:47:19.392496+00:00",
+    "level": "INFO",
+    "message": "Exported segment 'C' mmCIF to /app/runs/a524e039-a890-4dc7-9b09-cf4317395d17/C.mmcif",
+    "task_id": "export_results"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-10-01T09:47:19.575716+00:00",
+    "level": "INFO",
+    "message": "Exported segment 'A' mmCIF to /app/runs/a524e039-a890-4dc7-9b09-cf4317395d17/A.mmcif",
+    "task_id": "export_results"
+   },
+   {
+    "kind": "log",
+    "timestamp": "2026-10-01T09:47:19.657453+00:00",
+    "level": "INFO",
+    "message": "Exported segment 'B' mmCIF to /app/runs/a524e039-a890-4dc7-9b09-cf4317395d17/B.mmcif",
+    "task_id": "export_results"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-10-01T09:47:19.896987+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "export_results"
+   }
+  ],
+  "updated_at": "2026-10-01T09:47:19.960970+00:00"
+ },
+ "molecules": {
+  "run_id": "a524e039-a890-4dc7-9b09-cf4317395d17",
+  "unique_molecules": {
+   "type:protein|atoms:1676|residues:105|resnames:ACE,GLY,ASP,VAL,GLU,LYS,GLY,LYS,LYS,ILE,PHE,VAL,GLN,LYS,CYS,ALA,GLN,CYS,HIS,THR,VAL,GLU,LYS,GLY,GLY,LYS,HIS,LYS,THR,GLY,PRO,ASN,LEU,HIS,GLY,LEU,PHE,GLY,ARG,LYS,THR,GLY,GLN,ALA,PRO,GLY,PHE,THR,TYR,THR,ASP,ALA,ASN,LYS,ASN,LYS,GLY,ILE,THR,TRP,LYS,GLU,GLU,THR,LEU,MET,GLU,TYR,LEU,GLU,ASN,PRO,LYS,LYS,TYR,ILE,PRO,GLY,THR,LYS,MET,ILE,PHE,ALA,GLY,ILE,LYS,LYS,LYS,THR,GLU,ARG,GLU,ASP,LEU,ILE,ALA,TYR,LEU,LYS,LYS,ALA,THR,ASN,GLU|elements:C=526,H=850,N=144,O=152,S=4": {
+    "segment_ids": [
+     "A"
+    ],
+    "molecule_type": "protein",
+    "atom_count": 1676,
+    "residue_count": 0,
+    "smiles": null
+   },
+   "type:small_molecule|atoms:73|residues:1|elements:C=34,F=1,H=30,N=4,O=4|formula:C34F1H30N4O4": {
+    "segment_ids": [
+     "B"
+    ],
+    "molecule_type": "small_molecule",
+    "atom_count": 73,
+    "residue_count": 0,
+    "smiles": null
+   },
+   "type:nucleic|atoms:519|residues:16|elements:C=159,H=180,N=72,O=93,P=15": {
+    "segment_ids": [
+     "C"
+    ],
+    "molecule_type": "nucleic",
+    "atom_count": 519,
+    "residue_count": 0,
+    "smiles": null
+   },
+   "type:nucleic|atoms:492|residues:16|elements:C=150,H=181,N=51,O=95,P=15": {
+    "segment_ids": [
+     "D"
+    ],
+    "molecule_type": "nucleic",
+    "atom_count": 492,
+    "residue_count": 0,
+    "smiles": null
+   }
+  },
+  "type_counts": {
+   "protein": 1,
+   "small_molecule": 1,
+   "nucleic": 2
+  },
+  "total_fragment_count": 0,
+  "segments": [
+   "A",
+   "B",
+   "C",
+   "D"
+  ],
+  "segment_meta": {
+   "A": {
+    "type": "protein",
+    "atom_count": 1676,
+    "residue_count": 105
+   },
+   "B": {
+    "type": "small_molecule",
+    "atom_count": 73,
+    "residue_count": 1
+   },
+   "C": {
+    "type": "nucleic",
+    "atom_count": 519,
+    "residue_count": 16
+   },
+   "D": {
+    "type": "nucleic",
+    "atom_count": 492,
+    "residue_count": 16
+   }
+  }
+ },
+ "verification_A": {
+  "run_id": "a524e039-a890-4dc7-9b09-cf4317395d17",
+  "segment": "A",
+  "hits": []
+ },
+ "identifiers": {
+  "run_id": "a524e039-a890-4dc7-9b09-cf4317395d17",
+  "segment": "A",
+  "hits": [],
+  "attempted_resolvers": [
+   "pdb_struct_nucleotide",
+   "blast_uniprot",
+   "blast_swissprot_protein",
+   "blast_nt",
+   "name_manual",
+   "alphafind_struct",
+   "pdb_struct_protein",
+   "formula_pubchem",
+   "name_ccd",
+   "blast_pdb_protein",
+   "name_maps",
+   "formula_pubchem_local",
+   "formula_chembl",
+   "formula_hfamily",
+   "blast_nr_protein",
+   "blast_pdb_nucleic",
+   "blast_core_nt",
+   "mmcif_struct"
+  ],
+  "failed_resolvers": [
+   {
+    "resolver_name": "formula_pubchem_local",
+    "generator": "molecular_formula",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "formula_pubchem",
+    "generator": "molecular_formula",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "formula_hfamily",
+    "generator": "molecular_formula",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "formula_chembl",
+    "generator": "molecular_formula",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "blast_pdb_protein",
+    "generator": "fasta_resname_protein",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "blast_uniprot",
+    "generator": "fasta_resname_protein",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "blast_nr_protein",
+    "generator": "fasta_resname_protein",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "blast_swissprot_protein",
+    "generator": "fasta_resname_protein",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "pdb_struct_protein",
+    "generator": "pdb_protein",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "pdb_struct_protein",
+    "generator": "pdb_not_sanitized_protein",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "pdb_struct_protein",
+    "generator": "pdb_backbone_protein",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "pdb_struct_protein",
+    "generator": "pdb_backbone_not_sanitized_protein",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "pdb_struct_protein",
+    "generator": "topology_less_pdb",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "pdb_struct_nucleotide",
+    "generator": "topology_less_pdb",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "alphafind_struct",
+    "generator": "ca_only_pdb",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "mmcif_struct",
+    "generator": "mmcif",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "name_ccd",
+    "generator": "name_chain",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "name_maps",
+    "generator": "name_chain",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "name_manual",
+    "generator": "name_chain",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "name_ccd",
+    "generator": "name_molecule",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "name_maps",
+    "generator": "name_molecule",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "name_manual",
+    "generator": "name_molecule",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "name_ccd",
+    "generator": "resname",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "name_maps",
+    "generator": "resname",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "name_manual",
+    "generator": "resname",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "blast_pdb_nucleic",
+    "generator": "fasta_resname_nucleic",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "blast_core_nt",
+    "generator": "fasta_resname_nucleic",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "blast_nt",
+    "generator": "fasta_resname_nucleic",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "pdb_struct_nucleotide",
+    "generator": "pdb_nucleic",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "pdb_struct_nucleotide",
+    "generator": "pdb_not_sanitized_nucleic",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "pdb_struct_nucleotide",
+    "generator": "pdb_backbone_nucleic",
+    "message": "file is not a database"
+   },
+   {
+    "resolver_name": "pdb_struct_nucleotide",
+    "generator": "pdb_backbone_not_sanitized_nucleic",
+    "message": "file is not a database"
+   }
+  ]
+ }
+}
