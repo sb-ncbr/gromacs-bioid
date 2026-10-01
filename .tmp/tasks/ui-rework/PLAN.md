@@ -98,3 +98,5 @@ Thinking/planning/QA/copy: **kimi-k3** · Implementation: **qwen3.8-27b** (preci
 ## Decision log
 - 2026-10-01: No docs link anywhere (docs don't exist yet — independent way-later TODO).
 - 2026-10-01: Error catalog v1 landed (errors/error-catalog.json): 9 fail/warn + executor codes, 5 stage groups, molecule types confirmed incl. water & unknown. New TaskBar grouping REPLACES legacy keyword matching (repair/unwrap/analyze previously fell into "Unknown" — legacy bug).
+
+- 2026-10-01: Backend relay (verification/manager.py worker): hits will be stored fidelity-first. UI MUST render stored order verbatim (no client re-sort) — realizes the chemical-fidelity UX win; re-sorting by confidence = zero-benefit. Verified flag demoted to display-only column. Contract: backend owns ranking, UI owns presentation. Ask: keep ordering deterministic (documented tie-break).
