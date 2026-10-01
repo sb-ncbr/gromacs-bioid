@@ -141,7 +141,7 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
 
           {hits.length === 0 ? (
             failedResolvers.length > 0 ? (
-              <Alert variant="destructive">
+              <Alert variant="error">
                 <AlertTitle>
                   Identification could not be completed &mdash; some search services were unavailable.
                 </AlertTitle>

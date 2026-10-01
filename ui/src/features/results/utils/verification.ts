@@ -44,7 +44,7 @@ export function bestConfidence(
     : 0;
 }
 
-const TRUNCATE_AT = 60;
+export const TRUNCATE_AT = 60;
 
 /**
  * Truncate a display name to `max` characters with an ellipsis.

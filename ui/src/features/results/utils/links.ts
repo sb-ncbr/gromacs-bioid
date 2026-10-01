@@ -58,7 +58,8 @@ export function buildDatabaseUrl(
       return `${BASE_URLS.chembl}${ensureChemblPrefix(id)}`;
     case "CHEBI_ID":
     case "CHEBI":
-      return `${BASE_URLS.chebi}${ensureChemblPrefix(id).replace("CHEMBL", "CHEBI")}`;
+      // Base URL already ends with "chebiId=CHEBI:" -> append the bare id only.
+      return `${BASE_URLS.chebi}${id.replace(/^CHEBI:?/i, "").toUpperCase()}`;
     case "ALPHAFOLD_ID":
     case "ALPHAFOLD":
       return `${BASE_URLS.alphafold}${id.toUpperCase()}`;

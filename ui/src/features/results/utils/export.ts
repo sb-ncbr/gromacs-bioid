@@ -77,6 +77,6 @@ export function exportFilename(
   segment: string,
   ext: "tsv" | "json",
 ): string {
-  const safe = (segment || "all").replace(/[^a-zA-Z0-9._-]+/g, "_");
-  return `verification_${safe}.${ext}`;
+  const safe = (segment || "verification").replace(/[^a-zA-Z0-9._-]+/g, "_");
+  return `${safe}.${ext}`;
 }
