@@ -546,9 +546,9 @@ class TestBlastMetadataExposure:
         json_response = response.json()
         assert len(json_response["hits"]) == 2
         
-        # Find hits by identifier
-        hit1 = next(h for h in json_response["hits"] if h["identifier"] == "1A2B_A")
-        hit2 = next(h for h in json_response["hits"] if h["identifier"] == "3C4D_B")
+        # Find hits by identifier (A2: PDB chain suffix stripped from identifier)
+        hit1 = next(h for h in json_response["hits"] if h["identifier"] == "1A2B")
+        hit2 = next(h for h in json_response["hits"] if h["identifier"] == "3C4D")
         
         # Check first hit metadata
         assert hit1["evalue"] == 1e-50

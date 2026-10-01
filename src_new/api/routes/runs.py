@@ -48,7 +48,7 @@ from ..models import (
     RunQueueResponse,
     RunSummaryResponse,
 )
-from ..utils import build_database_url
+from ..utils import build_database_url, normalize_identifier
 from ..tasks import run_pipeline_task
 
 router = APIRouter()
@@ -961,8 +961,9 @@ async def get_identifiers(run_id: str, segment: Optional[str] = None) -> Identif
                     else:
                         continue
                     
-                    # Build database URL
+                    # Build database URL (canonicalizes PDB chain ids and CHEMBL ids)
                     db_url = build_database_url(identifier, ident_type)
+                    display_identifier = normalize_identifier(identifier, ident_type) or identifier
                     
                     # Look up metadata from hits_metadata
                     metadata = {}
@@ -987,7 +988,7 @@ async def get_identifiers(run_id: str, segment: Optional[str] = None) -> Identif
                     seen_keys.add(dedup_key)
                     
                     all_hits.append(IdentifierHit(
-                        identifier=identifier,
+                        identifier=display_identifier,
                         ident_type=ident_type,
                         hit_type=hit_type_label,
                         resolver_name=resolver_name,
@@ -1060,8 +1061,9 @@ async def get_verification(run_id: str, segment: Optional[str] = None) -> Verifi
             identifier = hit.get("identifier", "")
             ident_type = hit.get("ident_type", "")
             db_url = build_database_url(identifier, ident_type)
+            display_identifier = normalize_identifier(identifier, ident_type) or identifier
             all_hits.append(VerifiedHitItem(
-                identifier=identifier,
+                identifier=display_identifier,
                 ident_type=ident_type,
                 database=hit.get("database", ""),
                 resolver_score=hit.get("resolver_score"),
