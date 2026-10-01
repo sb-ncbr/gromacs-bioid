@@ -107,3 +107,20 @@ Thinking/planning/QA/copy: **kimi-k3** · Implementation: **qwen3.8-27b** (preci
 
 - 2026-10-01: MODEL ROUTING LESSON - qwen3.8-flash-next stalled (1206 lines, 0 edits, 25min silent) on long agentic brief; killed, relaunched as qwen3.8-27b. 27b is the reliable coder until flash proves otherwise.
 - 2026-10-01: LANDMINE FIX - python-era .gitignore "lib/" silently ignored ui/src/lib; legacy history tracked node_modules(53k)+dist; purged from index, negation rules appended. Worktree builds (clean-tree truth) are now mandatory for all deploys.
+
+---
+
+## STATUS @ ui-production-v1 (2026-10-01) — WORK COMPLETE
+- WS1 scaffold/shell ✅ · WS2 frontpage ✅ · WS3 results core ✅ · WS4 tabs ✅ (incl. fix-forward waves B1) · WS5 error catalog ✅ · WS6 API additive (/api/v1, mine=1, rerun, queue, links) ✅ DEPLOYED · WS7 ingress+nginx deep-link ✅ · WS8 mol* robustness (single-plugin, watchdog, static fallback, context highlight) ✅ · WS9 cutover ✅
+- Production: UI bat3-frontend:production-v1 · API bat3-api:ui-rework-b1 · Ingress WS7-fixed · tags ui-rework-w1..w8 + ui-production-v1
+- Gates history: typecheck/lint/build green through 12 commits; 98 UI tests; pytest 66+2-pre-existing; openapi additions-only both API waves; live smoke matrices per deploy; 4-run data+page matrix 100% green; user visual passes: frontpage, theme, results, warnings, table alignment — signed off.
+
+## Way-later backlog (not blocking)
+- docs link when documentation exists (user-owned)
+- server-side human-name resolution endpoint (replaces browser-side lookups)
+- dark mode variant of BioID theme (DS supports)
+- config presets (Default/Fast) replacing raw advanced editor for lay users
+- backend: water/solvent classification (seg_2_SOL typed small_molecule - relayed)
+- backend: 2 pre-existing API test failures (test_api.py molecules fixture + config round-trip)
+- queue position accuracy upgrade (currently pending-ordered estimate)
+- a11y/deeper mobile pass; bundle chunk-size polish

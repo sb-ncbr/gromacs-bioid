@@ -47,3 +47,9 @@
 - Live verified: SWISSPROT 6/6 uniprot links; INCHIKEY pubchem-query link; deep-link 200; site 200.
 - INCIDENT 2026-10-01 (~2min site down): masked exit codes via `| tail` chains let kubectl set image to nonexistent :w6 -> ImagePullBackOff w/ Recreate strategy. Rolled back to w5 immediately. LESSONS (now enforced): (1) set -o pipefail in deploy chains, (2) pre-flight docker image inspect before set image, (3) worktree stale registrations cleaned via prune/remove, (4) rollout timeout => immediate rollback check. Also: agent session death #4 (15min in); G5+G6 finished by planner from disk salvage.
 2026-10-01 W7: ResultsPanel table scroll-capped 420px + sticky header (cd832cb50). Clean hardened deploy (pipefail + preflight image inspect).
+
+## 2026-10-01 CUTOVER — ui-production-v1 ✅
+- 4-run data+page matrix: 100% green. User matrix sign-off received.
+- Retag bat3-frontend:w8 -> bat3-frontend:production-v1 (same digest - provenance-stable deploy), rolled out.
+- git tag ui-production-v1. This concludes the rework; fix-forward treated as new waves on this base.
+- Living docs: PLAN.md (status + backlog), errors/error-catalog.json (warning copy source of truth), contracts/ (openapi baselines), fixtures/ (response snapshots), backups/ (pre-rework yamls + rollback pointers).
