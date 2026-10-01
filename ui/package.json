@@ -1,30 +1,46 @@
 {
   "name": "bat3-ui",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port 8081",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "typecheck": "tsc -b --pretty",
+    "gen:api": "openapi-typescript ../.tmp/tasks/ui-rework/contracts/openapi-live-baseline.json -o src/lib/api/types.ts"
   },
   "dependencies": {
-    "@emotion/react": "^11.14.0",
-    "@emotion/styled": "^11.14.0",
-    "@mui/icons-material": "^6.4.0",
-    "@mui/material": "^6.4.0",
+    "@e-infra/design-system": "0.1.9",
+    "@tanstack/react-query": "^5.62.0",
+    "lucide-react": "^1.8.0",
     "molstar": "^4.18.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-dropzone": "^14.3.8",
     "react-router-dom": "^7.2.0",
-    "rxjs": "^7.8.2"
+    "tailwindcss": "^4.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@tailwindcss/vite": "^4.0.0",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
-    "typescript": "^6.0.3",
-    "vite": "^6.2.0"
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "jsdom": "^25.0.0",
+    "openapi-typescript": "^7.9.1",
+    "prettier": "^3.8.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vite": "^6.2.0",
+    "vitest": "^3.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
   }
 }

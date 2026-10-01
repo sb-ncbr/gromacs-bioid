@@ -1,0 +1,12 @@
+@import "tailwindcss";
+@import "@e-infra/design-system/setup.css";
+@import "@e-infra/design-system/custom_setup.css";
+@source "../node_modules/@e-infra/design-system/dist";
+
+@layer base {
+  [data-theme="custom"] {
+    --brand-primary: #2e7d32;
+    --brand-secondary: #1b5e20;
+    --brand-tertiary: #e8f5e9;
+  }
+}
