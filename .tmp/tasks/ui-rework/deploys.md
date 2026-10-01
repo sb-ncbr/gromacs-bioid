@@ -28,3 +28,9 @@
 - 6708cc453 lint gate fixes (B-wave1 now lint/typecheck/test/build all green, 86 tests).
 - Image bat3-frontend:w3 (sha256:e9d91f5b26e1) from clean worktree 6708cc453. Live css verified: #2e7d32 present, data-theme=custom in bundle.
 - Includes B-wave1 components (TaskBar, MoleculeSelector, ResultsPanel, SignatureDialog, utils) - not page-wired yet; B-wave2 (integration, adaptive polling) running now.
+
+## 2026-10-01 W4 full results UI deploy ✅ (B-wave2 gated: 86 tests, lint/typecheck/build green)
+- Session resilience note: network reset killed b-wave2 at D3; resumed detached from D3->D5 clean (insurance architecture held).
+- Commits: d957b4767 hooks (adaptive polling), b85339cba page assembly, 8162fc26d warnings panel+catalog copy, 8978e166e tabs, 9277b37c8 molstar single-plugin + 25s watchdog -> static PNG fallback -> gray "Structural data not available".
+- Image bat3-frontend:w4 (sha256:e42cb9f7e986) from clean worktree 9277b37c8. Bundle smoke: results UI strings present.
+- Remaining: WS7 ingress deep-link fix; then 4-run visual suite with user.
