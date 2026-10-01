@@ -259,6 +259,7 @@ export default function RunResultsPage() {
           <OverviewTab
             runId={runId}
             status={statusQ.data}
+            summary={summaryQ.data ?? null}
           />
         </TabsContent>
 
@@ -273,7 +274,6 @@ export default function RunResultsPage() {
 
         <TabsContent value="signatures">
           <SignaturesTab
-            runId={runId}
             segment={segment}
             onSegmentChange={(s) => patchQuery({ segment: s })}
             segments={segments}
@@ -283,7 +283,6 @@ export default function RunResultsPage() {
 
         <TabsContent value="identifiers">
           <IdentifiersTab
-            runId={runId}
             segment={segment}
             onSegmentChange={(s) => patchQuery({ segment: s })}
             segments={segments}
@@ -293,7 +292,6 @@ export default function RunResultsPage() {
 
         <TabsContent value="verification">
           <VerificationTab
-            runId={runId}
             segment={segment}
             verification={verificationQ.data ?? null}
             onJumpToIdentifiers={() => patchQuery({ tab: "identifiers" })}
