@@ -1,3 +1,5 @@
 node_modules
 dist
 *.local
+tsconfig.app.tsbuildinfo
+tsconfig.node.tsbuildinfo
