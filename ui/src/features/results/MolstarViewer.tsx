@@ -91,10 +91,7 @@ const MolstarViewer: React.FC<MolstarViewerProps> = ({
     const gen = ++generationRef.current;
     setMode("loading");
 
-    const file: string | null =
-      segment === "SYSTEM"
-        ? renderPaths.system_mmcif ?? null
-        : (renderPaths.segments?.[segment] ?? renderPaths.system_mmcif ?? null);
+    const file: string | null = renderPaths.system_mmcif ?? null;
 
     const checkStatic = async (): Promise<boolean> => {
       try {
@@ -126,17 +123,22 @@ const MolstarViewer: React.FC<MolstarViewerProps> = ({
         .parse({ format: "mmcif" })
         .modelStructure();
 
-      const segList = Array.isArray(segments) ? segments : [];
+      const segList =
+        Array.isArray(segments) && segments.length > 0
+          ? segments
+          : Object.keys(segmentMeta ?? {});
+      const allSelected = segment === "SYSTEM";
       for (const seg of segList) {
         const meta = segmentMeta?.[seg] ?? null;
         const isProtein = meta?.type === "protein";
-        const isSelected = segment === "SYSTEM" || seg === segment;
+        const isSelected = allSelected || seg === segment;
         structure
           .component({ selector: { auth_asym_id: seg } })
           .representation({
             type: isProtein ? "cartoon" : "ball_and_stick",
           })
-          .opacity({ opacity: isSelected ? 1.0 : 0.15 });
+          .color({ custom: { molstar_use_default_coloring: true } })
+          .opacity({ opacity: isSelected ? 1.0 : 0.02 });
       }
 
       await loadMVS(plugin, builder.getState(), {
