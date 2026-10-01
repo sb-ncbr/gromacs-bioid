@@ -157,7 +157,7 @@ export default function RunResultsPage() {
             <Skeleton className="h-48 w-full rounded-lg" />
             <Skeleton className="h-96 w-full rounded-lg" />
           </div>
-          <div className="xl:col-span-5">
+          <div className="h-full xl:col-span-5">
             <Skeleton className="h-96 w-full rounded-lg" />
           </div>
         </div>
@@ -259,7 +259,7 @@ export default function RunResultsPage() {
         </div>
 
         {/* RIGHT: ResultsPanel (per-segment hits) */}
-        <div className="xl:col-span-5">
+        <div className="h-full xl:col-span-5">
           <ResultsPanel
             segment={segment}
             molecule={molecule}
