@@ -4,34 +4,259 @@
     "mechanisms": {
       "warning": "context.add_warning(code,msg,details) -> results.json warnings[]",
       "critical": "context.fail(code,msg) -> StepFailure -> results.json critical_errors[] (critical:true); executor marks remaining tasks SKIPPED, finish_run('failed')",
-      "executor_fallback": ["unhandled_exception", "pipeline_execution_failed"]
+      "executor_fallback": [
+        "unhandled_exception",
+        "pipeline_execution_failed"
+      ]
     },
-    "molecule_types": ["protein","nucleic","lipid","carbohydrate","water","ion","small_molecule","unknown"],
-    "note": "water IS a first-class worker type -> solvent gets its own icon slot; 'other' UI fallback maps 'unknown'"
+    "molecule_types": [
+      "protein",
+      "nucleic",
+      "lipid",
+      "carbohydrate",
+      "water",
+      "ion",
+      "small_molecule",
+      "unknown"
+    ],
+    "note": "water IS a first-class worker type -> solvent gets its own icon slot; 'other' UI fallback maps 'unknown'",
+    "resolver_human_names": {
+      "blast_nr_protein": "BLAST search of the NR protein database",
+      "blast_pdb_protein": "protein structure search in PDB",
+      "blast_pdb_nucleic": "nucleic structure search in PDB",
+      "blast_uniprot": "BLAST search of UniProt",
+      "blast_swissprot_protein": "BLAST search of Swiss-Prot",
+      "pdb_struct_protein": "protein structure similarity search in PDB",
+      "pdb_struct_nucleotide": "nucleotide structure similarity search in PDB",
+      "alphafind_struct": "AlphaFind structure similarity search",
+      "chembl_struct": "ChEMBL chemical database search",
+      "pubchem_struct": "PubChem chemical database search",
+      "idsm_pubchem": "PubChem similarity search",
+      "idsm_chembl": "ChEMBL similarity search",
+      "idsm_chebi": "ChEBI similarity search",
+      "formula_pubchem": "PubChem formula search",
+      "formula_pubchem_local": "PubChem formula search (local mirror)",
+      "formula_chembl": "ChEMBL formula search",
+      "formula_hfamily": "formula search (host-guest family)",
+      "mmcif_struct": "mmCIF structure search",
+      "name_ccd": "ligand name lookup (CCD)",
+      "name_maps": "name lookup",
+      "name_manual": "manual name lookup"
+    },
+    "interpolation_rules": {
+      "identifier_resolver_failed": "message format '{resolver} ({generator}): {error}'; resolver_human = resolver_human_names[resolver] else resolver; reason_human = match error against raw_error_map keys (substring, case-insens) else 'did not finish'; NEVER show raw error (may contain internal paths); technical detail expandable shows sanitized message (strip /app/... paths)",
+      "signature_generator_failed": "message format '{generator}: {error}'; generator_human = signature human-name map (CONTEXT.md)"
+    }
   },
   "stages": [
-    {"group": "prepare", "display": "Prepare structure", "tasks": ["discover_input","load_simulation","repair_topology","unwrap_periodic_boundaries","analyze_universe"]},
-    {"group": "signatures", "display": "Generate signatures", "tasks": ["generate_signatures"]},
-    {"group": "identify", "display": "Identify molecules", "tasks": ["identify_molecules"]},
-    {"group": "verify", "display": "Verify results", "tasks": ["verify_results"]},
-    {"group": "export", "display": "Export results", "tasks": ["export_results"]}
+    {
+      "group": "prepare",
+      "display": "Prepare structure",
+      "tasks": [
+        "discover_input",
+        "load_simulation",
+        "repair_topology",
+        "unwrap_periodic_boundaries",
+        "analyze_universe"
+      ]
+    },
+    {
+      "group": "signatures",
+      "display": "Generate signatures",
+      "tasks": [
+        "generate_signatures"
+      ]
+    },
+    {
+      "group": "identify",
+      "display": "Identify molecules",
+      "tasks": [
+        "identify_molecules"
+      ]
+    },
+    {
+      "group": "verify",
+      "display": "Verify results",
+      "tasks": [
+        "verify_results"
+      ]
+    },
+    {
+      "group": "export",
+      "display": "Export results",
+      "tasks": [
+        "export_results"
+      ]
+    }
   ],
   "codes": [
-    {"code":"insufficient_bonds","kind":"warning","stage":"prepare","user_title":"Bond information looks incomplete","user_what":"The structure has very few chemical bonds, which usually happens with PDB files that lack CONECT records. Molecule detection may be unreliable.","user_action":"Re-run with 'Guess missing bonds' enabled (Advanced configuration → Loader).","details_show":["bond_count","atom_count"]},
-    {"code":"pbc_jumps_detected","kind":"warning","stage":"prepare","user_title":"Structure appears split across periodic boundaries","user_what":"Molecules look broken across the edges of the simulation box.","user_action":"Re-run with 'Unwrap periodic boundaries' enabled (Advanced configuration → Loader).","details_show":["bond_jumps","backbone_jumps"]},
-    {"code":"pbc_unwrap_applied","kind":"info","stage":"prepare","user_title":"Structure was made whole","user_what":"Periodic boundary unwrapping was applied to make molecules whole.","user_action":null,"details_show":[]},
-    {"code":"pbc_unwrap_failed","kind":"warning","stage":"prepare","user_title":"Could not repair periodic boundaries","user_what":"Unwrapping was enabled but did not succeed; some molecules may still appear split.","user_action":"Re-run; contact us if it repeats.","details_show":[]},
-    {"code":"signature_generator_failed","kind":"warning","stage":"signatures","user_title":"One signature could not be generated","user_what":"The {generator_human} signature could not be generated for this molecule. Other signatures were still used.","user_action":null,"details_show":["generator_human"]},
-    {"code":"identifier_resolver_failed","kind":"warning","stage":"identify","user_title":"A search service did not respond","user_what":"The {resolver} search could not run, so some matches may be missing.","user_action":"Often temporary — try re-running later; contact us if it persists.","details_show":["resolver"],"raw_error_map":{"file is not a database":"search database temporarily unavailable"}},
-    {"code":"verification_failed","kind":"warning","stage":"verify","user_title":"Verification failed for one molecule","user_what":"Segment {segment} could not be verified; its matches may be less reliable.","user_action":null,"details_show":["segment"]},
-    {"code":"stage_time_budget","kind":"warning","stage":"*","user_title":"A step ran over its time budget","user_what":"The step continued with partial results; some searches may be incomplete.","user_action":"Re-running may produce more complete results.","details_show":["stage"]},
-    {"code":"system_export_failed","kind":"warning","stage":"export","user_title":"Export problem","user_what":"Some downloadable output files may be missing.","user_action":"Re-run if you need the exports.","details_show":[]},
-    {"code":"segment_export_failed","kind":"warning","stage":"export","user_title":"Export problem for one segment","user_what":"Some downloadable files for segment {segment} may be missing.","user_action":null,"details_show":["segment"]},
-    {"code":"missing_input","kind":"critical","stage":"prepare","user_title":"Input files could not be understood","user_what":"The uploaded files did not form a loadable simulation input.","user_action":"Include a topology (.tpr or .top with all .itp includes) and ideally a .gro file — or upload everything as a .zip.","details_show":[]},
-    {"code":"load_failed","kind":"critical","stage":"prepare","user_title":"Simulation files could not be loaded","user_what":"Several loading strategies were tried and none succeeded.","user_action":"Check the Input & Files tab for what was uploaded and try a different/complete file set.","details_show":["attempts"]},
-    {"code":"missing_universe","kind":"critical","stage":"prepare","user_title":"Internal processing error","user_what":"The loaded structure was not available to a later step.","user_action":"Please re-run; contact us if it repeats.","details_show":[]},
-    {"code":"missing_facade","kind":"critical","stage":"*","user_title":"Internal processing error","user_what":"A processing component was unavailable mid-run.","user_action":"Please re-run; contact us if it repeats.","details_show":[]},
-    {"code":"unhandled_exception","kind":"critical","stage":"*","user_title":"Unexpected error","user_what":"Something went wrong that we did not anticipate.","user_action":"Please re-run; contact us with the run ID if it repeats.","details_show":[]},
-    {"code":"pipeline_execution_failed","kind":"critical","stage":"*","user_title":"Unexpected error","user_what":"The processing job failed before completion.","user_action":"Please re-run; contact us with the run ID if it repeats.","details_show":[]}
+    {
+      "code": "insufficient_bonds",
+      "kind": "warning",
+      "stage": "prepare",
+      "user_title": "Bond information looks incomplete",
+      "user_what": "The structure has very few chemical bonds, which usually happens with PDB files that lack CONECT records. Molecule detection may be unreliable.",
+      "user_action": "Re-run with 'Guess missing bonds' enabled (Advanced configuration \u2192 Loader).",
+      "details_show": [
+        "bond_count",
+        "atom_count"
+      ]
+    },
+    {
+      "code": "pbc_jumps_detected",
+      "kind": "warning",
+      "stage": "prepare",
+      "user_title": "Structure appears split across periodic boundaries",
+      "user_what": "Molecules look broken across the edges of the simulation box.",
+      "user_action": "Re-run with 'Unwrap periodic boundaries' enabled (Advanced configuration \u2192 Loader).",
+      "details_show": [
+        "bond_jumps",
+        "backbone_jumps"
+      ]
+    },
+    {
+      "code": "pbc_unwrap_applied",
+      "kind": "info",
+      "stage": "prepare",
+      "user_title": "Structure was made whole",
+      "user_what": "Periodic boundary unwrapping was applied to make molecules whole.",
+      "user_action": null,
+      "details_show": []
+    },
+    {
+      "code": "pbc_unwrap_failed",
+      "kind": "warning",
+      "stage": "prepare",
+      "user_title": "Could not repair periodic boundaries",
+      "user_what": "Unwrapping was enabled but did not succeed; some molecules may still appear split.",
+      "user_action": "Re-run; contact us if it repeats.",
+      "details_show": []
+    },
+    {
+      "code": "signature_generator_failed",
+      "kind": "info",
+      "stage": "signatures",
+      "user_title": "A signature was skipped",
+      "user_what": "The {generator_human} signature does not apply to this molecule, so it was skipped. This is expected by design - other signatures were still generated and used.",
+      "user_action": null,
+      "details_show": [
+        "generator_human"
+      ]
+    },
+    {
+      "code": "identifier_resolver_failed",
+      "kind": "warning",
+      "stage": "identify",
+      "user_title": "A search did not finish",
+      "user_what": "The {resolver_human} did not complete ({reason_human}), so some matches may be missing.",
+      "user_action": "Usually nothing is wrong with your data. You can re-run the annotation for a complete search.",
+      "details_show": [
+        "resolver_human",
+        "reason_human"
+      ],
+      "raw_error_map": {
+        "file is not a database": "temporarily unavailable",
+        "timed out": "took too long and was stopped",
+        "BLAST timed out": "took too long and was stopped"
+      }
+    },
+    {
+      "code": "verification_failed",
+      "kind": "warning",
+      "stage": "verify",
+      "user_title": "Verification failed for one molecule",
+      "user_what": "Segment {segment} could not be verified; its matches may be less reliable.",
+      "user_action": null,
+      "details_show": [
+        "segment"
+      ]
+    },
+    {
+      "code": "stage_time_budget",
+      "kind": "warning",
+      "stage": "*",
+      "user_title": "A step ran over its time budget",
+      "user_what": "The step continued with partial results; some searches may be incomplete.",
+      "user_action": "Re-running may produce more complete results.",
+      "details_show": [
+        "stage"
+      ]
+    },
+    {
+      "code": "system_export_failed",
+      "kind": "warning",
+      "stage": "export",
+      "user_title": "Export problem",
+      "user_what": "Some downloadable output files may be missing.",
+      "user_action": "Re-run if you need the exports.",
+      "details_show": []
+    },
+    {
+      "code": "segment_export_failed",
+      "kind": "warning",
+      "stage": "export",
+      "user_title": "Export problem for one segment",
+      "user_what": "Some downloadable files for segment {segment} may be missing.",
+      "user_action": null,
+      "details_show": [
+        "segment"
+      ]
+    },
+    {
+      "code": "missing_input",
+      "kind": "critical",
+      "stage": "prepare",
+      "user_title": "Input files could not be understood",
+      "user_what": "The uploaded files did not form a loadable simulation input.",
+      "user_action": "Include a topology (.tpr or .top with all .itp includes) and ideally a .gro file \u2014 or upload everything as a .zip.",
+      "details_show": []
+    },
+    {
+      "code": "load_failed",
+      "kind": "critical",
+      "stage": "prepare",
+      "user_title": "Simulation files could not be loaded",
+      "user_what": "Several loading strategies were tried and none succeeded.",
+      "user_action": "Check the Input & Files tab for what was uploaded and try a different/complete file set.",
+      "details_show": [
+        "attempts"
+      ]
+    },
+    {
+      "code": "missing_universe",
+      "kind": "critical",
+      "stage": "prepare",
+      "user_title": "Internal processing error",
+      "user_what": "The loaded structure was not available to a later step.",
+      "user_action": "Please re-run; contact us if it repeats.",
+      "details_show": []
+    },
+    {
+      "code": "missing_facade",
+      "kind": "critical",
+      "stage": "*",
+      "user_title": "Internal processing error",
+      "user_what": "A processing component was unavailable mid-run.",
+      "user_action": "Please re-run; contact us if it repeats.",
+      "details_show": []
+    },
+    {
+      "code": "unhandled_exception",
+      "kind": "critical",
+      "stage": "*",
+      "user_title": "Unexpected error",
+      "user_what": "Something went wrong that we did not anticipate.",
+      "user_action": "Please re-run; contact us with the run ID if it repeats.",
+      "details_show": []
+    },
+    {
+      "code": "pipeline_execution_failed",
+      "kind": "critical",
+      "stage": "*",
+      "user_title": "Unexpected error",
+      "user_what": "The processing job failed before completion.",
+      "user_action": "Please re-run; contact us with the run ID if it repeats.",
+      "details_show": []
+    }
   ]
 }
