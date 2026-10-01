@@ -167,3 +167,90 @@ class TestManagerRerank:
         groups = self._groups(4)
         out = mgr._maybe_structure_rerank(results, "B", groups, 3, lambda: True)
         assert out == groups
+
+
+def _vh(identifier, ident_type, conf, verified=True, skel=None):
+    """VerifiedHit-shaped test double (only fields the ordering touches)."""
+    return SimpleNamespace(
+        identifier=identifier, ident_type=ident_type,
+        final_confidence=conf, is_verified=verified, skeleton_sim=skel,
+    )
+
+
+class TestFidelityOrderHits:
+    """F16 presentation ordering: _fidelity_order_hits / _fidelity_order_key.
+
+    Projection-proven target numbers (rerank_projection.json): fidelity-first
+    lifts inchikey validated@5/@10 to 82.5/88.5 (gate 0.7). These tests only
+    pin the deterministic mechanics behind that projection.
+    """
+
+    def test_verified_chem_block_sorted_by_skeleton_desc(self):
+        from src_new.verification.manager import _fidelity_order_hits
+        hits = [
+            _vh("CID_LOW", "PUBCHEM_CID", 99.0, skel=0.71),
+            _vh("1ABC", "PDB_ID", 88.0),
+            _vh("CID_GT", "PUBCHEM_CID", 40.0, skel=1.0),
+            _vh("CID_MID", "PUBCHEM_CID", 90.0, skel=0.85),
+        ]
+        out = _fidelity_order_hits(hits)
+        assert [h.identifier for h in out] == ["CID_GT", "CID_MID", "CID_LOW", "1ABC"]
+
+    def test_unverified_chem_stays_block2_original_order(self):
+        from src_new.verification.manager import _fidelity_order_hits
+        hits = [
+            _vh("REJ1", "PUBCHEM_CID", 95.0, verified=False, skel=0.99),
+            _vh("1ABC", "PDB_ID", 88.0),
+            _vh("CID_OK", "PUBCHEM_CID", 50.0, skel=0.80),
+        ]
+        out = _fidelity_order_hits(hits)
+        # verified chem first; then ORIGINAL relative order of the rest,
+        # even though REJ1 has a higher skeleton_sim and confidence
+        assert [h.identifier for h in out] == ["CID_OK", "REJ1", "1ABC"]
+
+    def test_tie_break_chain_conf_then_identifier_then_type(self):
+        from src_new.verification.manager import _fidelity_order_hits
+        hits = [
+            _vh("ZZZ", "PUBCHEM_CID", 90.0, skel=0.9),
+            _vh("AAA", "PUBCHEM_CID", 90.0, skel=0.9),   # tie on skel+conf -> id asc
+            _vh("MMM", "PUBCHEM_CID", 95.0, skel=0.9),   # higher conf first
+            _vh("AAA", "INCHIKEY", 90.0, skel=0.9),      # same id -> type asc
+        ]
+        out = _fidelity_order_hits(hits)
+        assert [(h.identifier, h.ident_type) for h in out] == [
+            ("MMM", "PUBCHEM_CID"),
+            ("AAA", "INCHIKEY"),
+            ("AAA", "PUBCHEM_CID"),
+            ("ZZZ", "PUBCHEM_CID"),
+        ]
+
+    def test_nan_and_none_skeleton_sink_to_block1_bottom(self):
+        import math
+        from src_new.verification.manager import _fidelity_order_hits
+        hits = [
+            _vh("NAN", "PUBCHEM_CID", 99.0, skel=float("nan")),
+            _vh("NONE", "PUBCHEM_CID", 98.0, skel=None),
+            _vh("INF", "PUBCHEM_CID", 97.0, skel=math.inf),
+            _vh("OK", "PUBCHEM_CID", 1.0, skel=0.72),
+        ]
+        out = _fidelity_order_hits(hits)
+        assert out[0].identifier == "OK"
+
+    def test_idempotent(self):
+        from src_new.verification.manager import _fidelity_order_hits
+        hits = [
+            _vh("B", "PUBCHEM_CID", 90.0, skel=0.8),
+            _vh("A", "PUBCHEM_CID", 90.0, skel=0.8),
+            _vh("P", "PDB_ID", 70.0),
+            _vh("C", "PUBCHEM_CID", 10.0, verified=False, skel=0.9),
+        ]
+        once = _fidelity_order_hits(hits)
+        twice = _fidelity_order_hits(once)
+        assert [h.identifier for h in once] == [h.identifier for h in twice]
+
+    def test_no_verified_chem_returns_copy_same_order(self):
+        from src_new.verification.manager import _fidelity_order_hits
+        hits = [_vh("1ABC", "PDB_ID", 88.0), _vh("P12345", "UNIPROT_ID", 70.0)]
+        out = _fidelity_order_hits(hits)
+        assert [h.identifier for h in out] == ["1ABC", "P12345"]
+        assert out is not hits

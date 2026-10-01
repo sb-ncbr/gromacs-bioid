@@ -98,6 +98,44 @@ def _chemical_corroboration(results, segment: str, canonical_signature):
         return None, "fingerprint_unavailable"
 
 
+def _fidelity_order_key(hit):
+    """Deterministic tie-break chain for fidelity-first presentation order.
+
+    Contract (UI 2026-10-01): stored order IS display order; backend owns
+    ranking, UI owns presentation; the verified flag is never a sort key for
+    display purposes (it only defines which hits participate in block 1).
+
+    Chain: skeleton_sim desc -> final_confidence desc -> identifier asc ->
+    ident_type asc. NaN/Inf skeleton_sim sinks to -1.0 (bottom of block 1).
+    """
+    s = hit.skeleton_sim
+    if s is None or (isinstance(s, float) and (math.isnan(s) or math.isinf(s))):
+        s = -1.0
+    return (-s, -hit.final_confidence, str(hit.identifier), str(hit.ident_type))
+
+
+def _fidelity_order_hits(hits):
+    """Stable repartition: verified chemical hits first, fidelity-sorted.
+
+    Block 1: verified hits with ident_type in CHEMICAL_IDENT_TYPES, sorted by
+             _fidelity_order_key (skeleton fidelity to the simulated molecule).
+    Block 2: everything else, original relative order preserved.
+
+    Ordering-only: no verification state, score, or schema is modified.
+    Idempotent: re-application returns the identical order.
+    Projection-validated (rerank_projection.json, 2026-09-30): @5 82.5 /
+    @10 88.5 validated (gate 0.7) without touching any gate/threshold.
+    """
+    block1 = [h for h in hits
+              if h.is_verified and h.ident_type in CHEMICAL_IDENT_TYPES]
+    if not block1:
+        return list(hits)
+    block1.sort(key=_fidelity_order_key)
+    idx = {id(h) for h in block1}
+    block2 = [h for h in hits if id(h) not in idx]
+    return block1 + block2
+
+
 class VerificationManager:
     """Manages the verification pipeline for identification results.
     
@@ -372,6 +410,9 @@ class VerificationManager:
                 
                 verified_hits.append(verified_hit)
             
+            # F16: fidelity-first presentation order (stored order = display
+            # order; ordering-only, deterministic tie-break chain).
+            verified_hits = _fidelity_order_hits(verified_hits)
             # Store results back to ResultsManager
             output_path = f"verification/{segment}/verified_hits"
             hits_as_dicts = [dataclasses.asdict(hit) for hit in verified_hits]
