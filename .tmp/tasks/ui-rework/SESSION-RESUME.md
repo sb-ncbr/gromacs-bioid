@@ -1,7 +1,7 @@
 # SESSION RESUME — BioID UI Rework (compaction-ready)
 
-## State: COMPLETE, in production (2026-10-01, cutover tag `ui-production-v1`, commit 2c68a43d5)
-Live: web=bat3-frontend:production-v1, api=bat3-api:ui-rework-b1, ingress WS7-fixed. Site: bioid-ceitec.dyn.cloud.e-infra.cz (200).
+## State: COMPLETE, in production; post-cutover polish waves W8–W10 shipped (panel bottom-align via absolute decoupling w9, merged Name/Identifier column w10). Tip: 161ef782e (2026-10-01)
+Live: web=bat3-frontend:production-v1 (digest = w10), api=bat3-api:ui-rework-b1, ingress WS7-fixed. Site: bioid-ceitec.dyn.cloud.e-infra.cz (200).
 
 ## What was built (all gated/user-verified)
 Fresh `ui/` (Vite6+React19+TS strict+Tailwind v4+e-infra DS 0.1.9 pinned, BioID green theme); frontpage (upload, IP-bound recents, rerun/delete); results (TaskBar→warnings anchors, adaptive-polling hooks, segment selector w/ type icons, Mol* system-context single-instance w/ watchdog+PNG fallback+gray-missing state, stored-order verification panel bottom-aligned to viewer, tabs Overview/Input&Files/Signatures/Identifiers/Verification/Warnings with human copy from error catalog); API additive `/api/v1` (+creator_ip, ?mine=1, rerun, queue, canonical database_url); ingress deep-link fix (SPA on /, API on /api).

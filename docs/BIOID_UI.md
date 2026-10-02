@@ -7,7 +7,7 @@
 - `/` Frontpage: upload (dropzone + optional run name + Fast Mode + advanced config dialog), **IP-bound recent annotations** (`GET /api/v1/runs?mine=1`), per-run rerun/delete.
 - `/runs/:runId` results; state is deep-linkable via `?segment` + `?tab` query params.
   Header: run_name or "Annotation results" + full gray uuid + copy button.
-  Below: TaskBar (5 stage groups from `error-catalog.json`, click → warnings anchor), molecule selector (typed icons), Mol\* viewer (system context: selected segment opacity 1.0, others 0.02, element coloring; single plugin instance; 25 s watchdog → static PNG → gray "Structural data not available"), results panel (verification hits in **server stored order — never re-sorted client-side**; scroll-capped flex column aligned to viewer bottom).
+  Below: TaskBar (5 stage groups from `error-catalog.json`, click → warnings anchor), molecule selector (typed icons), Mol\* viewer (system context: selected segment opacity 1.0, others 0.02, element coloring; single plugin instance; 25 s watchdog → static PNG → gray "Structural data not available"), results panel (verification hits in **server stored order — never re-sorted client-side**; Name cell links to database, hover reveals raw identifier; panel height bound to left column via `xl:absolute xl:inset-0` in a stretched grid cell — selector+viewer drive row height, table scrolls inside; mobile falls back to 420px cap).
   Tabs: Overview · Input & Files (loading truthfulness rules, `input/` fallback, per-file downloads) · Signatures (human names, attempted/failed generators, blurred detail dialog) · Identifiers (clean table, provenance hovers, attempted/failed resolvers) · Verification (export JSON/TSV) · Warnings & Errors.
 
 ## Data & API doctrine

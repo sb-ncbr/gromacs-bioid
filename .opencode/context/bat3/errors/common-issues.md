@@ -451,3 +451,14 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
 - Signature: log EOF mid-task, no result block, uncommitted partial edits; ~15–60 min runtime
 - Cause: gateway stream drop (also triggered by client network resets)
 - Fix: per-deliverable commit discipline; resume with explicit done/remaining state; inspect disk salvage before relaunch. flash-next model additionally stalls (0 edits) — use qwen3.8-27b for long briefs
+
+
+## P2-5: Flex h-full chains can't cap grid/flex rows inflated by content
+- Signature: `h-full` on cell+card, but a 1800-row table still stretches the page (no scroll)
+- Cause: circular constraint — the overflowing item itself determines the row height; flex-1/min-h-0 chains never engage
+- Fix: on the constrained cell, `position: relative` + child `absolute inset-0` (removes it from row-height math; other column drives height); media-query it if stacked layout must flow (e.g. `xl:absolute`)
+- Verify: long-content sibling never exceeds driver column's bottom edge
+
+## P2-6: worktree add fails "Could not reset index file"
+- Cause: stale worktree registrations (removed dirs w/o `worktree remove`, crashed sessions)
+- Fix: `git worktree remove <path> --force` leftovers + `git worktree prune`; retry. Verify with `git worktree list`
