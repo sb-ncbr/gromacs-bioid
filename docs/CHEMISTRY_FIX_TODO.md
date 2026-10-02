@@ -691,6 +691,31 @@ of global bond guessing: known story, deferred (see common-issues).
   (fence watchdog lost on api-pod roll — revival rides the F17 wave);
   worker fleet still v3.122 until that wave.
 
+### F-residual ranking wave (IN FLIGHT 2026-10-02; final numbers target)
+
+- **Basis**: Task B evidence (541-row v8 residual, bucketted). Included:
+  411 mirror-present failing rows (NOT_PROPOSED 264 + SURFACED_BUT_LOST 122
+  + FIRST_BLOCK_ONLY 25) = **406 distinct entries + 116 nochem riders**;
+  excluded: GT_NOT_IN_MIRROR 130 rows (permanent disclosed floor).
+  Pre-replay snapshot: backups/results_cohort406_pre_fresidual_2026-10-02.tgz.
+- **Mechanism**: replay_identify_verify.py (rebuild identifiers with current
+  resolvers incl. local-mirror hfamily/formula caps + verification with
+  F16-era manager; atomic-on-diff). Rationale: entries computed under
+  older-code resolvers; retrieval gap is a code-era artifact, not content.
+- **Fleet**: validation-worker x164 + validation-api rolled to
+  bat3-validation-api:v3.124 (uniform; F19 gates green on both).
+- **State at compaction**: replay running on 3 workers (chunks 136/136/134)
+  after clean dry-run (10/10 changed, +42 newly-verified chem hits;
+  chemCandidates counter reports 0/0 — helper format stale vs current
+  identifiers shape; deltas come from post-hoc regen).
+- **Completion protocol**: (1) chunk summaries + error sweep; (2) rerun
+  coverability_probe phase-0 for per-row flip accounting (bucket-level
+  before/after); (3) audit_chem_ion + S7 v10 official; publish v8 -> v9 ->
+  v10 evolution with raw + coverable-normalized side-by-side, token-channels
+  as regression controls, organic cache-growth provenance.
+- **Do-not**: no gate/threshold edits; no GT-aware logic; the 130-row floor
+  and tie-cluster noise stay in every table.
+
 ### NEXT proposed tasks (specced, awaiting scheduling; full specs in
 ### .tmp/TASKS_next_wave.md 2026-10-01; promote into this doc when scheduled)
 - **A — F19: PHASES 0-2 DONE (see above); phase 3 rollout scheduled.**

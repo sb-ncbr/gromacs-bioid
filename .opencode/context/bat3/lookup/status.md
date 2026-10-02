@@ -282,10 +282,20 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
   restricted admission now requires per-container securityContext (worker
   deploy already compliant; api deploy patched). The 7 pre-existing master
   test failures are a DIFFERENT class, still open for triage.
+- **F-residual ranking wave IN FLIGHT (2026-10-02; resume per
+  .tmp/PICKUP_AFTER_COMPACTION.md)**: fleet rolled — validation-worker x164
+  AND validation-api on bat3-validation-api:v3.124 (F19 gates green).
+  Cohort 406 entries / 411 mirror-present rows (Task B buckets; 130
+  not-in-mirror excluded, floor disclosed; 289MB pre-replay snapshot taken).
+  replay_identify_verify running chunked on 3 workers (dry-run clean:
+  10/10 changed, +42 verified chem hits; chemCandidates counter = stale-
+  format reporting artifact, ignored). Remaining: chunk completion sweep
+  -> coverability_probe phase-0 flip accounting -> audit + **S7 v10
+  official** with v8->v9->v10 evolution table (raw + normalized together,
+  token-channel controls, cache-growth provenance).
 - Open besides: 334 corrupt download triage; phase-2 audit_gap; FE bond-guess
   (deferred); zombie-PID exit-hang pattern (harmless, reap on pod touches);
-  fence-watchdog revival (rides F17 wave — NFS-safe this time).
-  Next options: **F17** (subprocess isolation + 437 replay — deferred by
-  user, spec stands), **F-residual ranking wave** (386-row recovery class
-  from Task B; 210 rows already have >=0.7 candidates in-window), 334
-  corrupt-entry triage, phase-2 audit_gap.
+  fence-watchdog revival (rides F17 wave — NFS-safe this time);
+  7 master facade/store test failures (separate class, triage open);
+  replay_identify_verify needs a WORKER pod (mirror at /app/databases;
+  api pod lacks it).
