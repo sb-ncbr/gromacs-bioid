@@ -17,7 +17,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@e-infra/design-system";
-import { Check, Info, X, ExternalLink } from "lucide-react";
+import { Check, Info, X } from "lucide-react";
 import {
   buildDownloadBlob,
   downloadBlob,
@@ -79,6 +79,7 @@ const VerificationTab: React.FC<VerificationTabProps> = ({
                   <TableRow>
                     <TableHead className="w-24">Verified</TableHead>
                     <TableHead>Name</TableHead>
+                    <TableHead>Identifier</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Similarity</TableHead>
                     <TableHead className="w-40">Confidence</TableHead>
@@ -114,26 +115,26 @@ const VerificationTab: React.FC<VerificationTabProps> = ({
                         <TableCell>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              {url ? (
-                                <a
-                                  href={url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex max-w-[16rem] items-center gap-1 align-middle text-[#2E7D32] hover:underline"
-                                >
-                                  <span className="truncate">{truncateName(name)}</span>
-                                  <ExternalLink size={13} aria-hidden className="shrink-0" />
-                                </a>
-                              ) : (
-                                <span className="inline-block max-w-[16rem] truncate align-middle">
-                                  {truncateName(name)}
-                                </span>
-                              )}
+                              <span className="inline-block max-w-[14rem] truncate align-middle">
+                                {truncateName(name)}
+                              </span>
                             </TooltipTrigger>
-                            <TooltipContent>
-                              <span className="font-mono text-xs">{h.identifier}</span>
-                            </TooltipContent>
+                            <TooltipContent>{name}</TooltipContent>
                           </Tooltip>
+                        </TableCell>
+                        <TableCell>
+                          {url ? (
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[#2E7D32] hover:underline"
+                            >
+                              {h.identifier}
+                            </a>
+                          ) : (
+                            <span>{h.identifier}</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <span className="text-xs text-gray-500">{h.ident_type}</span>
