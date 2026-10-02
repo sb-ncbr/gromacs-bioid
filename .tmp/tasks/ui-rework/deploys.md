@@ -54,3 +54,4 @@
 - git tag ui-production-v1. This concludes the rework; fix-forward treated as new waves on this base.
 - Living docs: PLAN.md (status + backlog), errors/error-catalog.json (warning copy source of truth), contracts/ (openapi baselines), fixtures/ (response snapshots), backups/ (pre-rework yamls + rollback pointers).
 2026-10-01 W9: right panel absolute inset-0 bound to left column height incl. table scroll (40b88fbf5); production-v1 retagged to w9 digest.
+2026-10-01 W10: name/identifier merged column deployed (production-v1 -> w10 digest).
