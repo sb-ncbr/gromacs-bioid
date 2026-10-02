@@ -87,7 +87,16 @@ def verified_hits(doc):
                 out.append((h.get("ident_type"), h.get("identifier"), conf,
                             h.get("skeleton_sim"), h.get("skeleton_method"),
                             h.get("is_verified")))
-    out.sort(key=lambda x: x[2], reverse=True)
+    _CH = ("PUBCHEM", "INCHI")
+
+    def _fid_key(x):
+        t, ident, conf, skel = x[0], x[1], x[2], x[3]
+        is_ch = any(f in (t or "").upper() for f in _CH)
+        s = skel if isinstance(skel, (int, float)) and skel == skel else -1.0
+        if is_ch:
+            return (0, 0 if x[5] else 1, -s, -conf, str(ident), str(t))
+        return (1, 0, 0.0, -conf, str(ident), str(t))
+    out.sort(key=_fid_key)
     return out
 
 
@@ -167,35 +176,48 @@ def attempted_any(by_sig):
 
 
 def _ion_elements_of(doc):
-    """Ion-element symbols visible in fragment-unique element summaries.
+    """Ion-element symbols visible in the entry.
 
-    Ions typically aren't separate small fragments (membrane/system clusters
-    swallow them), so scan ALL unique keys' element compositions for any
-    metal/halide symbol - presence in the universe = presence evidence
-    for ion-type GT annotations (Ca/Mg/Zn/Ni/K/Na/Cl/Fe...).
+    Channel 1 (historic): scan ALL fragment-unique keys' element compositions
+    for any metal/halide symbol (ions get swallowed into system clusters, so
+    presence in a key = presence evidence for ion-type GT annotations).
+
+    Channel 2 (F19, 2026-10-01): union with the metals pass payload
+    (data.fragments.metals.present_elements). Coordinated metals are orphaned
+    from connectivity segmentation and never appear in fragment keys; the
+    metals pass scans universe atoms directly (presence-only semantics).
+    Union is ADD-ONLY: nothing is ever removed from the token channel.
     """
     fr = (((doc.get("data") or {}).get("fragments") or {}).get("unique"))
     out = set()
-    if not isinstance(fr, dict):
-        return out
     import re as _re
     el_re = _re.compile(r"elements:([^|]+)")
     metals_like = ("Ca", "Mg", "Zn", "Ni", "K", "Na", "Fe", "Cu", "Co", "Mn",
                    "Li", "Rb", "Cs", "Sr", "Ba", "Cd", "Hg", "Ag", "Au",
                    "Cl", "F", "I", "Br", "Al", "Mo", "W", "V", "Ti", "Cr", "Sn", "Pb")
-    for k in fr.keys():
-        kk = str(k)
-        try:
-            elems = el_re.search(kk)
-            if not elems:
+    if isinstance(fr, dict):
+        for k in fr.keys():
+            kk = str(k)
+            try:
+                elems = el_re.search(kk)
+                if not elems:
+                    continue
+                for token in elems.group(1).split(","):
+                    if "=" in token:
+                        sym = token.split("=", 1)[0].strip()
+                        if sym in metals_like:
+                            out.add(sym)
+            except Exception:
                 continue
-            for token in elems.group(1).split(","):
-                if "=" in token:
-                    sym = token.split("=", 1)[0].strip()
-                    if sym in metals_like:
-                        out.add(sym)
-        except Exception:
-            continue
+    # F19 union (no fragments/metals key on pre-F19 results -> no-op there)
+    try:
+        metals = (((doc.get("data") or {}).get("fragments") or {})
+                  .get("metals")) or {}
+        for sym in (metals.get("present_elements") or []):
+            if sym in metals_like:
+                out.add(sym)
+    except Exception:
+        pass
     return out
 
 
@@ -282,7 +304,7 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
         ids = ids[:: max(1, len(ids) // sample)][:sample]
 
     agg = {
-        "scanned": 0, "read_errors": 0,
+        "scanned": 0, "read_errors": 0, "not_live_skipped": 0,
         "stage_status": collections.defaultdict(collections.Counter),
         "deepest": collections.Counter(),
         "runtime": [], "molecules": [], "mol_verified_rates": [],
@@ -312,6 +334,10 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
                 print(f"  ...scanned {i}/{len(ids)} ({time.time() - t0:.0f}s)", file=sys.stderr)
             if "error" in r:
                 agg["read_errors"] += 1
+                continue
+            if not (r["stage_status"].get("load_simulation") == "success"
+                    and r["stage_status"].get("verify_results") == "success"):
+                agg["not_live_skipped"] += 1
                 continue
             agg["scanned"] += 1
             for name, st in r["stage_status"].items():
@@ -404,6 +430,7 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
                             sim_agg["any"][k] += 1
 
     out = {"scanned_entries": agg["scanned"], "read_errors": agg["read_errors"],
+           "not_live_skipped": agg["not_live_skipped"],
            "gt_covered_scanned": agg["gt_covered"],
            "scan_seconds": round(time.time() - t0, 1), "pattern": pattern}
     out["S3_per_stage"] = {n: {"total": sum(c.values()), **dict(c)}
@@ -505,7 +532,8 @@ def print_report(rep):
     full = rep.get("full")
     if full:
         print(f"\n--- NFS scan[{full.get('pattern')}]: {full['scanned_entries']} entries"
-              f" ({full.get('read_errors', 0)} read errors, {full['scan_seconds']}s) ---")
+              f" ({full.get('read_errors', 0)} read errors, {full['scan_seconds']}s,"
+              f" not-live skipped: {full.get('not_live_skipped', 0)}) ---")
         print("S3 per-stage status:")
         for name in STAGES:
             s = full["S3_per_stage"].get(name, {})
