@@ -7,7 +7,7 @@ Design contract (user-approved 2026-10-01, audit-validated):
     (audit: 27/27 blinded metals absent from EVERY instance composition;
     26/27 coordinated to protein/nucleic within 3.0 A).
   * Element vocabulary is EXACTLY the ion channel's
-    (`_ion_elements_of.metals_like` in validation campaign_stats) — 32
+    (`_ion_elements_of.metals_like` in validation campaign_stats) — 31
     symbols INCLUDING halides. Scanning metals-only would miss Cl/Br/I/F
     (evidence battery v1 bug, fixed v2).
   * Hot path is a single pass over universe atoms — NO distance math

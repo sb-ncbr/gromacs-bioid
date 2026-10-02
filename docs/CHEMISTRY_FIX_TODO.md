@@ -624,7 +624,7 @@ of global bond guessing: known story, deferred (see common-issues).
   coverability_class_drift.json (4,311 GT-key classifications; 186 mirror-vs-web
   disagreements — web-chain classification nondeterminism, see common-issues).
 
-### F19 — coordinated-metal awareness (ion channel) (PHASES 0-2 DONE 2026-10-01/02; phase 3 rollout next)
+### F19 — coordinated-metal awareness (ion channel) (DONE 2026-10-02; v9 official)
 
 - **Root (audit-proved, 30-entry stratified sample)**: single-atom metal
   residues carry no covalent bonds, so connectivity segmentation ORPHANS them
@@ -637,7 +637,7 @@ of global bond guessing: known story, deferred (see common-issues).
 - **Fix (Option 3 — presence parity, not chemistry)**: metals pass in
   `FragmentStore._record_summary` -> `data.fragments.metals`. Presence =
   single-pass element scan of universe atoms (NO distance math; vocabulary =
-  `_ion_elements_of.metals_like` VERBATIM, 32 symbols incl. halides —
+  `_ion_elements_of.metals_like` VERBATIM, 31 symbols incl. halides —
   vocabulary-mismatch bug caught by the evidence battery). Context =
   per-atom coordination for transition metals only, capped (200 atoms),
   one lazy cKDTree (O(n log n)); degrades to presence-only with recorded
@@ -661,12 +661,35 @@ of global bond guessing: known story, deferred (see common-issues).
   inchikey +0.2pp @10 traced to POSITIVE-resolution cache growth between
   runs (web nondeterminism class; v8 90.6 remains official — see
   common-issues cache-state sensitivity).
-- **Open (Phase 3)**: v2.45 worker image -> fleet rollout -> replay the
-  ion-blind cohort (~700 entries) -> audit_chem_ion new baseline; verify
-  replayed entries' fragments.metals match projection inputs
-  (rollout-validation item). Pre-existing matter for triage: 7 master test
-  failures in test_fragment_store/test_universe_facade (A/B-verified NOT
-  from F19; suspected WAVE-7/UI-side fallout).
+- **Phase 3 (rollout + replay, 2026-10-02)**: image bat3-validation-api:v3.124
+  live on validation-api (v3.123 superseded same-day by the facade fix);
+  fleet rollout DEFERRED to the F17 wave (surgical replay needs no fleet).
+  Offline replay spliced fragments/metals into the 857-entry ion-blind
+  cohort: **852 replayed + 5 idempotent, 0 errors/timeouts/mismatches**
+  (replay_fragments_metals.py, subprocess-per-entry 420s cap, EXPECTED-map
+  verified per entry; dry-run 10/10, live sample 5/5 first).
+- **Found+fixed en route (f7baeb734)**: WAVE-7 refactor missed the tuple
+  unpack in the virtual-segment branch (`props.flags = ...` on a tuple) ->
+  AttributeError in extract_molecule_instance on any __vN box (replay
+  blocker, 8/10 dry-run failures). 1-line fix + 3 regression tests.
+  The 7 pre-existing master test failures are a DIFFERENT class and persist
+  (A/B-verified before and after) — separate triage, owner pending.
+- **v9 OFFICIAL (campaign_stats_v9.json)**:
+  ion attempted 52.2 -> **97.3%**, validated 35.1 -> **95.6%** — projection
+  matched to the decimal; pdb 99.6 / uniprot 98.2 unchanged;
+  inchikey 90.6 -> 91.3 (cache-growth class, disclosed, token-channels are
+  the regression control); entry-any 99.5 -> 99.6.
+  Audit cohort (4,641/1,737): validated 841 -> **1,684 (96.9%)**,
+  no_metals 647 -> 33; per-element: Ca/Mg/Fe/Co/Mn/Cd/Cs/Li -> 100,
+  Ni 18.8 -> 91.7, **Zn 27.1 -> 93.6% (n=591)**; free-ion controls flat
+  (Cl 100, K 99.3, Na 83.3); floors disclosed (I 0->0, Na absent-class,
+  residual 53 = degraded/stripped/unresolved). New channel attribution:
+  fragments.metals:Zn 509 / Mg 247 / Ca 219 / Mn 46 / Ni 41.
+- **Ops notes folded into common-issues.md**: kubectl strategic-merge matches
+  containers BY NAME (phantom-container trap: patch targeted 'validation-api'
+  but the container is 'api'); ephemeral /tmp ops scripts must live on NFS
+  (fence watchdog lost on api-pod roll — revival rides the F17 wave);
+  worker fleet still v3.122 until that wave.
 
 ### NEXT proposed tasks (specced, awaiting scheduling; full specs in
 ### .tmp/TASKS_next_wave.md 2026-10-01; promote into this doc when scheduled)

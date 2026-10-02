@@ -269,8 +269,23 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
 - 7 PRE-EXISTING master test failures (test_fragment_store/
   test_universe_facade, e.g. KeyError: Segment 'SOL' not found) A/B-verified
   NOT from F19 — suspected WAVE-7/UI-side fallout; awaiting triage owner.
+- **F19 COMPLETE — v9 OFFICIAL (2026-10-02)**: ion att 52.2->97.3%, val
+  35.1->95.6% (projection exact to the decimal); pdb/uniprot unchanged;
+  inchikey 90.6->91.3 (cache-growth, disclosed); entry-any 99.6. Audit cohort
+  (4,641): validated 841->1,684 (96.9%); Zn 27.1->93.6%; no_metals 647->33.
+  Rollout: bat3-validation-api:v3.124 on validation-api; fleet roll deferred
+  to F17 wave. Replay: 857-cohort spliced (852+5 idempotent, 0 errors/
+  timeouts/mismatches) via replay_fragments_metals.py. En-route fixes:
+  (a) f7baeb734 WAVE-7 tuple-unpack in virtual-segment branch (was the
+  replay blocker; 3 regression tests); (b) kubectl container-name phantom
+  trap + ephemeral-watchdog-loss lessons in common-issues; (c) PodSecurity
+  restricted admission now requires per-container securityContext (worker
+  deploy already compliant; api deploy patched). The 7 pre-existing master
+  test failures are a DIFFERENT class, still open for triage.
 - Open besides: 334 corrupt download triage; phase-2 audit_gap; FE bond-guess
-  (deferred); zombie-PID exit-hang pattern (harmless, reap on pod touches).
-  Next: **F19 phase 3** (v2.45 image -> fleet rollout -> replay ~700-entry
-  ion-blind cohort -> new audit baseline); then optional F-residual ranking
-  wave from the 386-row recovery class (Task B).
+  (deferred); zombie-PID exit-hang pattern (harmless, reap on pod touches);
+  fence-watchdog revival (rides F17 wave — NFS-safe this time).
+  Next options: **F17** (subprocess isolation + 437 replay — deferred by
+  user, spec stands), **F-residual ranking wave** (386-row recovery class
+  from Task B; 210 rows already have >=0.7 candidates in-window), 334
+  corrupt-entry triage, phase-2 audit_gap.

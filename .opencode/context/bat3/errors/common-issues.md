@@ -421,6 +421,41 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
   and when a fresher rerun is wanted, run it as a new official version
   (v9...) rather than silently re-quoting.
 
+## kubectl strategic-merge patch matches containers BY NAME (phantom trap, 2026-10-02)
+
+- `-p '{"spec":{"template":{"spec":{"containers":[{"name":"validation-api","image":...}]}}}}'`
+  on a deployment whose only container was named `api` did NOT patch it —
+  strategic merge keyed by name CREATED a second, phantom container (new
+  image, default CMD, no env/mounts) while the workhorse stayed old. Rollout
+  even succeeded (2/2 ready) and admission was satisfied by the phantom's
+  compliant securityContext.
+- Rules: always `kubectl get deploy X -o jsonpath` the ACTUAL container
+  names before patching; prefer `kubectl set image deploy/X <name>=img`;
+  after any strategic patch, verify the RESULTING template has the intended
+  container count and each container's image/mounts.
+
+## Ephemeral ops scripts belong on NFS, not pod /tmp (2026-10-02)
+
+- The fence watchdog lived at /tmp/fence_watchdog_v2.py on the validation-api
+  pod and was lost on the api-pod roll (v3.123). Corpus on NFS
+  (quarantine_smiles_spin_2026-09-27.txt, 437) survived because it was NFS.
+  Rule: any ops script meant to survive pod churn gets an NFS home
+  (/data/validation/) and pod restarts only re-launch pointers. Watchdog
+  revival is bundled with the F17 wave (it guards that replay; fleet is
+  idle meanwhile — exposure accepted by ruling).
+
+## WAVE-7 refactor class: tuple-unpack missed call sites (2026-10-02)
+
+- _compute_flags() -> (flags, na_meta) since WAVE-7; the virtual-segment
+  branch kept assigning the whole tuple to props.flags -> AttributeError in
+  extract_molecule_instance on __vN universes. Fixed f7baeb734 + regression
+  tests. Post-refactor rule: after changing a helper's return signature,
+  grep ALL call sites (including feature branches: virtual segments,
+  _discover_* paths) and add an integration test per consumer. NOTE: the 7
+  pre-existing master failures in test_fragment_store/test_universe_facade
+  are a DIFFERENT class and REMAIN OPEN for triage (A/B-verified before and
+  after this fix).
+
 ## FE/metal vdw radii poison global bond guessing (known, deferred)
 
 - MDA DefaultGuesser raises on unknown vdw types (FE in HEM, other metals),
