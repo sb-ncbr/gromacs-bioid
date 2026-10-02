@@ -141,3 +141,29 @@ class FragmentStore:
              "atoms_per_copy": inst.atom_count}
             for inst in self._instances
         ])
+
+        # F19: presence/coordination scan for ion-channel elements (metals
+        # incl. halides). Add-only; never fails analyze_universe.
+        try:
+            from .metal_scan import scan_metals
+            visible = set()
+            for inst in self._instances:
+                for el in (inst.element_composition or {}):
+                    visible.add(el)
+            self.results.set_data(
+                "fragments/metals",
+                _convert_to_native(scan_metals(self.facade.universe,
+                                               visible_elements=visible)),
+            )
+        except Exception as exc:  # defensive: metals scan must not break the step
+            try:
+                self.results.set_data(
+                    "fragments/metals",
+                    {"schema": 1, "error": f"{type(exc).__name__}: {exc}",
+                     "present_elements": [], "element_atom_counts": {},
+                     "atoms": [],
+                     "context": {"computed": False, "reason": "scan_crash",
+                                 "transition_atom_count": 0},
+                     "newly_visible_elements": []})
+            except Exception:
+                pass
