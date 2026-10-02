@@ -421,7 +421,9 @@ class LoadedUniverse:
                     molecule_count=len(members),
                     residue_count=len(frag0.residues),
                 )
-                props.flags = self._compute_flags(frag0, frag0)
+                props.flags, na_meta = self._compute_flags(frag0, frag0)
+                props.na_detection = na_meta["na_detection"]
+                props.na_structural_promotions = na_meta["na_structural_promotions"]
                 self._segment_properties[vname] = props
         if self._virtual_fragments:
             logger.info(
