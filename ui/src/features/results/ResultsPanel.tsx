@@ -173,7 +173,6 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
                 <TableRow>
                   <TableHead className="w-12" />
                   <TableHead>Name</TableHead>
-                  <TableHead>Identifier</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Similarity</TableHead>
                   <TableHead className="w-36">Confidence</TableHead>
@@ -207,26 +206,26 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
                       <TableCell>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <span className="inline-block max-w-[16rem] truncate align-middle">
-                              {truncateName(name)}
-                            </span>
+                            {url ? (
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex max-w-[16rem] items-center gap-1 align-middle text-[#2E7D32] hover:underline"
+                              >
+                                <span className="truncate">{truncateName(name)}</span>
+                                <ExternalLink size={13} aria-hidden className="shrink-0" />
+                              </a>
+                            ) : (
+                              <span className="inline-block max-w-[16rem] truncate align-middle">
+                                {truncateName(name)}
+                              </span>
+                            )}
                           </TooltipTrigger>
-                          <TooltipContent>{name}</TooltipContent>
+                          <TooltipContent>
+                            <span className="font-mono text-xs">{h.identifier}</span>
+                          </TooltipContent>
                         </Tooltip>
-                      </TableCell>
-                      <TableCell>
-                        {url ? (
-                          <a
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[#2E7D32] hover:underline"
-                          >
-                            {h.identifier} <ExternalLink size={13} aria-hidden />
-                          </a>
-                        ) : (
-                          <span>{h.identifier}</span>
-                        )}
                       </TableCell>
                       <TableCell>
                         <span className="text-xs text-gray-400">{h.ident_type}</span>
