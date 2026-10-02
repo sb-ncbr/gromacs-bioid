@@ -249,7 +249,28 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
   numbers stand unrevised. Artifacts: coverability_probe.json,
   coverability_rows.jsonl, residual_failing_rows_v8.jsonl,
   coverability_ik_cache.json, coverability_classes.json (+drift) on NFS.
+- **F19 coordinated-metal awareness (ion channel) — PHASES 0-2 DONE**:
+  audit proved the mechanism (single-atom metal residues orphaned from
+  connectivity segmentation; 27/27 invisible at instance layer, 26/27
+  protein/nucleic-coordinated <=3.0 A; entry 4341 arithmetic). Fix = presence
+  parity (Option 3): metal_scan pass -> fragments/metals (vocabulary =
+  metals_like verbatim incl. halides; transition-only capped context via
+  lazy cKDTree; clean degrades) + _ion_elements_of add-only union. Commits
+  dfea2a4d7 (15/15 tests) + c72688e7e (23/23; scripts/campaign_stats.py now
+  canonical synced source). Official-frame projection (old==v8 anchors
+  bit-exact): ion att 52.2->97.3%, val 35.1->95.6%, +1,057 flips 0 negative;
+  Zn 26.2->92.3. Perf 83ms@350k salt / 378ms@348k mixed. NFS metric
+  .bak-pre-metals; no-move check: ion/pdb/uniprot/entry-any BIT-IDENTICAL.
+  Organic inchikey +0.2pp @10 in same-cohort rerun = positive-resolution
+  cache growth (web nondeterminism; v8 90.6 stays official — see
+  common-issues cache-state sensitivity).
+- **Task C / F17 ruling (user, 2026-10-02): 437 stay quarantined; no F17 work
+  this wave.** F18 folded into the same standing spec for later.
+- 7 PRE-EXISTING master test failures (test_fragment_store/
+  test_universe_facade, e.g. KeyError: Segment 'SOL' not found) A/B-verified
+  NOT from F19 — suspected WAVE-7/UI-side fallout; awaiting triage owner.
 - Open besides: 334 corrupt download triage; phase-2 audit_gap; FE bond-guess
   (deferred); zombie-PID exit-hang pattern (harmless, reap on pod touches).
-  Next per plan: F19 design review (ion channel), then F17 design review;
-  optional F-residual ranking wave from the 386-row recovery class.
+  Next: **F19 phase 3** (v2.45 image -> fleet rollout -> replay ~700-entry
+  ion-blind cohort -> new audit baseline); then optional F-residual ranking
+  wave from the 386-row recovery class (Task B).

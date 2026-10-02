@@ -624,23 +624,59 @@ of global bond guessing: known story, deferred (see common-issues).
   coverability_class_drift.json (4,311 GT-key classifications; 186 mirror-vs-web
   disagreements — web-chain classification nondeterminism, see common-issues).
 
+### F19 — coordinated-metal awareness (ion channel) (PHASES 0-2 DONE 2026-10-01/02; phase 3 rollout next)
+
+- **Root (audit-proved, 30-entry stratified sample)**: single-atom metal
+  residues carry no covalent bonds, so connectivity segmentation ORPHANS them
+  — absent from every instance composition, no `elements:` token, blind ion
+  channel. 27/27 sample metals invisible at the instance layer; 26/27
+  coordinated to protein/nucleic within 3.0 A; metals are ALWAYS present in
+  the exported structure (entry 4341 arithmetic: protein 4,051 + TRS 20 +
+  Zn 1 = 4,072 atoms; the Zn is literally the last serial). Free ions were
+  already ~100% only because system/lipid clusters swallow them by luck.
+- **Fix (Option 3 — presence parity, not chemistry)**: metals pass in
+  `FragmentStore._record_summary` -> `data.fragments.metals`. Presence =
+  single-pass element scan of universe atoms (NO distance math; vocabulary =
+  `_ion_elements_of.metals_like` VERBATIM, 32 symbols incl. halides —
+  vocabulary-mismatch bug caught by the evidence battery). Context =
+  per-atom coordination for transition metals only, capped (200 atoms),
+  one lazy cKDTree (O(n log n)); degrades to presence-only with recorded
+  reasons (no_elements/no_positions/no_scipy/cap_exceeded/scan_crash).
+  Metric: `_ion_elements_of` ADD-ONLY union with
+  `fragments.metals.present_elements` (no-op on pre-F19 results).
+  bound/free/associated is payload for future waves, NOT S7 gating.
+- **Evidence (f19_evidence2.json; old channel reproduces v8 anchors bit-exact
+  on the official frame)**: projection att 52.2 -> **97.3%**, val 35.1 ->
+  **95.6%**; +1,057 validated-positive flips, 0 negative, 0 attempted-lost;
+  Zn 26.2 -> 92.3 (n=736), Mg/Ca/Fe/Co/Cd -> 100, Ni 16.4 -> 92.7,
+  controls K/Cu flat. Residual gap explained: 50 entries w/o system.mmcif,
+  4 element-unresolved, Na genuinely absent in some boxes.
+- **Perf gate (worker image, real code)**: 83 ms @350k salt; 378 ms @348k
+  mixed + 12Zn (KDTree build dominates); cap-degrade 30 ms; presence at
+  15-16 ms/300k atoms.
+- **Commits**: dfea2a4d7 (scan + 15/15 tests incl. FragmentStore
+  integration), c72688e7e (metric union + source-of-truth sync
+  scripts/campaign_stats.py canonical, 23/23). NFS metric `.bak-pre-metals`.
+  **No-move check**: ion/pdb/uniprot/entry-any BIT-IDENTICAL; organic
+  inchikey +0.2pp @10 traced to POSITIVE-resolution cache growth between
+  runs (web nondeterminism class; v8 90.6 remains official — see
+  common-issues cache-state sensitivity).
+- **Open (Phase 3)**: v2.45 worker image -> fleet rollout -> replay the
+  ion-blind cohort (~700 entries) -> audit_chem_ion new baseline; verify
+  replayed entries' fragments.metals match projection inputs
+  (rollout-validation item). Pre-existing matter for triage: 7 master test
+  failures in test_fragment_store/test_universe_facade (A/B-verified NOT
+  from F19; suspected WAVE-7/UI-side fallout).
+
 ### NEXT proposed tasks (specced, awaiting scheduling; full specs in
 ### .tmp/TASKS_next_wave.md 2026-10-01; promote into this doc when scheduled)
-- **A — F19 coordinated-metal awareness (ion channel)**: make analyze_universe
-  emit bound-metal species (element + coordination context) so coordinated
-  Zn/Mg/Ca/Fe/Ni are visible to the ion path. Evidence: ion validated 48.4%
-  overall but Zn 27.1% (n=591) vs free Cl/K/Na ~100%; no_metals frag type =
-  protein x642. Audit-first (detection rule from data), GT-blind detection,
-  free-ion regression gate ~100%. Target: attempted 52% -> >90%, close the
-  per-element table toward free ions.
+- **A — F19: PHASES 0-2 DONE (see above); phase 3 rollout scheduled.**
 - **B — coverability probe: DONE (2026-10-01)** — see "Task B" section above.
   Follow-up unlocked: 386-row pipeline-recoverable class (210 with >=0.7
   in-window candidate) becomes the F-residual ranking-wave input;
   IN_MIRROR__NOT_PROPOSED 171 boxchem rows = requeue candidates.
-- **C — F17 generator-budget subprocess isolation + 437 replay** (WAVE 6 spec
-  stands; added evidence: signature_isolated_timeout x3,320 in S6 means an
-  isolation path EXISTS — step 0 is auditing why MolToSmiles spin bypassed it;
-  spawn-not-fork; subprocess per segment (not per generator) to bound spawn
-  overhead; F18 HTTP timeouts folded into the same wrapper; 437-strong
-  quarantine corpus is the regression test; replay only after fixed image is
-  fleet-wide, acceptance = watchdog quiet + deterministic `*_timeout` outcomes).
+- **C — F17 generator-budget subprocess isolation + 437 replay** — **DEFERRED
+  by user ruling (2026-10-02): the 437 stay quarantined for now.** Spec stands
+  unchanged for a later session (signature_isolated_timeout x3,320 step-0
+  audit; spawn-not-fork; subprocess per segment; F18 HTTP timeouts folded in;
+  replay only after fixed image fleet-wide).

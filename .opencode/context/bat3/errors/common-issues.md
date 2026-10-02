@@ -402,6 +402,25 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
   skeletize.from_smiles -> same ion rule) — 4,311 keys in ~45s offline.
   Never run web-dependent classification/sim-resolution cold from worker pods.
 
+## S7 full-scan numbers are resolution-cache-state sensitive (2026-10-02)
+
+- Re-running campaign_stats --full --sim on an UNCHANGED cohort can move
+  organic inchikey @k by tenths of a point. Sim GT<->candidate resolution
+  chains are web-backed with POSITIVES-ONLY NFS caches (inchikey_smiles,
+  pubchem_smiles); any audit/probe run on a worker pod (egress works) keeps
+  adding positives, so pairs unresolvable at v8-time later compute sims >0.
+  Observed same-cohort rerun: inchikey @1 56.3->56.9 (~35 ann), @10 90.6->90.8.
+- The ION channel is elements-token-based (no web sims) -> it is the
+  sensitive control: F19 no-move check had ion/pdb/uniprot/entry-any
+  BIT-IDENTICAL while organic drifted. Resolution-dependent channels drift
+  with cache growth; resolution-independent ones don't.
+- Hygiene rules: official numbers live with their run artifact + cache state
+  (v8 = 90.6 stays canonical); no-move/regression gates must compare
+  token-based channels bit-exact and treat organic deltas with disclosed
+  cache-growth provenance; for quote-level prose prefer the PUBLISHED run,
+  and when a fresher rerun is wanted, run it as a new official version
+  (v9...) rather than silently re-quoting.
+
 ## FE/metal vdw radii poison global bond guessing (known, deferred)
 
 - MDA DefaultGuesser raises on unknown vdw types (FE in HEM, other metals),
