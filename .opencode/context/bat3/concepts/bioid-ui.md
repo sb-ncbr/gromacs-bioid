@@ -18,6 +18,7 @@ Production web frontend for BAT3 identification runs. Full rewrite (2026-10-01, 
 - DS `custom_setup.css` (`@layer`) cannot beat `setup.css` unlayered `:root` purple — override unlayered (`html[data-theme="custom"]`).
 - Deploys: worktree builds only, `pipefail` chains, `docker image inspect` preflight, rollout-timeout ⇒ rollback.
 - Agent ops: long CLI sessions die after ~15–60 min; per-deliverable commits + disk salvage recover losslessly; qwen3.8-27b reliable, qwen3.8-flash-next stalled on long briefs.
+- Deploy truthing: unique rollout-trigger tags + html-asset-hash parity check (P2-7); w12 settled final state.
 - Height-constraining siblings in grids: flex h-full alone is circular — use absolute-inset-0 decoupling (P2-5). ResultsPanel uses it on xl.
 - Compact table pattern (w10): Name cell = database link, identifier revealed on hover tooltip (fewer columns, same information).
 

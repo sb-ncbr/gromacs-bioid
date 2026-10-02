@@ -20,7 +20,7 @@
 ## Deployment (ceitec-biodata-ns)
 - Images: `cerit.io/tomsko/bat3-frontend` (UI, from `Dockerfile.frontend`, nginx-unprivileged:8081) and `cerit.io/tomsko/bat3-api` (API, `Dockerfile.api`).
 - Build ONLY from a clean git worktree (`git worktree add /tmp/opencode/deploy-wN <commit>`). Dirty-tree builds pulled in uncommitted work before; `.gitignore` collisions hid `ui/src/lib` before the fix (see Landmines).
-- Deploy chain must use `set -o pipefail` and verify `docker image inspect` before `kubectl set image`. Rollouts: watch `kubectl rollout status`; on timeout roll back immediately.
+- Deploy chain MUST use `set -o pipefail`; verify `docker image inspect` before `kubectl set image`; trigger rollouts ONLY with UNIQUE tag strings (a recycled tag string makes `set image` a silent no-op - P2-7); moving pointers (`production-v1`) are registry markers, never rollout triggers. Post-deploy verification = html-asset-hash parity: html served live == html baked in the deployed image. On rollout timeout: roll back immediately.
 - Rollback: images `bat3-frontend:legacy-pre-rework` (old UI), `bat3-api:ui1` (old API); git tags `ui-rework-w1..w8`, `ui-production-v1`; YAMLs in `.tmp/tasks/ui-rework/backups/`.
 - Ingress: `/api /files /health /docs /openapi.json` → api service; `/` → web (SPA). Editing rules in `bat3-chart/templates/ingress.yaml`.
 
@@ -29,6 +29,7 @@
 2. DS theming: `setup.css` declares its purple default at **unlayered** `:root`; `custom_setup.css` is `@layer`-wrapped and loses. Override unlayered with higher-specificity selectors.
 3. Masked exit codes (`cmd | tail`) in deploy chains once rolled out a nonexistent image tag → brief outage. `pipefail` + image preflight now mandatory.
 4. Legacy repo history tracked `ui/node_modules` + `dist`; index was purged (history bloat remains; filter-repo is way-later).
+5. `kubectl set image` with an unchanged tag string = silent no-rollout; served w9 for ~1 day while w10/w11 were believed live. Detection = html-asset-hash mismatch; rule = unique rollout-trigger tags (P2-7).
 
 ## Where things live
 `.tmp/tasks/ui-rework/` — PLAN.md (workstreams, backlog), CONTEXT.md (coder bundle), errors/, contracts/, fixtures/ (live snapshots), backups/, deploys.md (append-only deploy + incident log), briefs/ (coder briefs), SESSION-RESUME.md.

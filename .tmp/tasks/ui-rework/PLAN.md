@@ -124,3 +124,8 @@ Thinking/planning/QA/copy: **kimi-k3** · Implementation: **qwen3.8-27b** (preci
 - backend: 2 pre-existing API test failures (test_api.py molecules fixture + config round-trip)
 - queue position accuracy upgrade (currently pending-ordered estimate)
 - a11y/deeper mobile pass; bundle chunk-size polish
+
+
+## PROJECT CLOSED (2026-10-02) ✅
+Post-cutover polish delivered: W8 panel bottom-align attempt -> W9 absolute-decoupling (real fix) -> W10 merged Name/Identifier panel column -> W11 tab merge (reverted; user wants tab two-column) -> W12 truth deploy & P2-7 discovery (same-tag set-image no-op had hidden w10/w11 for ~1 day; html-asset-hash parity now standard verification).
+Final live: bat3-frontend:production-v1 (= w12/w10 digest f810a51e; deployment references :w12) + bat3-api:ui-rework-b1 + WS7 ingress. All user visual passes signed off. UI topic CLOSED; future work starts new threads from SESSION-RESUME.md.

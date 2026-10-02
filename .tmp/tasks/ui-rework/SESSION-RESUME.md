@@ -1,6 +1,6 @@
 # SESSION RESUME — BioID UI Rework (compaction-ready)
 
-## State: COMPLETE, in production; post-cutover polish waves W8–W10 shipped (panel bottom-align via absolute decoupling w9, merged Name/Identifier column w10). Tip: cf4eee824 + w11 (501887476, verification-tab merged column parity; prod = w11 digest). HYGIENE DONE x2 - this file is the cold-start point
+## State: CLOSED (2026-10-02, hygiene round 3). Production: web=bat3-frontend:w12 (=production-v1 pointer, digest f810a51e == w10; panel merged col, tab two-col, absolute-bound height), api=bat3-api:ui-rework-b1, WS7 ingress. HYGIENE DONE x3 - this file is the cold-start point. Topic closed; new work = new thread.
 Live: web=bat3-frontend:production-v1 (digest = w10), api=bat3-api:ui-rework-b1, ingress WS7-fixed. Site: bioid-ceitec.dyn.cloud.e-infra.cz (200).
 
 ## What was built (all gated/user-verified)

@@ -62,3 +62,5 @@
 - P2-7 discovered: production-v1 same-string set-image no-op'd w10+w11 rollouts; pod served w9 for ~1 day. User report (two columns) led to root cause via html-asset-hash parity check.
 - State now: tab reverted to two-column (ba7b9921f, user preference), panel merged. w12 digest == w10 digest f810a51e (ui/ byte-identical to w10 worktree - reproducibility confirmed).
 - Deploy discipline updated: unique tags trigger rollouts; production-v1 = registry pointer only; html-asset-hash parity = standard post-deploy verification.
+
+## 2026-10-02: UI rework formally CLOSED. All waves + fix-forwards live & verified; topic archived.
