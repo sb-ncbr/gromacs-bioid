@@ -503,3 +503,18 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
 - Signature: repeated `set image x=:production-v1` after retagging; rollout "succeeds" instantly; pod serves OLD content; html asset hash inside image != live html asset hash
 - Cause: deployment spec unchanged (same string) -> no new ReplicaSet; pod keeps old pull
 - Fix: deploy with UNIQUE tag strings (:w12); verify parity: live html asset == image html asset (docker run --rm --entrypoint sh IMG -c "cat /var/www/app/index.html"). Use moving tags (production-v1) as registry pointers only, never as rollout trigger
+
+## V-13: never co-schedule campaign_stats + audit scripts on the api pod (OOMKill)
+- Signature: api container restart exit 137 (OOMKilled) mid-run; nohup'd long-runs dead; log tails stop mid-phase; `lastState.terminated.reason=OOMKilled`
+- Cause: audit (GT classification structures) + full-frame stats (~1.15M pairs + entry parse) together exceed pod memory; they ran solo fine for months
+- Fix: serialize heavy NFS loads on the api pod — stats first, audit after; if parallelism needed, put one job on a WORKER pod (memory headroom + separate limit)
+
+## V-14: long-run artifacts + scripts on /tmp = lost on any container restart (generalized)
+- Signature: after pod roll/OOM/restart, progress logs and helper scripts vanished; rerun from scratch
+- Cause: /tmp is container-ephemeral; deployments/pods cycle without warning (rollouts, node drains, OOM)
+- Fix: ALL long-run inputs, scripts, and logs live on NFS (/data/validation/logs/...); wrapper commands reference NFS paths only. Extends the fence-watchdog lesson; 2026-10-02: F-residual 3-chunk logs + audit script both lost this way and re-homed
+
+## V-15: results.json pipeline payload is DOUBLE-NESTED (analysis scripts read empty)
+- Signature: diff/audit scripts report "0 changes" or empty verification even though pipeline data exists
+- Cause: results.json top level is schema_version/tasks/artifacts/data; the pipeline payload lives under the "data" key — verification at results["data"]["verification"], identifiers at results["data"]["identifiers"]; reading results["verification"] (top level) silently yields None
+- Fix: always d.get("data",{}).get("verification") (or the ResultsManager accessors); assert non-empty before concluding "no change" — a 0-vs-0 match is indistinguishable from a missed path

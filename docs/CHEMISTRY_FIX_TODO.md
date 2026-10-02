@@ -691,7 +691,7 @@ of global bond guessing: known story, deferred (see common-issues).
   (fence watchdog lost on api-pod roll — revival rides the F17 wave);
   worker fleet still v3.122 until that wave.
 
-### F-residual ranking wave (IN FLIGHT 2026-10-02; final numbers target)
+### F-residual ranking wave (DONE 2026-10-02; S7 v10 OFFICIAL)
 
 - **Basis**: Task B evidence (541-row v8 residual, bucketted). Included:
   411 mirror-present failing rows (NOT_PROPOSED 264 + SURFACED_BUT_LOST 122
@@ -702,19 +702,43 @@ of global bond guessing: known story, deferred (see common-issues).
   resolvers incl. local-mirror hfamily/formula caps + verification with
   F16-era manager; atomic-on-diff). Rationale: entries computed under
   older-code resolvers; retrieval gap is a code-era artifact, not content.
-- **Fleet**: validation-worker x164 + validation-api rolled to
-  bat3-validation-api:v3.124 (uniform; F19 gates green on both).
-- **State at compaction**: replay running on 3 workers (chunks 136/136/134)
-  after clean dry-run (10/10 changed, +42 newly-verified chem hits;
-  chemCandidates counter reports 0/0 — helper format stale vs current
-  identifiers shape; deltas come from post-hoc regen).
-- **Completion protocol**: (1) chunk summaries + error sweep; (2) rerun
-  coverability_probe phase-0 for per-row flip accounting (bucket-level
-  before/after); (3) audit_chem_ion + S7 v10 official; publish v8 -> v9 ->
-  v10 evolution with raw + coverable-normalized side-by-side, token-channels
-  as regression controls, organic cache-growth provenance.
-- **Do-not**: no gate/threshold edits; no GT-aware logic; the 130-row floor
-  and tie-cluster noise stay in every table.
+- **Execution**: initial 3-chunk run lost to a fleet rollout mid-wave
+  (15:16-15:24 UTC; /tmp logs died with pods — NFS logging rule); recovered
+  same day as a **41-pod x 10-entry fan-out, 0 errors, 406/406 processed in
+  ~35 min** (logs on NFS: logs/riv2/). Snapshot diff ground truth:
+  118/406 entries moved (+112/-6), net **+1,520 chem-verified hits**; the
+  few negatives are same-cluster redistributions/cap effects, zero bucket
+  regressions measured downstream.
+- **S7 v10 official (campaign_stats_v10.json, 2026-10-02 17:27Z)**:
+  **inchikey @10 raw 90.6 -> 91.3* -> 92.9** (@5 88.2, @1 59.2);
+  ion validated 95.6 FLAT (F19 channel unchanged — regression control);
+  pdb 99.6 / uniprot 98.2 FLAT. (*v9 organic move = cache-growth
+  provenance, disclosed.)
+- **Coverable-normalized frame (gate-verified: probe regen identical to
+  v10 anchors, delta +0 / 92.9 == 92.9)**:
+  raw **92.9** | excl. not-in-mirror **95.0** | excl. not-in-mirror +
+  variant layer **95.4** (Task B frame was 90.6 / 92.7 / 93.1).
+- **Flip accounting (541 -> 410 residual, probe rerun with
+  PROBE_ANCHOR_JSON=campaign_stats_v10.json; baselines pinned as
+  *.taskB-baseline)**: **131 rows FIXED, 0 regressions, 0 bucket
+  transitions.** NOT_PROPOSED 264->182 (82 fixed, 31%);
+  SURFACED_BUT_LOST 122->77 (45 fixed, 37%); FIRST_BLOCK_ONLY 25->21 (4);
+  GT_NOT_IN_MIRROR 130->130 (floor untouched, by design).
+  131/5784 = +2.26pp — independently reproduces the raw 90.6->92.9 move.
+- **Residual residue (410 rows)**: 182 NOT_PROPOSED (114 boxchem = requeue
+  class), 77 SURFACED_BUT_LOST, 21 FIRST_BLOCK_ONLY, 130 not-in-mirror
+  floor; probe flags 148 content-unattainable rows. Audit (v10-era,
+  post-v3.121 frame, 4053 organic annotations): @10 hit-rate 84.5%;
+  top residual classes engine_miss_identity 273, band_buried 222,
+  gt_absent_best<0.3 91, prodrug_band 27.
+- **Ops events this wave (all in common-issues)**: (a) never co-schedule
+  campaign_stats + audit on the api pod — OOMKilled 16:28Z, serialize
+  instead; (b) long-run scripts must live on NFS, not /tmp (audit script
+  lost in the same OOM restart; fence-watchdog lesson generalized);
+  (c) results.json pipeline payload is double-nested
+  (results["data"]["verification"] / ["data"]["identifiers"]).
+- **Do-not (still binding)**: no gate/threshold edits; no GT-aware logic;
+  the 130-row floor and tie-cluster noise stay in every table.
 
 ### NEXT proposed tasks (specced, awaiting scheduling; full specs in
 ### .tmp/TASKS_next_wave.md 2026-10-01; promote into this doc when scheduled)

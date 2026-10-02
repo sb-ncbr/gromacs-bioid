@@ -282,17 +282,22 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
   restricted admission now requires per-container securityContext (worker
   deploy already compliant; api deploy patched). The 7 pre-existing master
   test failures are a DIFFERENT class, still open for triage.
-- **F-residual ranking wave IN FLIGHT (2026-10-02; resume per
-  .tmp/PICKUP_AFTER_COMPACTION.md)**: fleet rolled — validation-worker x164
-  AND validation-api on bat3-validation-api:v3.124 (F19 gates green).
-  Cohort 406 entries / 411 mirror-present rows (Task B buckets; 130
-  not-in-mirror excluded, floor disclosed; 289MB pre-replay snapshot taken).
-  replay_identify_verify running chunked on 3 workers (dry-run clean:
-  10/10 changed, +42 verified chem hits; chemCandidates counter = stale-
-  format reporting artifact, ignored). Remaining: chunk completion sweep
-  -> coverability_probe phase-0 flip accounting -> audit + **S7 v10
-  official** with v8->v9->v10 evolution table (raw + normalized together,
-  token-channel controls, cache-growth provenance).
+- **F-residual ranking wave DONE (2026-10-02; S7 v10 OFFICIAL)**: 406-entry
+  cohort replayed via 41-pod fan-out (0 errors; 3-chunk v1 lost to a fleet
+  rollout — /tmp logs lesson, recovered same-day). Snapshot diff ground
+  truth: 118 movers (+112/-6), net +1,520 chem-verified hits.
+  **inchikey @10 raw 90.6 -> 91.3* -> 92.9; ion 95.6 / pdb 99.6 / uniprot
+  98.2 all FLAT (controls).** Coverable-normalized frame (gate-verified
+  regen==anchors): raw 92.9 / excl-not-in-mirror 95.0 / excl-floor+variant
+  95.4. **Flip accounting: 541 -> 410 residual; 131 FIXED, 0 regressions,
+  0 bucket transitions** (NOT_PROPOSED 264->182, SURFACED 122->77,
+  FIRST_BLOCK 25->21, not-in-mirror floor 130->130 by design); 131/5784
+  = +2.26pp, reproduces the raw move. Residue: 114 boxchem requeue class,
+  77 surfaced-lost, 148 content-unattainable; audit top classes
+  engine_miss_identity 273 / band_buried 222. Ops lessons added: no
+  stats+audit co-scheduling on api pod (OOMKill); long-run scripts on NFS
+  not /tmp; results.json double-nesting. Worker requests now cpu=250m
+  (limits unchanged), 164/164 rolled.
 - Open besides: 334 corrupt download triage; phase-2 audit_gap; FE bond-guess
   (deferred); zombie-PID exit-hang pattern (harmless, reap on pod touches);
   fence-watchdog revival (rides F17 wave — NFS-safe this time);
