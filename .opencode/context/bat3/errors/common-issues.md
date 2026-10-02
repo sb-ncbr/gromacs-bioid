@@ -497,3 +497,9 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
 ## P2-6: worktree add fails "Could not reset index file"
 - Cause: stale worktree registrations (removed dirs w/o `worktree remove`, crashed sessions)
 - Fix: `git worktree remove <path> --force` leftovers + `git worktree prune`; retry. Verify with `git worktree list`
+
+
+## P2-7: kubectl set image to the SAME tag string = silent no-op (no rollout)
+- Signature: repeated `set image x=:production-v1` after retagging; rollout "succeeds" instantly; pod serves OLD content; html asset hash inside image != live html asset hash
+- Cause: deployment spec unchanged (same string) -> no new ReplicaSet; pod keeps old pull
+- Fix: deploy with UNIQUE tag strings (:w12); verify parity: live html asset == image html asset (docker run --rm --entrypoint sh IMG -c "cat /var/www/app/index.html"). Use moving tags (production-v1) as registry pointers only, never as rollout trigger

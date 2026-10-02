@@ -56,3 +56,9 @@
 2026-10-01 W9: right panel absolute inset-0 bound to left column height incl. table scroll (40b88fbf5); production-v1 retagged to w9 digest.
 2026-10-01 W10: name/identifier merged column deployed (production-v1 -> w10 digest).
 2026-10-01 W11: Verification tab merged column parity (was the table user still saw two columns in). production-v1 -> w11.
+
+
+## 2026-10-02 W12 truthing deploy + panel merge ACTUALLY live
+- P2-7 discovered: production-v1 same-string set-image no-op'd w10+w11 rollouts; pod served w9 for ~1 day. User report (two columns) led to root cause via html-asset-hash parity check.
+- State now: tab reverted to two-column (ba7b9921f, user preference), panel merged. w12 digest == w10 digest f810a51e (ui/ byte-identical to w10 worktree - reproducibility confirmed).
+- Deploy discipline updated: unique tags trigger rollouts; production-v1 = registry pointer only; html-asset-hash parity = standard post-deploy verification.
