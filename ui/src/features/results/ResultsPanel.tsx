@@ -111,7 +111,7 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
 
   return (
     <TooltipProvider delayDuration={150}>
-      <Card className="flex h-full flex-col">
+      <Card className="flex h-full flex-col xl:absolute xl:inset-0">
         <CardHeader>
           <div className="flex items-center gap-2 flex-wrap">
             <CardTitle className="text-lg">Segment: {segment}</CardTitle>
@@ -167,7 +167,7 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
               </Alert>
             )
           ) : (
-            <div className="flex-1 min-h-0 overflow-y-auto rounded-md border border-border">
+            <div className="max-h-[420px] min-h-0 flex-1 overflow-y-auto rounded-md border border-border xl:max-h-none">
             <Table>
               <TableHeader className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_var(--border)]">
                 <TableRow>
