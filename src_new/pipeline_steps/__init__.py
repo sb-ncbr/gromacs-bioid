@@ -41,6 +41,46 @@ logger = logging.getLogger("base")
 _STAGE_BUDGET_STATE_KEY = "stage_deadline_epoch"
 _STAGE_BUDGET_DEFAULT_S = int(os.environ.get("VALIDATION_STAGE_BUDGET_DEFAULT_S", "900"))
 
+# ---------------------------------------------------------------------------
+# Stage error persistence (N1 / F-N1e): generator and resolver failures were
+# previously only converted to log warnings, making whole dead-channel classes
+# invisible postmortem (N1 audit 2026-10-03). Errors are persisted to
+# results.json under a SEPARATE top-level branch `stage_errors/signatures/{seg}`
+# and `stage_errors/identifiers/{frag}` — deliberately NOT nested inside
+# signatures/{seg}/ or identifiers/{frag}/ because the verification stage
+# iterates those dictionaries (an extra key would be read as a bogus
+# generator/resolver entry). Bounded to keep results.json size in check.
+# ---------------------------------------------------------------------------
+_STAGE_ERRORS_MAX_PER_SEGMENT = 20
+_STAGE_ERROR_MAX_CHARS = 300
+
+
+def bounded_stage_errors(errors: list) -> list[dict]:
+    """Normalize+bound stage error records for results.json persistence.
+
+    - keep at most _STAGE_ERRORS_MAX_PER_SEGMENT entries
+    - truncate error text to _STAGE_ERROR_MAX_CHARS
+    - keep only {generator,resolver}(if present)+error; input NOT mutated
+    - non-dict entries and empty messages are dropped
+    """
+    out: list[dict] = []
+    if not isinstance(errors, list):
+        return out
+    for entry in errors[: _STAGE_ERRORS_MAX_PER_SEGMENT]:
+        if not isinstance(entry, dict):
+            continue
+        msg = str(entry.get("error", "") or "")[: _STAGE_ERROR_MAX_CHARS]
+        if not msg:
+            continue
+        rec: dict = {}
+        if entry.get("generator"):
+            rec["generator"] = str(entry["generator"])
+        if entry.get("resolver"):
+            rec["resolver"] = str(entry["resolver"])
+        rec["error"] = msg
+        out.append(rec)
+    return out
+
 _STAGE_BUDGETS_DEFAULT = {
     "generate_signatures": 1200,
     "identify_molecules": 1200,
@@ -362,6 +402,11 @@ def _generate_signatures(context):
         
         if result.get("attempted"):
             context.results.set_data(f"signatures/{segment_name}/attempted", result["attempted"])
+
+        # F-N1e: persist (bounded) generation errors for postmortem visibility
+        _sig_errs = bounded_stage_errors(result.get("errors", []))
+        if _sig_errs:
+            context.results.set_data(f"stage_errors/signatures/{segment_name}", _sig_errs)
     
     if budget_hit:
         context.add_warning(
@@ -500,7 +545,12 @@ def _identify_molecules(context):
             gen_name = error.get("generator", "unknown")
             error_msg = error.get("error", "unknown error")
             context.add_warning("identifier_resolver_failed", f"{resolver_name} ({gen_name}): {error_msg}")
-        
+
+        # F-N1e: persist (bounded) resolution errors for postmortem visibility
+        _ident_errs = bounded_stage_errors(result.get("errors", []))
+        if _ident_errs:
+            context.results.set_data(f"stage_errors/identifiers/{fragment_name}", _ident_errs)
+
         for path, value in result["results"].items():
             context.results.set_data(path, value)
     

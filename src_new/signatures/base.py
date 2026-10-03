@@ -75,7 +75,11 @@ class SignatureGenerator(ABC):
             return self._generate(instance, fragment, facade)
         except Exception as exc:
             logger.error(f"Signature generation failed for {self.name}: {exc}")
-            return None
+            # F-N1e: propagate the real failure reason so pipeline collectors can
+            # persist it to results.json (stage_errors branch). Previously the
+            # reason was log-only and downstream saw a bare "Generation returned
+            # None", making dead-channel classes invisible postmortem.
+            raise
     
     @abstractmethod
     def _is_applicable(

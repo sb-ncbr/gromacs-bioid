@@ -1,1 +1,53 @@
-{"note":"intended golden deltas per workstream land here; G0 uses empty set"}
+{
+ "4653": {
+  "SYSTEM|@errors": "any",
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+ },
+ "1682": {
+  "SYSTEM|@errors": "any",
+  "SYSTEM__v1|@errors": "any",
+  "SYSTEM__v2|@errors": "any",
+  "SYSTEM__v3|@errors": "any",
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+ },
+ "1602": {
+  "SYSTEM|@errors": "any",
+  "SYSTEM__v1|@errors": "any",
+  "SYSTEM__v2|@errors": "any",
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+ },
+ "1920": {
+  "SYSTEM|@errors": "any",
+  "SYSTEM__v1|@errors": "any",
+  "SYSTEM__v2|@errors": "any",
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+ },
+ "1549": {
+  "SYSTEM|@errors": "any",
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+ },
+ "1553": {
+  "SYSTEM|@errors": "any",
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+ },
+ "1567": {
+  "SYSTEM|@errors": "any",
+  "SYSTEM__v1|@errors": "any",
+  "SYSTEM__v2|@errors": "any",
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+ },
+ "4725": {
+  "SYSTEM|@errors": "any",
+  "SYSTEM__v1|@errors": "any",
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+ },
+ "1089": {
+  "SYSTEM|@errors": "any",
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+ },
+ "6250": {
+  "SYSTEM|@errors": "any",
+  "SYSTEM__v1|@errors": "any",
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+ }
+}
