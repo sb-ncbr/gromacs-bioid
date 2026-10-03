@@ -9,6 +9,7 @@ from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import create_engine, func, text
 from sqlalchemy.orm import sessionmaker, Session
@@ -57,6 +58,28 @@ app.include_router(runs_router, prefix="/api/v1/runs", tags=["runs"])
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+# --- Validation-runs file serving (F-N1a) ---------------------------------
+# Registered BEFORE the /files StaticFiles mount (mount is added in lifespan,
+# i.e. after import-time routes), so this pattern wins for validation-uuids;
+# everything else under /files falls through to the static mount unchanged.
+VALIDATION_FILES_ROOT = Path(os.environ.get("VALIDATION_FILES_ROOT", "/data/validation"))
+
+
+@app.get("/files/validation-{rest:path}", include_in_schema=False)
+async def serve_validation_file(rest: str):
+    """Serve files for validation runs by uuid (validation-<eid>-<ts>).
+
+    Resolved via VALIDATION_FILES_ROOT (validation NFS mount, read-only).
+    Absent root / unknown uuid / traversal attempts -> 404 (same as before).
+    """
+    from .validation_files import resolve_validation_file
+
+    target = resolve_validation_file(rest, VALIDATION_FILES_ROOT)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    return FileResponse(str(target))
 
 
 @app.get("/api/v1/health")

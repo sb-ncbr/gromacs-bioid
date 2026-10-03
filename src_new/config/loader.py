@@ -2,9 +2,26 @@ from __future__ import annotations
 
 import configparser
 import json
+import os
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Union, get_type_hints
+
+
+def _apply_deployment_env_overrides(config: "RunConfig") -> None:
+    """Apply deployment-specific env overrides to a loaded RunConfig.
+
+    DEPLOYMENT_FILE_URL: public base URL at which THIS deployment's /files
+    endpoint serves run inputs (used by RCSB structure-search resolvers).
+    The hardcoded default points to the main production instance
+    (bioid.dyn.cloud.e-infra.cz); other deployments (e.g. bioid-ceitec) MUST
+    override or the resolver URLs 404 for this instance's uuids and structure
+    search silently dies (N1 audit, 2026-10-03, W2/F-N1a). Env wins when set;
+    ini value is used otherwise.
+    """
+    url = os.environ.get("DEPLOYMENT_FILE_URL")
+    if url:
+        config.pdb.deployment_file_url = url.rstrip("/")
 
 
 @dataclass
@@ -352,6 +369,7 @@ class RunConfig:
             if cp.has_option("miscellaneous", "use_temporary_directory"):
                 config._overrides["miscellaneous.use_temporary_directory"] = cp.getboolean("miscellaneous", "use_temporary_directory")
 
+        _apply_deployment_env_overrides(config)
         return config
 
     @staticmethod
@@ -389,7 +407,9 @@ class RunConfig:
         config_path = repo_root / "config.ini"
         
         if not config_path.exists():
-            return cls()
+            config = cls()
+            _apply_deployment_env_overrides(config)
+            return config
         
         cp = configparser.ConfigParser()
         cp.read(config_path)
@@ -553,8 +573,6 @@ def merge_with_dict(config: RunConfig, overrides: dict[str, Any]) -> RunConfig:
 
 
 # API configuration constants (for validation API compatibility)
-import os
-
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://validation:validation-password-change-me@validation-postgres.ceitec-biodata-ns.svc.cluster.local:5432/bat3_validation"
