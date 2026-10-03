@@ -174,6 +174,7 @@ class MockAtomGroup:
             masses=self._masses,
             segids=self._segids,
             resids=self._resids,
+            resnums=np.array(self._resids, dtype=np.int64),  # F-N1d: topology-less PDB uses atoms.resnums
             resnames=self._resnames,
             resindices=self._resindices,
             n_atoms=self._n_atoms,
@@ -188,10 +189,11 @@ class MockAtomGroup:
             resid_to_data[resid]['atom_indices'].append(i)
         
         residue_list = []
-        for resid, data in sorted(resid_to_data.items()):
+        for resindex, (resid, data) in enumerate(sorted(resid_to_data.items())):
             residue_list.append(types.SimpleNamespace(
                 resid=resid,
                 resname=data['resname'],
+                resindex=resindex,  # F-N1d: backbone-selector PDB path consumes residue.resindex
                 atoms=MockResidueAtoms(data['atom_indices'], snapshot),
             ))
         
@@ -216,6 +218,12 @@ class MockAtomGroup:
     def resids(self):
         """Residue IDs for each atom."""
         return self._resids
+
+    @property
+    def resnums(self):
+        """Residue numbers for each atom (MDAnalysis parity: per-atom resnum == resid here)."""
+        import numpy as _np
+        return _np.array(self._resids, dtype=_np.int64)
     
     @property
     def names(self):

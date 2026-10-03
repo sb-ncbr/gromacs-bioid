@@ -1,53 +1,116 @@
 {
  "4653": {
   "SYSTEM|@errors": "any",
-  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged; W3 F-N1d: mock/parallel path gains topology_less_pdb+pdb_backbone_nucleic(+not_sanitized) payloads (mock completeness fixes resnums/resindex); pre-existing payloads unchanged (gate verifies)",
+  "SYSTEM|topology_less_pdb": "any",
+  "SYSTEM|pdb_backbone_nucleic": "any",
+  "SYSTEM|pdb_backbone_not_sanitized_nucleic": "any"
  },
  "1682": {
   "SYSTEM|@errors": "any",
   "SYSTEM__v1|@errors": "any",
   "SYSTEM__v2|@errors": "any",
   "SYSTEM__v3|@errors": "any",
-  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged; W3 F-N1d: mock/parallel path gains topology_less_pdb+pdb_backbone_nucleic(+not_sanitized) payloads (mock completeness fixes resnums/resindex); pre-existing payloads unchanged (gate verifies)",
+  "SYSTEM|topology_less_pdb": "any",
+  "SYSTEM|pdb_backbone_nucleic": "any",
+  "SYSTEM|pdb_backbone_not_sanitized_nucleic": "any",
+  "SYSTEM__v1|topology_less_pdb": "any",
+  "SYSTEM__v1|pdb_backbone_nucleic": "any",
+  "SYSTEM__v1|pdb_backbone_not_sanitized_nucleic": "any",
+  "SYSTEM__v2|topology_less_pdb": "any",
+  "SYSTEM__v2|pdb_backbone_nucleic": "any",
+  "SYSTEM__v2|pdb_backbone_not_sanitized_nucleic": "any",
+  "SYSTEM__v3|topology_less_pdb": "any",
+  "SYSTEM__v3|pdb_backbone_nucleic": "any",
+  "SYSTEM__v3|pdb_backbone_not_sanitized_nucleic": "any"
  },
  "1602": {
   "SYSTEM|@errors": "any",
   "SYSTEM__v1|@errors": "any",
   "SYSTEM__v2|@errors": "any",
-  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged; W3 F-N1d: mock/parallel path gains topology_less_pdb+pdb_backbone_nucleic(+not_sanitized) payloads (mock completeness fixes resnums/resindex); pre-existing payloads unchanged (gate verifies)",
+  "SYSTEM|topology_less_pdb": "any",
+  "SYSTEM|pdb_backbone_nucleic": "any",
+  "SYSTEM|pdb_backbone_not_sanitized_nucleic": "any",
+  "SYSTEM__v1|topology_less_pdb": "any",
+  "SYSTEM__v1|pdb_backbone_nucleic": "any",
+  "SYSTEM__v1|pdb_backbone_not_sanitized_nucleic": "any",
+  "SYSTEM__v2|topology_less_pdb": "any",
+  "SYSTEM__v2|pdb_backbone_nucleic": "any",
+  "SYSTEM__v2|pdb_backbone_not_sanitized_nucleic": "any"
  },
  "1920": {
   "SYSTEM|@errors": "any",
   "SYSTEM__v1|@errors": "any",
   "SYSTEM__v2|@errors": "any",
-  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged; W3 F-N1d: mock/parallel path gains topology_less_pdb+pdb_backbone_nucleic(+not_sanitized) payloads (mock completeness fixes resnums/resindex); pre-existing payloads unchanged (gate verifies)",
+  "SYSTEM|topology_less_pdb": "any",
+  "SYSTEM|pdb_backbone_nucleic": "any",
+  "SYSTEM|pdb_backbone_not_sanitized_nucleic": "any",
+  "SYSTEM__v1|topology_less_pdb": "any",
+  "SYSTEM__v1|pdb_backbone_nucleic": "any",
+  "SYSTEM__v1|pdb_backbone_not_sanitized_nucleic": "any",
+  "SYSTEM__v2|topology_less_pdb": "any",
+  "SYSTEM__v2|pdb_backbone_nucleic": "any",
+  "SYSTEM__v2|pdb_backbone_not_sanitized_nucleic": "any"
  },
  "1549": {
   "SYSTEM|@errors": "any",
-  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged; W3 F-N1d: mock/parallel path gains topology_less_pdb+pdb_backbone_nucleic(+not_sanitized) payloads (mock completeness fixes resnums/resindex); pre-existing payloads unchanged (gate verifies)",
+  "SYSTEM|topology_less_pdb": "any",
+  "SYSTEM|pdb_backbone_nucleic": "any",
+  "SYSTEM|pdb_backbone_not_sanitized_nucleic": "any"
  },
  "1553": {
   "SYSTEM|@errors": "any",
-  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged; W3 F-N1d: mock/parallel path gains topology_less_pdb+pdb_backbone_nucleic(+not_sanitized) payloads (mock completeness fixes resnums/resindex); pre-existing payloads unchanged (gate verifies)",
+  "SYSTEM|topology_less_pdb": "any",
+  "SYSTEM|pdb_backbone_nucleic": "any",
+  "SYSTEM|pdb_backbone_not_sanitized_nucleic": "any"
  },
  "1567": {
   "SYSTEM|@errors": "any",
   "SYSTEM__v1|@errors": "any",
   "SYSTEM__v2|@errors": "any",
-  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged; W3 F-N1d: mock/parallel path gains topology_less_pdb+pdb_backbone_nucleic(+not_sanitized) payloads (mock completeness fixes resnums/resindex); pre-existing payloads unchanged (gate verifies)",
+  "SYSTEM|topology_less_pdb": "any",
+  "SYSTEM|pdb_backbone_nucleic": "any",
+  "SYSTEM|pdb_backbone_not_sanitized_nucleic": "any",
+  "SYSTEM__v1|topology_less_pdb": "any",
+  "SYSTEM__v1|pdb_backbone_nucleic": "any",
+  "SYSTEM__v1|pdb_backbone_not_sanitized_nucleic": "any",
+  "SYSTEM__v2|topology_less_pdb": "any",
+  "SYSTEM__v2|pdb_backbone_nucleic": "any",
+  "SYSTEM__v2|pdb_backbone_not_sanitized_nucleic": "any"
  },
  "4725": {
   "SYSTEM|@errors": "any",
   "SYSTEM__v1|@errors": "any",
-  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged; W3 F-N1d: mock/parallel path gains topology_less_pdb+pdb_backbone_nucleic(+not_sanitized) payloads (mock completeness fixes resnums/resindex); pre-existing payloads unchanged (gate verifies)",
+  "SYSTEM|topology_less_pdb": "any",
+  "SYSTEM|pdb_backbone_nucleic": "any",
+  "SYSTEM|pdb_backbone_not_sanitized_nucleic": "any",
+  "SYSTEM__v1|topology_less_pdb": "any",
+  "SYSTEM__v1|pdb_backbone_nucleic": "any",
+  "SYSTEM__v1|pdb_backbone_not_sanitized_nucleic": "any"
  },
  "1089": {
   "SYSTEM|@errors": "any",
-  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged; W3 F-N1d: mock/parallel path gains topology_less_pdb+pdb_backbone_nucleic(+not_sanitized) payloads (mock completeness fixes resnums/resindex); pre-existing payloads unchanged (gate verifies)",
+  "SYSTEM|topology_less_pdb": "any",
+  "SYSTEM|pdb_backbone_nucleic": "any",
+  "SYSTEM|pdb_backbone_not_sanitized_nucleic": "any"
  },
  "6250": {
   "SYSTEM|@errors": "any",
   "SYSTEM__v1|@errors": "any",
-  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged"
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged; W3 F-N1d: mock/parallel path gains topology_less_pdb+pdb_backbone_nucleic(+not_sanitized) payloads (mock completeness fixes resnums/resindex); pre-existing payloads unchanged (gate verifies)",
+  "SYSTEM|topology_less_pdb": "any",
+  "SYSTEM|pdb_backbone_nucleic": "any",
+  "SYSTEM|pdb_backbone_not_sanitized_nucleic": "any",
+  "SYSTEM__v1|topology_less_pdb": "any",
+  "SYSTEM__v1|pdb_backbone_nucleic": "any",
+  "SYSTEM__v1|pdb_backbone_not_sanitized_nucleic": "any"
  }
 }
