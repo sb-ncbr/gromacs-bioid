@@ -860,7 +860,16 @@ Plan: `.tmp/PLAN_N1_FIX_WAVE.md` · Cohort for requeue: 797 nucleic entries (eid
 - Units: wave suites 36/36; full tests/src_new red sets IDENTICAL (22==22) image vs
   v3.124 baseline → zero wave regressions; reds all env/pre-existing (DB/egress/blastdb).
 
-### To do: W6b rollout (env+PVC+routed serving, staged) → W7 replay
+### W6b rollout — DONE 2026-10-03
+ceitec api ui-rework-b1→v3.125-N1 (+VALIDATION_FILES_ROOT, validation PVC ro mount;
+route-table parity 70+1 pre-verified, zero UI-visible change); validation-api/worker +
+ceitec worker all v3.125-N1 w/ DEPLOYMENT_FILE_URL=bioid-ceitec (canary→fleet; ini
+[pdb] deployment_file_url set+recorded, backup taken). Public smoke: validation-uuid
+GET 200 md5-exact, RCSB POST 204 fetched-ok (was 404 'invalid entry_id' pre-rollout).
+bat3-ui-worker x2 (v2.44, queue validation.ui.celery) untouched by design (no theft
+path, foreign UI lineage) — gap reported. Post-rollout fleet gates 10/10 GREEN.
+
+### To do: W7 replay
 (identification-only deltas + protein parity sweep) → W8 requeue 797 (snapshots + queue,
 V-16/V-17) → W9 closeout (anchors, flips, funnel v12, stats package v12).
 ### Pending user decisions
