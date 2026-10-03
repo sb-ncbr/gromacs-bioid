@@ -838,12 +838,16 @@ Plan: `.tmp/PLAN_N1_FIX_WAVE.md` · Cohort for requeue: 797 nucleic entries (eid
 ### In flight (W6)
 - Image `cerit.io/tomsko/bat3-validation-api:v3.125-N1` built (7612591f41f4) + pushed.
 - Probe pod `n1-w6-probe` (v3.125-N1, worker PVCs + PDBCHARGES SEC ctx) up.
-- OPEN: 4725 gate divergence — image code yields 2 NEW fastas on 4725
-  (SYSTEM fasta_map_protein ~35aa w/ X, SYSTEM__v1 fasta_map_nucleic 'T') vs overlay PASS.
-  same fasta.py md5, same deps (MDA 2.10.0/rdkit 2026.03.6/numpy 2.4.6). Suspect stale
-  pycache shadowing on NFS-skewed mtimes in the old-pod overlay (V-18 candidate).
-  Next: nuke overlay __pycache__, re-run; if image behavior is the honest one →
-  allow_delta update (disclosed W4 protein-broadening) rather than code change.
+- RESOLVED 2026-10-03 (commit 03d30e13b): 4725 gate "divergence" was overlay-methodology
+  failure, not code. `n1_run_gates.py` inserts `sys.path.insert(0, BAT3_SRC or "/app")` →
+  overlay runs without `BAT3_SRC=/tmp/gate_src` tested the pod's baked v3.124 code
+  (PYTHONPATH/cd/pycache-purge cannot defeat it; V-18 extended w/ mechanism (c)).
+  Image behavior verified honest + deterministic (3 runs, hash seeds 0/1 byte-identical;
+  module-spy parity: identical residue graphs 2479at/160res deg {2:2,3:154,4:4}, fallbacks
+  len 62/1 on both pods). SYSTEM fasta_map_protein (62-res component→35+-aa seq incl 1 X) +
+  SYSTEM__v1 fasta_map_nucleic ('T') = disclosed W4 protein-broadening → allow_delta, no
+  code change. FULL gates 10/10 GREEN on image pod AND overlay (BAT3_SRC set).
+  Correct overlay invocation recorded in .tmp/PICKUP_N1_FIX_WAVE.md.
 
 ### To do: W6 rest → W6b rollout (env+PVC+routed serving, staged) → W7 replay
 (identification-only deltas + protein parity sweep) → W8 requeue 797 (snapshots + queue,

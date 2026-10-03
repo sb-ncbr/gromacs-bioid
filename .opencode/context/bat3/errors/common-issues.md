@@ -535,6 +535,7 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
 - Symptom: same .py content, different behavior between PYTHONPATH-overlay runs on old pods vs new-image probes.
 - Causes: (a) overlay synced `src_new/` WITHOUT legacy `src/` -> generators importing src.constants fail in overlay only (registry tests red, looks like code regression); (b) stale __pycache__ under overlay can shadow fresher .py when tar-synced mtimes skew (NFS nodes run up to +2h, V-17).
 - Protocol: on every overlay sync ALSO sync `src/` and `find /tmp/gate_src -name __pycache__ -exec rm -rf {} +`; before trusting a diff, md5-check the module AND run one import-print (`module.__file__`).
+- (c) HARDEST TO SEE (proven 2026-10-03, fixture-4725 hunt): `n1_run_gates.py` does `sys.path.insert(0, os.environ.get("BAT3_SRC", "/app"))` -> WITHOUT `BAT3_SRC=/tmp/gate_src` an "overlay" gate silently imports the pod's BAKED image code; `PYTHONPATH` and `cd` do NOT defeat the insert. Fingerprint `module.__file__` lies if taken in a separate python invocation from the gate run. Fix: ALWAYS pass `BAT3_SRC=/tmp/gate_src` for overlay gates, or verify behavior in-image. Symptom was "same bytes, same input, different result" - never true; the bytes actually executed differed.
 
 ### V-19 Image contents vs gate artifacts (.dockerignore strips tests)
 - `.dockerignore` excludes `tests/`, `**/test_*.py`, `**/*_test.py` from production images (intentional).
