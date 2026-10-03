@@ -91,13 +91,15 @@
  "4725": {
   "SYSTEM|@errors": "any",
   "SYSTEM__v1|@errors": "any",
-  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged; W3 F-N1d: mock/parallel path gains topology_less_pdb+pdb_backbone_nucleic(+not_sanitized) payloads (mock completeness fixes resnums/resindex); pre-existing payloads unchanged (gate verifies)",
+  "_note": "W1 F-N1e: worker-path generation errors now surfaced verbatim (base.generate re-raises after log); payloads/attempted unchanged; W3 F-N1d: mock/parallel path gains topology_less_pdb+pdb_backbone_nucleic(+not_sanitized) payloads (mock completeness fixes resnums/resindex); pre-existing payloads unchanged (gate verifies); W4 F-N1b: multi-chain/branched protein assembly (residue graph 160 res, deg-hist {2:2,3:154,4:4}) triggers largest-component fallback - SYSTEM gains fasta_map_protein (62-res largest component linearized to 35+-aa seq incl. 1 X; deterministic (-len,seq) tie-breaks, byte-identical across 3 runs and PYTHONHASHSEED 0/1), SYSTEM__v1 gains fasta_map_nucleic ('T', single-residue component). Image/overlay byte-parity proven via module spy (identical graphs, fallbacks, payloads). Overlay-run root cause of earlier 'divergence': run_gates.py defaults sys.path.insert(0,'/app') unless BAT3_SRC is set - overlay runs without BAT3_SRC tested the pod's baked v3.124 code (see common-issues V-18).",
   "SYSTEM|topology_less_pdb": "any",
   "SYSTEM|pdb_backbone_nucleic": "any",
   "SYSTEM|pdb_backbone_not_sanitized_nucleic": "any",
   "SYSTEM__v1|topology_less_pdb": "any",
   "SYSTEM__v1|pdb_backbone_nucleic": "any",
-  "SYSTEM__v1|pdb_backbone_not_sanitized_nucleic": "any"
+  "SYSTEM__v1|pdb_backbone_not_sanitized_nucleic": "any",
+  "SYSTEM|fasta_map_protein": "any",
+  "SYSTEM__v1|fasta_map_nucleic": "any"
  },
  "1089": {
   "SYSTEM|@errors": "any",
