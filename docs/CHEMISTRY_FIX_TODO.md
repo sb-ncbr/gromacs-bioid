@@ -869,7 +869,15 @@ GET 200 md5-exact, RCSB POST 204 fetched-ok (was 404 'invalid entry_id' pre-roll
 bat3-ui-worker x2 (v2.44, queue validation.ui.celery) untouched by design (no theft
 path, foreign UI lineage) — gap reported. Post-rollout fleet gates 10/10 GREEN.
 
-### To do: W7 replay
+### W7 replay — DONE 2026-10-03 (approval-gated measurement before requeue)
+553-entry identify+verify replay on stored sigs (3 pods, shadow roots, zero mutation):
+0 errors, 53 changed, **0 lost identifiers globally**. W5 override measured == design:
+52 nuc segs gained (premeasure: 53 both-dir; 8/8 sample exact, e.g. snipped 1880 1FZX
+A/B both strands). nuc100 static (expected pre-requeue); prot20 +12 entry gains all
+external-drift, none lost. RCSB 404 in replay = shadow artifact only; wire proven W6b.
+### W8 requeue 797 — IN FLIGHT: snapshots taken, batch nucleic-fix-wave-1 queued,
+first production proof on 1881 (1FZX verified 100.0/conf 92; W4 fastas live).
+### Remaining: W8 settlement watch → W9 statistics (S7 GT v12 + per-molecule breakdown)
 (identification-only deltas + protein parity sweep) → W8 requeue 797 (snapshots + queue,
 V-16/V-17) → W9 closeout (anchors, flips, funnel v12, stats package v12).
 ### Pending user decisions
