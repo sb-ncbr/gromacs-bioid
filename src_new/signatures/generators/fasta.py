@@ -253,9 +253,22 @@ def fragment_to_protseq_map_based(
         residue_adjacency_matrix,
     ) = _fragment_to_protein_mk_adjacency_matrices(fragment)
 
-    _fragment_to_protein_sequence_verify_sequentiality(
-        residue_adjacency_matrix, atom_adjacency_matrix
-    )
+    try:
+        _fragment_to_protein_sequence_verify_sequentiality(
+            residue_adjacency_matrix, atom_adjacency_matrix
+        )
+    except RuntimeError as exc:
+        # F-N1b: merged duplexes / multi-chain assemblies / branched graphs
+        # previously produced NO fasta at all (silent identification hole).
+        # Fall back to largest-component selection; strict path below stays
+        # byte-identical whenever the graph verifies.
+        return _fragment_to_seq_best_component(
+            residue_indices_to_code,
+            residue_indices_to_index,
+            residue_adjacency_matrix,
+            anchor=anchor,
+            reason=str(exc),
+        )
 
     anchor_indices, non_anchor_indices = _split_residue_indices_methionine(
         residue_indices_to_code, anchor=anchor
@@ -407,6 +420,38 @@ def _discontinuous_segment_cnt(adjacency_matrix: AdjacencyMatrix) -> int:
     return components
 
 
+def _residue_components(adjacency_matrix: AdjacencyMatrix) -> list[list[int]]:
+    """Connected components of the residue graph as row-index lists (F-N1b).
+
+    Deterministic: components sorted by (-size, min row index).
+    """
+    visited = [False] * len(adjacency_matrix)
+    comps: list[list[int]] = []
+    for i_from in range(len(adjacency_matrix)):
+        if visited[i_from]:
+            continue
+        # fresh BFS (no reuse_visited): returned mask == this component only
+        vis, _, _, _ = _bfs(i_from, adjacency_matrix)
+        comp = [idx for idx, seen in enumerate(vis) if seen]
+        for idx in comp:
+            visited[idx] = True
+        comps.append(comp)
+    comps.sort(key=lambda c: (-len(c), c[0]))
+    return comps
+
+
+def _is_linear_chain(adjacency_matrix: AdjacencyMatrix) -> bool:
+    """True iff graph is a single linear chain (degrees all in {1,2}, ≤2 endpoints)."""
+    degrees = _degrees_count(adjacency_matrix)
+    if any(d >= 3 or d == 0 for d in degrees):
+        return False
+    return degrees.count(1) <= 2
+
+
+def _submatrix(adjacency_matrix: AdjacencyMatrix, rows: list[int]) -> AdjacencyMatrix:
+    return [[adjacency_matrix[i][j] for j in rows] for i in rows]
+
+
 def _degrees_count(adjacency_matrix: AdjacencyMatrix) -> list[int]:
     """Calculate degree count for each node."""
     degrees = [0] * len(adjacency_matrix)
@@ -533,6 +578,59 @@ def _mk_residue_atom_adjacency_matrix(
         atom_adjacency_matrix, is_residue_adjacency=False,
     )
     return residue_adjacency_matrix, atom_adjacency_matrix
+
+
+def _fragment_to_seq_best_component(
+    residue_indices_to_code: dict[int, str],
+    residue_indices_to_index: dict[int, int],
+    residue_adjacency_matrix: AdjacencyMatrix,
+    anchor: str | None,
+    reason: str,
+) -> str:
+    """F-N1b: extract the longest sequence from a merged/branched assembly.
+
+    The strict sequentiality check already failed (``reason``). Instead of
+    giving up on the whole segment (merged duplexes, multi-chain proteins),
+    decompose the residue graph into connected components, select the LARGEST
+    (ties: lowest minimum row index — deterministic), and extract its longest
+    linear sequence. Documented trade-off: non-longest strands of asymmetric
+    assemblies are not represented (W4 design lock 2026-10-03; complementary
+    duplex strands share blast subject sets). Deterministic tie-breaks:
+    (-length, sequence string) everywhere in this fallback.
+
+    Raises RuntimeError when nothing extractable remains.
+    """
+    comps = _residue_components(residue_adjacency_matrix)
+    keep_rows = comps[0]
+    row_to_resid = {row: resid for resid, row in residue_indices_to_index.items()}
+    kept_resids = sorted(row_to_resid[r] for r in keep_rows)
+
+    sub_adj = _submatrix(residue_adjacency_matrix, keep_rows)
+    sub_code = {resid: residue_indices_to_code[resid] for resid in kept_resids}
+    sub_index = {resid: i for i, resid in enumerate(kept_resids)}
+
+    # Note: if the strict check failed ONLY on the atom-component count while
+    # the residue graph is a clean linear chain, plain extraction below returns
+    # the full chain — strictly more useful than giving up.
+    seqs = _find_longest_sequences_bfs(
+        set(kept_resids), sub_adj, sub_index, sub_code
+    )
+    seqs = [s for s in seqs if s]
+    if not seqs:
+        raise RuntimeError(
+            f"no linear sequence extractable from {len(comps)}-component assembly ({reason})"
+        )
+    full = len(sub_code)
+    exact = [s for s in seqs if len(s) == full]
+    pool = exact if exact else seqs
+    pool.sort(key=lambda s: (-len(s), s))
+    chosen = pool[0]
+    logger.info(
+        f"fasta strand-select: {len(comps)} components, kept largest "
+        f"({len(keep_rows)}/{len(residue_indices_to_code)} residues, "
+        f"len={len(chosen)}) after: {reason}"
+    )
+    return chosen
 
 
 def cant_determine_err(strict: bool, partial: bool) -> None:
