@@ -796,3 +796,17 @@ of global bond guessing: known story, deferred (see common-issues).
   unchanged for a later session (signature_isolated_timeout x3,320 step-0
   audit; spawn-not-fork; subprocess per segment; F18 HTTP timeouts folded in;
   replay only after fixed image fleet-wide).
+
+## TASK N1 — Nucleic resolution audit — AUDIT COMPLETE (2026-10-03, measurement-only)
+Trigger: bag funnel v11 showed nucleic at 32/1,697 hits (1.89%) vs protein 93.6% / chem_other 94.6%.
+Full deliverable: `/data/validation/n1_nucleic_audit.json`; spec+outcome: `.tmp/TASK_N1_nucleic_resolution_audit.md`.
+
+Attribution of 1,665 hitless (wire-verified, 100% covered):
+- **Layer A — RCSB structure-search dead campaign-wide (all classes)**: mmcif_struct 0/25k, pdb_struct_* 0/31k attempts with hits. File-URL 404 -> RCSB 404 passthrough (worker-pod probe); request schema also rejected (400) vs current API. Proteins masked by blast+alphafind; nucleic had no fallback. **This was the intended primary channel for nucleic structural ID.**
+- **Layer B — no sequence for 50.4% (839)**: merged duplex/multi-strand segments can't produce fasta (linear-path limit, live-error "Found 4 disjoint residue components"); >=31-residue molecules: 731/736 sequence-less. Era + algorithm limit.
+- **Layer C — gate physics for 49.5% (824)**: all <=30 nt; BLAST returns only below-gate partials (best 0.77-1.2 evalue vs 0.1); even perfect full-length short match (~0.2-0.4) fails. User hypothesis CONFIRMED + strengthened: even PDB-deposited designed duplexes cannot pass sequence gates at this length.
+- **Layer D — names dead**: 1,662/1,665 name_molecule='lipid' (input convention).
+
+Bug ledger additions: pdb_backbone_nucleic still broken on atomistic NA (v3.124, "Unable to generate PDB signature"); sig/resolution errors never persisted in results.json (dead-channel classes invisible postmortem); [identifiers] toggles ineffective; pdb_nucleic absent from stored content purely era (pre-wave-7 code), generates correctly live.
+
+Fix menu (report-only, awaiting user pick): F-N1a RCSB channel revival (serve files + schema refresh; all-class lever) · F-N1b strand-aware splitting/per-component sequences · F-N1c <=25nt exact-identity override (content-gated; N2 pre-measure first) · F-N1d backbone_nucleic fix · F-N1e error persistence · F-N1f toggle hygiene.

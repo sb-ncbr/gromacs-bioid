@@ -1,0 +1,84 @@
+{
+ "eid": "1602",
+ "code": "v3.124-golden",
+ "segments": {
+  "SYSTEM": {
+   "resolver_hits": {},
+   "errors": []
+  },
+  "SYSTEM__v1": {
+   "resolver_hits": {},
+   "errors": []
+  },
+  "SYSTEM__v2": {
+   "resolver_hits": {
+    "inchi_key|inchikey_self": {
+     "count": 1,
+     "ids": [
+      "UMNYVUIVARTERU-UHFFFAOYSA-N"
+     ],
+     "hit_type": "identity"
+    },
+    "molecular_formula|formula_pubchem_local": {
+     "count": 4,
+     "ids": [
+      "138805674",
+      "150702682",
+      "169271364",
+      "170546896"
+     ],
+     "hit_type": "identity"
+    },
+    "molecular_formula|formula_pubchem": {
+     "count": 4,
+     "ids": [
+      "138805674",
+      "150702682",
+      "169271364",
+      "170546896"
+     ],
+     "hit_type": "identity"
+    },
+    "molecular_formula|formula_hfamily": {
+     "count": 11,
+     "ids": [
+      "('123649070', 50.0)",
+      "('138805674', 50.0)",
+      "('150702682', 50.0)",
+      "('158492133', 50.0)",
+      "('158546580', 50.0)",
+      "('161889719', 50.0)",
+      "('166135885', 50.0)",
+      "('169271364', 50.0)",
+      "('169271577', 50.0)",
+      "('170546896', 50.0)",
+      "('42611253', 50.0)"
+     ],
+     "hit_type": "similarity"
+    },
+    "selfies|pubchem_struct": {
+     "count": 1,
+     "ids": [
+      "0"
+     ],
+     "hit_type": "identity"
+    },
+    "smiles|pubchem_struct": {
+     "count": 1,
+     "ids": [
+      "0"
+     ],
+     "hit_type": "identity"
+    },
+    "smiles_not_sanitized|pubchem_struct": {
+     "count": 1,
+     "ids": [
+      "0"
+     ],
+     "hit_type": "identity"
+    }
+   },
+   "errors": []
+  }
+ }
+}

@@ -1,0 +1,96 @@
+{
+ "eid": "1089",
+ "code": "v3.124-golden",
+ "segments": {
+  "SYSTEM": {
+   "flags": {
+    "has_elements": true,
+    "has_masses": true,
+    "has_positions": true,
+    "has_names": true,
+    "has_unique_names": true,
+    "is_protein": true,
+    "is_nucleic": false,
+    "has_multi_atom_residues": true
+   },
+   "residue_count": 102,
+   "atom_count": 1640,
+   "attempted": [
+    "molecular_formula",
+    "fasta_map_protein",
+    "fasta_resname_protein",
+    "pdb_protein",
+    "pdb_not_sanitized_protein",
+    "pdb_backbone_protein",
+    "pdb_backbone_not_sanitized_protein",
+    "topology_less_pdb",
+    "tdi",
+    "mmcif",
+    "name_chain",
+    "name_molecule",
+    "fingerprint"
+   ],
+   "generated": {
+    "fasta_map_protein": {
+     "kind": "full",
+     "text": "MYGKLNDLLEDLQEVLKNLHKNWHGGKDNLHDVDNHLQNVIEDIHDFMQGGGSGGKLQEMMKEFQQVLDELNNHLQGGKHTVHHIEQNIKEIFHHLEELVHR"
+    },
+    "fasta_resname_protein": {
+     "kind": "full",
+     "text": "MYGKLNDLLEDLQEVLKNLHKNWHGGKDNLHDVDNHLQNVIEDIHDFMQGGGSGGKLQEMMKEFQQVLDELNNHLQGGKHTVHHIEQNIKEIFHHLEELVHR"
+    },
+    "fingerprint": {
+     "kind": "full",
+     "text": "49a3f71819ff72496746659f55981bcc2c8181f7f8dd5be97f724a0dbcb453df1d84d6faf7712c977da391a6776caad4a24567da166263fadf17d26b84843981"
+    },
+    "mmcif": {
+     "kind": "hash",
+     "sha256": "de4b3a96a16bff999c7cc53da27a69deafa32f3c213732a67e9126426ded3846",
+     "len": 68565,
+     "head": "data_mock\n\n_atom_site.group_PDB atom\n\nloop_\n_atom_site.id\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.label_element_symbol\n1 N MET SYSTEM 43.660 23.500 17.220 N\n2 H1 MET SYSTEM 42.830 22.970 16.960 H\n3 H2 MET SYSTEM 44.080 23.860 16.380 H\n4 H3 MET SYSTEM 43.320 24.240 17.820 H\n5 CA MET SYSTEM 44.600 22.730 18.050 C\n6 HA MET SYSTEM 45.000 21.940 17.410 H\n7 CB MET SYSTEM 45.730 23.660 18.570 C\n8 HB2 "
+    },
+    "molecular_formula": {
+     "kind": "full",
+     "text": "C522H800N155O159S4"
+    },
+    "name_chain": {
+     "kind": "full",
+     "text": "SYSTEM"
+    },
+    "name_molecule": {
+     "kind": "full",
+     "text": "protein"
+    },
+    "pdb_backbone_not_sanitized_protein": {
+     "kind": "hash",
+     "sha256": "ff11637a0e028d10030b57bb9059dab2bebcd7509dfa8ff16d3228e6a3b499b9",
+     "len": 44533,
+     "head": "HEADER    export\nATOM      0  N   MET A   0      43.660  23.500  17.220  1.00  0.00           C  \nATOM     19  N   TYR A   1      43.210  22.740  19.990  1.00  0.00           C  \nATOM     40  N   GLY A   2      40.220  21.840  22.070  1.00  0.00           C  \nATOM     47  N   LYS A   3      38.580  20.550  24.100  1.00  0.00           C  \nATOM     69  N   LEU A   4      37.750  22.030  26.370  1.00  0.00           C  \nATOM     88  N   ASN A   5      35.100  22.930  25.860  1.00  0.00           C"
+    },
+    "pdb_backbone_protein": {
+     "kind": "hash",
+     "sha256": "ff11637a0e028d10030b57bb9059dab2bebcd7509dfa8ff16d3228e6a3b499b9",
+     "len": 44533,
+     "head": "HEADER    export\nATOM      0  N   MET A   0      43.660  23.500  17.220  1.00  0.00           C  \nATOM     19  N   TYR A   1      43.210  22.740  19.990  1.00  0.00           C  \nATOM     40  N   GLY A   2      40.220  21.840  22.070  1.00  0.00           C  \nATOM     47  N   LYS A   3      38.580  20.550  24.100  1.00  0.00           C  \nATOM     69  N   LEU A   4      37.750  22.030  26.370  1.00  0.00           C  \nATOM     88  N   ASN A   5      35.100  22.930  25.860  1.00  0.00           C"
+    },
+    "pdb_not_sanitized_protein": {
+     "kind": "hash",
+     "sha256": "e99ed33d04fff61c5cf1f8776d644fd26eeb5434cefe29fe77c8258f3b7475c0",
+     "len": 169111,
+     "head": "HEADER    export\nATOM      0  N   MET A   0      43.660  23.500  17.220  1.00  0.00           N  \nATOM      1  H1  MET A   0      42.830  22.970  16.960  1.00  0.00           H  \nATOM      2  H2  MET A   0      44.080  23.860  16.380  1.00  0.00           H  \nATOM      3  H3  MET A   0      43.320  24.240  17.820  1.00  0.00           H  \nATOM      4  CA  MET A   0      44.600  22.730  18.050  1.00  0.00           C  \nATOM      5  HA  MET A   0      45.000  21.940  17.410  1.00  0.00           H"
+    },
+    "pdb_protein": {
+     "kind": "hash",
+     "sha256": "e99ed33d04fff61c5cf1f8776d644fd26eeb5434cefe29fe77c8258f3b7475c0",
+     "len": 169111,
+     "head": "HEADER    export\nATOM      0  N   MET A   0      43.660  23.500  17.220  1.00  0.00           N  \nATOM      1  H1  MET A   0      42.830  22.970  16.960  1.00  0.00           H  \nATOM      2  H2  MET A   0      44.080  23.860  16.380  1.00  0.00           H  \nATOM      3  H3  MET A   0      43.320  24.240  17.820  1.00  0.00           H  \nATOM      4  CA  MET A   0      44.600  22.730  18.050  1.00  0.00           C  \nATOM      5  HA  MET A   0      45.000  21.940  17.410  1.00  0.00           H"
+    },
+    "tdi": {
+     "kind": "full",
+     "text": ""
+    }
+   },
+   "errors": []
+  }
+ }
+}

@@ -321,3 +321,5 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
   7 master facade/store test failures (separate class, triage open);
   replay_identify_verify needs a WORKER pod (mirror at /app/databases;
   api pod lacks it).
+
+UPDATE 2026-10-03 (N1 audit COMPLETE): Nucleic hole root-caused at L0 evidence: dead RCSB structure channel campaign-wide (0/40k, URL-404 -> RCSB-404 passthrough + outdated request schema); 50.4% of hitless = no sequence (merged-multistrand linear-path limit); 49.5% = short-oligo blast gate physics (user hypothesis confirmed; even perfect <=16-mer matches fail evalue 0.1/1e-50 gates). Fixes menu F-N1a..f awaits user scope pick. Artifacts /data/validation/n1_*.json.

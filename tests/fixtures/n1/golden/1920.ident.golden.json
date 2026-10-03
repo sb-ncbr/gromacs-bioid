@@ -1,0 +1,18 @@
+{
+ "eid": "1920",
+ "code": "v3.124-golden",
+ "segments": {
+  "SYSTEM": {
+   "resolver_hits": {},
+   "errors": []
+  },
+  "SYSTEM__v1": {
+   "resolver_hits": {},
+   "errors": []
+  },
+  "SYSTEM__v2": {
+   "resolver_hits": {},
+   "errors": []
+  }
+ }
+}

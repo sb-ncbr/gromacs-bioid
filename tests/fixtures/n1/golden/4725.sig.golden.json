@@ -1,0 +1,186 @@
+{
+ "eid": "4725",
+ "code": "v3.124-golden",
+ "segments": {
+  "SYSTEM": {
+   "flags": {
+    "has_elements": true,
+    "has_masses": true,
+    "has_positions": true,
+    "has_names": true,
+    "has_unique_names": true,
+    "is_protein": true,
+    "is_nucleic": false,
+    "has_multi_atom_residues": true
+   },
+   "residue_count": 160,
+   "atom_count": 2479,
+   "attempted": [
+    "molecular_formula",
+    "fasta_map_protein",
+    "fasta_resname_protein",
+    "pdb_protein",
+    "pdb_not_sanitized_protein",
+    "pdb_backbone_protein",
+    "pdb_backbone_not_sanitized_protein",
+    "topology_less_pdb",
+    "tdi",
+    "mmcif",
+    "name_chain",
+    "name_molecule",
+    "fingerprint"
+   ],
+   "generated": {
+    "fasta_resname_protein": {
+     "kind": "full",
+     "text": "DGAXPEVKPVDNFDWSQYHGKWWQVAAYPDHITKYGKXGWAEYTPEGKSVKVSRYSVIHGKEYFSEGTAYPVGDSKIGKIYHSYTIGGVTQEGVFNVLSTDNKNYIIGYFXSYKGHMDLVWVLSRSMVLTGEAKTAVENYLIGSPVVDSQKLVYSDFSXK"
+    },
+    "fingerprint": {
+     "kind": "full",
+     "text": "dc8b1d9b7c380f6386c8c1981d2a95292c24c1df2d238df4057cabf4420278eee1af207b8fdf4009c748d8c94fe0a36eaad89cee971ee54daf27fba9cdff6289"
+    },
+    "mmcif": {
+     "kind": "hash",
+     "sha256": "6657c10fc0757219b5ee6096f8e8b55f5600871468ce587d2b7d14674def7d10",
+     "len": 103957,
+     "head": "data_mock\n\n_atom_site.group_PDB atom\n\nloop_\n_atom_site.id\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.label_element_symbol\n1 N ASP SYSTEM 43.960 22.530 57.910 N\n2 H1 ASP SYSTEM 44.510 21.700 57.730 H\n3 H2 ASP SYSTEM 44.400 23.440 57.820 H\n4 H3 ASP SYSTEM 43.130 22.430 57.360 H\n5 CA ASP SYSTEM 43.560 22.410 59.400 C\n6 HA ASP SYSTEM 43.080 21.430 59.480 H\n7 CB ASP SYSTEM 44.840 22.440 60.320 C\n8 HB2 "
+    },
+    "molecular_formula": {
+     "kind": "full",
+     "text": "C819H1209N204O241S6"
+    },
+    "name_chain": {
+     "kind": "full",
+     "text": "SYSTEM"
+    },
+    "name_molecule": {
+     "kind": "full",
+     "text": "protein"
+    },
+    "pdb_backbone_not_sanitized_protein": {
+     "kind": "hash",
+     "sha256": "884d2767f9cf673067911d6523e64b49693da94a3d53f2f1cedf603eed849426",
+     "len": 67929,
+     "head": "HEADER    export\nATOM      0  N   ASP A   0      43.960  22.530  57.910  1.00  0.00           C  \nATOM     14  N   GLY A   1      41.670  23.370  60.620  1.00  0.00           C  \nATOM     21  N   ALA A   2      38.270  24.720  60.380  1.00  0.00           C  \nATOM     31  N   CYX A   3      36.210  26.500  57.830  1.00  0.00           C  \nATOM     41  N   PRO A   4      36.230  30.160  57.710  1.00  0.00           C  \nATOM     55  N   GLU A   5      34.060  32.780  59.300  1.00  0.00           C"
+    },
+    "pdb_backbone_protein": {
+     "kind": "hash",
+     "sha256": "884d2767f9cf673067911d6523e64b49693da94a3d53f2f1cedf603eed849426",
+     "len": 67929,
+     "head": "HEADER    export\nATOM      0  N   ASP A   0      43.960  22.530  57.910  1.00  0.00           C  \nATOM     14  N   GLY A   1      41.670  23.370  60.620  1.00  0.00           C  \nATOM     21  N   ALA A   2      38.270  24.720  60.380  1.00  0.00           C  \nATOM     31  N   CYX A   3      36.210  26.500  57.830  1.00  0.00           C  \nATOM     41  N   PRO A   4      36.230  30.160  57.710  1.00  0.00           C  \nATOM     55  N   GLU A   5      34.060  32.780  59.300  1.00  0.00           C"
+    },
+    "pdb_not_sanitized_protein": {
+     "kind": "hash",
+     "sha256": "24e0dac0a27495763433e81e1d641e17a8c01036f879cff9826585e0d409f4cd",
+     "len": 255768,
+     "head": "HEADER    export\nATOM      0  N   ASP A   0      43.960  22.530  57.910  1.00  0.00           N  \nATOM      1  H1  ASP A   0      44.510  21.700  57.730  1.00  0.00           H  \nATOM      2  H2  ASP A   0      44.400  23.440  57.820  1.00  0.00           H  \nATOM      3  H3  ASP A   0      43.130  22.430  57.360  1.00  0.00           H  \nATOM      4  CA  ASP A   0      43.560  22.410  59.400  1.00  0.00           C  \nATOM      5  HA  ASP A   0      43.080  21.430  59.480  1.00  0.00           H"
+    },
+    "pdb_protein": {
+     "kind": "hash",
+     "sha256": "24e0dac0a27495763433e81e1d641e17a8c01036f879cff9826585e0d409f4cd",
+     "len": 255768,
+     "head": "HEADER    export\nATOM      0  N   ASP A   0      43.960  22.530  57.910  1.00  0.00           N  \nATOM      1  H1  ASP A   0      44.510  21.700  57.730  1.00  0.00           H  \nATOM      2  H2  ASP A   0      44.400  23.440  57.820  1.00  0.00           H  \nATOM      3  H3  ASP A   0      43.130  22.430  57.360  1.00  0.00           H  \nATOM      4  CA  ASP A   0      43.560  22.410  59.400  1.00  0.00           C  \nATOM      5  HA  ASP A   0      43.080  21.430  59.480  1.00  0.00           H"
+    },
+    "tdi": {
+     "kind": "full",
+     "text": ""
+    }
+   },
+   "errors": []
+  },
+  "SYSTEM__v1": {
+   "flags": {
+    "has_elements": true,
+    "has_masses": true,
+    "has_positions": true,
+    "has_names": true,
+    "has_unique_names": true,
+    "is_protein": false,
+    "is_nucleic": true,
+    "has_multi_atom_residues": true
+   },
+   "residue_count": 1,
+   "atom_count": 61,
+   "attempted": [
+    "smiles",
+    "smiles_not_sanitized",
+    "inchi_key",
+    "morgan_fingerprint",
+    "selfies",
+    "molecular_formula",
+    "skeleton_fp",
+    "resname",
+    "fasta_map_nucleic",
+    "pdb_nucleic",
+    "pdb_not_sanitized_nucleic",
+    "pdb_backbone_nucleic",
+    "pdb_backbone_not_sanitized_nucleic",
+    "topology_less_pdb",
+    "mmcif",
+    "name_chain",
+    "name_molecule",
+    "name_segment",
+    "fingerprint"
+   ],
+   "generated": {
+    "fingerprint": {
+     "kind": "full",
+     "text": "9d073cbbb59b7b7a3802d67a4d45e97406a2c9269521e7f1fd60c972e38a201beec3b28b52a2f00c3ac6c723d642b82cb5f25e25ee7e3dd981e967771005bd01"
+    },
+    "inchi_key": {
+     "kind": "full",
+     "text": "XZTUSOXSLKTKJQ-UHFFFAOYSA-N"
+    },
+    "mmcif": {
+     "kind": "full",
+     "text": "data_mock\n\n_atom_site.group_PDB atom\n\nloop_\n_atom_site.id\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.label_element_symbol\n1 O23 DTX SYSTEM 28.820 31.890 35.990 O\n2 C23 DTX SYSTEM 29.480 30.980 36.550 C\n3 C22 DTX SYSTEM 29.110 29.610 37.030 C\n4 O21 DTX SYSTEM 30.740 31.150 36.990 O\n5 C21 DTX SYSTEM 31.330 29.930 37.340 C\n6 C20 DTX SYSTEM 30.150 29.000 37.520 C\n7 C17 DTX SYSTEM 30.220 27.600 38.150 C\n8 C16 DTX SYSTEM 31.600 26.890 38.100 C\n9 C13 DTX SYSTEM 29.850 27.590 39.690 C\n10 C12 DTX SYSTEM 28.880 26.360 39.920 C\n11 C11 DTX SYSTEM 28.700 26.030 41.460 C\n12 C18 DTX SYSTEM 29.100 28.920 40.070 C\n13 C14 DTX SYSTEM 31.220 27.430 40.410 C\n14 C15 DTX SYSTEM 32.010 26.430 39.470 C\n15 O14 DTX SYSTEM 31.920 28.650 40.320 O\n16 C8 DTX SYSTEM 31.100 27.050 41.920 C\n17 C7 DTX SYSTEM 32.480 26.760 42.620 C\n18 C9 DTX SYSTEM 30.110 25.880 42.170 C\n19 C10 DTX SYSTEM 29.860 25.480 43.750 C\n20 C1 DTX SYSTEM 29.010 24.140 43.880 C\n21 C19 DTX SYSTEM 29.100 26.580 44.500 C\n22 C5 DTX SYSTEM 31.300 25.210 44.270 C\n23 C6 DTX SYSTEM 32.280 26.400 44.100 C\n24 C4 DTX SYSTEM 32.020 23.900 43.800 C\n25 C3 DTX SYSTEM 31.080 22.640 43.810 C\n26 C2 DTX SYSTEM 29.650 22.900 43.220 C\n27 O32 DTX SYSTEM 31.050 22.120 45.100 O\n28 H1 DTX SYSTEM 28.110 29.190 36.990 H\n29 H2 DTX SYSTEM 31.820 30.050 38.300 H\n30 H3 DTX SYSTEM 32.040 29.530 36.620 H\n31 H4 DTX SYSTEM 29.540 26.970 37.570 H\n32 H5 DTX SYSTEM 32.230 27.680 37.700 H\n33 H6 DTX SYSTEM 31.580 26.150 37.290 H\n34 H7 DTX SYSTEM 29.180 25.400 39.490 H\n35 H8 DTX SYSTEM 27.900 26.630 39.510 H\n36 H9 DTX SYSTEM 28.050 25.160 41.470 H\n37 H10 DTX SYSTEM 28.160 26.820 41.990 H\n38 H11 DTX SYSTEM 29.740 29.800 39.920 H\n39 H12 DTX SYSTEM 28.810 29.120 41.110 H\n40 H13 DTX SYSTEM 28.220 29.200 39.470 H\n41 H14 DTX SYSTEM 33.100 26.580 39.530 H\n42 H15 DTX SYSTEM 31.650 25.410 39.600 H\n43 H16 DTX SYSTEM 31.480 29.160 41.020 H\n44 H17 DTX SYSTEM 30.660 27.950 42.360 H\n45 H18 DTX SYSTEM 33.220 27.560 42.520 H\n46 H19 DTX SYSTEM 32.920 25.870 42.150 H\n47 H20 DTX SYSTEM 30.540 24.990 41.700 H\n48 H21 DTX SYSTEM 27.990 24.200 43.470 H\n49 H22 DTX SYSTEM 28.930 23.890 44.950 H\n50 H23 DTX SYSTEM 29.570 27.560 44.330 H\n51 H24 DTX SYSTEM 29.040 26.420 45.590 H\n52 H25 DTX SYSTEM 28.050 26.460 44.230 H\n53 H26 DTX SYSTEM 31.050 25.010 45.320 H\n54 H27 DTX SYSTEM 31.860 27.330 44.500 H\n55 H28 DTX SYSTEM 33.210 26.220 44.640 H\n56 H29 DTX SYSTEM 32.890 23.740 44.460 H\n57 H30 DTX SYSTEM 32.550 24.000 42.850 H\n58 H31 DTX SYSTEM 31.620 21.880 43.240 H\n59 H32 DTX SYSTEM 29.740 22.980 42.130 H\n60 H33 DTX SYSTEM 28.970 22.080 43.480 H\n61 H34 DTX SYSTEM 31.970 21.960 45.380 H\n\n#"
+    },
+    "molecular_formula": {
+     "kind": "full",
+     "text": "C23H34O4"
+    },
+    "name_chain": {
+     "kind": "full",
+     "text": "SYSTEM"
+    },
+    "name_molecule": {
+     "kind": "full",
+     "text": "nucleic"
+    },
+    "name_segment": {
+     "kind": "full",
+     "text": "v1"
+    },
+    "pdb_not_sanitized_nucleic": {
+     "kind": "full",
+     "text": "HEADER    export\nATOM   2479 O23  DTX A   0      28.820  31.890  35.990  1.00  0.00           O  \nATOM   2480 C23  DTX A   0      29.480  30.980  36.550  1.00  0.00           C  \nATOM   2481 C22  DTX A   0      29.110  29.610  37.030  1.00  0.00           C  \nATOM   2482 O21  DTX A   0      30.740  31.150  36.990  1.00  0.00           O  \nATOM   2483 C21  DTX A   0      31.330  29.930  37.340  1.00  0.00           C  \nATOM   2484 C20  DTX A   0      30.150  29.000  37.520  1.00  0.00           C  \nATOM   2485 C17  DTX A   0      30.220  27.600  38.150  1.00  0.00           C  \nATOM   2486 C16  DTX A   0      31.600  26.890  38.100  1.00  0.00           C  \nATOM   2487 C13  DTX A   0      29.850  27.590  39.690  1.00  0.00           C  \nATOM   2488 C12  DTX A   0      28.880  26.360  39.920  1.00  0.00           C  \nATOM   2489 C11  DTX A   0      28.700  26.030  41.460  1.00  0.00           C  \nATOM   2490 C18  DTX A   0      29.100  28.920  40.070  1.00  0.00           C  \nATOM   2491 C14  DTX A   0      31.220  27.430  40.410  1.00  0.00           C  \nATOM   2492 C15  DTX A   0      32.010  26.430  39.470  1.00  0.00           C  \nATOM   2493 O14  DTX A   0      31.920  28.650  40.320  1.00  0.00           O  \nATOM   2494  C8  DTX A   0      31.100  27.050  41.920  1.00  0.00           C  \nATOM   2495  C7  DTX A   0      32.480  26.760  42.620  1.00  0.00           C  \nATOM   2496  C9  DTX A   0      30.110  25.880  42.170  1.00  0.00           C  \nATOM   2497 C10  DTX A   0      29.860  25.480  43.750  1.00  0.00           C  \nATOM   2498  C1  DTX A   0      29.010  24.140  43.880  1.00  0.00           C  \nATOM   2499 C19  DTX A   0      29.100  26.580  44.500  1.00  0.00           C  \nATOM   2500  C5  DTX A   0      31.300  25.210  44.270  1.00  0.00           C  \nATOM   2501  C6  DTX A   0      32.280  26.400  44.100  1.00  0.00           C  \nATOM   2502  C4  DTX A   0      32.020  23.900  43.800  1.00  0.00           C  \nATOM   2503  C3  DTX A   0      31.080  22.640  43.810  1.00  0.00           C  \nATOM   2504  C2  DTX A   0      29.650  22.900  43.220  1.00  0.00           C  \nATOM   2505 O32  DTX A   0      31.050  22.120  45.100  1.00  0.00           O  \nATOM   2506  H1  DTX A   0      28.110  29.190  36.990  1.00  0.00           H  \nATOM   2507  H2  DTX A   0      31.820  30.050  38.300  1.00  0.00           H  \nATOM   2508  H3  DTX A   0      32.040  29.530  36.620  1.00  0.00           H  \nATOM   2509  H4  DTX A   0      29.540  26.970  37.570  1.00  0.00           H  \nATOM   2510  H5  DTX A   0      32.230  27.680  37.700  1.00  0.00           H  \nATOM   2511  H6  DTX A   0      31.580  26.150  37.290  1.00  0.00           H  \nATOM   2512  H7  DTX A   0      29.180  25.400  39.490  1.00  0.00           H  \nATOM   2513  H8  DTX A   0      27.900  26.630  39.510  1.00  0.00           H  \nATOM   2514  H9  DTX A   0      28.050  25.160  41.470  1.00  0.00           H  \nATOM   2515 H10  DTX A   0      28.160  26.820  41.990  1.00  0.00           H  \nATOM   2516 H11  DTX A   0      29.740  29.800  39.920  1.00  0.00           H  \nATOM   2517 H12  DTX A   0      28.810  29.120  41.110  1.00  0.00           H  \nATOM   2518 H13  DTX A   0      28.220  29.200  39.470  1.00  0.00           H  \nATOM   2519 H14  DTX A   0      33.100  26.580  39.530  1.00  0.00           H  \nATOM   2520 H15  DTX A   0      31.650  25.410  39.600  1.00  0.00           H  \nATOM   2521 H16  DTX A   0      31.480  29.160  41.020  1.00  0.00           H  \nATOM   2522 H17  DTX A   0      30.660  27.950  42.360  1.00  0.00           H  \nATOM   2523 H18  DTX A   0      33.220  27.560  42.520  1.00  0.00           H  \nATOM   2524 H19  DTX A   0      32.920  25.870  42.150  1.00  0.00           H  \nATOM   2525 H20  DTX A   0      30.540  24.990  41.700  1.00  0.00           H  \nATOM   2526 H21  DTX A   0      27.990  24.200  43.470  1.00  0.00           H  \nATOM   2527 H22  DTX A   0      28.930  23.890  44.950  1.00  0.00           H  \nATOM   2528 H23  DTX A   0      29.570  27.560  44.330  1.00  0.00           H  \nATOM   2529 H24  DTX A   0      29.040  26.420  45.590  1.00  0.00           H  \nATOM   2530 H25  DTX A   0      28.050  26.460  44.230  1.00  0.00           H  \nATOM   2531 H26  DTX A   0      31.050  25.010  45.320  1.00  0.00           H  \nATOM   2532 H27  DTX A   0      31.860  27.330  44.500  1.00  0.00           H  \nATOM   2533 H28  DTX A   0      33.210  26.220  44.640  1.00  0.00           H  \nATOM   2534 H29  DTX A   0      32.890  23.740  44.460  1.00  0.00           H  \nATOM   2535 H30  DTX A   0      32.550  24.000  42.850  1.00  0.00           H  \nATOM   2536 H31  DTX A   0      31.620  21.880  43.240  1.00  0.00           H  \nATOM   2537 H32  DTX A   0      29.740  22.980  42.130  1.00  0.00           H  \nATOM   2538 H33  DTX A   0      28.970  22.080  43.480  1.00  0.00           H  \nATOM   2539 H34  DTX A   0      31.970  21.960  45.380  1.00  0.00           H  \nCONECT 2479 2480\nCONECT 2480 2479 2481 2482\nCONECT 2481 2480 2484 2506\nCONECT 2482 2480 2483\nCONECT 2484 2481 2483 2485\nCONECT 2506 2481\nCONECT 2483 2482 2484 2507 2508\nCONECT 2507 2483\nCONECT 2508 2483\nCONECT 2485 2484 2486 2487 2509\nCONECT 2486 2485 2492 2510 2511\nCONECT 2487 2485 2488 2490 2491\nCONECT 2509 2485\nCONECT 2492 2486 2491 2519 2520\nCONECT 2510 2486\nCONECT 2511 2486\nCONECT 2488 2487 2489 2512 2513\nCONECT 2490 2487 2516 2517 2518\nCONECT 2491 2487 2492 2493 2494\nCONECT 2489 2488 2496 2514 2515\nCONECT 2512 2488\nCONECT 2513 2488\nCONECT 2496 2489 2494 2497 2525\nCONECT 2514 2489\nCONECT 2515 2489\nCONECT 2516 2490\nCONECT 2517 2490\nCONECT 2518 2490\nCONECT 2493 2491 2521\nCONECT 2494 2491 2495 2496 2522\nCONECT 2519 2492\nCONECT 2520 2492\nCONECT 2521 2493\nCONECT 2495 2494 2501 2523 2524\nCONECT 2522 2494\nCONECT 2501 2495 2500 2532 2533\nCONECT 2523 2495\nCONECT 2524 2495\nCONECT 2497 2496 2498 2499 2500\nCONECT 2525 2496\nCONECT 2498 2497 2504 2526 2527\nCONECT 2499 2497 2528 2529 2530\nCONECT 2500 2497 2501 2502 2531\nCONECT 2504 2498 2503 2537 2538\nCONECT 2526 2498\nCONECT 2527 2498\nCONECT 2528 2499\nCONECT 2529 2499\nCONECT 2530 2499\nCONECT 2502 2500 2503 2534 2535\nCONECT 2531 2500\nCONECT 2532 2501\nCONECT 2533 2501\nCONECT 2503 2502 2504 2505 2536\nCONECT 2534 2502\nCONECT 2535 2502\nCONECT 2505 2503 2539\nCONECT 2536 2503\nCONECT 2537 2504\nCONECT 2538 2504\nCONECT 2539 2505\nEND\n"
+    },
+    "pdb_nucleic": {
+     "kind": "full",
+     "text": "HEADER    export\nATOM   2479 O23  DTX A   0      28.820  31.890  35.990  1.00  0.00           O  \nATOM   2480 C23  DTX A   0      29.480  30.980  36.550  1.00  0.00           C  \nATOM   2481 C22  DTX A   0      29.110  29.610  37.030  1.00  0.00           C  \nATOM   2482 O21  DTX A   0      30.740  31.150  36.990  1.00  0.00           O  \nATOM   2483 C21  DTX A   0      31.330  29.930  37.340  1.00  0.00           C  \nATOM   2484 C20  DTX A   0      30.150  29.000  37.520  1.00  0.00           C  \nATOM   2485 C17  DTX A   0      30.220  27.600  38.150  1.00  0.00           C  \nATOM   2486 C16  DTX A   0      31.600  26.890  38.100  1.00  0.00           C  \nATOM   2487 C13  DTX A   0      29.850  27.590  39.690  1.00  0.00           C  \nATOM   2488 C12  DTX A   0      28.880  26.360  39.920  1.00  0.00           C  \nATOM   2489 C11  DTX A   0      28.700  26.030  41.460  1.00  0.00           C  \nATOM   2490 C18  DTX A   0      29.100  28.920  40.070  1.00  0.00           C  \nATOM   2491 C14  DTX A   0      31.220  27.430  40.410  1.00  0.00           C  \nATOM   2492 C15  DTX A   0      32.010  26.430  39.470  1.00  0.00           C  \nATOM   2493 O14  DTX A   0      31.920  28.650  40.320  1.00  0.00           O  \nATOM   2494  C8  DTX A   0      31.100  27.050  41.920  1.00  0.00           C  \nATOM   2495  C7  DTX A   0      32.480  26.760  42.620  1.00  0.00           C  \nATOM   2496  C9  DTX A   0      30.110  25.880  42.170  1.00  0.00           C  \nATOM   2497 C10  DTX A   0      29.860  25.480  43.750  1.00  0.00           C  \nATOM   2498  C1  DTX A   0      29.010  24.140  43.880  1.00  0.00           C  \nATOM   2499 C19  DTX A   0      29.100  26.580  44.500  1.00  0.00           C  \nATOM   2500  C5  DTX A   0      31.300  25.210  44.270  1.00  0.00           C  \nATOM   2501  C6  DTX A   0      32.280  26.400  44.100  1.00  0.00           C  \nATOM   2502  C4  DTX A   0      32.020  23.900  43.800  1.00  0.00           C  \nATOM   2503  C3  DTX A   0      31.080  22.640  43.810  1.00  0.00           C  \nATOM   2504  C2  DTX A   0      29.650  22.900  43.220  1.00  0.00           C  \nATOM   2505 O32  DTX A   0      31.050  22.120  45.100  1.00  0.00           O  \nATOM   2506  H1  DTX A   0      28.110  29.190  36.990  1.00  0.00           H  \nATOM   2507  H2  DTX A   0      31.820  30.050  38.300  1.00  0.00           H  \nATOM   2508  H3  DTX A   0      32.040  29.530  36.620  1.00  0.00           H  \nATOM   2509  H4  DTX A   0      29.540  26.970  37.570  1.00  0.00           H  \nATOM   2510  H5  DTX A   0      32.230  27.680  37.700  1.00  0.00           H  \nATOM   2511  H6  DTX A   0      31.580  26.150  37.290  1.00  0.00           H  \nATOM   2512  H7  DTX A   0      29.180  25.400  39.490  1.00  0.00           H  \nATOM   2513  H8  DTX A   0      27.900  26.630  39.510  1.00  0.00           H  \nATOM   2514  H9  DTX A   0      28.050  25.160  41.470  1.00  0.00           H  \nATOM   2515 H10  DTX A   0      28.160  26.820  41.990  1.00  0.00           H  \nATOM   2516 H11  DTX A   0      29.740  29.800  39.920  1.00  0.00           H  \nATOM   2517 H12  DTX A   0      28.810  29.120  41.110  1.00  0.00           H  \nATOM   2518 H13  DTX A   0      28.220  29.200  39.470  1.00  0.00           H  \nATOM   2519 H14  DTX A   0      33.100  26.580  39.530  1.00  0.00           H  \nATOM   2520 H15  DTX A   0      31.650  25.410  39.600  1.00  0.00           H  \nATOM   2521 H16  DTX A   0      31.480  29.160  41.020  1.00  0.00           H  \nATOM   2522 H17  DTX A   0      30.660  27.950  42.360  1.00  0.00           H  \nATOM   2523 H18  DTX A   0      33.220  27.560  42.520  1.00  0.00           H  \nATOM   2524 H19  DTX A   0      32.920  25.870  42.150  1.00  0.00           H  \nATOM   2525 H20  DTX A   0      30.540  24.990  41.700  1.00  0.00           H  \nATOM   2526 H21  DTX A   0      27.990  24.200  43.470  1.00  0.00           H  \nATOM   2527 H22  DTX A   0      28.930  23.890  44.950  1.00  0.00           H  \nATOM   2528 H23  DTX A   0      29.570  27.560  44.330  1.00  0.00           H  \nATOM   2529 H24  DTX A   0      29.040  26.420  45.590  1.00  0.00           H  \nATOM   2530 H25  DTX A   0      28.050  26.460  44.230  1.00  0.00           H  \nATOM   2531 H26  DTX A   0      31.050  25.010  45.320  1.00  0.00           H  \nATOM   2532 H27  DTX A   0      31.860  27.330  44.500  1.00  0.00           H  \nATOM   2533 H28  DTX A   0      33.210  26.220  44.640  1.00  0.00           H  \nATOM   2534 H29  DTX A   0      32.890  23.740  44.460  1.00  0.00           H  \nATOM   2535 H30  DTX A   0      32.550  24.000  42.850  1.00  0.00           H  \nATOM   2536 H31  DTX A   0      31.620  21.880  43.240  1.00  0.00           H  \nATOM   2537 H32  DTX A   0      29.740  22.980  42.130  1.00  0.00           H  \nATOM   2538 H33  DTX A   0      28.970  22.080  43.480  1.00  0.00           H  \nATOM   2539 H34  DTX A   0      31.970  21.960  45.380  1.00  0.00           H  \nCONECT 2479 2480\nCONECT 2480 2479 2481 2482\nCONECT 2481 2480 2484 2506\nCONECT 2482 2480 2483\nCONECT 2484 2481 2483 2485\nCONECT 2506 2481\nCONECT 2483 2482 2484 2507 2508\nCONECT 2507 2483\nCONECT 2508 2483\nCONECT 2485 2484 2486 2487 2509\nCONECT 2486 2485 2492 2510 2511\nCONECT 2487 2485 2488 2490 2491\nCONECT 2509 2485\nCONECT 2492 2486 2491 2519 2520\nCONECT 2510 2486\nCONECT 2511 2486\nCONECT 2488 2487 2489 2512 2513\nCONECT 2490 2487 2516 2517 2518\nCONECT 2491 2487 2492 2493 2494\nCONECT 2489 2488 2496 2514 2515\nCONECT 2512 2488\nCONECT 2513 2488\nCONECT 2496 2489 2494 2497 2525\nCONECT 2514 2489\nCONECT 2515 2489\nCONECT 2516 2490\nCONECT 2517 2490\nCONECT 2518 2490\nCONECT 2493 2491 2521\nCONECT 2494 2491 2495 2496 2522\nCONECT 2519 2492\nCONECT 2520 2492\nCONECT 2521 2493\nCONECT 2495 2494 2501 2523 2524\nCONECT 2522 2494\nCONECT 2501 2495 2500 2532 2533\nCONECT 2523 2495\nCONECT 2524 2495\nCONECT 2497 2496 2498 2499 2500\nCONECT 2525 2496\nCONECT 2498 2497 2504 2526 2527\nCONECT 2499 2497 2528 2529 2530\nCONECT 2500 2497 2501 2502 2531\nCONECT 2504 2498 2503 2537 2538\nCONECT 2526 2498\nCONECT 2527 2498\nCONECT 2528 2499\nCONECT 2529 2499\nCONECT 2530 2499\nCONECT 2502 2500 2503 2534 2535\nCONECT 2531 2500\nCONECT 2532 2501\nCONECT 2533 2501\nCONECT 2503 2502 2504 2505 2536\nCONECT 2534 2502\nCONECT 2535 2502\nCONECT 2505 2503 2539\nCONECT 2536 2503\nCONECT 2537 2504\nCONECT 2538 2504\nCONECT 2539 2505\nEND\n"
+    },
+    "resname": {
+     "kind": "full",
+     "text": "DTX"
+    },
+    "selfies": {
+     "kind": "full",
+     "text": "[C][C][C][C][C][Branch1][C][O][C][C][Ring1][#Branch1][C][C][C][C][Ring1][O][C][C][C][Branch1][C][C][C][Branch1][O][C][=C][C][=Branch1][C][=O][O][C][Ring1][=Branch1][C][C][C][Ring1][S][Ring1][N][O]"
+    },
+    "skeleton_fp": {
+     "kind": "full",
+     "text": "skelfp:v1:00000000000000000000800000000002000000000008000002000001000800000000000000001000000000000000000200000000008010000000000000000800000000000042000001000000800000000004010600000000000000000000010000000000000000000000000000200000000001000000000000000820000000000020000010000000000100000000000000000000000000010000000000000100000000010000200000000000100000000000481000000000000000000010000020000000800000000000000000000000000000000000000200400000000000000001000040000000000000000000000000000000000000001000000000000000|C23O4"
+    },
+    "smiles": {
+     "kind": "full",
+     "text": "CC12CCC(O)CC1CCC1C2CCC2(C)C(C3=CC(=O)OC3)CCC12O"
+    },
+    "smiles_not_sanitized": {
+     "kind": "full",
+     "text": "CC12CCC(O)CC1CCC1C2CCC2(C)C(C3=CC(=O)OC3)CCC12O"
+    }
+   },
+   "errors": []
+  }
+ }
+}

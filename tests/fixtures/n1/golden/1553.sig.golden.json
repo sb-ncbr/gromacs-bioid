@@ -1,0 +1,74 @@
+{
+ "eid": "1553",
+ "code": "v3.124-golden",
+ "segments": {
+  "SYSTEM": {
+   "flags": {
+    "has_elements": true,
+    "has_masses": true,
+    "has_positions": true,
+    "has_names": true,
+    "has_unique_names": true,
+    "is_protein": false,
+    "is_nucleic": true,
+    "has_multi_atom_residues": true
+   },
+   "residue_count": 26,
+   "atom_count": 846,
+   "attempted": [
+    "molecular_formula",
+    "fasta_map_nucleic",
+    "pdb_nucleic",
+    "pdb_not_sanitized_nucleic",
+    "pdb_backbone_nucleic",
+    "pdb_backbone_not_sanitized_nucleic",
+    "topology_less_pdb",
+    "mmcif",
+    "name_chain",
+    "name_molecule",
+    "fingerprint"
+   ],
+   "generated": {
+    "fasta_map_nucleic": {
+     "kind": "full",
+     "text": "AAGGGTGGGTGTAAGTGTGGGTGGGT"
+    },
+    "fingerprint": {
+     "kind": "full",
+     "text": "1fd473baa52f49f9106afe6957e2e58531c3c8a6df13048866ff37a2dd4db9eee45b3bd951d7d2b17c684d53a1163b3c447dc7978d5f55fdc45212bb2d0cce1b"
+    },
+    "mmcif": {
+     "kind": "hash",
+     "sha256": "003735dfb61af008c7044e6751bf63fa129378c3a6123a59f0783542160d39a9",
+     "len": 34539,
+     "head": "data_mock\n\n_atom_site.group_PDB atom\n\nloop_\n_atom_site.id\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.label_element_symbol\n1 HO5' DA5 SYSTEM 39.220 41.820 27.420 H\n2 O5' DA5 SYSTEM 39.760 42.210 28.110 O\n3 C5' DA5 SYSTEM 39.940 43.590 27.830 C\n4 H5' DA5 SYSTEM 40.590 43.900 28.650 H\n5 H5'' DA5 SYSTEM 39.020 44.180 27.850 H\n6 C4' DA5 SYSTEM 40.640 43.710 26.370 C\n7 H4' DA5 SYSTEM 40.700 44.780 26.16"
+    },
+    "molecular_formula": {
+     "kind": "full",
+     "text": "C260H295N109O157P25"
+    },
+    "name_chain": {
+     "kind": "full",
+     "text": "SYSTEM"
+    },
+    "name_molecule": {
+     "kind": "full",
+     "text": "nucleic"
+    },
+    "pdb_not_sanitized_nucleic": {
+     "kind": "hash",
+     "sha256": "7ed5fed73f2aa3611afd9a0d61e709aca5ff2b00a7d1f6fb9dd808bedb73bfe1",
+     "len": 87859,
+     "head": "HEADER    export\nATOM      0 HO5' DA5 A   0      39.220  41.820  27.420  1.00  0.00           H  \nATOM      1 O5'  DA5 A   0      39.760  42.210  28.110  1.00  0.00           O  \nATOM      2 C5'  DA5 A   0      39.940  43.590  27.830  1.00  0.00           C  \nATOM      3 H5'  DA5 A   0      40.590  43.900  28.650  1.00  0.00           H  \nATOM      4 H5'' DA5 A   0      39.020  44.180  27.850  1.00  0.00           H  \nATOM      5 C4'  DA5 A   0      40.640  43.710  26.370  1.00  0.00           C"
+    },
+    "pdb_nucleic": {
+     "kind": "hash",
+     "sha256": "7ed5fed73f2aa3611afd9a0d61e709aca5ff2b00a7d1f6fb9dd808bedb73bfe1",
+     "len": 87859,
+     "head": "HEADER    export\nATOM      0 HO5' DA5 A   0      39.220  41.820  27.420  1.00  0.00           H  \nATOM      1 O5'  DA5 A   0      39.760  42.210  28.110  1.00  0.00           O  \nATOM      2 C5'  DA5 A   0      39.940  43.590  27.830  1.00  0.00           C  \nATOM      3 H5'  DA5 A   0      40.590  43.900  28.650  1.00  0.00           H  \nATOM      4 H5'' DA5 A   0      39.020  44.180  27.850  1.00  0.00           H  \nATOM      5 C4'  DA5 A   0      40.640  43.710  26.370  1.00  0.00           C"
+    }
+   },
+   "errors": []
+  }
+ }
+}

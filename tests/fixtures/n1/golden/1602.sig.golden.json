@@ -1,0 +1,223 @@
+{
+ "eid": "1602",
+ "code": "v3.124-golden",
+ "segments": {
+  "SYSTEM": {
+   "flags": {
+    "has_elements": true,
+    "has_masses": true,
+    "has_positions": true,
+    "has_names": true,
+    "has_unique_names": true,
+    "is_protein": false,
+    "is_nucleic": true,
+    "has_multi_atom_residues": true
+   },
+   "residue_count": 33,
+   "atom_count": 1106,
+   "attempted": [
+    "molecular_formula",
+    "fasta_map_nucleic",
+    "pdb_nucleic",
+    "pdb_not_sanitized_nucleic",
+    "pdb_backbone_nucleic",
+    "pdb_backbone_not_sanitized_nucleic",
+    "topology_less_pdb",
+    "mmcif",
+    "name_chain",
+    "name_molecule",
+    "fingerprint"
+   ],
+   "generated": {
+    "fingerprint": {
+     "kind": "full",
+     "text": "d7476b60ab074729e2900f16c9d48eba2135998d74a42035fe03e3b7d93ba2808f34b7b47dfdeb296207588011466c34059b083a1b4392a51fbf08d713388ddc"
+    },
+    "mmcif": {
+     "kind": "hash",
+     "sha256": "8534b0e8280d860f97ea0971f5483ea678e3343596dc03ab7feafe01faca7d02",
+     "len": 45383,
+     "head": "data_mock\n\n_atom_site.group_PDB atom\n\nloop_\n_atom_site.id\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.label_element_symbol\n1 HO5' DC5 SYSTEM 50.640 31.480 61.400 H\n2 O5' DC5 SYSTEM 50.620 32.360 61.790 O\n3 C5' DC5 SYSTEM 51.880 32.980 61.680 C\n4 H5' DC5 SYSTEM 52.620 32.350 62.170 H\n5 H5'' DC5 SYSTEM 51.740 33.920 62.230 H\n6 C4' DC5 SYSTEM 52.420 33.230 60.240 C\n7 H4' DC5 SYSTEM 53.430 33.600 60.42"
+    },
+    "molecular_formula": {
+     "kind": "full",
+     "text": "C349H402N128O195P30S2"
+    },
+    "name_chain": {
+     "kind": "full",
+     "text": "SYSTEM"
+    },
+    "name_molecule": {
+     "kind": "full",
+     "text": "nucleic"
+    },
+    "pdb_not_sanitized_nucleic": {
+     "kind": "hash",
+     "sha256": "a5a467d2e20f195681ece0b03f919dcbb9e30a2332371e845056aecd46fde537",
+     "len": 114789,
+     "head": "HEADER    export\nATOM      0 HO5' DC5 A   0      50.640  31.480  61.400  1.00  0.00           H  \nATOM      1 O5'  DC5 A   0      50.620  32.360  61.790  1.00  0.00           O  \nATOM      2 C5'  DC5 A   0      51.880  32.980  61.680  1.00  0.00           C  \nATOM      3 H5'  DC5 A   0      52.620  32.350  62.170  1.00  0.00           H  \nATOM      4 H5'' DC5 A   0      51.740  33.920  62.230  1.00  0.00           H  \nATOM      5 C4'  DC5 A   0      52.420  33.230  60.240  1.00  0.00           C"
+    },
+    "pdb_nucleic": {
+     "kind": "hash",
+     "sha256": "a5a467d2e20f195681ece0b03f919dcbb9e30a2332371e845056aecd46fde537",
+     "len": 114789,
+     "head": "HEADER    export\nATOM      0 HO5' DC5 A   0      50.640  31.480  61.400  1.00  0.00           H  \nATOM      1 O5'  DC5 A   0      50.620  32.360  61.790  1.00  0.00           O  \nATOM      2 C5'  DC5 A   0      51.880  32.980  61.680  1.00  0.00           C  \nATOM      3 H5'  DC5 A   0      52.620  32.350  62.170  1.00  0.00           H  \nATOM      4 H5'' DC5 A   0      51.740  33.920  62.230  1.00  0.00           H  \nATOM      5 C4'  DC5 A   0      52.420  33.230  60.240  1.00  0.00           C"
+    }
+   },
+   "errors": []
+  },
+  "SYSTEM__v1": {
+   "flags": {
+    "has_elements": true,
+    "has_masses": true,
+    "has_positions": true,
+    "has_names": true,
+    "has_unique_names": true,
+    "is_protein": false,
+    "is_nucleic": true,
+    "has_multi_atom_residues": true
+   },
+   "residue_count": 16,
+   "atom_count": 507,
+   "attempted": [
+    "molecular_formula",
+    "fasta_map_nucleic",
+    "pdb_nucleic",
+    "pdb_not_sanitized_nucleic",
+    "pdb_backbone_nucleic",
+    "pdb_backbone_not_sanitized_nucleic",
+    "topology_less_pdb",
+    "mmcif",
+    "name_chain",
+    "name_molecule",
+    "name_segment",
+    "fingerprint"
+   ],
+   "generated": {
+    "fasta_map_nucleic": {
+     "kind": "full",
+     "text": "CGCGAAAATTTTCGCG"
+    },
+    "fingerprint": {
+     "kind": "full",
+     "text": "d4bd54bec35080cdb48e8b265df465dac86e6d797f3a924e968fc7e6962e7e5352f8589a3b46c05077cea83eff4be43c4e9035be04d00660cafcd77c62afca82"
+    },
+    "mmcif": {
+     "kind": "hash",
+     "sha256": "9ff066bfcc5277a12f19af7a72d4b4243f951649ac377af6b01160267dfcfd46",
+     "len": 20785,
+     "head": "data_mock\n\n_atom_site.group_PDB atom\n\nloop_\n_atom_site.id\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.label_element_symbol\n1 HO5' DC5 SYSTEM 50.640 31.480 61.400 H\n2 O5' DC5 SYSTEM 50.620 32.360 61.790 O\n3 C5' DC5 SYSTEM 51.880 32.980 61.680 C\n4 H5' DC5 SYSTEM 52.620 32.350 62.170 H\n5 H5'' DC5 SYSTEM 51.740 33.920 62.230 H\n6 C4' DC5 SYSTEM 52.420 33.230 60.240 C\n7 H4' DC5 SYSTEM 53.430 33.600 60.42"
+    },
+    "molecular_formula": {
+     "kind": "full",
+     "text": "C156H182N60O94P15"
+    },
+    "name_chain": {
+     "kind": "full",
+     "text": "SYSTEM"
+    },
+    "name_molecule": {
+     "kind": "full",
+     "text": "nucleic"
+    },
+    "name_segment": {
+     "kind": "full",
+     "text": "v1"
+    },
+    "pdb_not_sanitized_nucleic": {
+     "kind": "hash",
+     "sha256": "2a9b9cd743a10c27c98485e547fe11e45c32cf2934f6283e822add26e3094649",
+     "len": 52632,
+     "head": "HEADER    export\nATOM      0 HO5' DC5 A   0      50.640  31.480  61.400  1.00  0.00           H  \nATOM      1 O5'  DC5 A   0      50.620  32.360  61.790  1.00  0.00           O  \nATOM      2 C5'  DC5 A   0      51.880  32.980  61.680  1.00  0.00           C  \nATOM      3 H5'  DC5 A   0      52.620  32.350  62.170  1.00  0.00           H  \nATOM      4 H5'' DC5 A   0      51.740  33.920  62.230  1.00  0.00           H  \nATOM      5 C4'  DC5 A   0      52.420  33.230  60.240  1.00  0.00           C"
+    },
+    "pdb_nucleic": {
+     "kind": "hash",
+     "sha256": "2a9b9cd743a10c27c98485e547fe11e45c32cf2934f6283e822add26e3094649",
+     "len": 52632,
+     "head": "HEADER    export\nATOM      0 HO5' DC5 A   0      50.640  31.480  61.400  1.00  0.00           H  \nATOM      1 O5'  DC5 A   0      50.620  32.360  61.790  1.00  0.00           O  \nATOM      2 C5'  DC5 A   0      51.880  32.980  61.680  1.00  0.00           C  \nATOM      3 H5'  DC5 A   0      52.620  32.350  62.170  1.00  0.00           H  \nATOM      4 H5'' DC5 A   0      51.740  33.920  62.230  1.00  0.00           H  \nATOM      5 C4'  DC5 A   0      52.420  33.230  60.240  1.00  0.00           C"
+    }
+   },
+   "errors": []
+  },
+  "SYSTEM__v2": {
+   "flags": {
+    "has_elements": true,
+    "has_masses": true,
+    "has_positions": true,
+    "has_names": true,
+    "has_unique_names": true,
+    "is_protein": false,
+    "is_nucleic": false,
+    "has_multi_atom_residues": true
+   },
+   "residue_count": 1,
+   "atom_count": 92,
+   "attempted": [
+    "smiles",
+    "smiles_not_sanitized",
+    "inchi_key",
+    "morgan_fingerprint",
+    "selfies",
+    "molecular_formula",
+    "skeleton_fp",
+    "resname",
+    "mmcif",
+    "name_chain",
+    "name_molecule",
+    "name_segment",
+    "fingerprint"
+   ],
+   "generated": {
+    "fingerprint": {
+     "kind": "full",
+     "text": "c2f11d1d14d43cb8496079c7e751a378e6325ba5046382baf984e209c093d55aee1fca766372662aa10bc6215b2860c3dc36c3faebab72fc573b3b33daa5f244"
+    },
+    "inchi_key": {
+     "kind": "full",
+     "text": "UMNYVUIVARTERU-UHFFFAOYSA-N"
+    },
+    "mmcif": {
+     "kind": "full",
+     "text": "data_mock\n\n_atom_site.group_PDB atom\n\nloop_\n_atom_site.id\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.label_element_symbol\n1 C LIG SYSTEM 30.020 27.020 50.330 C\n2 C1 LIG SYSTEM 30.790 28.310 50.290 C\n3 H LIG SYSTEM 30.170 29.190 50.450 H\n4 C2 LIG SYSTEM 31.910 28.350 51.390 C\n5 C3 LIG SYSTEM 33.060 29.150 50.750 C\n6 C4 LIG SYSTEM 32.780 28.940 49.280 C\n7 N LIG SYSTEM 31.600 28.450 49.040 N\n8 C5 LIG SYSTEM 33.850 29.250 48.310 C\n9 C6 LIG SYSTEM 33.870 30.140 47.330 C\n10 C7 LIG SYSTEM 35.100 29.920 46.480 C\n11 C8 LIG SYSTEM 35.950 31.020 46.090 C\n12 C9 LIG SYSTEM 35.240 30.160 45.040 C\n13 N1 LIG SYSTEM 35.720 28.780 47.070 N\n14 C10 LIG SYSTEM 35.050 28.320 48.130 C\n15 O LIG SYSTEM 35.430 27.460 48.870 O\n16 C11 LIG SYSTEM 32.830 31.170 46.950 C\n17 C12 LIG SYSTEM 32.680 32.250 48.010 C\n18 O1 LIG SYSTEM 32.390 31.970 49.130 O\n19 N2 LIG SYSTEM 33.110 33.510 47.730 N\n20 C13 LIG SYSTEM 33.140 34.710 48.580 C\n21 C14 LIG SYSTEM 32.460 35.790 47.840 C\n22 N3 LIG SYSTEM 32.890 36.220 46.620 N\n23 C15 LIG SYSTEM 32.070 37.260 46.180 C\n24 C16 LIG SYSTEM 31.070 37.520 47.130 C\n25 S LIG SYSTEM 31.030 36.440 48.460 S\n26 C17 LIG SYSTEM 32.080 38.110 44.940 C\n27 O2 LIG SYSTEM 31.260 38.980 44.650 O\n28 C18 LIG SYSTEM 33.050 37.560 43.850 C\n29 O3 LIG SYSTEM 33.280 36.370 43.660 O\n30 C19 LIG SYSTEM 33.570 38.680 43.020 C\n31 N4 LIG SYSTEM 33.220 39.980 42.960 N\n32 C20 LIG SYSTEM 33.900 40.780 42.130 C\n33 C21 LIG SYSTEM 34.670 40.010 41.270 C\n34 S1 LIG SYSTEM 34.740 38.340 41.760 S\n35 C22 LIG SYSTEM 33.850 42.230 42.050 C\n36 O4 LIG SYSTEM 33.050 42.790 42.780 O\n37 C23 LIG SYSTEM 34.840 42.990 41.170 C\n38 N5 LIG SYSTEM 34.380 43.350 39.790 N\n39 C24 LIG SYSTEM 35.160 43.990 38.930 C\n40 O5 LIG SYSTEM 36.280 44.310 39.210 O\n41 C25 LIG SYSTEM 34.610 44.570 37.530 C\n42 C26 LIG SYSTEM 35.540 45.670 36.870 C\n43 C27 LIG SYSTEM 35.920 46.880 37.360 C\n44 C28 LIG SYSTEM 36.880 47.590 36.490 C\n45 O6 LIG SYSTEM 37.450 48.620 36.620 O\n46 N6 LIG SYSTEM 37.000 46.720 35.460 N\n47 C29 LIG SYSTEM 36.260 45.490 35.620 C\n48 C30 LIG SYSTEM 35.720 44.740 34.490 C\n49 C31 LIG SYSTEM 37.020 44.320 35.130 C\n50 C32 LIG SYSTEM 35.500 47.470 38.600 C\n51 N7 LIG SYSTEM 34.420 47.080 39.200 N\n52 C33 LIG SYSTEM 34.050 47.970 40.350 C\n53 H1 LIG SYSTEM 33.050 48.410 40.290 H\n54 C34 LIG SYSTEM 35.170 49.110 40.260 C\n55 C35 LIG SYSTEM 35.980 48.790 39.030 C\n56 C36 LIG SYSTEM 34.070 47.030 41.560 C\n57 H2 LIG SYSTEM 30.590 26.160 49.960 H\n58 H3 LIG SYSTEM 29.130 27.220 49.740 H\n59 H4 LIG SYSTEM 29.650 26.760 51.320 H\n60 H5 LIG SYSTEM 32.210 27.350 51.690 H\n61 H6 LIG SYSTEM 31.510 28.960 52.210 H\n62 H7 LIG SYSTEM 34.060 28.850 51.070 H\n63 H8 LIG SYSTEM 32.980 30.220 50.960 H\n64 H9 LIG SYSTEM 37.000 30.870 46.280 H\n65 H10 LIG SYSTEM 35.550 32.030 46.090 H\n66 H11 LIG SYSTEM 35.760 29.370 44.500 H\n67 H12 LIG SYSTEM 34.480 30.540 44.360 H\n68 H13 LIG SYSTEM 36.720 28.690 47.010 H\n69 H14 LIG SYSTEM 31.910 30.610 46.780 H\n70 H15 LIG SYSTEM 33.070 31.670 46.010 H\n71 H16 LIG SYSTEM 33.450 33.710 46.800 H\n72 H17 LIG SYSTEM 34.190 34.920 48.790 H\n73 H18 LIG SYSTEM 32.740 34.500 49.580 H\n74 H19 LIG SYSTEM 30.270 38.260 47.090 H\n75 H20 LIG SYSTEM 35.140 40.280 40.330 H\n76 H21 LIG SYSTEM 35.740 42.370 41.120 H\n77 H22 LIG SYSTEM 35.100 43.940 41.660 H\n78 H23 LIG SYSTEM 33.510 42.990 39.440 H\n79 H24 LIG SYSTEM 33.610 44.950 37.760 H\n80 H25 LIG SYSTEM 34.550 43.680 36.900 H\n81 H26 LIG SYSTEM 37.410 46.940 34.560 H\n82 H27 LIG SYSTEM 35.770 45.160 33.490 H\n83 H28 LIG SYSTEM 34.890 44.080 34.730 H\n84 H29 LIG SYSTEM 37.930 44.520 34.570 H\n85 H30 LIG SYSTEM 37.000 43.430 35.760 H\n86 H31 LIG SYSTEM 35.660 49.210 41.230 H\n87 H32 LIG SYSTEM 34.760 50.110 40.110 H\n88 H33 LIG SYSTEM 37.040 48.770 39.290 H\n89 H34 LIG SYSTEM 35.780 49.620 38.340 H\n90 H35 LIG SYSTEM 34.930 46.350 41.480 H\n91 H36 LIG SYSTEM 33.250 46.310 41.510 H\n92 H37 LIG SYSTEM 34.200 47.580 42.490 H\n\n#"
+    },
+    "molecular_formula": {
+     "kind": "full",
+     "text": "C37H38N8O7S2"
+    },
+    "name_chain": {
+     "kind": "full",
+     "text": "SYSTEM"
+    },
+    "name_molecule": {
+     "kind": "full",
+     "text": "unknown"
+    },
+    "name_segment": {
+     "kind": "full",
+     "text": "v2"
+    },
+    "resname": {
+     "kind": "full",
+     "text": "LIG"
+    },
+    "selfies": {
+     "kind": "full",
+     "text": "[C][C][C][C][C][Branch2][#Branch1][=N][C][=C][Branch2][=Branch1][O][C][C][=Branch1][C][=O][N][C][C][=N][C][=Branch2][Branch1][=Branch2][=C][Branch1][C][O-1][C][=Branch1][C][=O][C][=N][C][=Branch2][Ring2][=Branch1][=C][Branch1][C][O-1][C][N][C][=Branch1][C][=O][C][C][=C][Branch1][O][C][=N][C][Branch1][C][C][C][C][Ring1][=Branch1][C][=Branch1][C][=O][N][C][Ring1][N][C][C][Ring1][Ring1][C][=S+1][Ring2][Ring1][#Branch2][C][=S+1][Ring2][Ring2][Ring1][C][Branch1][Branch1][C][C][Ring1][Ring1][N][C][Ring2][Ring2][#C][=O][=N][Ring2][Branch1][Branch1]"
+    },
+    "skeleton_fp": {
+     "kind": "full",
+     "text": "skelfp:v1:0000000004000080000000010080000000400000000a00000000000000000000000000000000006004000000000000060000000000000000000000000000001010008000000000400100000000000000000400000c000000c00028040000000000000000820008000000000000000000000000000000004002000040000000000020001014000000001040000000000200040040000000010000000000000000401000800400800000000000101000000000002020000000000000000000000008000010000000000000000000000000000000000000000000000000000000220040000000000000000000000800800400080000002000000000080000000804|C37N8O7S2"
+    },
+    "smiles": {
+     "kind": "full",
+     "text": "CC1CCC(C2=C(CC(=O)NCC3=NC(=C([O-])C(=O)C4=NC(=C([O-])CNC(=O)CC5=C(C6=NC(C)CC6)C(=O)NC56CC6)C=[S+]4)C=[S+]3)C3(CC3)NC2=O)=N1"
+    },
+    "smiles_not_sanitized": {
+     "kind": "full",
+     "text": "CC1CCC(C2=C(CC(=O)NCC3=NC(=C([O-])C(=O)C4=NC(=C([O-])CNC(=O)CC5=C(C6=NC(C)CC6)C(=O)NC56CC6)C=[S+]4)C=[S+]3)C3(CC3)NC2=O)=N1"
+    }
+   },
+   "errors": []
+  }
+ }
+}

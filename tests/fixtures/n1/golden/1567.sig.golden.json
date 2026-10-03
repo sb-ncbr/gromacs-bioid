@@ -1,0 +1,216 @@
+{
+ "eid": "1567",
+ "code": "v3.124-golden",
+ "segments": {
+  "SYSTEM": {
+   "flags": {
+    "has_elements": true,
+    "has_masses": true,
+    "has_positions": true,
+    "has_names": true,
+    "has_unique_names": true,
+    "is_protein": false,
+    "is_nucleic": true,
+    "has_multi_atom_residues": true
+   },
+   "residue_count": 112,
+   "atom_count": 3548,
+   "attempted": [
+    "molecular_formula",
+    "fasta_map_nucleic",
+    "pdb_nucleic",
+    "pdb_not_sanitized_nucleic",
+    "pdb_backbone_nucleic",
+    "pdb_backbone_not_sanitized_nucleic",
+    "topology_less_pdb",
+    "mmcif",
+    "name_chain",
+    "name_molecule",
+    "fingerprint"
+   ],
+   "generated": {
+    "fingerprint": {
+     "kind": "full",
+     "text": "7756dd99987b98da4a3c52aaa15b27774758211cb69a8bae9200f72b29346532cec0dbb5ae0135f67afc1188f0b9724a3ef7efbdbaf7b9225a19ec77554178f9"
+    },
+    "mmcif": {
+     "kind": "hash",
+     "sha256": "1def209ff1c20d52820ec67dd6f5f96a3a21a91a19ded159572106ca751e328b",
+     "len": 151363,
+     "head": "data_mock\n\n_atom_site.group_PDB atom\n\nloop_\n_atom_site.id\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.label_element_symbol\n1 HO5' DC5 SYSTEM 156.090 170.760 89.450 H\n2 O5' DC5 SYSTEM 156.760 170.070 89.440 O\n3 C5' DC5 SYSTEM 157.290 170.160 90.770 C\n4 H5' DC5 SYSTEM 157.580 171.190 90.950 H\n5 H5'' DC5 SYSTEM 158.160 169.500 90.770 H\n6 C4' DC5 SYSTEM 156.400 169.790 91.900 C\n7 H4' DC5 SYSTEM 157.010"
+    },
+    "molecular_formula": {
+     "kind": "full",
+     "text": "C1086H1258N426O668P110"
+    },
+    "name_chain": {
+     "kind": "full",
+     "text": "SYSTEM"
+    },
+    "name_molecule": {
+     "kind": "full",
+     "text": "nucleic"
+    },
+    "pdb_not_sanitized_nucleic": {
+     "kind": "hash",
+     "sha256": "be0610d58beccf638023e1f9e1f048190f5187e767754fcef361f8755a9d64a7",
+     "len": 368245,
+     "head": "HEADER    export\nATOM      0 HO5' DC5 A   0     156.090 170.760  89.450  1.00  0.00           H  \nATOM      1 O5'  DC5 A   0     156.760 170.070  89.440  1.00  0.00           O  \nATOM      2 C5'  DC5 A   0     157.290 170.160  90.770  1.00  0.00           C  \nATOM      3 H5'  DC5 A   0     157.580 171.190  90.950  1.00  0.00           H  \nATOM      4 H5'' DC5 A   0     158.160 169.500  90.770  1.00  0.00           H  \nATOM      5 C4'  DC5 A   0     156.400 169.790  91.900  1.00  0.00           C"
+    },
+    "pdb_nucleic": {
+     "kind": "hash",
+     "sha256": "be0610d58beccf638023e1f9e1f048190f5187e767754fcef361f8755a9d64a7",
+     "len": 368245,
+     "head": "HEADER    export\nATOM      0 HO5' DC5 A   0     156.090 170.760  89.450  1.00  0.00           H  \nATOM      1 O5'  DC5 A   0     156.760 170.070  89.440  1.00  0.00           O  \nATOM      2 C5'  DC5 A   0     157.290 170.160  90.770  1.00  0.00           C  \nATOM      3 H5'  DC5 A   0     157.580 171.190  90.950  1.00  0.00           H  \nATOM      4 H5'' DC5 A   0     158.160 169.500  90.770  1.00  0.00           H  \nATOM      5 C4'  DC5 A   0     156.400 169.790  91.900  1.00  0.00           C"
+    }
+   },
+   "errors": []
+  },
+  "SYSTEM__v1": {
+   "flags": {
+    "has_elements": true,
+    "has_masses": true,
+    "has_positions": true,
+    "has_names": true,
+    "has_unique_names": true,
+    "is_protein": false,
+    "is_nucleic": true,
+    "has_multi_atom_residues": true
+   },
+   "residue_count": 56,
+   "atom_count": 1780,
+   "attempted": [
+    "molecular_formula",
+    "fasta_map_nucleic",
+    "pdb_nucleic",
+    "pdb_not_sanitized_nucleic",
+    "pdb_backbone_nucleic",
+    "pdb_backbone_not_sanitized_nucleic",
+    "topology_less_pdb",
+    "mmcif",
+    "name_chain",
+    "name_molecule",
+    "name_segment",
+    "fingerprint"
+   ],
+   "generated": {
+    "fasta_map_nucleic": {
+     "kind": "full",
+     "text": "GCGCGGCATGGGGCATTTTTTTGAGCGCGCGCCTATTTTTTCGGCTACTGCCGGCG"
+    },
+    "fingerprint": {
+     "kind": "full",
+     "text": "fb45625c94cd7f9ca73f90c9675ece1b3fe936a69ede8bb6e558d48a58ee399dccb873138e8a93804b17d0fef446310cdd6e460108e54ebdcc2ccc3b5cf4bf11"
+    },
+    "mmcif": {
+     "kind": "hash",
+     "sha256": "c179a5b9e9851f267e56e0c3112ec4c42659992221919110c317db4031eadfd7",
+     "len": 75490,
+     "head": "data_mock\n\n_atom_site.group_PDB atom\n\nloop_\n_atom_site.id\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.label_element_symbol\n1 HO5' DG5 SYSTEM 45.450 17.050 94.040 H\n2 O5' DG5 SYSTEM 45.940 17.520 93.370 O\n3 C5' DG5 SYSTEM 45.180 17.700 92.230 C\n4 H5' DG5 SYSTEM 44.470 16.890 92.060 H\n5 H5'' DG5 SYSTEM 45.820 17.610 91.350 H\n6 C4' DG5 SYSTEM 44.550 19.090 92.100 C\n7 H4' DG5 SYSTEM 43.840 18.960 91.29"
+    },
+    "molecular_formula": {
+     "kind": "full",
+     "text": "C545H635N199O346P55"
+    },
+    "name_chain": {
+     "kind": "full",
+     "text": "SYSTEM"
+    },
+    "name_molecule": {
+     "kind": "full",
+     "text": "nucleic"
+    },
+    "name_segment": {
+     "kind": "full",
+     "text": "v1"
+    },
+    "pdb_not_sanitized_nucleic": {
+     "kind": "hash",
+     "sha256": "dc755a1d5890ebd4208076b3a2c9086bd9377a08139290a33131a894610ba919",
+     "len": 184711,
+     "head": "HEADER    export\nATOM   1768 HO5' DG5 A   0      45.450  17.050  94.040  1.00  0.00           H  \nATOM   1769 O5'  DG5 A   0      45.940  17.520  93.370  1.00  0.00           O  \nATOM   1770 C5'  DG5 A   0      45.180  17.700  92.230  1.00  0.00           C  \nATOM   1771 H5'  DG5 A   0      44.470  16.890  92.060  1.00  0.00           H  \nATOM   1772 H5'' DG5 A   0      45.820  17.610  91.350  1.00  0.00           H  \nATOM   1773 C4'  DG5 A   0      44.550  19.090  92.100  1.00  0.00           C"
+    },
+    "pdb_nucleic": {
+     "kind": "hash",
+     "sha256": "dc755a1d5890ebd4208076b3a2c9086bd9377a08139290a33131a894610ba919",
+     "len": 184711,
+     "head": "HEADER    export\nATOM   1768 HO5' DG5 A   0      45.450  17.050  94.040  1.00  0.00           H  \nATOM   1769 O5'  DG5 A   0      45.940  17.520  93.370  1.00  0.00           O  \nATOM   1770 C5'  DG5 A   0      45.180  17.700  92.230  1.00  0.00           C  \nATOM   1771 H5'  DG5 A   0      44.470  16.890  92.060  1.00  0.00           H  \nATOM   1772 H5'' DG5 A   0      45.820  17.610  91.350  1.00  0.00           H  \nATOM   1773 C4'  DG5 A   0      44.550  19.090  92.100  1.00  0.00           C"
+    }
+   },
+   "errors": []
+  },
+  "SYSTEM__v2": {
+   "flags": {
+    "has_elements": true,
+    "has_masses": true,
+    "has_positions": true,
+    "has_names": true,
+    "has_unique_names": true,
+    "is_protein": false,
+    "is_nucleic": true,
+    "has_multi_atom_residues": true
+   },
+   "residue_count": 56,
+   "atom_count": 1768,
+   "attempted": [
+    "molecular_formula",
+    "fasta_map_nucleic",
+    "pdb_nucleic",
+    "pdb_not_sanitized_nucleic",
+    "pdb_backbone_nucleic",
+    "pdb_backbone_not_sanitized_nucleic",
+    "topology_less_pdb",
+    "mmcif",
+    "name_chain",
+    "name_molecule",
+    "name_segment",
+    "fingerprint"
+   ],
+   "generated": {
+    "fasta_map_nucleic": {
+     "kind": "full",
+     "text": "CGCCGGCAGTAGCCGAAAAAATAGGCGCGCGCTCAAAAAAATGCCCCATGCCGCGC"
+    },
+    "fingerprint": {
+     "kind": "full",
+     "text": "ee2cae679012a3595c4a3af10a2177dfcd03ff0490709929ad0ac0f07c00278bc795012e52f4f1db2235d6cbfb5860c7c16f37f3cb6ead38c4d3f7980d8b8db7"
+    },
+    "mmcif": {
+     "kind": "hash",
+     "sha256": "736a424ab88bdc7bf7d443ca7f7c801b5058071ab274a6376e89505a3c20ab59",
+     "len": 74990,
+     "head": "data_mock\n\n_atom_site.group_PDB atom\n\nloop_\n_atom_site.id\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.label_element_symbol\n1 HO5' DC5 SYSTEM 156.090 170.760 89.450 H\n2 O5' DC5 SYSTEM 156.760 170.070 89.440 O\n3 C5' DC5 SYSTEM 157.290 170.160 90.770 C\n4 H5' DC5 SYSTEM 157.580 171.190 90.950 H\n5 H5'' DC5 SYSTEM 158.160 169.500 90.770 H\n6 C4' DC5 SYSTEM 156.400 169.790 91.900 C\n7 H4' DC5 SYSTEM 157.010"
+    },
+    "molecular_formula": {
+     "kind": "full",
+     "text": "C541H623N227O322P55"
+    },
+    "name_chain": {
+     "kind": "full",
+     "text": "SYSTEM"
+    },
+    "name_molecule": {
+     "kind": "full",
+     "text": "nucleic"
+    },
+    "name_segment": {
+     "kind": "full",
+     "text": "v2"
+    },
+    "pdb_not_sanitized_nucleic": {
+     "kind": "hash",
+     "sha256": "7a15b17660e1338335aa0a4bad4723bec02118e70a62f1fa42fec1c4f987c083",
+     "len": 183555,
+     "head": "HEADER    export\nATOM      0 HO5' DC5 A   0     156.090 170.760  89.450  1.00  0.00           H  \nATOM      1 O5'  DC5 A   0     156.760 170.070  89.440  1.00  0.00           O  \nATOM      2 C5'  DC5 A   0     157.290 170.160  90.770  1.00  0.00           C  \nATOM      3 H5'  DC5 A   0     157.580 171.190  90.950  1.00  0.00           H  \nATOM      4 H5'' DC5 A   0     158.160 169.500  90.770  1.00  0.00           H  \nATOM      5 C4'  DC5 A   0     156.400 169.790  91.900  1.00  0.00           C"
+    },
+    "pdb_nucleic": {
+     "kind": "hash",
+     "sha256": "7a15b17660e1338335aa0a4bad4723bec02118e70a62f1fa42fec1c4f987c083",
+     "len": 183555,
+     "head": "HEADER    export\nATOM      0 HO5' DC5 A   0     156.090 170.760  89.450  1.00  0.00           H  \nATOM      1 O5'  DC5 A   0     156.760 170.070  89.440  1.00  0.00           O  \nATOM      2 C5'  DC5 A   0     157.290 170.160  90.770  1.00  0.00           C  \nATOM      3 H5'  DC5 A   0     157.580 171.190  90.950  1.00  0.00           H  \nATOM      4 H5'' DC5 A   0     158.160 169.500  90.770  1.00  0.00           H  \nATOM      5 C4'  DC5 A   0     156.400 169.790  91.900  1.00  0.00           C"
+    }
+   },
+   "errors": []
+  }
+ }
+}
