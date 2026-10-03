@@ -42,6 +42,16 @@ class BlastHit:
     bits: float
     identity_p: float
     coverage_p: float
+    subject_len: int | None = None  # F-N1c: needed for both-directions exact rule
+
+
+# F-N1c: exact short identity rule applies only to nucleotide queries up to
+# this length. Rationale (measured 2026-10-03 over the campaign pdbnt DB on the
+# full 824-sequence hitless short cohort): a perfect L-mer self-match scores
+# eval ~L*DB*2^-bits, physically unreachable to the 51-bit/1e-50 identity gates
+# for L<=22ish; 55/824 sequences have true 100% full-length matches (all <=12mers,
+# the rest mostly 20-mers with none), 53 of them also subject-length-exact.
+_SHORT_IDENTITY_MAX_QLEN = 25
 
 
 class BLASTResolver(IdentifierResolver):
@@ -341,7 +351,8 @@ class BLASTResolver(IdentifierResolver):
                 identity_p: float = _scores_section["identity"] / aligned_residues if aligned_residues > 0 else 0.0
                 coverage_p: float = aligned_residues / query_len if query_len > 0 else 0.0
                 
-                results.append(BlastHit(accessions, evalue, bits, identity_p, coverage_p))
+                results.append(BlastHit(accessions, evalue, bits, identity_p, coverage_p,
+                                        subject_len=hit.get("len")))
         
         return results
 
@@ -352,31 +363,30 @@ class BLASTResolver(IdentifierResolver):
 
     def _run_blast_identity(self, sequence: str, working_directory: str) -> list[str]:
         """Execute identity search with BLAST."""
-        hits = self._process_blast_results(
-            self._run_blast_local(sequence, working_directory)
-        )
+        raw_json = self._run_blast_local(sequence, working_directory)
+        hits = self._process_blast_results(raw_json)
 
         # Apply filters for exact matches
-        hits = self._filter_blast_results(
+        strict_hits = self._filter_blast_results(
             hits,
             lambda hit: hit.evalue <= self.blast_config.exact_match_max_evalue,
         )
-        hits = self._filter_blast_results(
-            hits, 
-            lambda hit: hit.bits >= self.blast_config.exact_match_min_bits
+        strict_hits = self._filter_blast_results(
+            strict_hits,
+            lambda hit: hit.bits >= self.blast_config.exact_match_min_bits,
         )
-        hits = self._filter_blast_results(
-            hits,
+        strict_hits = self._filter_blast_results(
+            strict_hits,
             lambda hit: hit.identity_p >= self.blast_config.exact_match_min_identity_p,
         )
-        hits = self._filter_blast_results(
-            hits,
+        strict_hits = self._filter_blast_results(
+            strict_hits,
             lambda hit: hit.coverage_p >= self.blast_config.exact_match_min_query_cov_p,
         )
-        
+
         # Capture metadata for each hit
         metadata: dict[str, dict] = {}
-        for hit in hits:
+        for hit in strict_hits:
             meta = {
                 "evalue": hit.evalue,
                 "bit_score": hit.bits,
@@ -385,9 +395,40 @@ class BLASTResolver(IdentifierResolver):
             }
             for accession in hit.accessions:
                 metadata[accession] = meta
+
+        accepted: list[str] = [accession for hit in strict_hits for accession in hit.accessions]
+
+        # F-N1c: exact short identity override (nucleotide queries only,
+        # len <= _SHORT_IDENTITY_MAX_QLEN). A 100%-identical, full-query-length,
+        # subject-length-EXACT match is an identity claim regardless of the
+        # evalue/bit-score length ceiling that makes short-mers unreachable for
+        # the strict gates. Both-directionality (subject_len == query_len) is
+        # required: a 16-mer contained inside a long rRNA is NOT the same
+        # molecule. Protein path and the nucleotide similarity path unchanged.
+        query_len = len(sequence.strip()) if sequence else 0
+        if not self.is_protein and 0 < query_len <= _SHORT_IDENTITY_MAX_QLEN:
+            accepted_set = set(accepted)
+            for hit in hits:
+                if (
+                    hit.identity_p == 1.0
+                    and hit.coverage_p == 1.0
+                    and hit.subject_len is not None
+                    and hit.subject_len == query_len
+                ):
+                    for accession in hit.accessions:
+                        if accession not in accepted_set:
+                            accepted.append(accession)
+                            accepted_set.add(accession)
+                            metadata[accession] = {
+                                "evalue": hit.evalue,
+                                "bit_score": hit.bits,
+                                "identity_p": hit.identity_p,
+                                "coverage_p": hit.coverage_p,
+                                "note": f"exact_short_identity_len_le_{_SHORT_IDENTITY_MAX_QLEN}",
+                            }
+
         self._last_resolution_metadata = metadata
-        
-        return [accession for hit in hits for accession in hit.accessions]
+        return accepted
 
     def _run_blast_similarity(self, sequence: str, working_directory: str) -> list[tuple[str, float]]:
         """Execute similarity search with BLAST."""
