@@ -740,8 +740,52 @@ of global bond guessing: known story, deferred (see common-issues).
 - **Do-not (still binding)**: no gate/threshold edits; no GT-aware logic;
   the 130-row floor and tie-cluster noise stay in every table.
 
+### F-boxchem requeue wave (DONE 2026-10-03; S7 v11 OFFICIAL — falsification)
+
+- **Basis**: the largest recoverable-looking residue of the F-residual wave —
+  the 114-row boxchem subset of IN_MIRROR__NOT_PROPOSED (182-left bucket),
+  112 distinct entries; full-pipeline requeue (load->analyze->signatures->
+  identify->verify), not an offline replay. Snapshot: backups/
+  results.json_boxchem112_pre_requeue_2026-10-02.tar (+9.8GB full-dir tgz).
+- **Ops events**: 19/112 tasks stolen by the stale 64d-old bat3-ceitec-bat3-
+  worker pool (shared celery broker!): 15 crashed on the pre-f7baeb734 tuple
+  bug, 4 "completed" with old code. Ruling (user): upgrade-not-pause — the
+  foreign pool now runs v3.124 (whole namespace unified); 19 requeued, all
+  completed. One celery meta loss (node clock skew) settled manually after
+  worker-log + results.json verification. Result: **112/112 completed, 0
+  final failures**.
+- **VERDICT — clean negative result**: coverable probe rerun anchored to
+  campaign_stats_v11.json (GATE OK, regen delta +0): residual **410 -> 410,
+  0 fixed, 0 regressions, 0 bucket transitions**; inchikey @10 exact regen
+  5374 == v10 (92.9 raw unpinned). Spot-diff (5 entries): identifiers
+  rebuilt 5/5, verification 2/5, molecules/signatures byte-identical.
+- **Conclusion**: Task B's "requeue class" hypothesis falsified — upstream
+  (universe->molecules->signatures) is deterministic on these inputs; chem-
+  candidate churn does not reach the GT compounds. The 114 (+ wider 410
+  residue) is engine-bound: organic ceiling for this code era =
+  **92.9 raw / 95.0 excl-mirror / 95.4 excl-floor+variant**. Residue
+  decomposition (audit v11-era): engine_miss_identity 277, band_buried 231,
+  gt_absent 108+23, prodrug 31, variant-layer 21, floor 130.
+- **S7 v11 OFFICIAL (campaign_stats_v11.json)**: inchikey 92.9 (5374 exact),
+  ion 95.8 (+0.2 requeue noise), pdb 99.6, uniprot 98.2, entry-any 99.6;
+  all controls flat. Frame frozen gate-verified across v8-v11 (ann=5784,
+  att ~5768, delta +0 every anchored rerun).
+
+### Bag-of-molecules funnel (v11; user S-metric; artifact bag_funnel_v11.json)
+- Frame: 13,917 live+analyzable entries -> **25,451 molecule-units**
+  (segment-level, the pipeline's own molecule unit).
+- >=1 searchable-structural signature (A): **100.0%**; >=1 names signature
+  (B): 100.0%; fingerprint-class: 0 by construction.
+- >=1 identifier hit: **89.5%**; >=1 verified result: **87.7%**.
+- Per class: protein 17,636 -> verified 93.6%; chem_other 6,118 -> 94.6%;
+  **nucleic 1,697 -> hit 1.9% / verified 1.9% (NEW HOLE; task N1)**.
+
 ### NEXT proposed tasks (specced, awaiting scheduling; full specs in
 ### .tmp/TASKS_next_wave.md 2026-10-01; promote into this doc when scheduled)
+- **N1 — nucleic resolution audit: SPEC READY at
+  .tmp/TASK_N1_nucleic_resolution_audit.md (2026-10-03).** Hypotheses ranked:
+  signature-format mismatch -> resolver coverage/config -> type misrouting ->
+  true content gap. Audit-only phases P0/P1/P2; no fixes without approval.
 - **A — F19: PHASES 0-2 DONE (see above); phase 3 rollout scheduled.**
 - **B — coverability probe: DONE (2026-10-01)** — see "Task B" section above.
   Follow-up unlocked: 386-row pipeline-recoverable class (210 with >=0.7

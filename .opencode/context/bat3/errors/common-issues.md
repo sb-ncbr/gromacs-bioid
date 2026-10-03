@@ -518,3 +518,15 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
 - Signature: diff/audit scripts report "0 changes" or empty verification even though pipeline data exists
 - Cause: results.json top level is schema_version/tasks/artifacts/data; the pipeline payload lives under the "data" key — verification at results["data"]["verification"], identifiers at results["data"]["identifiers"]; reading results["verification"] (top level) silently yields None
 - Fix: always d.get("data",{}).get("verification") (or the ResultsManager accessors); assert non-empty before concluding "no change" — a 0-vs-0 match is indistinguishable from a missed path
+
+## V-16: shared celery broker across deployments = cross-pool task theft
+- Signature: batch tasks fail/crash with bugs from code versions no pod in YOUR fleet runs; or "completed" results that don't match your image era. Receipt lines for your task ids absent from your pods' stdout.
+- Cause: two celery worker deployments pointed at the same broker+queue ('celery' list on the shared redis). Claims are a race; a stale pool (bat3-ceitec-bat3-worker v2.44, 64d old) stole 19/112 batch tasks: 15 crashed on the pre-f7baeb734 facade tuple bug, 4 "completed" with old-era output.
+- Detection: enumerate receipts on ALL worker pools in-ns since batch T0 (`kubectl logs -l <each-pool-label> --since-time ... | grep run_pipeline_task`); cross-check metas' run_ids against your batch.
+- Fix (user ruling 2026-10-02: single project, stale=upgrade, UI done): kubectl set image the stale pool to the current campaign image; whole namespace then runs one code era. Durable alternative for the future: dedicated queue names per fleet.
+- Remediation pattern for stolen tasks: requeue BOTH failures and old-code "completions" (results.json untouched by accounting; full rerun overwrites; snapshot first).
+
+## V-17: celery result meta lost while worker logs success (clock-skew node)
+- Signature: queue row stuck 'processing' for hours; celery-task-meta-<id> ABSENT in redis; but pod stdout shows "Task ... succeeded", and results.json is complete (last task success, pipeline success) — with updated_at stamps ~2h in the future.
+- Cause: node NTP skew on the executing pod (clock jumped +2.2h mid-run); result write/meta interaction lost or instantly expired; completion-checker settles only via meta.
+- Fix: verify task success via pod stdout + results.json completeness FIRST; then manual bookkeeping settle (queue completed + run completed + entries completed, last_error annotated) — or let sweep_stale_validations reconcile on its stale cadence (>12h). Never rerun before verifying; the "stuck" run usually already did the work.

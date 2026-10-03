@@ -298,6 +298,23 @@ Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict 
   stats+audit co-scheduling on api pod (OOMKill); long-run scripts on NFS
   not /tmp; results.json double-nesting. Worker requests now cpu=250m
   (limits unchanged), 164/164 rolled.
+- **F-boxchem requeue wave DONE (2026-10-03; S7 v11 OFFICIAL — negative
+  result)**: 112-entry full-pipeline requeue of the 114-row boxchem class ->
+  probe rerun (v11 anchors, GATE OK): residual 410->410, ZERO flips/
+  regressions/transitions; inchikey @10 5374==v10. Falsification: upstream
+  deterministic, residue engine-bound; organic ceiling this code era 92.9
+  raw / 95.4 normalized. v11: ion 95.8 / pdb 99.6 / uniprot 98.2 / entry-any
+  99.6 (controls flat). Ops: stale-worker theft wave (19/112 stolen by 64d
+  v2.44 pool over shared broker) resolved by upgrading bat3-ceitec-bat3-wor-
+  ker to v3.124 (user ruling: one project, stale=upgrade); whole namespace
+  now v3.124 workers x179 + web w12 + api ui-rework-b1. 1 celery-meta-loss
+  settle (clock-skew node) manual w/ verification.
+- **Bag-of-molecules funnel v11 (user S-metric, NEW)**: 13,917 entries ->
+  25,451 molecule-units; searchable-signature coverage 100% (A=100/B=100,
+  fingerprint-class empty); >=1 identifier hit 89.5%; >=1 verified 87.7%.
+  Per class: protein 93.6% verified, chem_other 94.6%, **nucleic 1.9% hit/
+  verified — NEW HOLE => task N1 specced (.tmp/TASK_N1_nucleic_resolution_
+  audit.md), awaiting scheduling.**
 - Open besides: 334 corrupt download triage; phase-2 audit_gap; FE bond-guess
   (deferred); zombie-PID exit-hang pattern (harmless, reap on pod touches);
   fence-watchdog revival (rides F17 wave — NFS-safe this time);
