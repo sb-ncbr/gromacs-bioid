@@ -530,3 +530,16 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
 - Signature: queue row stuck 'processing' for hours; celery-task-meta-<id> ABSENT in redis; but pod stdout shows "Task ... succeeded", and results.json is complete (last task success, pipeline success) — with updated_at stamps ~2h in the future.
 - Cause: node NTP skew on the executing pod (clock jumped +2.2h mid-run); result write/meta interaction lost or instantly expired; completion-checker settles only via meta.
 - Fix: verify task success via pod stdout + results.json completeness FIRST; then manual bookkeeping settle (queue completed + run completed + entries completed, last_error annotated) — or let sweep_stale_validations reconcile on its stale cadence (>12h). Never rerun before verifying; the "stuck" run usually already did the work.
+
+### V-18 Overlay test-harness skew (stale pyc + missing legacy package)
+- Symptom: same .py content, different behavior between PYTHONPATH-overlay runs on old pods vs new-image probes.
+- Causes: (a) overlay synced `src_new/` WITHOUT legacy `src/` -> generators importing src.constants fail in overlay only (registry tests red, looks like code regression); (b) stale __pycache__ under overlay can shadow fresher .py when tar-synced mtimes skew (NFS nodes run up to +2h, V-17).
+- Protocol: on every overlay sync ALSO sync `src/` and `find /tmp/gate_src -name __pycache__ -exec rm -rf {} +`; before trusting a diff, md5-check the module AND run one import-print (`module.__file__`).
+
+### V-19 Image contents vs gate artifacts (.dockerignore strips tests)
+- `.dockerignore` excludes `tests/`, `**/test_*.py`, `**/*_test.py` from production images (intentional).
+- Consequence: in-image probe/gate runs can NOT use /app/tests/...; run gates from NFS copies (/data/validation/n1_fixtures, n1_golden, n1_allow_delta.json, n1_run_gates.py) with image code unpatched instead.
+- pytest not in worker image; pypi egress works -> `PYTHONUSERBASE=/tmp/pylibs pip install --user pytest` + PYTHONPATH pattern; dies with pod, reinstall cheaply.
+
+### V-20 [identifiers] ini toggles are documentation-only
+- `identifiers.<resolver>: no` in run inis does NOT disable the resolver (registry only consults enabled_identity/similarity defaults True; resolved at class load from a different config object). Effective killswitches: feature flags at resolver registration/config builders, or env/config actually loaded at RUN time (verify against data.config dump + attempted lists, not ini text).

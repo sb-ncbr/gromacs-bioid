@@ -810,3 +810,45 @@ Attribution of 1,665 hitless (wire-verified, 100% covered):
 Bug ledger additions: pdb_backbone_nucleic still broken on atomistic NA (v3.124, "Unable to generate PDB signature"); sig/resolution errors never persisted in results.json (dead-channel classes invisible postmortem); [identifiers] toggles ineffective; pdb_nucleic absent from stored content purely era (pre-wave-7 code), generates correctly live.
 
 Fix menu (report-only, awaiting user pick): F-N1a RCSB channel revival (serve files + schema refresh; all-class lever) · F-N1b strand-aware splitting/per-component sequences · F-N1c <=25nt exact-identity override (content-gated; N2 pre-measure first) · F-N1d backbone_nucleic fix · F-N1e error persistence · F-N1f toggle hygiene.
+
+## N1 FIX WAVE (F-N1a..e) — IN PROGRESS
+Plan: `.tmp/PLAN_N1_FIX_WAVE.md` · Cohort for requeue: 797 nucleic entries (eids 1532–9990).
+
+### Done & committed (master)
+- W0 foundations `1f1523f25` (+`405292a09`): 10 real campaign fixtures (tests/fixtures/n1, 11MB,
+  frame-0 trimmed with SHA-256 trim-parity vs campaign inputs), v3.124 goldens (sig+ident),
+  dependency-free gate runner + pytest mirror, allow_delta ledger. G0 GREEN 10/10.
+- W1 F-N1e `f230fbbf0`: stage_errors/{signatures,identifiers}/{seg} persisted (bounded 20/300 chars),
+  separate branch (verify iterates those dicts); Generator.generate re-raises real reasons.
+- W2 F-N1a `b6a9fbf35`: DEPLOYMENT_FILE_URL env override (ini fallback intact);
+  GET /files/validation-<eid>-<ts>/... route → VALIDATION_FILES_ROOT (guarded, 404-durable).
+  A2: NO schema change needed (existing client works for proteins, verified live);
+  RCSB structure-similarity backend = PROTEIN-ONLY (NA entry_id→404 / NA file_url→400; 1UBQ→200).
+- W3 F-N1d `e227cea48`: mock/parallel-path completeness (resnums/resindex); NA PDB+backbone
+  now generate on real fixtures. (Serial path was never broken; era content explains storage.)
+- W4 F-N1b `94be929c5`: largest-component strand selection when sequentiality fails;
+  deterministic (-len, seq); strict path byte-identical. Empirical: 1682 SYSTEM emits 147nt
+  == campaign v1 BYTE-EXACT; blastn 42==42 control; all 4 merged SYSTEMs gain strand-size
+  fasta; pre-existing payloads IDENTICAL (incl. protein fixture 1089).
+- W5 F-N1c `fae6b00f5`: pre-measure 824-cohort (55 perfect-full, 53 both-dir, all ≤12mers;
+  744 20-mers ZERO content → user content-gap confirmed for dominant cohort); identity-pass
+  override: pident=100% & cov=100% & slen==qlen & q≤25 → accept regardless of evalue/bits,
+  tagged exact_short_identity. Empirical: 1880/1881 12mers → 1FZX_A/B; fixtures exact-negative.
+
+### In flight (W6)
+- Image `cerit.io/tomsko/bat3-validation-api:v3.125-N1` built (7612591f41f4) + pushed.
+- Probe pod `n1-w6-probe` (v3.125-N1, worker PVCs + PDBCHARGES SEC ctx) up.
+- OPEN: 4725 gate divergence — image code yields 2 NEW fastas on 4725
+  (SYSTEM fasta_map_protein ~35aa w/ X, SYSTEM__v1 fasta_map_nucleic 'T') vs overlay PASS.
+  same fasta.py md5, same deps (MDA 2.10.0/rdkit 2026.03.6/numpy 2.4.6). Suspect stale
+  pycache shadowing on NFS-skewed mtimes in the old-pod overlay (V-18 candidate).
+  Next: nuke overlay __pycache__, re-run; if image behavior is the honest one →
+  allow_delta update (disclosed W4 protein-broadening) rather than code change.
+
+### To do: W6 rest → W6b rollout (env+PVC+routed serving, staged) → W7 replay
+(identification-only deltas + protein parity sweep) → W8 requeue 797 (snapshots + queue,
+V-16/V-17) → W9 closeout (anchors, flips, funnel v12, stats package v12).
+### Pending user decisions
+- NA-mode RCSB short-circuit (dead-by-design): keep wasted calls vs explicit short-circuit
+  message. Recommendation: report-only this wave; decide with W9 closeout data.
+- Requeue confirmation (W7 report first per plan).
