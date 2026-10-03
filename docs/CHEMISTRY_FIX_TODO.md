@@ -849,7 +849,18 @@ Plan: `.tmp/PLAN_N1_FIX_WAVE.md` · Cohort for requeue: 797 nucleic entries (eid
   code change. FULL gates 10/10 GREEN on image pod AND overlay (BAT3_SRC set).
   Correct overlay invocation recorded in .tmp/PICKUP_N1_FIX_WAVE.md.
 
-### To do: W6 rest → W6b rollout (env+PVC+routed serving, staged) → W7 replay
+### W6 rest — DONE 2026-10-03 (probes on n1-w6-probe, image code)
+- RCSB round-trip: route 200+md5 (44,533B golden 1089 payload, sha256 parity), guards
+  404 (dir-list/traversal/unknown-eid); public plane 200+md5; RCSB POST resolver-shape:
+  1UBQ→200/10 hits (self 100.0), synthetic→204 (fetch ok, honest zero), validation-uuid
+  pre-rollout→404 w/ exact 'invalid entry_id' wrapper == campaign silent-failure mode.
+- e2e: 1682 SYSTEM strand-select byte-exact == v1 (147nt); real stage_errors persisted
+  (RCSB 404s from frozen fixture config, ChEMBL egress, morgan RingInfo); 4653 green.
+  Harness 1682 assertion modernized to W4-era (backup in NFS logs).
+- Units: wave suites 36/36; full tests/src_new red sets IDENTICAL (22==22) image vs
+  v3.124 baseline → zero wave regressions; reds all env/pre-existing (DB/egress/blastdb).
+
+### To do: W6b rollout (env+PVC+routed serving, staged) → W7 replay
 (identification-only deltas + protein parity sweep) → W8 requeue 797 (snapshots + queue,
 V-16/V-17) → W9 closeout (anchors, flips, funnel v12, stats package v12).
 ### Pending user decisions
