@@ -1042,3 +1042,48 @@ synthetic tests. (synthetic unit tests passed while the integration semantics we
 **Empirical test artifacts (scratch):** .tmp/f03_repro.py, .tmp/f03b_executor_skip.py
 (12/12 scenarios incl. exact 1612 production replay), .tmp/f05_stale_test.py (12/12;
 9/12 fail pre-fix).
+
+## FINAL AUDIT — SECTION F · Methodology fixes (ruled + implemented, 2026-10-04)
+
+Rulings + plan: `.tmp/METHODOLOGY_DECISIONS.md` · `.tmp/IMPLEMENTATION_PLAN.md`.
+
+**Wave A (repo hygiene, behavior-neutral):**
+- F-18 canonical map ×3→1 `ae397f064` (byte-identity proven pre-edit; shared object post).
+- F-16 resolve_all marked test/harness-only `2292d79aa`.
+- F-07 pubchem constant-score semantics annotated `c9821a9f9`.
+- F-06 neutral localhost DB default `46b59a0ff` (env-override verified both directions).
+
+**Wave B (runtime semantics; deployed IMAGE v3.127.1 all-5):**
+- F-21 `ef4ac367d` — CORRECTED scope (audit half-wrong, getattr blindspot):
+  dual `<name>`/`<name>_similarity` pair mechanism was live for class-attr
+  resolvers; fixed (i) 8 resolvers lacking declared IdentifiersConfig fields
+  (ini keys silently dropped) and (ii) 5 classes / 7 instances assigning
+  `self.name` AFTER `super().__init__()` (enablement keyed on "" = dead) —
+  now property-based reads. Drift note: name_ccd/maps/manual similarity now
+  honors its declared `no` default. SIDE-REPORT (unfixed, needs ruling):
+  formula_chembl env-only construction → inert unless ini says `yes`.
+- F-25 `c26810250` — RCSB paginate rows=10000; live-proven (464 total: 10→464
+  returned rows, protein control from worker pod).
+- F-17 `e562eee12` — verified_without_corroboration flag, telemetry-only per
+  ruling (identity stays identity; zero metric shift); backfill default False.
+- F-23 `65ae1c536` + refinement `fad7892d7` — NA-RCSB containment: nucleotide
+  mode short-circuit + two-stage NA classifier (entity_poly types; residue-name
+  scan for trimmed signatures — the gate caught stage-1 under-firing on REAL
+  generated signature entry 1533, hence v3.127.1). Declared verdict
+  `na_mode_unsupported` flows to stage_errors (countable non-failure class);
+  pod-side contrast: same payload class → HTTP 400 as before.
+
+**Deployment:** all 5 deployments `cerit.io/tomsko/bat3-validation-api:v3.127.1`
+(era clean); rollback yamls: `.tmp/rollback/v3.127/` and `.tmp/rollback/v3.127.1/`.
+
+**Live gate evidence (v3.127.1, in-pod + queue):**
+- Resume-regression: 1612 requeue (row 165263, batch b-wave-live-gate) completed
+  30s; verify-counts identical to snapshot; zero new errors at run time.
+- F-23 real signature: containment fires in 0.2 ms, zero network round-trip.
+- F-25: protein control query (464 total) returned all 464 rows from pod.
+- F-21: toggle honored at applicable-resolvers layer; similarity untouched.
+- F-17: gate→flag→persist chain in shipped image.
+- DATA NOTE (report, not fixed): failed-run `critical_errors` records persist
+  in results.json across successful recomputes (1612 still carries the
+  11:03 audit1-incident pair). Likely needs an explicit clear-on-recompute
+  policy decision.
