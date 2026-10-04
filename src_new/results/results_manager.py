@@ -204,16 +204,19 @@ class ResultsManager:
             meta["output_directory"] = str(output_directory)
         self._payload["pipeline"]["metadata"] = meta
         
-        # Initialize tasks from definitions
+        # Initialize tasks from definitions. Preserve persisted per-step state
+        # (success/skipped/running) so the executor's PIPELINE_RESUME_STAGES
+        # skip check works across restarts (F-03); only previously unseen steps
+        # get a fresh "pending" entry.
         for definition in definitions:
             step_id = definition.get("step_id") or definition.get("task_id")
             if step_id:
-                self._payload["tasks"][step_id] = {
+                self._payload["tasks"].setdefault(step_id, {
                     "name": definition.get("name", ""),
                     "status": "pending",
                     "artifacts": [],
                     "context_keys": []
-                }
+                })
         
         self._save()
     
