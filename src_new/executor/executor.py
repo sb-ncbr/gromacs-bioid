@@ -12,6 +12,23 @@ from .conditions import ConditionSeverity
 from ..results.schema import StepStatus
 from ..config.loader import RunConfig
 
+# Resume-skip eligibility (F-03-revised, user-approved 2026-10-04):
+# ONLY the heavy downstream steps may be skipped, and ONLY when their persisted
+# status is exactly "success" (i.e. all their generators/resolvers/molecules
+# completed successfully). These steps take their inputs from the loader/analyze
+# chain (facade/fragment_store in context + persisted artifacts), never from
+# each other's in-memory outputs - verified at pipeline_steps/__init__.py.
+# Everything else ALWAYS re-executes: universe/facade are in-memory only, no
+# persisted rehydration exists; re-running context-builders is cheap vs the
+# compute-heavy resolution steps. 'warning'/'failed'/'pending'/'skipped'
+# persisted statuses ALWAYS re-execute (the 2026-10-04 unwrap regression proved
+# that skipping predecessors of a rerunning step breaks in-memory invariants).
+RESUMABLE_ON_SUCCESS = frozenset({
+    "generate_signatures",
+    "identify_molecules",
+    "verify_results",
+})
+
 
 class PipelineExecutor:
     def __init__(self, steps, results_manager, pipeline_name=None):
@@ -121,16 +138,15 @@ class PipelineExecutor:
             for i, step in enumerate(self.steps):
                 step_id = self._step_id(step)
                 
-                # Restart-resilience: skip stages that already completed successfully.
-                # Long pipeline tasks get killed by environment churn (rollouts,
-                # network resets) and would otherwise redo hours of work from zero
-                # (the "48h zero-results boot loop", resolved 2026-09-18).
-                # Disable via PIPELINE_RESUME_STAGES=0 if full-rerun semantics needed.
+                # Restart-resilience (revised F-03 semantics, see RESUMABLE_ON_SUCCESS):
+                # skip heavy downstream stages whose persisted status is exactly
+                # "success"; context-builders and export always re-execute.
                 if os.environ.get("PIPELINE_RESUME_STAGES", "1") != "0":
                     persisted = (
                         (self.results_manager._payload.get("tasks") or {}).get(step_id) or {}
                     ).get("status")
-                    if persisted in ("success", "skipped"):
+                    if step_id in RESUMABLE_ON_SUCCESS and persisted == "success":
+                        logger.info(f"Resume: skipping {step_id} (persisted success)")
                         continue
                 
                 # If a previous step suffered a critical failure, mark this step as SKIPPED
