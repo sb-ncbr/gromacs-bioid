@@ -975,3 +975,29 @@ per item. Master register: `.tmp/final_findings.md` (scratch); this section = pi
   6,110 chem + 1,691 nucleic attempts that can only waste/400).
 - W10 all-class RCSB-benefit requeue (proteins/chem) — needs replay-based estimate first.
 - Audit decisions queue: F-01..F-14 dispositions.
+
+### D. Identify/verify + wire + legacy (audit reports 2-3, 2026-10-04)
+- **F-17 (methodology/med)** min_final_confidence=0.0 everywhere → confidence gate vacuous;
+  non-chemical identity hits verify on resolver self-assertion w/o corroboration record.
+- **F-21 (config/med, V-20 CONFIRMED)** [identifiers] ini toggles dead except 3 keys
+  (overwrite_existing, formula_local, formula_chembl).
+- **F-23 (med, decision)** NA-mode RCSB attempts design-dead (protein-centric structure node);
+  NEW: protein mode's composition filter excludes mixed entries (F-24); query has NO
+  request_options → silent 10-row truncation (F-25).
+- **F-15 (drift/low-med)** parallel identify worker = fork of manager.resolve missing PUG
+  breaker + overwrite-skip (armed only if identifiers_parallel=on).
+- **F-16 (low)** resolve_all production-dead/test-only. **F-18 (low)** canonical signature
+  map ×3 copies. **F-19 CLOSED** chain-collapse dedup safe (all-entity fetch + best-match).
+  **F-22 CLOSED** F-N1d fixed by wave-7 B4.
+- **F-20 (ops/low-med)** rcsb_cache: per-process limiter (fleet ceiling ≈ procs×3rps),
+  hardcoded NFS cache path, no TTL.
+- **F-26 (armed-divergence)** legacy start_processing endpoint → tasks.schedule_validation:
+  ts-less run_ids (W2 serving 404s) + re-downloads into unserved /entries/ layout.
+- **F-27 (packaging/low)** src/ PARTIALLY live (src_new imports src.constants ×2);
+  CODE_HEALTH_REPORT findings 1-2 persist (no packaging; pytest not in requirements).
+- **F-28 (methodology/med)** official figure generators + wave tooling: NFS-only, NO git —
+  unversioned mutable single copies (v12 reproducibility hole); campaign_stats.py is the
+  lone dual-homed/md5-synced exception.
+- Evidence cross-checks: serving logs all-200 in W8 window (RCSB fetch healthy on campaign
+  path); live 400s = genuine NA "could not process"; W4 strand-select deterministic (BFS
+  atom-0 → deterministic sibling parity).
