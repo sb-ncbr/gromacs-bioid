@@ -25,20 +25,64 @@ _NA_POLYMER_PREFIXES = (
 _ENTITY_POLY_TYPE_RE = re.compile(r"_entity_poly\.type\s+['\"]?([^'\"\s;]+)")
 
 
+# Stage-2 residues for header-less coordinate content (F-23, live evidence:
+# our own generator emits a minimal 8-column _atom_site loop where
+# _entity_poly.type lines are absent, so polymer-type detection alone
+# under-fires).
+_AMINO_RESNAMES = {
+    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
+    "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
+    "MSE", "SEC", "PYL", "HYP",
+}
+_NA_RESNAMES = {
+    "A", "C", "G", "U", "I", "DA", "DC", "DG", "DT", "DU", "DI",
+    "PSU", "5MU", "OMC", "OMG", "1MA", "6MZ", "7MG", "2MG",
+}
+
+
+def _resname_token_sets(text: str) -> tuple[set[str], set[str]]:
+    """Collect amino-acid vs nucleic residue names from ATOM/HETATM rows.
+
+    Only active for the minimal generated format (header declares
+    _atom_site.label_comp_id at token index 3); anything else returns
+    empty sets and the caller falls back to unclassified."""
+    if "_atom_site.label_comp_id" not in text:
+        return set(), set()
+    amino, na = set(), set()
+    for line in text.splitlines():
+        if not line.startswith(("ATOM", "HETATM")):
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        comp = parts[3].strip().strip("'\"").upper()
+        if comp in _AMINO_RESNAMES:
+            amino.add(comp)
+        elif comp in _NA_RESNAMES:
+            na.add(comp)
+    return amino, na
+
+
 def _na_only_mmcif_payload(text: str) -> bool:
     """True when the mmCIF text contains nucleic-acid polymer entities and
-    NO polypeptide entity (i.e. a payload class the protein-centric RCSB
-    backend cannot process). Unclassifiable text returns False (server
-    decides, preserving pre-F-23 behavior)."""
+    NO polypeptide/protein content (i.e. a payload class the protein-centric
+    RCSB backend cannot process). Unclassifiable text returns False (server
+    decides, preserving pre-F-23 behavior).
+
+    Stage 1: _entity_poly.type polymer classes (full mmCIF files).
+    Stage 2: residue-name scan of ATOM records (trimmed signatures)."""
     types = set()
     for match in _ENTITY_POLY_TYPE_RE.finditer(text):
         tok = match.group(1).rstrip("'\"").lower()
         types.add(tok)
-    if not types:
-        return False
-    has_protein = any(t.startswith("polypeptide") for t in types)
-    has_na = any(any(t.startswith(p) for p in _NA_POLYMER_PREFIXES) for t in types)
-    return has_na and not has_protein
+    if types:
+        has_protein = any(t.startswith("polypeptide") for t in types)
+        has_na = any(any(t.startswith(p) for p in _NA_POLYMER_PREFIXES) for t in types)
+        return has_na and not has_protein
+    amino, na = _resname_token_sets(text)
+    if amino or na:
+        return len(na) > 0 and len(amino) == 0
+    return False
 
 
 class MmCifResolver(IdentifierResolver):
