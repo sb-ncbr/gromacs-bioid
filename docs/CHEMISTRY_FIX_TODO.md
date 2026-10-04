@@ -875,9 +875,48 @@ path, foreign UI lineage) — gap reported. Post-rollout fleet gates 10/10 GREEN
 52 nuc segs gained (premeasure: 53 both-dir; 8/8 sample exact, e.g. snipped 1880 1FZX
 A/B both strands). nuc100 static (expected pre-requeue); prot20 +12 entry gains all
 external-drift, none lost. RCSB 404 in replay = shadow artifact only; wire proven W6b.
-### W8 requeue 797 — IN FLIGHT: snapshots taken, batch nucleic-fix-wave-1 queued,
-first production proof on 1881 (1FZX verified 100.0/conf 92; W4 fastas live).
-### Remaining: W8 settlement watch → W9 statistics (S7 GT v12 + per-molecule breakdown)
+### W8 requeue 797 — DONE 2026-10-03 (batch nucleic-fix-wave-1)
+786/797 completed; 11 still processing = pre-existing pathological signature-timeout
+cohort (12h stale_timeout history pre-wave, unrelated to N1 changes; they complete
+naturally over hours). 3884 transient ENOENT -> V-17 requeue -> completed.
+Deep production proofs: 1881 -> 1FZX verified 100.0/conf 92 all 3 segs; merged cohort
+100.0-identity hits (1HLV/1ZGW/3AN2). Wave-mechanism validations live (W4 fastas on
+merged SYSTEMs, W5 exact-short-identity, W2 RCSB channel firing real requests).
+
+### W9 statistics — DONE 2026-10-03 (v12 official, raw+normalized)
+- campaign_stats_v12.json (full NFS scan + sim): inchikey FROZEN window 5784/5768
+  exact; @1/5/10 = 59.2/88.3/92.9 (unchanged); ion ann 1747->1811 (+64), pdb ann
+  11079->11186 (+107) — denominators are run-window dependent (S7 block counts
+  annotations of entries-with-hits; +200 newly-verified nucleic entries entered);
+  pdb @10 99.6->99.5 pct / abs-validated@10 est 11035->11130.
+- Coverage probe refreshed, GATE OK anchored at v11 (new_pairs=0, metric stable;
+  v8-anchor abort was its protective design, PROBE_ANCHOR_JSON env-swap is the
+  sanctioned era advancement). Chem residual failing rows: 410->410, zero fixed,
+  zero regressions (wave untouched chemistry).
+- NUCLEIC CLASS (audit metric verbatim): 32/1697 = 1.89% -> 413/2091 = 19.75% hit;
+  verified 32 -> 412. New nucleic segments surfaced +394 (1697->2091: W4 mixed-system
+  segmentation). Strata: <=12mers 12.8->82.1%, 13-30 2.2->18.0%, 31-100 0.4->35.4%,
+  big 0.4->1.7% (the remaining hole = verifiable-content absence, as audited).
+- W8 flip (snapshot tgz vs live, 783 compared): seg-level verified gains on 201
+  entries (392 segs); 4 entries lost UniProt ids, rotated to MORE PDB ids (3JA4/
+  3JA5/6EHL/2JLF — candidate-set rotation on mixed prot-NA systems from W4 protein
+  strand-select; entry-level verification UP in all 4; deterministic across siblings).
+- bag_funnel_v12 + stats_package_v12.{json,md} assembled (figures data paths below).
+
+### Figure-data files (post-v12)
+- /data/validation/stats_package_v12.json / .md — master assembled package
+- /data/validation/campaign_stats_v12.json (+ logs/campaign_stats_v12.log)
+- /data/validation/bag_funnel_v12.json
+- /data/validation/coverability_probe.json + coverability_rows.jsonl (+ .v11-baseline)
+- /data/validation/residual_failing_rows_v8.jsonl (410) (+ baselines)
+- /data/validation/n1_postwave_rate.json (nucleic 1.89->19.75 raw table)
+- /data/validation/n1_w8_flip.json (per-entry pre/post verified deltas)
+- /data/validation/n1_nucleic_rows.jsonl (pre) / rescan merged in n1_postwave_rate
+- /data/validation/n1_w7_*.txt cohort lists; logs/n1_w7_{a,b,c}.{jsonl,log}
+
+### Remaining: 11 pathological stragglers conclude naturally; registry closeout.
+Pending user decisions: NA-mode RCSB containment (with W9 data), W10 all-class
+RCSB-benefit requeue for proteins/chem (now that channel fires).
 (identification-only deltas + protein parity sweep) → W8 requeue 797 (snapshots + queue,
 V-16/V-17) → W9 closeout (anchors, flips, funnel v12, stats package v12).
 ### Pending user decisions
