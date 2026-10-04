@@ -29,6 +29,7 @@ Quick entry point to all BAT3 context files. Use this to find verification comma
 | Example run | `examples/run-batch.md` |
 | What is BAT3 | `concepts/bat3.md` |
 | Validation pipeline | `concepts/validation.md` |
+| Publication (NM paper) | `lookup/publication-journal.md` |
 
 ## Reference
 - `concepts/bat3.md` - BAT3 overview
