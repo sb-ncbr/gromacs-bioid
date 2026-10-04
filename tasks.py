@@ -141,6 +141,13 @@ def fetch_entry_metadata(entry_id: int, local_accession: str) -> dict:
             "error": str(e),
         }
 
-# Import run_pipeline_task to register it on this celery app
-# This is needed because schedule_validation calls run_pipeline_task
+# DO NOT DELETE THIS IMPORT - it looks unused but it is load-bearing (F-04).
+# Workers run this module as the celery app (`celery -A tasks`), and dispatch
+# is BY NAME: queue_processor.py:207 does
+#     send_task("src_new.api.tasks.run_pipeline_task", ...)
+# Importing the task here is the ONLY thing that registers that name on this
+# app. Without it every dispatched validation fails fleet-wide with
+# "Received unregistered task" (silent outage: queue drains, all runs error).
+# (The prior comment claimed schedule_validation needs it - false: that
+# function imports run_pipeline_task directly at line 53.)
 from src_new.api.tasks import run_pipeline_task as _run_pipeline_task_ref
