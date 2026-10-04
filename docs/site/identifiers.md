@@ -45,6 +45,13 @@ Resilience guards: per-stage deadline is propagated into resolver loops;
 the PubChem circuit breaker self-heals every 30 s (probe to a fixed CID).
 Resolver errors are collected into `stage_errors/identifiers/<segment>`.
 
+!!! note "Declared verdicts in stage_errors (not failures)"
+    `na_mode_unsupported` (F-23, 2026-10-04): an RCSB structure-search call
+    was skipped *by design* because the payload class is unsupported upstream
+    (pure nucleic acid). These previously appeared as fake-fixable HTTP 400
+    error spam with a guaranteed zero-hit outcome. Treatment: count
+    separately from real errors (rate-limit/crash classes); no action needed.
+
 !!! info "RCSB structure-search channel — current truth (F-23/24/25)"
     - Query shape: structure node `similarity_type: local`,
       `target_search_space: assembly`, `number_of_candidates: 10000`.
@@ -58,13 +65,19 @@ Resolver errors are collected into `stage_errors/identifiers/<segment>`.
       **excludes mixed-composition entries** (protein+NA complexes, RCSB enum
       `Protein/NA`) in both modes — **F-24, addon decision pending** (additive
       design only; ruled 2026-10-04).
-    - The structure-search backend is protein-centric: **pure nucleic-acid
-      payloads are rejected with HTTP 400** — by design of the upstream
-      engine, not a transient outage (proven live 2026-10-04: 1BNA protein-shaped
-      structure node → 400; 1UBQ control → 200/464). Containment verdict
-      design landing with F-23 (B4).
+    - **F-23 containment deployed 2026-10-04**: the structure-search backend
+      is protein-centric and rejects pure nucleic-acid payloads by design
+      (HTTP 400; proven live: 1BNA → 400, 1UBQ → 200/464). NA-mode calls are
+      now **short-circuited before the request**: `pdb_struct_nucleotide`
+      always (mode = NA payload), `mmcif_struct` when the mmCIF contains only
+      NA polymer entities (mixed protein+NA still queries — the engine can
+      handle the protein part). Instead of 400 spam, stage_errors receives
+      the declared verdict **`na_mode_unsupported`** — a countable,
+      non-failure containment class. Guarantee: these verdicts replace
+      attempts that historically produced **zero** hits.
     - `mmcif_struct` sends the same query shape **without** the composition
-      filter (attempts every class; NA payloads → same 400 class).
+      filter (attempts every class that passes the NA-only guard); until F-23
+      this produced e.g. 1,691 zero-hit NA attempts.
 
 ## Stage 3 — verification (candidate → verdict)
 

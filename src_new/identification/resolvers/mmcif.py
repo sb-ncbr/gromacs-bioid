@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import tempfile
 
 import requests
@@ -14,6 +15,30 @@ from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
 from ._ssh_upload import has_ssh_config, ssh_delete, ssh_upload
 
 logger = logging.getLogger("identifier")
+
+# F-23 containment support: classify pure-NA mmCIF payloads (which the
+# protein-centric RCSB structure-search backend rejects by design, HTTP 400).
+_NA_POLYMER_PREFIXES = (
+    "polydeoxyribonucleotide",  # also matches the ".../polyribonucleotide hybrid" token prefix
+    "polyribonucleotide",
+)
+_ENTITY_POLY_TYPE_RE = re.compile(r"_entity_poly\.type\s+['\"]?([^'\"\s;]+)")
+
+
+def _na_only_mmcif_payload(text: str) -> bool:
+    """True when the mmCIF text contains nucleic-acid polymer entities and
+    NO polypeptide entity (i.e. a payload class the protein-centric RCSB
+    backend cannot process). Unclassifiable text returns False (server
+    decides, preserving pre-F-23 behavior)."""
+    types = set()
+    for match in _ENTITY_POLY_TYPE_RE.finditer(text):
+        tok = match.group(1).rstrip("'\"").lower()
+        types.add(tok)
+    if not types:
+        return False
+    has_protein = any(t.startswith("polypeptide") for t in types)
+    has_na = any(any(t.startswith(p) for p in _NA_POLYMER_PREFIXES) for t in types)
+    return has_na and not has_protein
 
 
 class MmCifResolver(IdentifierResolver):
@@ -81,6 +106,21 @@ class MmCifResolver(IdentifierResolver):
         Returns:
             List of (PDB ID, score*100) tuples.
         """
+        # F-23 containment (2026-10-04): this resolver has no composition
+        # filter, so pure-NA payloads reach RCSB and are rejected by design
+        # (HTTP 400; pre-F-23 this produced fake-fixable 400 spam in
+        # stage_errors, e.g. 1,691 zero-hit NA attempts). Skip the call and
+        # record the declared verdict `na_mode_unsupported` (countable,
+        # non-failure class). Mixed protein+NA payloads still go through —
+        # the protein-centric engine can process the protein part.
+        if _na_only_mmcif_payload(signature):
+            logger.info(
+                "RCSB structure search skipped (mmcif): pure-NA payload is "
+                "rejected by design upstream; verdict=na_mode_unsupported"
+            )
+            self._last_error = "na_mode_unsupported"
+            return []
+
         # Create temp file for mmCIF structure
         fd, cif_path = tempfile.mkstemp(suffix=".cif", dir=safe_tmp_dir(working_directory))
         os.close(fd)

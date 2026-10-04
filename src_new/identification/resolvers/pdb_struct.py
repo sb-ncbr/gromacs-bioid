@@ -98,6 +98,21 @@ class PDBStructResolver(IdentifierResolver):
         Returns:
             List of (identifier, similarity_score) tuples.
         """
+        # F-23 containment (2026-10-04): in nucleotide mode the uploaded
+        # payload is pure nucleic acid, which the protein-centric RCSB
+        # structure-search backend rejects by design — HTTP 400 (proven live:
+        # 1UBQ payload -> 200/464; 1BNA payload -> 400). Pre-F-23 every NA
+        # entry burned an attempt and produced fake-fixable 400 spam in
+        # stage_errors. Skip the call and record the declared verdict
+        # `na_mode_unsupported` instead (countable, non-failure class).
+        if getattr(self, "_nucleotide_mode", False):
+            logger.info(
+                "RCSB structure search skipped (pdb_struct): nucleotide-mode "
+                "payload is rejected by design upstream; verdict=na_mode_unsupported"
+            )
+            self._last_error = "na_mode_unsupported"
+            return []
+
         # Create temp file for PDB structure
         fd, pdb_path = tempfile.mkstemp(suffix=".pdb", dir=safe_tmp_dir(working_directory))
         os.close(fd)
