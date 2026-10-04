@@ -756,13 +756,15 @@ def sweep_stale_validations(db: Session, stale_hours: int = STALE_HOURS) -> dict
     """Reconcile zombie state left by expired Celery results / dead workers.
 
     - bat3_runs 'running'/'pending' older than stale_hours -> failed ('stale_timeout')
-    - queue items 'processing' older than stale_hours -> requeued with note
-      (run marked failed; retry budget untouched so it gets a fresh shot)
+    - queue items 'processing' older than stale_hours -> requeued with retry
+      budget consumed; terminally failed (quarantine, entry failed too) once
+      MAX_RETRIES stale cycles are reached (F-05)
     - entries stuck 'processing' with no live queue/run -> back to 'pending'
     - batch counters recomputed from queue rows; all-done -> 'completed'
     """
     cutoff = _utcnow() - timedelta(hours=stale_hours)
-    stats = {"runs_failed": 0, "queue_requeued": 0, "entries_reset": 0, "batches_completed": 0}
+    stats = {"runs_failed": 0, "queue_requeued": 0, "queue_quarantined": 0,
+             "entries_reset": 0, "batches_completed": 0}
     try:
         # 1) stale bat3 runs
         stale_runs = db.query(models.Bat3Run).filter(
@@ -781,11 +783,22 @@ def sweep_stale_validations(db: Session, stale_hours: int = STALE_HOURS) -> dict
             (models.ValidationQueue.started_at < cutoff)
             | ((models.ValidationQueue.started_at.is_(None)) & (models.ValidationQueue.created_at < cutoff)),
         ).all()
+        # F-05: consume the shared retry budget per stale cycle; terminally
+        # fail (quarantine) after MAX_RETRIES cycles instead of requeueing
+        # forever - unbounded requeue was the pathological-straggler factory.
         for item in stale_items:
-            item.status = "queued"
-            item.started_at = None
-            item.last_error = f"stale_timeout: requeued after >{stale_hours}h without completion"
-            stats["queue_requeued"] += 1
+            item.retry_count = (item.retry_count or 0) + 1
+            item.last_error = (
+                f"stale_timeout: no completion for >{stale_hours}h "
+                f"(stale cycle {item.retry_count}/{MAX_RETRIES})"
+            )
+            if item.retry_count < MAX_RETRIES:
+                item.status = "queued"
+                item.started_at = None
+                stats["queue_requeued"] += 1
+            else:
+                _fail_queue_item(item, item.last_error, item.entry)
+                stats["queue_quarantined"] += 1
 
         # 3) entries stuck 'processing' without an active queue row or run
         processing_entries = db.query(models.MddbEntry).filter(
