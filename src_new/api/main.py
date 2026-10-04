@@ -20,7 +20,9 @@ from .routes.runs import router as runs_router, get_runs_dir
 logger = logging.getLogger(__name__)
 
 # Database setup
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://validation:validation-password-change-me@validation-postgres:5432/bat3_validation")
+# F-06: no credentials / resolvable cluster service name in repo defaults.
+# Cluster always provides DATABASE_URL via env; the default is for local dev.
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://validation@localhost:5432/bat3_validation")
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

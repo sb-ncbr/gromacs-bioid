@@ -573,9 +573,10 @@ def merge_with_dict(config: RunConfig, overrides: dict[str, Any]) -> RunConfig:
 
 
 # API configuration constants (for validation API compatibility)
+# F-06: no credentials / resolvable cluster service name in repo defaults.
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://validation:validation-password-change-me@validation-postgres.ceitec-biodata-ns.svc.cluster.local:5432/bat3_validation"
+    "postgresql://validation@localhost:5432/bat3_validation"
 )
 
 CELERY_BROKER_URL = os.getenv(
