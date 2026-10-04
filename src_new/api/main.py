@@ -659,16 +659,6 @@ async def bulk_action(request: dict):
     finally:
         db.close()
 
-
-@app.post("/validation/queue/start-processing")
-async def start_processing():
-    """Start queue processing (trigger worker to pick up tasks)."""
-    logger.info("Queue processing triggered")
-    return {"success": True, "message": "Processing started"}
-
-
-
-
 @app.post("/validation/queue/pause-processing")
 async def pause_processing():
     """Pause queue processing."""
@@ -723,13 +713,6 @@ async def stop_processing():
         return {"success": True, "message": f"Stopped {updated} queue items"}
     finally:
         db.close()
-
-@app.post("/validation/queue/stop-processing")
-async def stop_processing():
-    """Stop queue processing."""
-    logger.info("Queue processing stopped")
-    return {"success": True, "message": "Processing stopped"}
-
 
 @app.post("/validation/queue/clear")
 async def clear_queue():
