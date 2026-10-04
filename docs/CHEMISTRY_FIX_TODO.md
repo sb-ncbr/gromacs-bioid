@@ -923,3 +923,55 @@ V-16/V-17) → W9 closeout (anchors, flips, funnel v12, stats package v12).
 - NA-mode RCSB short-circuit (dead-by-design): keep wasted calls vs explicit short-circuit
   message. Recommendation: report-only this wave; decide with W9 closeout data.
 - Requeue confirmation (W7 report first per plan).
+
+## FINAL AUDIT (READ-ONLY) — findings register (opened 2026-10-04)
+
+Post-campaign whole-codebase audit. Read-only mandate: findings reported, user decides
+per item. Master register: `.tmp/final_findings.md` (scratch); this section = pinned ledger.
+
+### A. Execution / queue / control plane (report 1, 2026-10-04)
+- **F-03 (bug/med)** Restart-resume INERT: `ResultsManager.start_run` resets every task to
+  "pending" (results_manager.py:211-218) BEFORE executor's resume-skip reads persisted state
+  (executor.py:124-134) → restarts redo ALL stages; 2026-09-18 boot-loop fix silently dead.
+  Fix sketch: task-entry `setdefault` instead of unconditional reset.
+- **F-05 (methodology/med-high)** 12h stale sweeper requeues FOREVER (queue_processor.py:755-833):
+  retry_count untouched, no cap/quarantine (dispatch path caps at 3). Mechanistic explanation
+  of pathological-straggler class (12h slot burn per cycle). Fix sketch: stale-cycle counter →
+  quarantine status after K cycles.
+- **F-09 (risk/med, urgent-cheap)** bat3-ui-worker `PYTHONPATH=/data/validation/patched_src`;
+  stale PRE-W4 src_new tree exists there (Sep 20, no W4/W5 markers). Inert only because CWD
+  precedes PYTHONPATH (verified live). Fix: delete NFS tree + drop env.
+- **F-01 (bug/med)** Duplicate POST routes in src_new/api/main.py (start-processing :509/:663,
+  stop-processing :710/:727) — first wins, second defs are dead stubs that look live.
+- **F-02 (consistency/low)** Worker entrypoint truth split: Dockerfile.worker CMD
+  (-A src_new.celery_app --concurrency=4) is dead default; live = -A tasks --concurrency=2.
+- **F-04 (fragility/med)** Prod worker task registration survives via bottom-of-file import
+  side-effect (tasks.py:146); deleting it = fleet-wide silent dispatch outage.
+- **F-07 (methodology/low-med)** pubchem.py returns threshold as hit "score" (TODO ×3,
+  Tanimoto never computed) — synthetic ordinals for that resolver family.
+- **F-08 (config/low)** CELERY_BROKER_TRANSPORT_OPTIONS env on 3 deploys: nobody reads it
+  (code sets opts; VALUES DIFFER: env KEEPINTVL=30 vs code 20). Dead config.
+- **F-06 (security/low)** Placeholder DB password as code default (api/main.py:23, loader.py:576).
+- **F-10 (hygiene/low)** SPIN_DEBUG=1 armed fleet-wide (120s faulthandler dumps).
+- **F-11 (architecture/info)** Control plane = repo-ROOT main.py (md5-verified live) + root
+  queue_processor.py/models.py/tasks.py; bat3_validation/api v2.5 lineage has NO live
+  deployment (divergent twin queue_processor, 500 vs 833 LOC).
+- **F-12 (ok)** settle_by_results_truth well-guarded (mtime≥start−600s, ≥15min age, 400/tick).
+- **F-13 (obs)** bat3-ceitec-bat3-redis 0/0 dormant; single broker everywhere.
+- **F-14 (record-pin)** Fleet = 181 workers (164+15+2).
+
+### B. Deferred from N1 fix menu (verify in audit; not executed in wave)
+- **F-N1d** pdb_backbone_nucleic / pdb_backbone_not_sanitized_nucleic fail on atomistic NA
+  ("Unable to generate PDB signature", v3.124 probe) — STILL OPEN, verify vs current code.
+- **F-N1f (V-20)** [identifiers] "no" toggles ineffective in campaign inis — verify registry
+  gating coverage (formula_chembl gate exists; others?).
+- Mis-flagged segments: 21 nucleic-frame molecules carried protein signatures (pre-wave);
+  post-W4 segmentation recount pending.
+- topology_less_pdb mock/parallel-path failure ("SimpleNamespace has no attribute resnums")
+  — serial campaign path fine; verify current state.
+
+### C. Pending user decisions (carried)
+- NA-mode RCSB containment (xclass: mmcif/pdb_struct families attempt ALL classes post-W2 —
+  6,110 chem + 1,691 nucleic attempts that can only waste/400).
+- W10 all-class RCSB-benefit requeue (proteins/chem) — needs replay-based estimate first.
+- Audit decisions queue: F-01..F-14 dispositions.
