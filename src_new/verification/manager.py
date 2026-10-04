@@ -342,6 +342,11 @@ class VerificationManager:
                 if annotation_component is not None and (math.isnan(annotation_component) or math.isinf(annotation_component)):
                     annotation_component = 0.0
                 
+                # F-07 NOTE: for pubchem-family resolvers, resolver_component
+                # derives from a CONSTANT threshold-stub score (ordinal-only
+                # within that resolver; see resolvers/pubchem.py docstrings).
+                # Do not interpret pubchem-family final_confidence values as
+                # comparable to blast/uniprot-derived values.
                 final_confidence = (
                     w_resolver * resolver_component +
                     w_similarity * similarity_component +

@@ -94,9 +94,16 @@ class PubChemResolver(IdentifierResolver):
 
         Returns:
             List of (CID, similarity_score) tuples.
-            Note: PubChem API does not return per-compound similarity scores.
-            We return the threshold as a fallback score. TODO: Compute Tanimoto
-            from canonical SMILES if RDKit is available.
+
+            SCORE SEMANTICS (F-07, known deviation): the score is a CONSTANT
+            stub equal to ``config.pubchem.similarity_threshold`` — the
+            PubChem similarity API returns candidate CIDs without per-compound
+            scores. The value therefore has ordinal meaning ONLY within this
+            resolver's own hit list (all items tie); it MUST NOT be compared
+            against or rank-mixed with real similarity scores from other
+            resolvers (blast/uniprot/alphafind).
+            TODO: fetch canonical SMILES per CID (pubchempy.get_properties)
+            and compute real Tanimoto via RDKit.
 
         Raises:
             IdentifierResolutionError: If resolution fails (no results is OK).
@@ -220,9 +227,13 @@ def pubchem_fetch_similarity_match(
 
     Returns:
         List of (CID, score) tuples.
-        Note: PubChem API returns CIDs but not per-compound similarity scores.
-        We use the threshold as a fallback score.
-        TODO: Fetch canonical SMILES and compute Tanimoto with RDKit for actual scores.
+
+        SCORE SEMANTICS (F-07, known deviation): every returned score is the
+        constant ``threshold`` itself — PubChem returns CIDs, not per-compound
+        scores. Ordinal-only within this resolver; do not compare or
+        rank-mix with scores from other resolver families.
+        TODO: fetch canonical SMILES via pubchempy.get_properties and compute
+        Tanimoto similarity with RDKit for actual per-compound scores.
 
     Raises:
         IdentifierResolutionError: On PubChem search failure.
@@ -245,9 +256,9 @@ def pubchem_fetch_similarity_match(
                 # Fallback to POST request
                 cids = _pubchem_fetch_similar_match_post(smiles, threshold, session)
 
-            # Fix: Return actual scores if available, otherwise use threshold as fallback
-            # TODO: Fetch canonical SMILES via pubchempy.get_properties and compute
-            # Tanimoto similarity with RDKit for accurate per-compound scores.
+            # F-07: scores are the threshold constant for every CID.
+            # Ordinal-only within this resolver; never rank-mix with real
+            # per-target scores (see docstring TODO for the Tanimoto fix).
             return [(cid, float(threshold)) for cid in cids]
         except pubchempy.TimeoutError:
             if attempt < retry_attempts - 1:
