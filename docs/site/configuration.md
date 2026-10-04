@@ -18,18 +18,39 @@ workers); the same schema applies to any run-local `config.ini`.
     the PubChem circuit breaker and the overwrite-existing skip. Do not enable
     `identifiers_parallel` until that fork is unified.
 
-### `[identifiers]` — mostly decorative (F-21 / V-20)
-Per-resolver `yes/no` toggles in this section are **not read** by the resolver
-registry (one exception pair below). Resolvers run unless the *registry* gating
-skips them. Effective keys:
+### `[identifiers]` — per-resolver pair toggles (F-21 corrected 2026-10-04)
+Every resolver honors a **pair** of toggles, read per attempt:
+
+| Key pattern | Gates | Default |
+|---|---|---|
+| `<resolver_name>` | **identity** attempts | `yes` |
+| `<resolver_name>_similarity` | **similarity** attempts | `yes`, except `atom_similarity` and `name_*_similarity` (default `no`) |
+
+So `<name>: no` suppresses identity attempts while similarity attempts keep
+running under `<name>_similarity: yes` — this pair semantics (not dead code)
+explains the old V-20 observation of "resolver still ran despite `no`".
+
+All 27 resolver names are valid keys: `pubchem_struct`, `chembl_struct`,
+`idsm_pubchem/chembl/chebi`, `inchikey_pubchem`, `inchikey_self`,
+`formula_pubchem`, `formula_hfamily`, `blast_pdb_protein`, `blast_uniprot`,
+`blast_nr_protein`, `blast_swissprot_protein`, `blast_pdb_nucleic`,
+`blast_core_nt`, `blast_nt`, `pdb_struct_protein`, `pdb_struct_nucleotide`,
+`alphafind_struct`, `foldseek_3di`, `mmcif_struct`, `lipid_maps`,
+`glycan_composition`, `atom`, `name_ccd`, `name_maps`, `name_manual`.
+
+!!! warning "ini keys only work if declared"
+    The ini loader reads **declared config fields only** — unknown keys are
+    silently ignored. F-21 completion (2026-10-04) declared the 8 previously
+    missing pairs; before that, toggling e.g. `mmcif_struct: no` did nothing.
+    Unrecognized keys still do nothing — the table above is the valid set.
+
+Special keys:
 
 | Key | Effect |
 |---|---|
 | `overwrite_existing` | if `no`, resolvers skip signatures that already have hits in results.json |
-| `formula_local` | enables the local PubChem mirror resolver when the mirror DB file exists |
-| `formula_chembl` | enables the ChEMBL exact-formula fallback (also auto-on when `VALIDATION_SKIP_PUG` is set) |
-
-Treat every other `[identifiers]` toggle as inert until F-21 is dispositioned.
+| `formula_local` | construction gate for the local PubChem mirror resolver (also needs the mirror DB file) |
+| `formula_chembl` | gates the ChEMBL exact-formula fallback: construction needs this `yes` **or** `VALIDATION_SKIP_PUG=1`, and identity attempts need the field `yes` — with env-only construction and a fleet ini lacking the flag, the resolver exists but stays inert (known quirk, reported) |
 
 ### `[verification]`
 | Key | Campaign value | Meaning |

@@ -158,6 +158,26 @@ class IdentifiersConfig:
     name_maps_similarity: bool = False
     name_manual: bool = True
     name_manual_similarity: bool = False
+    # F-21 completion (2026-10-04): these 8 resolvers previously had NO
+    # declared fields, so ini keys naming them were silently ignored (the
+    # loader only honors declared dataclass fields). Defaults mirror the
+    # historical getattr(..., True) fallback -> zero behavior change.
+    formula_pubchem: bool = True
+    formula_pubchem_similarity: bool = True
+    formula_hfamily: bool = True
+    formula_hfamily_similarity: bool = True
+    inchikey_pubchem: bool = True
+    inchikey_pubchem_similarity: bool = True
+    inchikey_self: bool = True
+    inchikey_self_similarity: bool = True
+    mmcif_struct: bool = True
+    mmcif_struct_similarity: bool = True
+    foldseek_3di: bool = True
+    foldseek_3di_similarity: bool = True
+    lipid_maps: bool = True
+    lipid_maps_similarity: bool = True
+    glycan_composition: bool = True
+    glycan_composition_similarity: bool = True
     # Offline-PUG formula fallback (ChEMBL REST exact-formula). Enable in
     # production config while PubChem is cluster-blocked (503 since 2026-09-12),
     # or per-run via VALIDATION_SKIP_PUG=1. Default off: zero behavior change

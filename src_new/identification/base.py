@@ -49,7 +49,7 @@ class IdentifierResolver(ABC):
     name: str = ""
     identifier_type: str = ""  # e.g. "PDB_ID", "CHEMBL_ID"
     accepted_signatures: list[str] = []  # e.g. ["smiles", "inchikey"]
-    
+
     def __init__(self, config: RunConfig) -> None:
         """Initialize the resolver with configuration.
 
@@ -57,15 +57,31 @@ class IdentifierResolver(ABC):
             config: RunConfig instance containing feature toggles.
         """
         self.config = config
-        # Read enablement from IdentifiersConfig automatically by name
-        self.enabled_identity = getattr(config.identifiers, self.name, True)
+        # F-21: enablement is read THROUGH PROPERTIES (below) at access time,
+        # never eagerly here — several subclasses assign ``self.name`` AFTER
+        # ``super().__init__()`` (alphafind/foldseek/mmcif/name/pdb_struct),
+        # and eager reads keyed the toggles on the base default "" so their
+        # ini keys could never take effect. Reading on access fixes all of
+        # them at once. Nothing may assign these attributes (read-only).
         # Wall-clock deadline for cooperative stage time budgets (set by the
         # resolution manager between calls; None = no budget). Resolvers with
         # expensive internal loops (network fan-out) MUST poll _over_budget().
         self._stage_deadline_epoch: float | None = None
-        self.enabled_similarity = getattr(config.identifiers, f"{self.name}_similarity", True)
         self._last_resolution_metadata: dict[str, dict] | None = None
         self._last_error: str | None = None
+
+    @property
+    def enabled_identity(self) -> bool:
+        """Identity-attempt enablement from ``[identifiers] <name>`` toggle
+        (default on). Read on access — see F-21 note in __init__."""
+        return getattr(self.config.identifiers, self.name, True)
+
+    @property
+    def enabled_similarity(self) -> bool:
+        """Similarity-attempt enablement from ``[identifiers]
+        <name>_similarity`` toggle (default on). Read on access — see F-21
+        note in __init__."""
+        return getattr(self.config.identifiers, f"{self.name}_similarity", True)
 
     def _over_budget(self) -> bool:
         """True when the caller-assigned stage deadline has passed."""
