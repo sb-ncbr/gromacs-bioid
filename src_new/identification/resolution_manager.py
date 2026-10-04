@@ -325,7 +325,13 @@ class IdentifierResolutionManager:
     
     def resolve_all(self, results: ResultsManager, working_directory: str = "") -> None:
         """Iterate all fragments/signatures in results and resolve.
-        
+
+        TEST/HARNESS ONLY (F-16): production code path does NOT use this
+        method. The serial pipeline step calls :meth:`resolve` per
+        fragment/generator with errors collection and stage-time deadline
+        wiring; this batch helper intentionally lacks both. Callers exist
+        only in tests/ replay harnesses. Do not wire into production paths.
+
         Args:
             results: ResultsManager containing signature data.
         """
