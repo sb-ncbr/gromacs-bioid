@@ -544,3 +544,31 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
 
 ### V-20 [identifiers] ini toggles are documentation-only
 - `identifiers.<resolver>: no` in run inis does NOT disable the resolver (registry only consults enabled_identity/similarity defaults True; resolved at class load from a different config object). Effective killswitches: feature flags at resolver registration/config builders, or env/config actually loaded at RUN time (verify against data.config dump + attempted lists, not ini text).
+
+### V-21 pytest red-band: environment parity, not regressions
+- `tests/src_new` assumes CWD = tree root (loaders resolve `tests/data/...` relative); running
+  pytest inside tests/ yields 30+ scarlet "regressions" that are pure harness artifacts.
+- api test modules need `httpx` (starlette testclient); install user-site (`PYTHONUSERBASE`, V-19).
+- Zero-regression proof pattern: run the same suite on OLD-image pod (baseline) and NEW-image pod,
+  diff FAILED sets; identical = all environmental. Wave suites ran 36/36 green, full suite red
+  sets 22==22 (v3.124 vs v3.125-N1, 2026-10-03). Full suites take 60-80 min (real loader runs).
+
+### V-22 Replay/shadow provenance vs serving truth (RCSB 404 artifacts)
+- Offline identify+verify replays of pdb_struct/mmcif fail with RCSB 404 "invalid entry_id":
+  resolvers build public URLs to *derived* payload files, but shadow replay never places those
+  files under the served NFS path (/data/validation/<eid>/input/) — only LIVE pipeline runs do.
+  Mistaking these replay 404s for channel failure is easy; the wire must be proven separately
+  (scratch file + public GET + resolver-shaped POST, like W6.1/W6b smoke).
+- Same 404 shape also results pre-rollout (route absent) and pre-config-fix (wrong host) —
+  three distinct causes, one surface. Timeline evidence required before blaming a channel.
+
+### V-23 Stats denominators are run-window-dependent (S7/GT comparisons)
+- campaign_stats S7_similarity_hit_at_k counts GT annotations only for ENTRIES WITH >=1 hit
+  in that run (code: `if sim_engine is not None and r["hits"]`). Waves that ADD verified entries
+  legitimately grow ann/att (v11->v12: pdb +107, ion +64) while pcts can drift -0.1 even with
+  abs validated UP. Always report abs_est next to pct; never diff pcts across waves alone.
+- coverability_probe.py p0 hard-gates regen against ANCHOR_JSON S7 anchors (default = v8!) and
+  aborts (exit 2) on ANY metric drift - by design. Era advancement = run with
+  PROBE_ANCHOR_JSON=/data/validation/campaign_stats_<prev-era>.json (v11->v12 passed with
+  new_pairs=0). The abort message points at class drift first; check anchors before debugging.
+
