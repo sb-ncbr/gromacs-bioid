@@ -56,6 +56,13 @@ class VerifiedHit:
     # F7: skeleton-fingerprint corroboration for chemical hits (None = not computed)
     skeleton_sim: float | None = None
     skeleton_method: str | None = None
+    # F-17 (2026-10-04): telemetry flag — True when a NON-CHEMICAL identity
+    # hit reached is_verified by assertion alone, i.e. corroboration fetch /
+    # verification workers produced no similarity score (outage, missing
+    # fetcher, worker None). DOES NOT change verification semantics: the hit
+    # remains verified/identity exactly as before (user ruling); the flag only
+    # records that fact for later surfacing (UI/methodology accounting).
+    verified_without_corroboration: bool = False
     
     @classmethod
     def unverified(

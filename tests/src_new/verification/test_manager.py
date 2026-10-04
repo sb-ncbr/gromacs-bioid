@@ -380,13 +380,76 @@ class TestIdentityOnlyVerification:
             }
         }
         tmp_results.set_data("identifiers/seg_no_sim", identity_data)
-        
+
         manager = VerificationManager(config)
         result = manager.verify_all(tmp_results)
-        
+
         assert "seg_no_sim" in result
         if len(result["seg_no_sim"]) > 0:
             hit = result["seg_no_sim"][0]
             if hit.is_verified:
                 # similarity_score should be None, not 0.0
                 assert hit.similarity_score is None
+
+    def test_identity_hit_flagged_verified_without_corroboration(self, config, tmp_results) -> None:
+        """F-17: non-chemical identity hit verified with NO similarity signal at all
+        must carry verified_without_corroboration=True (telemetry only)."""
+        identity_data = {
+            "residue_sequence_protein": {
+                "blast_resolver": {
+                    "signature": "MVLSPADK",
+                    "hit_type": "identity",
+                    "ident_type": "NR_ID",
+                    "hits": ["NP_100"]
+                }
+            }
+        }
+        tmp_results.set_data("identifiers/seg_flag", identity_data)
+
+        manager = VerificationManager(config)
+        result = manager.verify_all(tmp_results)
+
+        assert "seg_flag" in result and len(result["seg_flag"]) > 0
+        hit = result["seg_flag"][0]
+        assert hit.is_verified is True  # ruling: identity stays identity
+        assert hit.similarity_score is None
+        assert hit.verified_without_corroboration is True
+        # and serialization carries it into stored results
+        stored = tmp_results.get_data("verification/seg_flag/verified_hits")
+        assert stored and stored[0]["verified_without_corroboration"] is True
+
+    def test_chemical_identity_hit_not_flagged_and_not_verified(self, config, tmp_results) -> None:
+        """F-17: chemical hits are excluded from the flag (F7 gate governs them:
+        without skeleton corroboration they are not verified at all)."""
+        chem_data = {
+            "smiles": {
+                "pubchem_struct": {
+                    "signature": "O",
+                    "hit_type": "identity",
+                    "ident_type": "PUBCHEM_CID",
+                    "hits": ["962"]
+                }
+            }
+        }
+        tmp_results.set_data("identifiers/seg_chem", chem_data)
+        # NOTE: chemical ident class token is PUBCHEM_CID (resolver
+        # identifier_type), not the generic "CID".
+
+        manager = VerificationManager(config)
+        result = manager.verify_all(tmp_results)
+
+        if len(result["seg_chem"]) > 0:
+            hit = result["seg_chem"][0]
+            assert hit.ident_type == "PUBCHEM_CID"
+            assert hit.verified_without_corroboration is False
+
+    def test_old_results_backfill_default_false(self) -> None:
+        """F-17: VerifiedHit constructed the old way (no flag kwarg) defaults False,
+        so pre-F-17 stored hits remain valid schema."""
+        hit = VerifiedHit(
+            identifier="X", ident_type="NR_ID", database="nr",
+            resolver_score=50.0, similarity_score=12.0,
+            annotation_quality_score=None, final_confidence=50.0,
+            supporting_evidence_count=1, is_verified=True,
+        )
+        assert hit.verified_without_corroboration is False

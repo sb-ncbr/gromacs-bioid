@@ -382,6 +382,15 @@ class VerificationManager:
                         )
                 
                 if final_confidence >= min_confidence and has_positive_evidence:
+                    # F-17: telemetry flag (ruling 2026-10-04: identity stays
+                    # identity either way — flag ONLY records that this
+                    # non-chemical identity hit verified with no corroboration
+                    # signal at all). No effect on is_verified or any count.
+                    verified_without_corroboration = (
+                        hit_type == "identity"
+                        and ident_type not in CHEMICAL_IDENT_TYPES
+                        and similarity_score is None
+                    )
                     # Create verified hit
                     verified_hit = VerifiedHit(
                         identifier=normalized_id,
@@ -395,6 +404,7 @@ class VerificationManager:
                         is_verified=True,
                         skeleton_sim=skeleton_sim,
                         skeleton_method=skeleton_method,
+                        verified_without_corroboration=verified_without_corroboration,
                     )
                 else:
                     # Create unverified hit
