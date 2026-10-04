@@ -1001,3 +1001,44 @@ per item. Master register: `.tmp/final_findings.md` (scratch); this section = pi
 - Evidence cross-checks: serving logs all-200 in W8 window (RCSB fetch healthy on campaign
   path); live 400s = genuine NA "could not process"; W4 strand-select deterministic (BFS
   atom-0 → deterministic sibling parity).
+
+## FINAL AUDIT — SECTION E · Fix verification & deployment (2026-10-04)
+
+**Rulings:** F-09 fixed (shadow tree deleted, ui-worker PYTHONPATH dropped, in-place) ·
+F-10 wontfix · F-08 later · F-13 deferred-to-migration · F-26 → dedicated workstream
+(widened: 6 main.py call sites + src_new endpoint) · F-04 armored (b65ea8845) ·
+F-02 documented fallback CMD (372dec800).
+
+**Code fixes (all image-baked, deployed as v3.126-audit2, fleet-wide):**
+- F-01 ed4322254 duplicate stub routes removed (single defs; verified in-pod route table).
+- F-03 ef1bc0ec1 start_run setdefault (status persistence) → REVISED 4b374e306 after
+  live regression (below): skip only generate_signatures/identify_molecules/verify_results,
+  only on persisted 'success'; loader/repair/unwrap/analyze/export always re-run.
+- F-05 022240db2 sweeper consumes retry budget, quarantines at MAX_RETRIES, entry failed too.
+
+**INCIDENT 2026-10-04 (audit1):** activating the never-fired 2026-09-18 skip path via
+start_run-fix exposed latent missing context-rehydration: requeue of entry 1612
+(unwrap='warning') skipped loader → unwrap critically failed (missing_universe),
+pipeline failed. Caught by mandatory live requeue test before methodology work;
+workers rolled back to N1 within ~25 min; semantics revised + verified. LESSON:
+fixes that activate dead code paths REQUIRE live end-to-end verification, not only
+synthetic tests. (synthetic unit tests passed while the integration semantics were wrong)
+
+**Live verification evidence (v3.126-audit2, entry 1612, snapshot-backed):**
+- Baseline (old code) requeue: 45s, completed, semantics identical to snapshot.
+- Post-fix full run: 44.9s, completed, statuses+hits+segments+signatures identical.
+- Resume run: 15.0s (3× faster), IDENTICAL semantics; run log shows exactly
+  "Resume: skipping {generate_signatures,identify_molecules,verify_results}
+  (persisted success)".
+- F-05 live: synth straggler (retry=3, stale 25h) quarantined in one 30s sweeper
+  tick: queue failed (cycle 4/3 note), entry failed; synth rows cleaned after.
+- F-04: all workers register src_new.api.tasks.run_pipeline_task (fleet probe 181 hits).
+- F-01: ceitec api route table single-def per route.
+- Rollback yamls: .tmp/rollback/v3.126/*.pre-v3.126.yaml.
+
+**Straggler implication:** 11 pathological stragglers now die within ≤3 stale cycles
+(~36h) under deployed F-05 instead of looping forever.
+
+**Empirical test artifacts (scratch):** .tmp/f03_repro.py, .tmp/f03b_executor_skip.py
+(12/12 scenarios incl. exact 1612 production replay), .tmp/f05_stale_test.py (12/12;
+9/12 fail pre-fix).
