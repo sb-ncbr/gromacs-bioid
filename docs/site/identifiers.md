@@ -46,17 +46,25 @@ the PubChem circuit breaker self-heals every 30 s (probe to a fixed CID).
 Resolver errors are collected into `stage_errors/identifiers/<segment>`.
 
 !!! info "RCSB structure-search channel — current truth (F-23/24/25)"
-    - Query: structure node `similarity_type: local`,
-      `target_search_space: assembly`, **no pagination options → default 10
-      rows** silently returned.
+    - Query shape: structure node `similarity_type: local`,
+      `target_search_space: assembly`, `number_of_candidates: 10000`.
+    - **F-25 fixed 2026-10-04**: payload now carries
+      `request_options.paginate.rows=10000` — previously RCSB silently
+      returned its default **10 rows** regardless of `number_of_candidates`
+      (live-probed: same query = 464 total / 10 rows without paginate, 100
+      with). Universes >10 now actually reach the parser.
     - `pdb_struct_*` adds a composition filter
-      (`selected_polymer_entity_types in ["Protein (only)"]` / NA-only), which
-      **excludes mixed-composition entries** (protein+NA complexes) in both modes.
-    - The structure alignment backend is protein-centric: **nucleic-acid
-      payloads are rejected with 400 "could not process"** — this is by design
-      of the upstream engine, not a transient outage (containment decision pending).
-    - Practical effect: the channel currently serves **protein-only entries**
-      (verified healthy — 1UBQ live control returns 10 hits).
+      (`selected_polymer_entity_types in ["Protein (only)"]` / NA-only) which
+      **excludes mixed-composition entries** (protein+NA complexes, RCSB enum
+      `Protein/NA`) in both modes — **F-24, addon decision pending** (additive
+      design only; ruled 2026-10-04).
+    - The structure-search backend is protein-centric: **pure nucleic-acid
+      payloads are rejected with HTTP 400** — by design of the upstream
+      engine, not a transient outage (proven live 2026-10-04: 1BNA protein-shaped
+      structure node → 400; 1UBQ control → 200/464). Containment verdict
+      design landing with F-23 (B4).
+    - `mmcif_struct` sends the same query shape **without** the composition
+      filter (attempts every class; NA payloads → same 400 class).
 
 ## Stage 3 — verification (candidate → verdict)
 

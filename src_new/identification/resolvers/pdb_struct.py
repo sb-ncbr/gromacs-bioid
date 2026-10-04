@@ -222,10 +222,21 @@ class PDBStructResolver(IdentifierResolver):
                     }
                 ]
             },
-            "return_type": "entry"
+            "return_type": "entry",
+            # F-25: without request_options/paginate, RCSB v2 silently returns
+            # only the default 10 rows regardless of number_of_candidates
+            # (probed live 2026-10-04: same query -> (464 total, 10 rows) vs
+            # (464 total, 100 rows) with rows=100). Match the 10000-candidate
+            # intent; the parser reads the whole result_set.
+            "request_options": {
+                "paginate": {
+                    "start": 0,
+                    "rows": 10000
+                }
+            }
         }
 
-        logger.info("RCSB structure search request: similarity_type=local target_search_space=assembly")
+        logger.info("RCSB structure search request: similarity_type=local target_search_space=assembly, paginated rows=10000")
         logger.debug(f"Querying RCSB API for '{remote_path}'")
         
         try:
