@@ -19,4 +19,10 @@ RUN mkdir -p /app/runs /app/databases && chown -R 1000:1000 /app
 
 USER 1000
 
-CMD ["celery", "-A", "src_new.celery_app", "worker", "--loglevel=info", "--pool=threads", "--concurrency=4"]
+# FALLBACK CMD ONLY - every production worker deployment overrides this
+# (verified 2026-10-04, audit F-02):
+#   validation-worker:        -A tasks             --concurrency=2 --prefetch-multiplier=1
+#   bat3-ceitec-bat3-worker:  -A src_new.celery_app --concurrency=2 --prefetch-multiplier=1
+#   bat3-ui-worker:           -A src_new.celery_app --concurrency=2 -Q validation.ui.celery
+# Do not rely on this CMD for production semantics; it exists for local runs.
+CMD ["celery", "-A", "src_new.celery_app", "worker", "--loglevel=info", "--pool=threads", "--concurrency=2", "--prefetch-multiplier=1"]
