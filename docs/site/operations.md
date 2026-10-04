@@ -25,7 +25,7 @@ Running the fleet day-to-day; failure taxonomy; when to worry.
 | Broker wedge | throughput collapses, 0 restarts | cluster middlebox keeps dead TCP ESTABLISHED | fixed in code (socket timeouts, keepalive, health checks); visibility_timeout=6h |
 | Poison entries | worker OOMKills | multi-GB pipelines × prefetch | prefetch=1, concurrency=2 (fixed) |
 | Stalls | stages parked hours | resolver/fetch fan-out | stage budgets (fixed); budget warnings are searchable |
-| Stragglers (pathological) | same entries requeue every 12h indefinitely | **sweeper has no retry cap** (F-05); underlying cause = per-entry hard hangs outside budgeted stages | manual triage cohort; a stale-cycle cap + quarantine is pending decision |
+| Stragglers (pathological) | same entries requeue every 12h | underlying cause = per-entry hard hangs outside budgeted stages | **quarantine deployed (F-05, v3.126-audit2):** each stale cycle consumes `retry_count`; at `MAX_RETRIES` (3) the item + entry fail permanently (`stale_timeout … cycle K/3`) — no more infinite loops |
 | Clock skew (NFS vs pods, ~7200s) | celery ETA warnings; settle delayed | NFS server clock ahead | benign for settle (conservative); keep in mind when reading mtimes |
 | Replay-vs-serve 404s | offline replay "invalid entry_id" | derived payloads not under served input/ (V-22) | prove wire changes publicly, separately |
 

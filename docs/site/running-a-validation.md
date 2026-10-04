@@ -74,8 +74,12 @@ are re-ranked by skeleton similarity before the verify window is cut
   old artifacts remain on NFS until cleaned (results.json is overwritten on the
   next attempt).
 - `skip_if_output_exists` stage caching applies within a run directory only.
-- A restarted run **re-executes all stages** (the resume-skip mechanism is
-  currently inert — finding F-03; plan time accordingly).
+- A restarted run (≥ v3.126-audit2) re-executes the **context chain**
+  (`discover→load→repair→unwrap→analyze`) plus `export`, and **skips**
+  `generate_signatures`/`identify_molecules`/`verify_results` *only* where the
+  persisted status is exactly `success` — the expensive resolution compute is
+  what resume saves (measured 45s → 15s on a completed entry). Warning/failed/
+  pending statuses always re-execute. Disable via `PIPELINE_RESUME_STAGES=0`.
 - Never requeue while any worker runs a different image era (era-unity rule).
 
 ## Where to watch progress

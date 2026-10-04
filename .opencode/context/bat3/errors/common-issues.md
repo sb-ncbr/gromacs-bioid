@@ -572,3 +572,13 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
   PROBE_ANCHOR_JSON=/data/validation/campaign_stats_<prev-era>.json (v11->v12 passed with
   new_pairs=0). The abort message points at class drift first; check anchors before debugging.
 
+
+### V-24 Fixes that ACTIVATE dead code paths need live end-to-end proof, not just unit tests
+- 2026-10-04 audit1: F-03 start_run-fix made the 2026-09-18 executor skip-logic fire for the
+  FIRST time (it never had - statuses were always reset to pending). The skip path had a latent
+  missing-context bug (skipped loader -> unwrap ran with no in-memory universe). Synthetic unit
+  tests all passed; the live 1612-requeue test caught it (pipeline failed 14.8s in).
+- Protocol that worked: mandatory snapshot-backed "requeue one sim" diff BEFORE any methodology
+  work + fast N1 rollback (yaml snapshot pre-rollout) -> revise semantics -> rebuild -> re-verify.
+- Rule: when a fix makes dormant code live, assume the activated path is UNTESTED regardless of
+  how long it sat in the tree; demand integration evidence (real trigger, real artifacts).

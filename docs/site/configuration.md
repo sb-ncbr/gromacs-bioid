@@ -66,7 +66,7 @@ Treat every other `[identifiers]` toggle as inert until F-21 is dispositioned.
 | `MDDBR_API_BASE` | api/worker | MDDBR REST base |
 | `SPIN_DEBUG` | worker | per-120s thread-stack dumps (postmortem probe; currently armed fleet-wide — F-10) |
 | `BAT3_SRC` | gate scripts | **overlay-gate selector** (see warning) |
-| `PIPELINE_RESUME_STAGES` | worker | nominal resume-skip switch (currently inert — F-03) |
+| `PIPELINE_RESUME_STAGES` | worker | resume-skip switch; `0` forces full re-run. Active since v3.126-audit2 (revised F-03 semantics): only `generate_signatures`/`identify_molecules`/`verify_results` skip, and only on persisted `success` |
 | `CELERY_BROKER_TRANSPORT_OPTIONS` | deploy env | **dead config** — nothing reads it (F-08); transport opts are set in code |
 
 !!! danger "`BAT3_SRC` shadowing (V-18)"
@@ -74,5 +74,6 @@ Treat every other `[identifiers]` toggle as inert until F-21 is dispositioned.
     `sys.path.insert(0, os.environ.get("BAT3_SRC", "/app"))`. Running them
     **without** `BAT3_SRC=/tmp/gate_src` silently executes the baked image code —
     `PYTHONPATH`, `cd`, and bytecode purges do NOT protect you. Any PYTHONPATH
-    pointing at an NFS code tree (e.g. the stale `/data/validation/patched_src`
-    on ui-worker, F-09) is an era-mix booby trap of the same class.
+    pointing at an NFS code tree is an era-mix booby trap of the same class
+    (real case: `/data/validation/patched_src` pre-W4 shadow tree on ui-worker
+    — removed 2026-10-04, F-09).
