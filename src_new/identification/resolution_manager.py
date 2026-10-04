@@ -15,6 +15,9 @@ from .base import IdentifierResolver
 from .cache_manager import ResolverCache
 from .registry import IdentifierRegistry
 
+# F-18: single source of truth for the generator-name -> signature-type map.
+from ..signatures.canonical import CANONICAL_SIGNATURE_TYPES as _CANONICAL_SIGNATURE_TYPES
+
 logger = logging.getLogger("identifier")
 
 # ---------------------------------------------------------------------------
@@ -81,36 +84,7 @@ def _breaker_blocked(resolver, pug_up: bool) -> bool:
     return True
 
 
-_CANONICAL_SIGNATURE_TYPES: dict[str, str] = {
-    "smiles": "smiles",
-    "smiles_not_sanitized": "smiles",
-    "inchi_key": "inchikey",
-    "morgan_fingerprint": "morgan_fingerprint",
-    "selfies": "selfies",
-    "molecular_formula": "formula",
-    "fasta_map_protein": "residue_sequence_protein",
-    "fasta_map_nucleic": "residue_sequence_nucleotide",
-    "fasta_resname_protein": "residue_sequence_protein",
-    "fasta_resname_nucleic": "residue_sequence_nucleotide",
-    "pdb_protein": "pdb_protein",
-    "pdb_not_sanitized_protein": "pdb_protein",
-    "pdb_backbone_protein": "pdb_protein",
-    "pdb_backbone_not_sanitized_protein": "pdb_protein",
-    "pdb_nucleic": "pdb_nucleic",
-    "pdb_not_sanitized_nucleic": "pdb_nucleic",
-    "pdb_backbone_nucleic": "pdb_nucleic",
-    "pdb_backbone_not_sanitized_nucleic": "pdb_nucleic",
-    "ca_only_pdb": "ca_only_pdb",
-    "tdi": "3di_sequence",
-    "lipid_shorthand": "lipid_shorthand",
-    "glycan_composition": "glycan_composition",
-    "mmcif": "mmcif",
-    "name_chain": "name",
-    "name_molecule": "name",
-    "name_segment": "name",
-    "atom": "element",
-    "fingerprint": "hash",
-}
+# _CANONICAL_SIGNATURE_TYPES lives in src_new/signatures/canonical.py (F-18).
 
 
 class IdentifierResolutionManager:
