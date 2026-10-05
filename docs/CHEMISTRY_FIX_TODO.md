@@ -1152,3 +1152,41 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   NOFIX if additive invariant can't be replay-proven. See decision item 3b.
 - OQ-8 · open (cosmetic) · `formula_pubchem_local` appears twice in
   attempted lists (pre-existing bookkeeping dup; harmless).
+
+## SECTION F3 · Wave D — F-28 stats→repo + N1 leftovers (2026-10-05, repo-side)
+
+- D2 `6f419b486` + tag `v12-stats-generators`: 34 NFS single-copy *.py captured
+  byte-identical (md5-verified 0/34 mismatch), py_compile 34/34, into
+  scripts/stats/ with MANIFEST.csv + README. Dual-home drift at copy time:
+  6 identical; validation_similarity.py reverse-drift (REPO newer); rest
+  NFS-only. NFS originals untouched; method = repo-edit-first from now on.
+- D2b: adopted repo-native audit tools into scripts/stats/ (audit_gt_absent.py,
+  audit_interm.py — previously .tmp-only lineage while their OUTPUTS lived
+  on NFS) + new versioned tool n1_misflag_recount_postw4.py.
+- D3 GOLD E2E (live): /tmp-redirected run of REPO-copy
+  assemble_stats_package_v12.py regenerated stats_package_v12.json AND .md
+  IDENTICAL (timestamp-normalized) to the frozen official artifacts
+  (2026-10-03). Provable: the versioned code IS the code behind official v12.
+- D4 N1 leftovers:
+  * F-N1d CLOSED by live evidence: post-W4 entries carry pdb_nucleic +
+    pdb_backbone_nucleic + not-sanitized variants (entry 1533 generated set).
+  * gt_absent anatomy re-run (redirected, no official mutation): STABLE vs
+    frozen — 194 rows, classes identical (A_gt_unresolvable 118, B1a 47,
+    D_unrelated 28, B2 1; mirror-missing 76; sim_new_pairs 22).
+  * mis-flag recount post-W4 (scripts/stats/n1_misflag_recount_postw4.py,
+    same frozen-frame conditions as the original audit): count = 21
+    UNCHANGED — BUT all 21 are recent-reprocessed virtual minority segments
+    (SYSTEM__vN, 2026-09-26..10-03, incl. ENAR-on). Anatomy of 2346/SYSTEM__v4:
+    is_nucleic=True name-tier fragment whose fasta_map_protein contains
+    'CUAAUUCAAUUAUU' (RNA letters labeled as protein fasta) + full pdb_protein
+    blobs. => NOT a pre-wave artifact: generator-class gating in the
+    virtual-minority exposure path assigns protein-family generator names to
+    nucleic fragments (content-wise wrong: RNA letters as protein sequence ->
+    wasted protein attempts + noise). REPORTED as OQ-9; no fix without ruling.
+- OQ-9 (REPORT 2026-10-05): minority-exposure virtual segments (SYSTEM__vN)
+  emit protein-class generators for nucleic-framed fragments (21 segments,
+  ~1% of nucleic frame, era-spanning incl. post-ENAR 2026-10-03). Evidence:
+  entry 2346 SYSTEM__v4 fasta_map_protein='CUAAUUCAAUUAUU'. Suggested
+  direction (needs ruling): gate generator class by segment properties
+  (is_nucleic) for virtual segments; fix scope = signatures worker routing,
+  not facade classification (which is correct).
