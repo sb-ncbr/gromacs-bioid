@@ -1043,10 +1043,17 @@ class TestBlastAlphabetValidation:
 # =============================================================================
 
 class TestIdentifierResolutionErrorPropagation:
-    """Test that IdentifierResolutionError propagates through resolve() (BASE-8)."""
+    """IdentifierResolutionError handling through resolve() (BASE-8).
 
-    def test_identifer_resolution_error_propagates(self, config: RunConfig) -> None:
-        """Test that IdentifierResolutionError raised in _resolve_identity propagates."""
+    OQ-10 (ruling 2026-10-05): the raise contract was superseded —
+    resolve() now returns None per the documented contract while the
+    error is still recorded via resolver.get_last_error() (read by the
+    resolution manager for UI/log telemetry). These tests now lock the
+    None+record contract.
+    """
+
+    def test_identifer_resolution_error_recorded_not_raised(self, config: RunConfig) -> None:
+        """Error in _resolve_identity -> resolve() returns None, error recorded."""
         from src_new.identification.base import IdentifierResolver, IdentifierResolutionError
         
         # Create a mock resolver that always raises IdentifierResolutionError
@@ -1066,14 +1073,12 @@ class TestIdentifierResolutionErrorPropagation:
         
         resolver = FailingResolver(config)
         
-        # Should raise IdentifierResolutionError, not return None
-        with pytest.raises(IdentifierResolutionError) as exc_info:
-            resolver.resolve("TEST_SIGNATURE", as_similarity=False)
-        
-        assert "Test resolution failure" in str(exc_info.value)
+        # OQ-10: returns None (no raise), error still recorded for UI/log
+        assert resolver.resolve("TEST_SIGNATURE", as_similarity=False) is None
+        assert resolver.get_last_error() == "Test resolution failure"
 
-    def test_identifer_resolution_error_propagates_similarity(self, config: RunConfig) -> None:
-        """Test that IdentifierResolutionError raised in _resolve_similarity propagates."""
+    def test_identifer_resolution_error_recorded_not_raised_similarity(self, config: RunConfig) -> None:
+        """Error in _resolve_similarity -> resolve() returns None, error recorded (OQ-10)."""
         from src_new.identification.base import IdentifierResolver, IdentifierResolutionError
         
         class FailingSimilarityResolver(IdentifierResolver):
@@ -1092,11 +1097,9 @@ class TestIdentifierResolutionErrorPropagation:
         
         resolver = FailingSimilarityResolver(config)
         
-        # Should raise IdentifierResolutionError, not return None
-        with pytest.raises(IdentifierResolutionError) as exc_info:
-            resolver.resolve("TEST_SIGNATURE", as_similarity=True)
-        
-        assert "Test similarity resolution failure" in str(exc_info.value)
+        # OQ-10: returns None (no raise), error still recorded for UI/log
+        assert resolver.resolve("TEST_SIGNATURE", as_similarity=True) is None
+        assert resolver.get_last_error() == "Test similarity resolution failure"
 
     def test_generic_exception_returns_none(self, config: RunConfig) -> None:
         """Test that generic exceptions still return None (not re-raised)."""

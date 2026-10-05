@@ -125,6 +125,37 @@ def test_resolver_catches_resolution_error_and_returns_none(config: RunConfig) -
     assert result is None
 
 
+def test_resolution_error_is_recorded_for_telemetry(config: RunConfig) -> None:
+    """OQ-10: dropping the raise must keep the error record for UI/log.
+
+    The resolution manager reads resolver.get_last_error() on the
+    not-result path and appends it to the run's error list, so this
+    assertion locks the telemetry contract (error visible in UI/logs).
+    """
+    
+    class ErrorResolver(IdentifierResolver):
+        name = "error_resolver2"
+        identifier_type = "ERROR_ID"
+        accepted_signatures = ["smiles"]
+        
+        def _is_applicable(self, signature: str) -> bool:
+            return True
+        
+        def _resolve_identity(self, signature: str, working_directory: str) -> list[str]:
+            raise IdentifierResolutionError("Intentional error")
+        
+        def _resolve_similarity(self, signature: str, working_directory: str) -> list[tuple[str, float]]:
+            raise IdentifierResolutionError("Intentional error")
+    
+    resolver = ErrorResolver(config)
+    
+    assert resolver.resolve("CCO", as_similarity=False) is None
+    assert resolver.get_last_error() == "Intentional error"
+    # similarity phase likewise records (manager reads it symmetrically)
+    assert resolver.resolve("CCO", as_similarity=True) is None
+    assert resolver.get_last_error() == "Intentional error"
+
+
 def test_resolver_catches_unexpected_error_and_returns_none(config: RunConfig) -> None:
     """Test that unexpected errors are caught and resolve returns None."""
     

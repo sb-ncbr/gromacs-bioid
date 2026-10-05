@@ -174,9 +174,13 @@ class IdentifierResolver(ABC):
             
             return result
         except IdentifierResolutionError as exc:
+            # OQ-10: resolution failures are external-world facts; record and
+            # return None per documented contract ("None if resolution fails").
+            # The error record is preserved via _last_error (manager reads
+            # get_last_error() on the not-result path for UI/log telemetry).
             self._last_error = str(exc)
             logger.error(f"Resolution failed for {self.name}: {exc}")
-            raise  # Re-raise so callers can handle appropriately
+            return None
         except Exception as exc:
             self._last_error = str(exc)
             logger.error(f"Unexpected error in {self.name} resolver: {exc}")
