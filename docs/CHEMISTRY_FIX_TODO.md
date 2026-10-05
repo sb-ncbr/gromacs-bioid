@@ -1321,3 +1321,20 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   (pbc_unwrap + mmcif_struct na_mode_unsupported => F-23 containment
   verdict resurfacing as designed). 1612 is now a permanently de-noised
   gate entry; old noise archived in snapshot + bat3_runs 177319.
+
+## SECTION F5a · OQ-9 fix landed (Wave F part 1, 2026-10-05, pre-deploy)
+
+- `8dee3b89e` + test file tests/src_new/pipeline_steps/test_oq9_virtual_routing.py.
+- Mechanics (verified reading facade/discovery/worker/snapshot chain):
+  facade classification CORRECT all along (virtual props computed via
+  _compute_flags(frag0)); parallel worker mock-facade routes correctly;
+  SERIAL path bug: generators' get_segment_properties(fragment.segids[0])
+  resolves PARENT segid props -> protein gens on NA virtual fragments.
+  Live 21 rows therefore came from serial-processed entries.
+- Fix: _PinnedPropsFacade + _pinned_props_facade in serial loop only.
+  Flat-cohort byte-invariance guaranteed structurally (same props object)
+  + locked by unit test; OQ-8/OQ-10 unchanged. Rides v3.130 with F-24.
+- NEXT in Wave F: F1-B F-24 code (rcsb_include_mixed_complexes, default
+  OFF, addon Protein/NA query appended) + gold fixtures; F2 additive +
+  flat replay (3 anchors incl. the 21-row evidence via stats tooling);
+  F3 W10 sweep; F4 v3.130 staged roll + 1612 gate + production W10.
