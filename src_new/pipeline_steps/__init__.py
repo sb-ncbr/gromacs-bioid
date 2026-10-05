@@ -448,21 +448,27 @@ def _identify_molecules(context):
                     if gen_name not in sig_type_map:
                         logger.warning(f"Signature type map missing entry for '{gen_name}'")
     
-    # Build work items: (fragment_name, valid_sigs, config_dict, sig_type_map) for parallel,
-    # or just (fragment_name, valid_sigs) for serial
+    # Build work items:
+    #   parallel: (fragment_name, valid_sigs, config_dict, sig_type_map,
+    #              existing_identifiers)  # F-15: seed for overwrite_existing parity
+    #   serial:   (fragment_name, valid_sigs)
     items_parallel = []
     items_serial = []
     for fragment_name in sorted(signatures_data.keys()):
         generated = signatures_data[fragment_name].get("generated", {})
         if not generated:
             continue
-        
+
         # Filter out empty signatures
         valid_sigs = {k: v for k, v in generated.items() if v}
         if not valid_sigs:
             continue
-        
-        items_parallel.append((fragment_name, valid_sigs, context.config.to_dict(), sig_type_map))
+
+        # F-15: pass the fragment's already-persisted identifiers blob so the
+        # parallel worker (which resolves into a temp ResultsManager) can skip
+        # present resolvers exactly like the serial path does.
+        existing_ids = context.results.get_data(f"identifiers/{fragment_name}") or {}
+        items_parallel.append((fragment_name, valid_sigs, context.config.to_dict(), sig_type_map, existing_ids))
         items_serial.append((fragment_name, valid_sigs))
     
     if not items_parallel:
@@ -480,8 +486,8 @@ def _identify_molecules(context):
     deadline = budget_deadline(context)
     if deadline is not None:
         items_parallel = [
-            (fn, vs, {**cfg, "_stage_deadline_epoch": deadline} if isinstance(cfg, dict) else cfg, stm)
-            for (fn, vs, cfg, stm) in items_parallel
+            (fn, vs, {**cfg, "_stage_deadline_epoch": deadline} if isinstance(cfg, dict) else cfg, stm, ex)
+            for (fn, vs, cfg, stm, ex) in items_parallel
         ]
 
     results = None

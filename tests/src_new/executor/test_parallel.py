@@ -167,7 +167,8 @@ class TestIdentificationWorker:
         config_dict = config.to_dict()
         sig_type_map = {"atom": "atom"}
         
-        item = (fragment_name, signatures_dict, config_dict, sig_type_map)
+        # F-15: 5th element = pre-existing identifiers blob ({} = fresh entry)
+        item = (fragment_name, signatures_dict, config_dict, sig_type_map, {})
         
         # Run worker
         result = _identify_molecules_worker(item)

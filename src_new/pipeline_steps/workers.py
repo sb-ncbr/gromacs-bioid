@@ -9,9 +9,6 @@ from typing import Any
 
 logger = logging.getLogger("base")
 
-# F-18: single source of truth for the generator-name -> signature-type map.
-from ..signatures.canonical import CANONICAL_SIGNATURE_TYPES as _CANONICAL_SIGNATURE_TYPES
-
 
 class MockResidueAtoms:
     """Mock atoms container for a single residue.
@@ -429,23 +426,38 @@ def _identify_molecules_worker(item: tuple) -> dict[str, Any]:
     """Worker function for parallel identification.
     
     Args:
-        item: Tuple of (fragment_name, signatures_dict, config_dict, signature_type_map).
+        item: Tuple of (fragment_name, signatures_dict, config_dict,
+              signature_type_map, existing_identifiers).
               signatures_dict maps generator_name -> signature string.
-              
+              existing_identifiers is the persisted identifiers/{fragment}
+              blob (or {}), seeded so overwrite_existing skip behaves exactly
+              like the serial path.
+
     Returns:
         Flat dict mapping result paths to values, plus attempted lists and errors.
         Never returns None - errors are collected in the 'errors' field.
+
+    F-15 (2026-10-04): this worker now DELEGATES to
+    IdentifierResolutionManager.resolve() per generator/signature against a
+    temp ResultsManager (verify-worker pattern). The previous inline fork of
+    the identity/similarity loops lacked the PubChem circuit breaker and the
+    overwrite_existing skip and re-owned the canonical type map; serial and
+    parallel paths now share a single implementation.
     """
     try:
         from ..config.loader import RunConfig
         from ..identification.registry import get_default_resolvers, IdentifierRegistry
         from ..identification.cache_manager import ResolverCache
         from ..identification.resolution_manager import IdentifierResolutionManager
-        
-        fragment_name, signatures_dict, config_dict, sig_type_map = item
+        from ..results.results_manager import ResultsManager
+        import tempfile
+        import os
+        import time as _time
+
+        fragment_name, signatures_dict, config_dict, sig_type_map, existing_identifiers = item
         deadline_epoch = config_dict.pop("_stage_deadline_epoch", None) if isinstance(config_dict, dict) else None
         config = RunConfig.from_dict(config_dict)
-        if deadline_epoch is not None and __import__("time").time() > deadline_epoch:
+        if deadline_epoch is not None and _time.time() > deadline_epoch:
             return {"fragment_name": fragment_name, "results": {},
                     "errors": [{"resolver": "worker", "generator": "", "error": "stage_time_budget exceeded before start"}]}
 
@@ -454,120 +466,81 @@ def _identify_molecules_worker(item: tuple) -> dict[str, Any]:
         registry = IdentifierRegistry(resolvers)
         cache = ResolverCache(config)
         manager = IdentifierResolutionManager(registry, config, signature_type_map=sig_type_map)
-        
-        results = {}
-        errors = []
-        
-        for generator_name, signature in signatures_dict.items():
-            if not signature:
-                continue
-            if deadline_epoch is not None and __import__("time").time() > deadline_epoch:
-                errors.append({"resolver": "worker", "generator": generator_name, "error": "stage_time_budget exceeded mid-fragment"})
-                break
 
-            # Call resolve directly with local cache
-            attempted_path = f"identifiers/{fragment_name}/{generator_name}/attempted"
-            
-            try:
-                # We need to call resolve for each signature
-                # But the manager.resolve method expects ResultsManager
-                # So let's use a minimal approach - call the internal logic
-                
-                from ..identification.base import IdentifierResolver
-                
-                # Determine signature type
-                signature_type = sig_type_map.get(generator_name) if sig_type_map else None
-                if signature_type is None:
-                    signature_type = _CANONICAL_SIGNATURE_TYPES.get(generator_name)
-                if signature_type is None:
-                    logger.warning(f"Unknown signature generator '{generator_name}', cannot determine signature type. Skipping.")
+        # Temp ResultsManager (verify-worker pattern) as resolve()'s receiver.
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
+            temp_path = f.name
+            json.dump({"pipeline_name": "identify_worker", "data": {}}, f)
+
+        try:
+            tmp_mgr = ResultsManager(temp_path)
+
+            # Seed pre-existing identifiers so the resolve() overwrite_existing
+            # skip fires exactly as in the serial path (which resolves into the
+            # real ResultsManager carrying prior-run blobs).
+            if existing_identifiers:
+                tmp_mgr.set_data(f"identifiers/{fragment_name}", existing_identifiers)
+
+            # Snapshot seeded content (flattened at blob granularity) so the
+            # flat output only carries paths this run actually (re)wrote.
+            def _blob_flatten(block: Any) -> dict:
+                flat: dict[str, Any] = {}
+                if not isinstance(block, dict):
+                    return flat
+                for gen_name, gen_entries in block.items():
+                    if isinstance(gen_entries, dict):
+                        for entry_key, entry_val in gen_entries.items():
+                            flat[f"{gen_name}/{entry_key}"] = entry_val
+                    else:
+                        flat[gen_name] = gen_entries
+                return flat
+
+            pre_flat = _blob_flatten(existing_identifiers) if existing_identifiers else {}
+
+            errors = []
+            for generator_name, signature in signatures_dict.items():
+                if not signature:
                     continue
-                
-                logger.debug(f"[Identify] {fragment_name}/{generator_name}: signature_type='{signature_type}', signature_len={len(signature)}")
-                
-                attempted_resolvers = []
-                
-                # Phase 1: Identity resolution
-                identity_resolvers = registry.get_applicable_resolvers(signature_type, as_similarity=False)
-                
-                for resolver in identity_resolvers:
-                    if deadline_epoch is not None and __import__("time").time() > deadline_epoch:
-                        errors.append({"resolver": "worker", "generator": generator_name, "error": "stage_time_budget exceeded mid-fragment"})
-                        break
-                    if not resolver.is_applicable(signature, signature_type, as_similarity=False):
-                        continue
+                if deadline_epoch is not None and _time.time() > deadline_epoch:
+                    errors.append({"resolver": "worker", "generator": generator_name,
+                                   "error": "stage_time_budget exceeded mid-fragment"})
+                    break
+                manager.resolve(
+                    results=tmp_mgr,
+                    segment=fragment_name,
+                    signature_generator_name=generator_name,
+                    signature=signature,
+                    cache=cache,
+                    working_directory=os.path.dirname(temp_path),
+                    errors=errors,
+                    deadline_epoch=deadline_epoch,
+                )
 
-                    attempted_resolvers.append(resolver.name)
-                    resolver._stage_deadline_epoch = deadline_epoch
-                    try:
-                        result = resolver.resolve(
-                            signature=signature,
-                            as_similarity=False,
-                            working_directory="",
-                            cache=cache
-                        )
-                        
-                        if result:
-                            resolver_data = {
-                                "signature": signature,
-                                "hit_type": "identity",
-                                "hits": result,
-                                "ident_type": resolver.identifier_type,
-                                "signature_type": signature_type
-                            }
-                            metadata = resolver.get_last_resolution_metadata()
-                            if metadata is not None:
-                                resolver_data["hits_metadata"] = metadata
-                            results[f"identifiers/{fragment_name}/{generator_name}/{resolver.name}"] = resolver_data
-                    except Exception as e:
-                        errors.append({"resolver": resolver.name, "generator": generator_name, "error": str(e)})
-                        continue
-                
-                # Phase 2: Similarity resolution
-                similarity_resolvers = registry.get_applicable_resolvers(signature_type, as_similarity=True)
-                
-                for resolver in similarity_resolvers:
-                    if deadline_epoch is not None and __import__("time").time() > deadline_epoch:
-                        errors.append({"resolver": "worker", "generator": generator_name, "error": "stage_time_budget exceeded mid-fragment"})
-                        break
-                    if not resolver.is_applicable(signature, signature_type, as_similarity=True):
-                        continue
+            # Flatten at blob granularity and drop pre-seeded identical paths:
+            # the merge loop writes these into the real ResultsManager with
+            # set_data(path, value) - same granularity the serial resolve()
+            # uses (whole per-resolver blob + per-generator attempted list).
+            out: dict[str, Any] = {}
+            after = tmp_mgr.get_data(f"identifiers/{fragment_name}") or {}
+            if isinstance(after, dict):
+                for gen_name, gen_entries in after.items():
+                    if isinstance(gen_entries, dict):
+                        for entry_key, entry_val in gen_entries.items():
+                            flat_key = f"{gen_name}/{entry_key}"
+                            if pre_flat.get(flat_key) == entry_val:
+                                continue  # untouched (overwrite-skipped) blob
+                            out[f"identifiers/{fragment_name}/{flat_key}"] = entry_val
+                    else:
+                        out[f"identifiers/{fragment_name}/{gen_name}"] = gen_entries
 
-                    attempted_resolvers.append(resolver.name)
-                    resolver._stage_deadline_epoch = deadline_epoch
-                    try:
-                        result = resolver.resolve(
-                            signature=signature,
-                            as_similarity=True,
-                            working_directory="",
-                            cache=cache
-                        )
-                        
-                        if result:
-                            resolver_data = {
-                                "signature": signature,
-                                "hit_type": "similarity",
-                                "hits": result,
-                                "ident_type": resolver.identifier_type,
-                                "signature_type": signature_type
-                            }
-                            metadata = resolver.get_last_resolution_metadata()
-                            if metadata is not None:
-                                resolver_data["hits_metadata"] = metadata
-                            results[f"identifiers/{fragment_name}/{generator_name}/{resolver.name}"] = resolver_data
-                    except Exception as e:
-                        errors.append({"resolver": resolver.name, "generator": generator_name, "error": str(e)})
-                        continue
-                
-                # Record attempted
-                if attempted_resolvers:
-                    results[attempted_path] = attempted_resolvers
-                    
-            except Exception as e:
-                errors.append({"generator": generator_name, "error": str(e)})
-                continue
-        
-        return {"fragment_name": fragment_name, "results": results, "errors": errors}
+            return {"fragment_name": fragment_name, "results": out, "errors": errors}
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            for suffix in ("-wal", "-shm"):
+                wal_path = temp_path + suffix
+                if os.path.exists(wal_path):
+                    os.unlink(wal_path)
         
     except Exception as e:
         return {"fragment_name": "unknown", "results": {}, "errors": [{"error": str(e)}]}
