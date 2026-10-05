@@ -1374,3 +1374,38 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   + ini re-enable -> empirical gate; THEN W10 full-family requeue (4324
   entries, chunked batches, batch prefix w10-heal); post-sweep recounts
   (official 21-metric AND family metric) -> 0; then Wave G docs.
+
+## SECTION F6 · OQ-11 local ChEMBL mirror landed + revived (v3.131, 2026-10-05)
+
+- CODE `9a18c6677`: ChEMBLDB (molecules/chembl_db.py; pubchem_db idiom:
+  immutable ro sqlite, exists() degrade hook), ChemblConfig.local_db_path
+  = /app/databases/chembl/current/chembl.sqlite, FormulaChEMBLResolver
+  local-first + one construction warning on REST fallback (REST preserved
+  as unreachable-dead-but-intact fallback). Tests x5 (+26 fallback suite
+  green); identification 188 pass / 4 known blast-env fails.
+- BUILDER `bf0a69935`: scripts/build_chembl_local_mirror.py (resume-safe,
+  schema sniff + RDKit fallback, caffeine self-check, atomic symlink).
+  BUILD 2026-10-05 (worker pod): chembl_37_sqlite.tar.gz (5.76 GB) EBI ->
+  distilled 2,901,464-row chembl.sqlite (224 MB; direct
+  compound_properties.full_molformula column present in v37 -- no RDKit
+  fallback needed), layout /app/databases/chembl/{v37,current->v37} +
+  build_metadata.json, raw tarball kept. Self-check caffeine -> CHEMBL113
+  first (48 exact hits).
+- DEPLOY v3.131 (4cfc52ff..., rollback .tmp/rollback/v3.131/): staged
+  worker-first, in-pod empirical gate (REAL live ini + mirror + resolver):
+  caffeine C8H10N4O2 48 hits / 16 ms [CHEMBL113 first], aspirin C9H8O4 41
+  hits / 166 ms [CHEMBL25], water H2O 4 hits / 7 ms, junk 0/1 ms, zero
+  errors (vs dead-REST era: everything 0/silent). Rolled all 5 deployments,
+  era-check 5/5 v3.131.
+- RE-ENABLE: live ini flipped back no->yes (single-line diff; backup
+  config_shared.ini.pre-oq11-reenable-2026-10-05; md5 symmetric reversal
+  to 6515685c). Selection set now [formula_pubchem_local, formula_pubchem,
+  formula_chembl (working offline), formula_hfamily].
+- E2E gate 165269/run 177323 (1612 full clean re-run on v3.131): pipeline
+  success, 0 errors, verification byte-equal, 0 unexpected diffs;
+  formula_chembl ATTEMPTED in-pipeline on SYSTEM molecular_formula
+  (whole-segment C310H362N122O188P30 -> 0 hits = correct system-scale
+  class). OQ-8 cosmetic double-attempted-listing visible again in the
+  payload -- ruled leave, noted.
+- Formula ecosystem current truth: pubchem local (offline, primary) +
+  chembl local (offline, revived) + PUG REST (503-dead soft) + hfamily.
