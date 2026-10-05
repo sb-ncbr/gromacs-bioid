@@ -51,11 +51,15 @@ Figure artifacts land on NFS (`/data/validation/stats_package_v12.*`,
 `campaign_stats_v12.json`, `bag_funnel_v12.json`, `coverability_probe.json`,
 `residual_failing_rows_v8.jsonl`, `n1_*.json`).
 
-!!! warning "Tooling provenance (F-28)"
-    Most stats/wave tooling lives **only on the NFS volume, unversioned**
-    (no git), as single mutable copies; `campaign_stats.py` is the lone
-    repo-synced exception. Reproducing v12 exactly requires the NFS tool copies.
-    Migration into the repo is a pending decision.
+!!! success "Tooling provenance (F-28, resolved 2026-10-05)"
+    Statistics/wave tooling is now under version control at
+    **`scripts/stats/`** (34 byte-identical md5-verified copies of the NFS set
+    + adopted audit tools; tag **`v12-stats-generators`** marks the exact
+    code era). Gold e2e: the repo-copy `assemble_stats_package_v12.py`
+    regenerates the official `stats_package_v12.json/.md` byte-identically
+    (timestamp-normalized). Repo is edit-first; NFS keeps execution copies
+    and data. `bag_funnel.py`/`bag_funnel_v12_run.py` are a known hand-fork
+    pair, pinned as-is.
 
 ## Guardrails in force (campaign rules)
 

@@ -10,13 +10,18 @@ workers); the same schema applies to any run-local `config.ini`.
 | Key | Default | Meaning |
 |---|---|---|
 | `n_threads` | 10 | worker parallelism when `*_parallel` enabled |
-| `signatures_parallel` / `identifiers_parallel` / `verification_parallel` | false | stage parallelism. Campaign ran **all serial**; the UI parallel-default enables signature parallelism only |
+| `signatures_parallel` / `identifiers_parallel` / `verification_parallel` | false | stage parallelism. Campaign ran **all serial**; the ceitec-API `/config/parallel-default` route returns a config enabling all three (incl. identifiers) |
 | `TPS` | 100 | legacy throttle hint |
 
-!!! warning "Armed-but-divergent (F-15)"
-    The parallel identify worker is a fork of the serial dispatcher and lacks
-    the PubChem circuit breaker and the overwrite-existing skip. Do not enable
-    `identifiers_parallel` until that fork is unified.
+!!! success "Parallel identify unified (F-15, 2026-10-05, v3.128)"
+    The parallel identify worker **no longer forks** the resolution loops: it
+    delegates to `IdentifierResolutionManager.resolve()` per generator against
+    a temp ResultsManager seeded with the fragment's persisted identifiers, so
+    parallel and serial share one implementation — including the **PubChem
+    circuit breaker**, the **`overwrite_existing` skip**, and per-resolver
+    toggles (F-21). Verified offline (10/10: equivalence/breaker/overwrite)
+    and live in-image. `identifiers_parallel` is safe to enable; the UI
+    parallel-default config already sets it true.
 
 ### `[identifiers]` — per-resolver pair toggles (F-21 corrected 2026-10-04)
 Every resolver honors a **pair** of toggles, read per attempt:

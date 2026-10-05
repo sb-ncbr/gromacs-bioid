@@ -582,3 +582,14 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
   work + fast N1 rollback (yaml snapshot pre-rollout) -> revise semantics -> rebuild -> re-verify.
 - Rule: when a fix makes dormant code live, assume the activated path is UNTESTED regardless of
   how long it sat in the tree; demand integration evidence (real trigger, real artifacts).
+
+### V-25 Config/behavior audits must trace getattr()-f-string reads AND try/except fallback copies
+- 2026-10-05 F-21: the audit's "enablement toggles dead" claim was half-wrong —
+  mechanism read enablement via `getattr(config.identifiers, f"{self.name}_similarity", True)`
+  (dynamic getattr), which a literal `config.identifiers.` grep misses entirely.
+- ALSO: blast.py/universe_facade.py shipped try/except "isolated execution" fallbacks
+  containing SUBSET copies (20/54, 15/80) of the same tables — a hidden degraded mode
+  that would never appear in any comparison of primary sources.
+- Rule: auditing any toggle/constant = grep `getattr(` + `ImportError` + `try:` around
+  the config module too, not just the apparent access path. When unifying constants,
+  byte-compare ALL sibling copies incl. fallback/hand-copied blocks, or stop and report.
