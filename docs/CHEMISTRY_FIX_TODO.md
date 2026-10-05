@@ -1147,12 +1147,20 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   formula identity selection = [formula_pubchem_local (working mirror),
   formula_pubchem, formula_hfamily]. Formula channel = local mirror + hfamily.
   Code kept dormant for revival via local ChEMBL mirror => OQ-11.
-- OQ-2 · **RULED: keep history; clean re-run MAY clear results.json errors** ·
-  "making things more confusing" to auto-clear; "just make sure clean re-run
-  can clear those errors, but keep them." Implementation: full (non-resume)
-  recompute resets results.json critical_errors; ledger/runs history persists.
-  => verify current semantics; fix if recompute doesn't reset; unit + e2e proof.
-  Rides next deploy (Wave F image).
+- OQ-2 · **RESOLVED §G1 — no code change, semantics proven** · Chain:
+  api/tasks.py:75 ResultsManager loads existing payload -> requeue KEEPS
+  errors; results_manager.py:36-50 fresh-init after results.json delete ->
+  clean re-run CLEARS them. Unit pins (81309634c, 13/13): resume-reopen
+  keeps; delete+fresh clears. LIVE PROOF entry 1612: snapshot
+  /data/validation/backups/oq2-clean-1612-2026-10-05/results.json
+  (md5 955374bc, errors=2 [11:03 audit1 pair] + 13 warning spam) -> rm
+  results.json -> queue sim row 165266 -> run 177320 full recompute
+  (~8 s end-to-end, input cached) -> NEW results.json md5 313753d1:
+  critical_errors=[],
+  verification payload BYTE-EQUAL vs snapshot (ts-normalized), 2 fresh
+  warnings (pbc_unwrap + F-23 na_mode_unsupported -- containment verdict
+  resurfacing by design), pipeline success, 9 tasks. History kept: old
+  errors archived in snapshot + bat3_runs 177319 + this ledger.
 - OQ-3 · **RESOLVED §G0** (commit 39e8599b7): 2 stale tracked .bak deleted;
   grep-clean; suite green-modulo-blast-env.
 - OQ-4 · **DEFERRED (backlog)** · UI toggle identifiers_parallel in separate
@@ -1292,3 +1300,24 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   sibling of V-25 getattr blindspot ("mechanism exists, empirically dead").
 - OQ-11 scheduled between Wave F and Wave G: local ChEMBL hosting to
   revive this resolver offline (pubchem local_db pattern).
+
+## SECTION G1 · OQ-2 closure — critical_errors lifecycle semantics proven (2026-10-05, no image)
+
+- Operator semantics (documented contract, zero code change):
+  * **requeue (resume)** -> ResultsManager loads existing results.json
+    (api/tasks.py:75) -> critical_errors + warnings KEPT (the audit-history
+    side the user wants preserved).
+  * **clean re-run = snapshot results.json -> delete -> requeue** ->
+    fresh payload (results_manager.py:36-50) -> errors CLEARED.
+- Unit pins `81309634c`: tests/src_new/test_results_manager.py +
+  test_oq2_resume_reopen_keeps_critical_errors + _clean_rerun_resets_
+  (13/13 module).
+- Live e2e (entry 1612, queue row 165266/batch oq2-clean-gate, run 177320):
+  pre-delete snapshot oq2-clean-1612-2026-10-05 (md5 955374bc; errors=2
+  from the 11:03 audit1 epoch; warnings 13-across-resume-cycles) -> rm ->
+  full recompute ~8 s (input cached; resume-skip correctly NOT firing) ->
+  new results.json md5 313753d1: critical_errors [], verification payload
+  byte-equal (ts-normalized), pipeline success/9 tasks, fresh warnings = 2
+  (pbc_unwrap + mmcif_struct na_mode_unsupported => F-23 containment
+  verdict resurfacing as designed). 1612 is now a permanently de-noised
+  gate entry; old noise archived in snapshot + bat3_runs 177319.
