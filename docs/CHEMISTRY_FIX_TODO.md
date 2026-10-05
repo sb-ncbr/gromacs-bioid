@@ -1190,3 +1190,24 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   direction (needs ruling): gate generator class by segment properties
   (is_nucleic) for virtual segments; fix scope = signatures worker routing,
   not facade classification (which is correct).
+
+## SECTION F4 · Wave E — F-27 constants promotion + packaging (2026-10-05, DEPLOYED v3.129)
+
+- E1 `0bbe57de5`: src_new/constants.py generated from src.constants source
+  of truth — 3 tables (masses 118 / residues 54 / nucleic 80) byte-VALUE
+  identical, md5-verified vs snapshot; checkpoint tag pre-f27-checkpoint +
+  .tmp backup. THREE import sites switched (plan had 2; 3rd = blast.py:19).
+- ALARM-class find per user rule+ruling (a): universe_facade.py + blast.py
+  carried try/except "isolated execution" fallbacks with SUBSET copies
+  (20/54, 15/80 = silent degraded classification; dead in prod). Deleted;
+  single canonical object proven shared across all 4 consumers (id-equal).
+- E3 `0bbe57de5`: minimal pyproject.toml (metadata + dev=pytest + paths;
+  requirements.txt remains image dep truth. pip -e install smoke OK).
+- E4 tests: signatures 87, molecules 124, pipeline_steps 25, top-level 73,
+  verification 143 pass; identification 169(+5 env), executor 10(+2 env),
+  api 66+2, input 21+1 — api/input failures STASH-PROVEN pre-existing;
+  loader NFS-backed stall class documented. f03b/f05/f15 harnesses green.
+- E-close live gate (v3.129 all-5, rollback .tmp/rollback/v3.129/):
+  in-image import smoke (shared canonical object); 1612 requeue
+  (row 165265) 15s resume pattern, verify counts identical to snapshot,
+  zero new critical errors. legacy src/ untouched (still importable).
