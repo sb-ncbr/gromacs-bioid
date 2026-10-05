@@ -1128,12 +1128,25 @@ Ruled items live in §E/§F/§F2/§G0; this list tracks unresolved, deferred, or
 requires-user-ruling questions with anchors. Format: OQ-N · status · question
 · evidence · disposition.
 
-- OQ-1 · **RULED: empirically test, then decide** · formula_chembl identity-mode
-  inert: resolver built under SKIP_PUG but config default False gates identity
-  attempts (N1 fixture sets it; live campaign ini unknown). User: "could be
-  very beneficial -- but make sure it works by empirically testing it."
-  => campaign: unit + in-pod ChEMBL reachability + measured identity lookups;
-  report -> then document-as-designed vs enable. NO behavior change pre-proof.
+- OQ-1 · **RESOLVED §G0a — contained** · Empirical campaign (live-pod probes,
+  2026-10-05): resolver is NOT inert -- it is live-enabled (worker SKIP_PUG=1
+  registers it; live ini formula_chembl: yes) AND silently dead: coded filter
+  `molecule_structures__full_molformula__exact` returns HTTP 400 upstream,
+  swallowed by the designed 400->[] soft-fail => attempts counted, zero hits,
+  zero errors, forever. Upstream truth: EBI ChEMBL removed formula fields
+  from payloads (CHEMBL113/25 both None) and filters (exact variants either
+  invalid [400] or silently ignored [full-DB results]); fuzzy search works
+  but exact re-rank impossible (no per-candidate formula available). No api/2.
+  RULING: contain. live ini flipped yes->no (single-line diff; backup
+  /data/validation/backups/config_shared.ini.pre-oq1-2026-10-05 md5 6515685c);
+  no-break proof chain: flag consumed ONLY by registry gate + enablement
+  property; get_applicable_resolvers excludes it; similarity flag unpaired
+  (True) but _resolve_similarity designed [] no-op; unit test
+  test_chembl_flag_off_is_output_equivalent_containment locks contract
+  (offline_fallbacks 28/28 green); live e2e post-flip: enabled_identity=False,
+  formula identity selection = [formula_pubchem_local (working mirror),
+  formula_pubchem, formula_hfamily]. Formula channel = local mirror + hfamily.
+  Code kept dormant for revival via local ChEMBL mirror => OQ-11.
 - OQ-2 · **RULED: keep history; clean re-run MAY clear results.json errors** ·
   "making things more confusing" to auto-clear; "just make sure clean re-run
   can clear those errors, but keep them." Implementation: full (non-resume)
@@ -1154,6 +1167,13 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   + W10 replay-first then ONE production requeue.
 - OQ-8 · **RULED: leave** · formula_pubchem_local double-attempted list is
   known-cosmetic; churn not worth a deploy.
+- OQ-11 · **SCHEDULED (between Wave F and Wave G)** · **local ChEMBL
+  hosting/mirror** to revive formula_chembl offline (pattern: pubchem
+  local_db, docs/PLAN_PUBCHEM_MIRROR.md). User: "before we get to G, we will
+  resolve this local chembl hosting." Scope sketch: ChEMBL SQLite (or derived
+  formula->CHEMBL table) on PVC, resolver switched to local lookup under a
+  flag, empirical gates (caffeine->CHEMBL113 exact), ini flip back to yes
+  only after proof.
 - OQ-9 · **RULED YES (fix in Wave F)** · protein-class generators on NA
   virtual segments (21 rows; RNA letters as protein fasta). Scoped fix:
   gate generator class by segment is_nucleic for virtual minority segments
@@ -1244,3 +1264,31 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   recompute-reset semantics; fix if needed; ships with Wave F image),
   OQ-7 -> Wave F plan, OQ-9 fix inside Wave F, OQ-4/OQ-5 backlog,
   OQ-8 left-cosmetic.
+
+## SECTION G0a · OQ-1 empirical campaign + containment (2026-10-05, no image)
+
+- Empirics (live worker pod validation-worker-787bc84df7-22j9f @ v3.129):
+  live ini had formula_chembl: yes (line 73, SKIP_PUG=1 era) => resolver
+  ACTIVE on every chemical entry; 4-probe Lydia tests along with raw-API
+  variants proved coded filter HTTP-400-swallowed => silent no-op (caffeine
+  -> 0 hits / 0.14 s; malformed/system-scale too; full_molformula exact
+  variant silently unfiltered 2.9 M rows; payloads carry no formula fields;
+  api/2 404). Verdict: dead upstream, contained by ini flip yes->no.
+  Snapshot: /data/validation/backups/config_shared.ini.pre-oq1-2026-10-05
+  (md5 6515685cddf9b960defa5faab6d373dd); new md5 8b60d62a...; single-line
+  diff (73c73). Running runs keep their already-loaded config; flip affects
+  only NEW runs -- no mid-run interference possible (ini read at run start).
+- No-break guarantee (code-level): the only consumers of the flag are the
+  registry construction gate and the per-call enablement property
+  (registry.py:118, base.py enabled_identity + get_applicable_resolvers).
+  Verified live post-flip: registered (no import breakage), identity
+  selection excludes it; formula sigs now served by working local mirror
+  (formula_pubchem_local) + hfamily. Test lock:
+  tests/src_new/identification/test_offline_fallbacks.py::
+  TestRegistryGating::test_chembl_flag_off_is_output_equivalent_containment
+  (offline_fallbacks 28/28).
+- Lesson candidate (pinned into V-26 on next errors-sync): 400->[]
+  "bad formula" soft-fail masks "invalid filter" bugs -- mechanism family
+  sibling of V-25 getattr blindspot ("mechanism exists, empirically dead").
+- OQ-11 scheduled between Wave F and Wave G: local ChEMBL hosting to
+  revive this resolver offline (pubchem local_db pattern).

@@ -45,6 +45,15 @@ Resilience guards: per-stage deadline is propagated into resolver loops;
 the PubChem circuit breaker self-heals every 30 s (probe to a fixed CID).
 Resolver errors are collected into `stage_errors/identifiers/<segment>`.
 
+!!! warning "formula_chembl contained (OQ-1, 2026-10-05) — dead upstream"
+    EBI ChEMBL REST removed molecular-formula support (payloads carry no
+    formula fields; the coded exact filter returns HTTP 400, previously
+    swallowed silently to `[]`). Identity attempts were contained via the
+    `[identifiers] formula_chembl: no` ini toggle — formula signatures are
+    now served by the working **local PubChem mirror** + `formula_hfamily`.
+    The resolver code stays dormant; planned revival = local ChEMBL mirror
+    (OQ-11, pubchem-mirror pattern).
+
 !!! note "Declared verdicts in stage_errors (not failures)"
     `na_mode_unsupported` (F-23, 2026-10-04): an RCSB structure-search call
     was skipped *by design* because the payload class is unsupported upstream
