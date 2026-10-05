@@ -124,12 +124,30 @@ class FormulaChEMBLResolver(IdentifierResolver):
     accepted_signatures = ["formula"]
 
     def __init__(self, config: RunConfig) -> None:
-        """Initialize with retry session (pubchem retry settings reused)."""
+        """Initialize with retry session (pubchem retry settings reused).
+
+        OQ-11 (2026-10-05): local mirror first when present
+        (chembl.local_db_path, EBI sqlite-derived) — the EBI REST formula
+        channel is dead upstream (payloads carry no formula fields; coded
+        filter HTTP-400-swallowed), so the REST session below remains only
+        as a degrading fallback, with one construction-time warning when
+        the mirror is absent.
+        """
         super().__init__(config)
         self._session = _create_retry_session(
             retry_attempts=config.pubchem.retry_attempts,
             retry_delay=config.pubchem.retry_delay_s,
         )
+        from ...molecules.chembl_db import ChEMBLDB
+
+        local_path = getattr(config.chembl, "local_db_path", "")
+        self._db = ChEMBLDB(local_path) if local_path else None
+        if self._db is None or not self._db.exists():
+            logger.warning(
+                "formula_chembl mirror DB missing at %r; falling back to EBI REST "
+                "(upstream formula support is dead — expect soft-fail empty hits)",
+                local_path,
+            )
 
     def _is_applicable(self, signature: str) -> bool:
         """Basic formula pattern: element symbols followed by optional numbers."""
@@ -138,7 +156,18 @@ class FormulaChEMBLResolver(IdentifierResolver):
         return bool(re.match(r"^([A-Z][a-z]?\d*)+$", signature))
 
     def _resolve_identity(self, signature: str, working_directory: str) -> list[str]:
-        """Resolve molecular formula to ChEMBL IDs via exact lookup."""
+        """Resolve molecular formula to ChEMBL IDs via exact lookup.
+
+        OQ-11: local ChEMBL mirror when present (offline, deterministic);
+        otherwise the legacy EBI REST path.
+        """
+        if self._db is not None and self._db.exists():
+            try:
+                return self._db.by_formula(signature.strip())
+            except Exception as exc:
+                raise IdentifierResolutionError(
+                    f"[Identifier] Local ChEMBL mirror formula lookup failed: {exc}"
+                ) from exc
         return fetch_chembl_ids_from_formula(signature.strip(), self._session)
 
     def _resolve_similarity(self, signature: str, working_directory: str) -> list[tuple[str, float]]:

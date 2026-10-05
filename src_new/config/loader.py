@@ -217,6 +217,12 @@ class BlastConfig:
 @dataclass
 class ChemblConfig:
     similarity_threshold: int = 60
+    # OQ-11 (2026-10-05): local ChEMBL mirror (formula -> CHEMBL_ID lookups;
+    # EBI REST dropped formula fields/filters upstream -- proven live
+    # 2026-10-05). Mirror pattern identical to pubchem local_db. When the DB
+    # file is absent the formula_chembl resolver auto-degrades to the legacy
+    # REST path with one warning (which currently soft-fails to [] upstream).
+    local_db_path: str = "/app/databases/chembl/current/chembl.sqlite"
 
 
 @dataclass
