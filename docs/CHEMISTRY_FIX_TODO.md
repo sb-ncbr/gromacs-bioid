@@ -1120,3 +1120,35 @@ Rulings + plan: `.tmp/METHODOLOGY_DECISIONS.md` · `.tmp/IMPLEMENTATION_PLAN.md`
   11:03 audit1-critical_errors pair (persistence question reported in F, no
   action). Straggler batch: 788 completed / 9 processing (F-05 quarantine
   horizon not yet tripped).
+
+## OPEN QUESTIONS (living register, est. 2026-10-05)
+
+Ruled items live in §E/§F/§F2; this list tracks unresolved, deferred, or
+requires-user-ruling questions with anchors. Format: OQ-N · status · question
+· evidence · suggested disposition.
+
+- OQ-1 · open · **formula_chembl identity-mode inert by design?**
+  VALIDATION_SKIP_PUG=1 constructs the resolver, but
+  `IdentifiersConfig.formula_chembl` defaults False -> identity attempts
+  gated off unless ini sets `formula_chembl: yes` (N1 fixture does; live
+  campaign ini unknown). Similarity-phase `attempted` entries still appear
+  (harmless no-op class). Ruling needed: document-as-designed vs enable.
+- OQ-2 · open · **results.json `critical_errors` persist across successful
+  recomputes** (1612 carries the 11:03 audit1 pair forever). Policy needed:
+  clear-on-recompute semantics (keep history vs clean slate) + who clears.
+- OQ-3 · open · **two tracked .bak files** in src_new/
+  (identification/resolution_manager.py.bak ~ equivalent-old content,
+  pipeline_steps/workers.py.bak): stale, tracked, confusing. Delete?
+- OQ-4 · open (optional, future) · **UI toggle for identifiers_parallel**
+  in the separate bat3-validation-ui image. Note: runs.py
+  `/config/parallel-default` already enables it (now safe post-F-15 parity).
+- OQ-5 · open (research) · **real NA structure-similarity upstream** (RCSB v2
+  NA payload support / alternative service). Containment landed (F-23);
+  full NA channel stays a backlog research item.
+- OQ-6 · monitoring · **straggler horizon**: batch 788/9 as of 2026-10-05;
+  F-05 quarantines at <=3 cycles (~36h). Auto-close on terminal state.
+- OQ-7 · pending (Wave F) · **F-24/W10 bundle**: additive-only design
+  (separate Protein/NA query appended, never merged; @10 windows immutable);
+  NOFIX if additive invariant can't be replay-proven. See decision item 3b.
+- OQ-8 · open (cosmetic) · `formula_pubchem_local` appears twice in
+  attempted lists (pre-existing bookkeeping dup; harmless).
