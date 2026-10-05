@@ -1409,3 +1409,25 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   payload -- ruled leave, noted.
 - Formula ecosystem current truth: pubchem local (offline, primary) +
   chembl local (offline, revived) + PUG REST (503-dead soft) + hfamily.
+
+## SECTION F7 · W10 full-family heal requeue FIRED (2026-10-05, in-flight)
+
+- Capacity: validation-worker scaled 164 -> 450 (requests 250m CPU / 16Gi
+  RAM as-is, limits unchanged 4cpu/24Gi; ns quota ceiling ~476 by request
+  memory; ramping 244+ at fire time, rolling to 450).
+- Requeue orchestration (in-pod psycopg2, CHUNK=500): FIRE COMPLETE
+  18:41 — 4324/4324 snapshotted to backups/oq9-w10-2026-10-05/raw/ +
+  deleted + queued (batch_id='w10-heal', priority 5). One false-start
+  incident (host-side edit error in fire script; crashed pre-insert after
+  chunk-0 file ops; rerun-safe retry completed with zero double-effect).
+- Early drain evidence (t+~15 min): completed 128 / processing 108 /
+  queued 4088 / FAILED 0. Heal verified on first completions
+  (2261/2304/2306/2307): virtual protein misflags 5|6 -> 0, nucleic
+  channels correct, zero errors, snapshot-backed flat checks.
+  Explained delta class (NOT a bug): genuine-protein SYSTEM segments gain
+  fasta_map_protein vs 2026-09-era outputs because map-fasta requires
+  bond data (input-repair era difference; 2261 sample = clean 301-aa
+  sequence). Family semantics stable since 1612/2346 gates.
+- NEXT: tail monitor until drained (~hours); then double recount
+  (official 21-metric + family 4332-metric) -> target 0; formula_chembl
+  spot-hits on small-molecule cohort entries; Wave G docs after.
