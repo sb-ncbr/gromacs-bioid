@@ -1,0 +1,27 @@
+# Minimal packaging metadata (F-27 / CODE_HEALTH #1-2, 2026-10-05).
+#
+# NOTE: this is intentionally NOT the dependency source of truth for runtime
+# images — Dockerfiles install from requirements.txt (and
+# requirements.worker.txt). This file exists so the repo is pip-installable
+# (`pip install -e .`) and pytest is available via the `dev` extra.
+[project]
+name = "bat3-validation"
+version = "3.129.0"
+description = "BAT3 validation pipeline (src_new backyard): queue-driven simulation validation with identification, verification, and statistics."
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "Proprietary" }
+
+[project.optional-dependencies]
+# developer extras: tests + the replay/audit harnesses
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# pre-existing environmental failures live in tests needing BLAST DB paths,
+# gromacs fixtures, or NFS fragment stores (documented, md5-of-failure-set
+# pinned per wave in docs/CHEMISTRY_FIX_TODO.md)
+addopts = "-ra"
+
+[tool.setuptools.packages.find]
+include = ["src_new*"]

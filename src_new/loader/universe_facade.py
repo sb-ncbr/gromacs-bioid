@@ -21,22 +21,12 @@ from ..results.results_manager import ResultsManager
 
 logger = logging.getLogger("base")
 
-# Import residue/nucleic constants from src (read-only import, do not modify src)
-try:
-    from src.constants import KNOWN_RESIDUE_CODES, KNOWN_NUCLEIC_ACIDS_CODES
-except ImportError:
-    # Fallback minimal copies for isolated execution
-    KNOWN_RESIDUE_CODES = {
-        'ALA': 'A', 'ARG': 'R', 'ASN': 'N', 'ASP': 'D', 'CYS': 'C',
-        'GLU': 'E', 'GLN': 'Q', 'GLY': 'G', 'HIS': 'H', 'ILE': 'I',
-        'LEU': 'L', 'LYS': 'K', 'MET': 'M', 'PHE': 'F', 'PRO': 'P',
-        'SER': 'S', 'THR': 'T', 'TRP': 'W', 'TYR': 'Y', 'VAL': 'V',
-    }
-    KNOWN_NUCLEIC_ACIDS_CODES = {
-        'A': 'A', 'C': 'C', 'T': 'T', 'G': 'G', 'U': 'U',
-        'DA': 'A', 'DC': 'C', 'DT': 'T', 'DG': 'G', 'DU': 'U',
-        'RA': 'A', 'RC': 'C', 'RT': 'T', 'RG': 'G', 'RU': 'U',
-    }
+# F-27 (2026-10-05): single source of truth is src_new/constants.py
+# (byte-value-identical promotion from src.constants, md5-verified).
+# The old try/except "isolated execution" fallback carried SUBSET copies
+# (20/54 residues, 15/80 nucleic codes) = silent degraded classification;
+# deleted per ruling so this module always uses the canonical tables.
+from ..constants import KNOWN_RESIDUE_CODES, KNOWN_NUCLEIC_ACIDS_CODES
 
 
 class SegmentProperty(str, Enum):

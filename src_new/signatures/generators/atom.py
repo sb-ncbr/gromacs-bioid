@@ -9,7 +9,8 @@ from MDAnalysis import AtomGroup
 from ...config.loader import SignaturesConfig
 from ...molecules.instances import MoleculeInstance
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty
-from src.constants import ATOMTABLE_ELEMENTS_MASSES
+# F-27 (2026-10-05): promoted into src_new (byte-value-identical, md5-verified).
+from ...constants import ATOMTABLE_ELEMENTS_MASSES
 from ..base import SignatureGenerator
 
 logger = logging.getLogger("base")
