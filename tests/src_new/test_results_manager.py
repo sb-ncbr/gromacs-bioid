@@ -256,3 +256,39 @@ def test_results_manager_migrates_legacy_shape_on_load(tmp_path: Path) -> None:
     assert payload["critical_errors"][0]["code"] == "legacy_error"
     assert payload["events"][0]["kind"] == "log"
     assert next(iter(payload["artifacts"].values()))["path"] == "/tmp/file.txt"
+
+
+# ---------------------------------------------------------------------------
+# OQ-2 (ruling 2026-10-05): critical_errors lifecycle semantics
+#   requeue(resume) = errors KEPT ; delete+requeue(clean re-run) = errors CLEARED
+# ---------------------------------------------------------------------------
+
+
+def test_oq2_resume_reopen_keeps_critical_errors(tmp_path: Path) -> None:
+    """Resume semantic: re-instantiating the manager on an existing
+    results.json preserves prior critical_errors (the 'keep them' side)."""
+    results_path = tmp_path / "run" / "results.json"
+    manager = ResultsManager(results_path, pipeline_name="oq2")
+    manager.record_error(code="demo_error", message="first epoch", critical=True)
+    manager.finish_run("completed")
+
+    reopened = ResultsManager(results_path, pipeline_name="oq2")
+    errors = reopened.as_dict()["critical_errors"]
+    assert len(errors) == 1 and errors[0]["code"] == "demo_error"
+
+
+def test_oq2_clean_rerun_resets_critical_errors(tmp_path: Path) -> None:
+    """Clean-re-run semantic: deleting results.json (snapshotted by the
+    operator) before requeue yields a fresh payload with empty
+    critical_errors (the 'can clear' side)."""
+    results_path = tmp_path / "run" / "results.json"
+    manager = ResultsManager(results_path, pipeline_name="oq2")
+    manager.record_error(code="demo_error", message="first epoch", critical=True)
+    manager.finish_run("completed")
+
+    results_path.unlink()  # operator clean-re-run step (after snapshot)
+    fresh = ResultsManager(results_path, pipeline_name="oq2")
+    payload = fresh.as_dict()
+    assert payload["critical_errors"] == []
+    assert payload["warnings"] == []
+    assert payload["tasks"] == {}
