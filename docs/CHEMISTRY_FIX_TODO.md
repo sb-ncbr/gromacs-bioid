@@ -1338,3 +1338,39 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   OFF, addon Protein/NA query appended) + gold fixtures; F2 additive +
   flat replay (3 anchors incl. the 21-row evidence via stats tooling);
   F3 W10 sweep; F4 v3.130 staged roll + 1612 gate + production W10.
+
+## SECTION F5 · Wave F landed + deployed v3.130 (2026-10-05)
+
+- Code: OQ-9 fix `8dee3b89e` (_PinnedPropsFacade serial routing; flat cohort
+  byte-invariant by construction+unit lock); F-24 additive `33932ebe2`
+  (rcsb_include_mixed_complexes default OFF; base list untouched; identity
+  phase inherits merge); F-24 replay `ce5285163` (live-frozen gold fixture
+  1UBQ base 464 + Protein/NA addon 2 {7P0V, 8ID2} + 1HLV 2 + 1S72 upstream
+  400 datapoint; additive-invariant + identity-neutrality on real data).
+  OQ-10/OQ-2 ride the image from G-era commits.
+- BLAST-RADIUS ESCALATION (report-first): official N1 metric = 21 misflagged
+  virtual NA segments; premeasure across 15,134 entries shows the family is
+  4,332 segments / 4,324 unique entries (21 NA-class + 4311 neither-class
+  ligand/lipid virtuals wearing protein signatures; 2261 SYSTEM__v2 spot-
+  validated, era 2026-09). Ruling: FULL-FAMILY cleanup (4324-entry W10
+  requeue) AND local-ChEMBL revival (OQ-11) BEFORE the requeue, so the
+  one-time requeue runs in the final era. Pre-measure + cohort archived:
+  /data/validation/backups/oq9-w10-2026-10-05/ (md5 c0679f.../3fd24f...).
+- Pre-deploy replay-first PROOF (cohort entry 2346 real universe, overlay
+  probe, restored byte-exact): baseline vs patched routing diff isolates
+  ONLY virtual segments (flat segments identical); NA v4/v5 protein-gens
+  removed + nucleic-gens added; neither-class v6 protein-gens removed.
+- DEPLOY v3.130 (image 50895bceb10b, pushed; rollback yamls
+  .tmp/rollback/v3.130/): staged worker-first 164/164, in-image smoke
+  (OQ-9 helper present; F-24 flag default False; OQ-10 contract in base).
+  Gates: 1612 clean re-run row 165267/run 177321 FLAT-INVARIANT live
+  (0 signature-set diffs, verification byte-equal, 0 errors);
+  2346 clean re-run row 165268/run 177322 HEALED live: v4/v5 protein
+  6->0 nucleic 1->5 (fasta_map_nucleic='CUAAUUCAAUUAUU' -- the same RNA,
+  correctly channeled); v6 protein 6->0/none added; flat SYSTEM keys
+  byte-identical; 0 critical errors. Remaining 4 deployments rolled;
+  era-check 5/5 v3.130.
+- NEXT PHASES (ruled): Phase OQ-11 local ChEMBL mirror build -> v3.131
+  + ini re-enable -> empirical gate; THEN W10 full-family requeue (4324
+  entries, chunked batches, batch prefix w10-heal); post-sweep recounts
+  (official 21-metric AND family metric) -> 0; then Wave G docs.
