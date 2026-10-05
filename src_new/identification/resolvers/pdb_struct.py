@@ -192,14 +192,15 @@ class PDBStructResolver(IdentifierResolver):
         else:
             logger.debug(f"Delete not applicable for '{pdb_name}'")
 
-    def _fetch_pdb_similarity(self, remote_path: str, as_protein: bool, as_nucleic: bool) -> dict:
+    def _fetch_pdb_similarity(self, remote_path: str, entity_types: list[str]) -> dict:
         """
         Execute RCSB structural similarity search.
         
         Args:
             remote_path: URL or path to the PDB file.
-            as_protein: Search protein entries.
-            as_nucleic: Search nucleic acid entries.
+            entity_types: Values for the selected_polymer_entity_types filter
+                (e.g. ["Protein (only)"], or ["Protein/NA"] for the F-24
+                additive mixed-complex query).
             
         Returns:
             JSON response from RCSB API.
@@ -208,8 +209,8 @@ class PDBStructResolver(IdentifierResolver):
             IdentifierResolutionError: On request failure.
         """
         url = "https://search.rcsb.org/rcsbsearch/v2/query"
-        
-        required_entity_type = "Protein (only)" if as_protein else "Nucleic acid (only)"
+
+        required_entity_type = entity_types
         
         request = {
             "query": {
@@ -232,7 +233,7 @@ class PDBStructResolver(IdentifierResolver):
                         "parameters": {
                             "attribute": "rcsb_entry_info.selected_polymer_entity_types",
                             "operator": "in",
-                            "value": [required_entity_type]
+                            "value": required_entity_type
                         }
                     }
                 ]
@@ -314,12 +315,33 @@ class PDBStructResolver(IdentifierResolver):
                 return []
             logger.info(f"PDB upload mode remote_path: {remote_path}")
 
-        response = self._fetch_pdb_similarity(remote_path, self._protein_mode, self._nucleotide_mode)
+        base_type = "Protein (only)" if self._protein_mode else "Nucleic acid (only)"
+        response = self._fetch_pdb_similarity(remote_path, [base_type])
         similar_structures = self._parse_pdb_response(response)
-        
+
+        # F-24 (2026-10-05, audit): additive mixed-complex channel. When the
+        # flag is ON, query the "Protein/NA" entity class as an EXTRA call and
+        # APPEND unique hits — the base list above is never modified
+        # (additive-invariant; flag default OFF => identical legacy output).
+        if getattr(self.config.pdb, "rcsb_include_mixed_complexes", False):
+            try:
+                addon_response = self._fetch_pdb_similarity(remote_path, ["Protein/NA"])
+                addon_hits = self._parse_pdb_response(addon_response)
+                seen = {identifier for identifier, _ in similar_structures}
+                added = 0
+                for identifier, score in addon_hits:
+                    if identifier not in seen:
+                        similar_structures.append((identifier, score))
+                        seen.add(identifier)
+                        added += 1
+                logger.info(f"F-24 additive Protein/NA query: {len(addon_hits)} hits ({added} new) appended")
+            except IdentifierResolutionError as exc:
+                # Addon failure must not degrade the base channel
+                logger.warning(f"F-24 additive Protein/NA query failed (base results kept): {exc}")
+
         if not deployment_file_access and remote_path:
             self._delete_file(remote_path)
-        
+
         return similar_structures
 
     def _pdb_fetch_identical_structures(self, pdb_path: str, deployment_file_access: bool) -> list[str]:

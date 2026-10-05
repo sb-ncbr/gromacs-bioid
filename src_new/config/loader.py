@@ -263,6 +263,12 @@ class PDBConfig:
     ssh_key: str = ""
     ssh_remote_path: str = ""
     ssh_public_url: str = ""
+    # F-24 (2026-10-05, audit): additive RCSB mixed-complex query. When True,
+    # structure similarity additionally queries the "Protein/NA" entity class
+    # and APPENDS unique hits to the base ("Protein (only)"/"Nucleic acid
+    # (only)") results. Base query untouched; @10 windows immutable; flag
+    # default OFF => byte-identical legacy behavior (additive-invariant).
+    rcsb_include_mixed_complexes: bool = False
 
 @dataclass
 class FoldseekConfig:
