@@ -278,6 +278,45 @@ def _analyze_universe(context):
     )
 
 
+class _PinnedPropsFacade:
+    """OQ-9 routing proxy (2026-10-05): pin per-segment props into the serial
+    signature loop so generators see the CURRENT segment's flags.
+
+    Generators resolve segment properties via
+    ``facade.get_segment_properties(fragment.segids[0])`` -- for virtual
+    minority segments (``SYSTEM__vN``) the fragment's segids[0] is the PARENT
+    segid ("SYSTEM"), whose props classify the majority species (protein),
+    which made protein-family generators fire on nucleic fragments in the
+    serial path (parallel worker mock-facades were already correct). This
+    proxy answers get_segment_properties() with the props fetched for the
+    driver-loop segment name (virtual or flat); everything else passes
+    through to the real facade. For flat segments the pinned props object is
+    the very same object today's lookup would return -> byte-invariant.
+    """
+
+    __slots__ = ("_real", "_props")
+
+    def __init__(self, real: Any, props: Any) -> None:
+        object.__setattr__(self, "_real", real)
+        object.__setattr__(self, "_props", props)
+
+    def get_segment_properties(self, segment_name: str) -> Any:
+        return self._props
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._real, name)
+
+
+def _pinned_props_facade(facade: Any, segment_name: str) -> Any:
+    """Wrap facade so this segment's props win (see _PinnedPropsFacade).
+    Falls back to the unwrapped facade when props are unavailable."""
+    try:
+        props = facade.get_segment_properties(segment_name)
+    except Exception:
+        return facade
+    return _PinnedPropsFacade(facade, props)
+
+
 def _generate_signatures(context):
     """Generate signatures for all segments with optional parallelism."""
     from ..signatures.registry import get_default_generators
@@ -355,17 +394,20 @@ def _generate_signatures(context):
             fragment = facade.get_fragment(segment_name)
             if instance is None:
                 continue
+            # OQ-9: route THIS segment's props (virtual minority or flat) into
+            # generator applicability/generation -> serial == parallel parity.
+            segment_facade = _pinned_props_facade(facade, segment_name)
             generated = {}
             attempted = []
             errors = []
             for generator in generators:
                 _g_t0 = time.time()
                 try:
-                    if generator.is_applicable(instance, fragment, facade):
+                    if generator.is_applicable(instance, fragment, segment_facade):
                         attempted.append(generator.name)
                         if _spin_dbg:
                             print(f"[SPIN] {segment_name}/{generator.name} START", flush=True)
-                        sig = generator.generate(instance, fragment, facade)
+                        sig = generator.generate(instance, fragment, segment_facade)
                         if _spin_dbg:
                             print(f"[SPIN] {segment_name}/{generator.name} DONE {time.time()-_g_t0:.1f}s", flush=True)
                         if sig is not None:
