@@ -1,0 +1,35 @@
+file,md5,bytes,class,notes
+assemble_stats_package.py,a367bbdfd0675ca3fb90924b25df1233,8921,official-generator,v10/v11-era package assembler (predecessor)
+assemble_stats_package_v12.py,7aa3112ad9e430d2cf8332ecd390eb99,9446,official-generator,v12 stats package assembler (official figure source)
+audit_chem_ion.py,096df00c30aaff19c0060fa527dab499,13737,audit,chemical/ion GT anatomy audit (F19 lineage)
+audit_gap.py,4d1af6f1c1a261e0da0ec6132063cec7,4518,audit,gap audit
+bag_funnel.py,f00132d2bbe14fa00497caa2185b403b,6127,official-generator,funnel builder (predecessor versions)
+bag_funnel_v12_run.py,305b6680948d9c6fab897f1c4d0ad142,6127,official-generator,v12 funnel runner
+campaign_stats.py,49b3da0e32a9acceb5ba809702da224e,28373,official-generator,v7-v12 campaign stats (frozen denominators)
+coverability_probe.py,13db0587f93db9e8e5094c5783b56932,22098,official-generator,coverability probe (figure anchors)
+gt_rules.py,436c6adc45687516f1bcd3051d0b0a85,3312,audit,ground-truth rules engine
+harvest_chemical_gt.py,e0dbfb4da678b60d8390f26a0ac7f165,2883,audit,chemical GT harvester
+n1_e2e_fixture.py,ea6ea0f71cfd7e6bfa3e6195f399862d,3441,n1-wave-tooling,N1 batch analysis
+n1_fixtures_trim.py,455a6093e664210299caf4da211ab92f,4248,n1-wave-tooling,N1 batch analysis
+n1_golden_harvest.py,8a65c7ef7cb09bae22e3b32d8ded7390,6766,n1-wave-tooling,N1 batch analysis
+n1_nucleic_dump.py,eae089714bdd691ce05c2dbd0d780b21,8619,n1-wave-tooling,N1 batch analysis
+n1_postwave_rate.py,c14ab773cd0714eaf9039a19ef0f11a4,2940,n1-wave-tooling,N1 batch analysis
+n1_probe.py,a3b30a86f8fd2d2f179c89d0a0932ca7,4670,n1-wave-tooling,N1 batch analysis
+n1_rcsb_probe.py,777d297679c596b12a71991744fc2b27,2137,n1-wave-tooling,N1 batch analysis
+n1_run_gates.py,73ac9bef3c376fc5f0fcbafbd3416af7,4639,n1-wave-tooling,N1 batch analysis
+n1_short_premeasure.py,0542740770dc8874ee64578461e3c8db,4463,n1-wave-tooling,N1 batch analysis
+n1_test_harness.py,b6a2ea9a5443e2760d6fb8fa7fd661b0,5836,n1-wave-tooling,N1 batch analysis
+n1_w3_diag.py,4827b46bc37a02bbbc89b19338e32144,3050,n1-wave-tooling,N1 batch analysis
+n1_w3_diag2.py,425cecd7c2466dbce66f92525e9b0cea,3107,n1-wave-tooling,N1 batch analysis
+n1_w7_replay.py,6947050ea583350db131fc8647553655,5906,n1-wave-tooling,N1 batch analysis
+n1_w8_flip.py,20d41eea894b61cf4a3e08c45d1408ec,3200,n1-wave-tooling,N1 batch analysis
+n1_xclass_scan.py,409a208c4ad684333eb3e433b1d41b2f,2657,n1-wave-tooling,N1 batch analysis
+offline_hit_k.py,6161bfc769275fb23fe1fd226ccab51c,5305,audit,hit@k offline evaluator
+rank_audit.py,f0687d248ee0a29072dc51cad77c7517,6152,audit,rank audit
+rank_audit_fresh.py,0e4db80f1a6b7ddadca95e04d6930cd0,6562,audit,rank audit fresh variant
+rank_audit_fresh2.py,879ce18f9a8828935a6ec1e999f7b631,6562,audit,rank audit fresh2 variant
+replay_identify_verify.py,c80dacbd8d71654dcee65cfa3c3a8563,7262,replay,identify+verify replay over frozen fragment store
+replay_verification.py,dc2ae716c4e40d7c2330b31429e4fa51,6983,replay,verification replay over frozen fragment store
+residue_scan.py,a95c6f09ccc3c164533e553b1afa9150,1463,audit,residue scanner
+strip_for_reidentify.py,7635973080d6980623f0bc00159cf6c0,1071,util,strip results.json identifiers for reidentify
+validation_similarity.py,0382ad52bd3f552bd0c21fcb7927888f,14578,util,"similarity universe builder (REPO-NEWER; NFS lags, inchikey_smiles+makedirs)"
