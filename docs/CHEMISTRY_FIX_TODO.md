@@ -1087,3 +1087,36 @@ Rulings + plan: `.tmp/METHODOLOGY_DECISIONS.md` · `.tmp/IMPLEMENTATION_PLAN.md`
   in results.json across successful recomputes (1612 still carries the
   11:03 audit1-incident pair). Likely needs an explicit clear-on-recompute
   policy decision.
+
+## SECTION F2 · Wave C — F-15 parallel identify parity (2026-10-05, DEPLOYED v3.128)
+
+- C1 `1ff4e76b3` — parallel identify worker DELETED its inline phase-loop fork;
+  delegates to `manager.resolve()` per generator/signature against a temp
+  ResultsManager (verify-worker pattern). Driver items extended: 5th tuple
+  element = fragment's persisted identifiers blob (seeded so overwrite skip
+  has serial parity); flat output at serial blob granularity.
+  Fork deficits closed: PubChem circuit breaker, overwrite_existing skip,
+  third canonical-map copy (already unified in F-18).
+- V-24 offline gate (.tmp/f15_parallel_parity.py 10/10):
+  T1-T3 parallel==serial deep-equality (real inchikey chain);
+  T4-T5b breaker honored in BOTH paths (fork lacked it), both breaker states equal;
+  T6-T9 overwrite skip fires in parallel (seed byte-identical; fresh compute
+  preserved beside kept seed). Executor suite: 2 failures PROVEN pre-existing
+  env at baseline via stash-bisect.
+- C-close live (v3.128 all-5, rollback .tmp/rollback/v3.128/):
+  isolated identifiers_parallel=1 proof in worker pod with REAL 1612-derived
+  fragments (name_ccd + formula-mirror classes, thread pool 2): parallel ==
+  serial deep-equal; zero worker errors. Regression row 165264: 15s resume
+  pattern, completed.
+- SIGNIFICANCE ADDITION (found during C3): src_new/api/routes/runs.py
+  `/config/parallel-default` sets identifiers_parallel=True -> UI parallel
+  default config already ARMS the identify parallel path in production. The
+  fork was live-armed, not just latent; parity now makes that path safe.
+  Remaining UI surface work (a toggle in the separate bat3-validation-ui
+  repo) recorded as optional future item.
+- NOTES: formula_chembl appears in similarity-phase `attempted` lists with
+  <name>_similarity defaulting True even while identity is field-gated off --
+  harmless no-op class; understanding pinned. Regression note: 1612 keeps the
+  11:03 audit1-critical_errors pair (persistence question reported in F, no
+  action). Straggler batch: 788 completed / 9 processing (F-05 quarantine
+  horizon not yet tripped).
