@@ -150,3 +150,25 @@ class TestRegistryGating:
         from src_new.identification.registry import get_default_resolvers
         names = [r.name for r in get_default_resolvers(config)]
         assert "formula_chembl" in names
+
+    def test_chembl_flag_off_is_output_equivalent_containment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """OQ-1 containment contract (ruling 2026-10-05): live ini
+        `formula_chembl: no` under SKIP_PUG must keep the resolver
+        registered (no import/registration breakage) while excluding it
+        from identity selection -- byte-equivalent outputs to the
+        dead-upstream era (attempt->400->[]) minus telemetry noise.
+        """
+        monkeypatch.setenv("VALIDATION_SKIP_PUG", "1")
+        from src_new.identification.registry import IdentifierRegistry, get_default_resolvers
+        cfg = RunConfig()
+        assert cfg.identifiers.formula_chembl is False  # flag OFF = containment
+        resolvers = get_default_resolvers(cfg)
+        by_name = {r.name: r for r in resolvers}
+        assert "formula_chembl" in by_name  # still registered (SKIP_PUG)
+        assert by_name["formula_chembl"].enabled_identity is False
+        reg = IdentifierRegistry(resolvers)
+        identity_names = [r.name for r in reg.get_applicable_resolvers("formula", as_similarity=False)]
+        assert "formula_chembl" not in identity_names
+        # similarity listing may include it, but similarity is a designed no-op
+        # (_resolve_similarity returns [] for exact-composition signatures)
+        assert by_name["formula_chembl"]._resolve_similarity("C8H10N4O2", "") == []
