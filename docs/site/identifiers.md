@@ -45,14 +45,16 @@ Resilience guards: per-stage deadline is propagated into resolver loops;
 the PubChem circuit breaker self-heals every 30 s (probe to a fixed CID).
 Resolver errors are collected into `stage_errors/identifiers/<segment>`.
 
-!!! warning "formula_chembl contained (OQ-1, 2026-10-05) — dead upstream"
+!!! warning "formula_chembl: REST dead → local mirror revived (OQ-1/OQ-11, 2026-10-05/06)"
     EBI ChEMBL REST removed molecular-formula support (payloads carry no
     formula fields; the coded exact filter returns HTTP 400, previously
-    swallowed silently to `[]`). Identity attempts were contained via the
-    `[identifiers] formula_chembl: no` ini toggle — formula signatures are
-    now served by the working **local PubChem mirror** + `formula_hfamily`.
-    The resolver code stays dormant; planned revival = local ChEMBL mirror
-    (OQ-11, pubchem-mirror pattern).
+    swallowed silently to `[]`). Revival: **local ChEMBL mirror**
+    (`[chembl] local_db_path`, 2.9M-row distilled sqlite on the databases
+    PVC, v37 feedstock) — resolver is local-first; the dead REST path only
+    degrades with one warning. Identity flow verified live (caffeine →
+    CHEMBL113 first, 48 exact hits, ms-scale). The formula channel chain:
+    `formula_pubchem_local` (offline, primary) → `formula_pubchem` (PUG,
+    503-prone) → `formula_chembl` (offline, revived) → `formula_hfamily`.
 
 !!! note "Declared verdicts in stage_errors (not failures)"
     `na_mode_unsupported` (F-23, 2026-10-04): an RCSB structure-search call
@@ -71,9 +73,13 @@ Resolver errors are collected into `stage_errors/identifiers/<segment>`.
       with). Universes >10 now actually reach the parser.
     - `pdb_struct_*` adds a composition filter
       (`selected_polymer_entity_types in ["Protein (only)"]` / NA-only) which
-      **excludes mixed-composition entries** (protein+NA complexes, RCSB enum
-      `Protein/NA`) in both modes — **F-24, addon decision pending** (additive
-      design only; ruled 2026-10-04).
+      historically **excluded mixed-composition entries** (protein+NA
+      complexes, RCSB enum `Protein/NA`) in both modes. **F-24 shipped
+      2026-10-05** (default OFF): config flag
+      `[pdb] rcsb_include_mixed_complexes` runs a strictly **additive** extra
+      `Protein/NA` query and appends unique hits — base list untouched,
+      identity-phase neutral (live-proven on frozen RCSB gold set: 1UBQ base
+      464, mixed addon {7P0V, 8ID2}). Flag-off replay byte-identical.
     - **F-23 containment deployed 2026-10-04**: the structure-search backend
       is protein-centric and rejects pure nucleic-acid payloads by design
       (HTTP 400; proven live: 1BNA → 400, 1UBQ → 200/464). NA-mode calls are

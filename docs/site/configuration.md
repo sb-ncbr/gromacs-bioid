@@ -55,7 +55,7 @@ Special keys:
 |---|---|
 | `overwrite_existing` | if `no`, resolvers skip signatures that already have hits in results.json |
 | `formula_local` | construction gate for the local PubChem mirror resolver (also needs the mirror DB file) |
-| `formula_chembl` | gates the ChEMBL exact-formula fallback: construction needs this `yes` **or** `VALIDATION_SKIP_PUG=1`, and identity attempts need the field `yes` — with env-only construction and a fleet ini lacking the flag, the resolver exists but stays inert (known quirk, reported) |
+| `formula_chembl` | the ChEMBL exact-formula resolver: construction needs this `yes` **or** `VALIDATION_SKIP_PUG=1`, identity attempts need the field `yes`. **Resolved era (OQ-11, 2026-10-06)**: upstream REST formula support is dead — the resolver is local-mirror-first via `[chembl] local_db_path` (revived: caffeine→CHEMBL113 live-verified) with one-warning REST degrade |
 
 ### `[verification]`
 | Key | Campaign value | Meaning |
@@ -74,6 +74,13 @@ Special keys:
 | `use_deployment_file_access` | publish input files via this deployment's `/files` route (preferred) |
 | `deployment_file_url` | public base URL of **this** deployment's file route; mis-set value kills the RCSB channel (404). Env `DEPLOYMENT_FILE_URL` overrides |
 | `ssh_host/user/key/remote_path/public_url` | SSH-upload fallback when deployment serving is disabled |
+| `rcsb_include_mixed_complexes` | F-24 additive mixed-complex channel: when `yes`, an **extra** RCSB query (`Protein/NA` entity class) runs after the base query and unique hits are appended (deduped, identity-neutral on real data). Default `no` = byte-identical legacy behavior |
+
+### `[chembl]` — ChEMBL channel
+| Key | Meaning |
+|---|---|
+| `similarity_threshold` | similarity-phase score pass (default 60) |
+| `local_db_path` | OQ-11: local ChEMBL formula mirror (`/app/databases/chembl/current/chembl.sqlite`); resolver goes local-first when present, else auto-degrades to the (dead-upstream) EBI REST path with one warning |
 
 ## Environment variables with behavioral effects
 

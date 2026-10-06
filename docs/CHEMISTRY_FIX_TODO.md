@@ -1170,9 +1170,9 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   upstream.
 - OQ-6 · **RESOLVED §G0** · straggler batch terminal: 788+9 completed,
   zero failures, quarantine never tripped.
-- OQ-7 · **RULED YES -> Wave F** · F-24 additive (separate Protein/NA query
-  appended, never merged; @10 windows immutable; replay-proven or NOFIX)
-  + W10 replay-first then ONE production requeue.
+- OQ-7 · **RESOLVED §F5/F7/F8** · F-24 additive SHIPPED (default OFF,
+  gold-fixture-proven); W10 full-family (ruled scope-(b)) drained 99.65%
+  with zero-defect verification (both misflag metrics 0).
 - OQ-8 · **RULED: leave** · formula_pubchem_local double-attempted list is
   known-cosmetic; churn not worth a deploy.
 - OQ-11 · **SCHEDULED (between Wave F and Wave G)** · **local ChEMBL
@@ -1182,10 +1182,11 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   formula->CHEMBL table) on PVC, resolver switched to local lookup under a
   flag, empirical gates (caffeine->CHEMBL113 exact), ini flip back to yes
   only after proof.
-- OQ-9 · **RULED YES (fix in Wave F)** · protein-class generators on NA
-  virtual segments (21 rows; RNA letters as protein fasta). Scoped fix:
-  gate generator class by segment is_nucleic for virtual minority segments
-  (signatures-worker routing); offline 3-anchors + queue-sim + staged roll.
+- OQ-9 · **RESOLVED §F5–F8** · Serial-loop props-routing bug
+  (_PinnedPropsFacade, `8dee3b89e`); blast radius measured at 4332/4324
+  (not 21); W10 full-family requeue healed ALL -> official metric 0 and
+  family metric 0/0/0 (recounts archived). Flat-cohort invariance proven
+  unit + live (1612/2346).
 - OQ-10 · **RESOLVED §G0** (commit 72763155d) · latent v3-era contract break:
   base.resolve() re-raised IdentifierResolutionError vs documented None.
   Ruling: drop raise, keep record (log + get_last_error -> manager error list
@@ -1474,3 +1475,34 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   nucleic 163, other 2. Columns incl. n_entries/n_segments, families,
   id_distinct_hits, verified_hits (chem/seq split), top_verified_id+score,
   representative entry/segment.
+
+## SECTION F9 · Epoch closure-hygiene state (2026-10-06)
+
+- HEAL VERIFIED to ZERO: official N1 21-metric = 0; family 4332/4324
+  metric = 0/0/0. v13 stats (package + both rollups + funnel) published on
+  NFS canonical root + stats_v13/ bundle; per-molecule species coverage:
+  protein 93.8% / chemical 97.2% / nucleic 16.3% (structural floor by
+  design) / other 0.4%; entry-any 97.9/99.3/99.5.
+- REMAINING TAIL (user decision: drain naturally, quarantine requeue later):
+  batch 'w10-heal' 4305/4324 at freeze; ~19 rows = prefetch/zombie claim
+  class (wave-wide OOMKilled bursts; 3 dead-man reclaim rounds applied
+  w/ audits; NOT code defects; runs fail instantly at claim, zero-IO).
+  Watchdog horizon 12h ultimately flips them; targeted requeue when
+  convenient. 5501 (NFS stale handle) cured in reclaim wave 1.
+- INFRA NOTES (for ops): validation-worker replicas ceilinged at 244 by
+  namespace limits.cpu quota (1061600/1064900m; ~3300m free); scale-up
+  attempt to 450 met FailedCreate; scaled back cleanly (carve-out:
+  worker mem limits are 24Gi; OOM kills during the mass heal = collective
+  peaks; current fleet steady at 244 x 4cpu/24Gi).
+- NEW REGISTER ITEM: OQ-12 · open (ops hardening idea) · zombie/prefetch
+  claim detection should be a ~1h DB-side dead-man probe (log-IO idle vs
+  claim age per queue worker) instead of passive 12h stale_timeout;
+  implemented as 3 manual reclaim scripts during W10 -- candidate for
+  codifying as a sweeper route. Evidence: reclaim audits on PVC.
+- Ledger commits for the era (context for harvest): 8dee3b89e OQ-9 fix,
+  33932ebe2 F-24 code, ce5285163 F-24 replay, d67b6d336 §F5,
+  9a18c6677+bf0a69935 OQ-11 code+builder, e51c70823 §F6, 6f8b6ae56 §F7,
+  7cb2fade8/78858cfd5/3f9202856 stats tooling, 18c438d37/4bb23cf5e §F8(+b).
+- Era truth at close: 5/5 deployments v3.131; live ini formula_chembl=yes
+  (mirror-first), pdb.rcsb_include_mixed_complexes default no (shipped);
+  queues: w10-heal 4305 done; stragglers-era completed earlier.
