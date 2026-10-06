@@ -331,3 +331,34 @@ UPDATE 2026-10-04 (FINAL AUDIT + ONLINE DOCS): Read-only whole-codebase audit ex
 UPDATE 2026-10-04-2 (FIX VERIFICATION + PROD DEPLOYMENT v3.126-audit2): Decision queue rulings executed - A-block: F-09 fixed live (pre-W4 NFS shadow tree /data/validation/patched_src deleted 1.5MB + PYTHONPATH dropped from ui-worker), F-10 wontfix, F-08 later (env actually present only on validation-worker), F-13 deferred-to-migration. B-block: F-01 fixed (ed4322254 stub routes), F-04 armored (b65ea8845 truthful DO-NOT-DELETE comment), F-02 documented (372dec800 fallback CMD), F-26 deferred to dedicated workstream (scope widened: 6 main.py call sites + src_new endpoint share ts-less schedule_validation path; recon brief .tmp/LANE_C_BRIEF.md), F-03+F-05 fixed AND deployed. INCIDENT: first F-03 (ef1bc0ec1 start_run-setdefault) activated the never-fired 2026-09-18 skip path whose latent missing-context bug exploded live on 1612 requeue (unwrap 'warning' re-ran after skipped loader; missing_universe; 14.8s fail) - caught by user-mandated live sim-requeue verification; workers N1-rolled-back within 25min; semantics revised per user ruling (4b374e306): skip ONLY generate_signatures/identify_molecules/verify_results, ONLY on persisted 'success'; context chain + export always re-run. VERIFIED LIVE on v3.126-audit2 (ALL 5 deployments, era-coherent; rollback yamls .tmp/rollback/v3.126/): baseline 45s -> recovery full-run 44.9s identical semantics -> resume run 15.0s (3x) identical semantics with "Resume: skipping ... (persisted success)" log lines; F-05 synth straggler quarantined in one 30s tick (queue+entry failed, cycle 4/3); F-04 fleet registration 181/181; F-01 single routes. Straggler implication: 11 pathological stragglers now terminate within <=3 stale cycles (~36h). Ledger CHEMISTRY_FIX_TODO.md Section E pinned (27f647f59); ops lesson V-24 added (dead-code activation requires live proof). Docs site polished to deployed semantics (resume/quarantine/PYTHONPATH/patched_src). Empirical artifacts: .tmp/f03_repro.py, .tmp/f03b_executor_skip.py (12/12), .tmp/f05_stale_test.py (12/12). NEXT: methodology dossier via Lane B (.tmp/LANE_B_BRIEF.md -> .tmp/METHODOLOGY_DECISIONS.md) then user walks C/D queue items 11-25.
 
 UPDATE 2026-10-05 (AUDIT WAVES A-E ALL COMPLETE, fleet v3.129 era-clean): All 28-finding methodology queue items ruled by user and executed in five waves with per-step empirical tests + commits + checkpoint tags. Wave A hygiene (F-18 map unification ae397f064, F-16 2292d79aa, F-07 c9821a9f9, F-06 46b59a0ff). Wave B runtime semantics, one image: F-21 CORRECTED (ef4ac367d - audit half-wrong, getattr blindspot; dual <name>/<name>_similarity mechanism existed; fixed 8 undeclared config fields + 5 classes/7 instances assigning name after super().__init__ making toggles keyed on ''), F-25 (c26810250 RCSB paginate rows=10000; proven 464 tot/10->464), F-17 (e562eee12 verified_without_corroboration flag, telemetry-only zero metric shift), F-23 (65ae1c536+F-23-ref fad7892d7 NA containment verdict na_mode_unsupported; stage-2 residue classifier added after live gate caught trimmed-signature gap -> v3.127->v3.127.1). Wave C F-15 (1ff4e76b3): parallel identify fork DELETED, delegates manager.resolve against seeded temp ResultsManager; offline 10/10 equivalence+breaker+overwrite proofs; runs.py parallel-default route was live-arming the fork; deployed v3.128. Wave D repo-only (6f419b486+3f323b2ec + tag v12-stats-generators): 34 NFS stats scripts -> scripts/stats/ byte-identical md5-verified; GOLD E2E = repo-copy assemble_v12 regenerates official v12 artifacts IDENTICAL (ts-normalized); gt_absent anatomy STABLE; F-N1d closed; mis-flag recount=21 -> REPORT-first OQ-9 (virtual-minority segments carry protein-name generators; RNA letters as protein fasta entry 2346 SYSTEM__v4). Wave E F-27 (0bbe57de5, v3.129): constants promoted src->src_new (value+md5 equality; pre-f27-checkpoint tag; subset-fallback divergence fallbacks deleted per ruling; 3 import sites not 2); minimal pyproject (requirements.txt remains image truth). Live gates every wave (1612 requeues 165263/165264/165265 -> 15-30s resume pattern; counts identical; in-pod component proofs). OPEN QUESTIONS register OQ-1..OQ-9 documented ledger-bottom (formula_chembl inert-by-design, critical_errors persistence, 2 tracked .bak deletes, UI toggle, NA research, stragglers 788/9 horizon 10-06 ~04:00, W10 bundle, attempted-dup, OQ-9 misroute). NEXT: Wave F (F-24 additive-or-nofix + W10 replay-sweep-first) and Wave G (docs banners + k8s docs hosting + straggler closeout). Pickup: .tmp/PICKUP_AUDIT_WAVES.md.
+
+## 2026-10-06 — audit-heal epoch COMPLETE (v13 era); stats published
+
+- Epoch result: 28-finding audit queue ruled+executed (Waves A-E, F); fleet
+  v3.131 all-5 deployments; OQ register closed except deferred lanes
+  (OQ-4/5 backlog, OQ-8 cosmetic, OQ-12 new ops-idea).
+- OQ-9 healed at family scale: official 21-row metric -> 0; full-family
+  4332/4324 virtual misflags -> 0/0/0 (W10 one-time requeue, 4305/4324 at
+  freeze; tail drains naturally; overcame wave-wide OOM kills via 3 audited
+  dead-man reclaim rounds).
+- formula channel offline-correct: pubchem local mirror (primary) +
+  ChEMBL local mirror REVIVED v37 (2.9M rows; caffeine -> CHEMBL113 live);
+  EBI REST formula API dead upstream (contained + documented).
+- F-24 mixed complexes: additive `Protein/NA` channel shipped DEFAULT OFF
+  (gold-fixture replays); can be enabled via ini [pdb]
+  rcsb_include_mixed_complexes when the user decides to accept it live.
+- Headline v13: entry-any 97.9/99.3/99.5 @1/@5/@10; channels S7
+  inchikey 60.2@1 93.0@10 | ion 96.1 | pdb 96.9@1 99.5@10 | uniprot
+  94.0@1 98.1@10 (annotations grew; pdb/uniprot -0.1..-0.4 = denominator
+  effect of healed+new entries, not regression).
+- Stats artifacts (NFS canonical + stats_v13/ bundle): stats_package_v13
+  (json/md), campaign_stats_v13, per_molecule_stats_v13.csv (26354),
+  per_molecule_by_species_v13.csv (15987 species; protein 10545 / chemical
+  3901 / nucleic 997 / other 544), funnel_v13.json, heal recounts (=0).
+- Ops notes: worker replicas ceiling 244 by ns limits.cpu quota; worker
+  mem 24Gi limits caused OOM bursts during mass heal (at current 244
+  steady); zombie/prefetch claim class = infra, handled by reclaim
+  pattern (12h watchdog backstop + 1h dead-man ideal -> OQ-12).
+- Ground truth ledger: docs/CHEMISTRY_FIX_TODO.md sections through F9;
+  pickup `.tmp/PICKUP_AUDIT_WAVES.md`; next: audit tail close + Wave G
+  (docs banners, k8s docs hosting, external incident registry note).
