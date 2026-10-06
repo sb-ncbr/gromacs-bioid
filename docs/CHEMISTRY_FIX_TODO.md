@@ -1593,3 +1593,38 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
 - OQ-7 register thread: F-24 shipped default-OFF (F5) -> now LIVE.
   Expect: mixed-complex segment structures gain Protein/NA neighbors in
   new runs only (forward-only, frozen-v12/v13 untouched).
+
+### G2 · k8s mkdocs hosting LANDED (2026-10-06)
+- Docs image `cerit.io/tomsko/bat3-docs:v3.131-g2.2` (Dockerfile.docs:
+  mkdocs-material:9 strict build -> nginxinc/nginx-unprivileged:1.27 on
+  8080; worker_processes capped 2 -- auto=host-cores OOMed the 64Mi
+  limit; PSA-restricted ns forced non-root; learnings recorded).
+- Site restructure: pages moved docs/site/*.md -> docs/site/docs/*.md
+  (git mv; mkdocs 1.6 rejects docs_dir "."). Build context = docs/site
+  (root .dockerignore excludes docs/ for api image -- documented in
+  Dockerfile.docs).
+- Deployment validation-docs (1 repl, 10m/32Mi req / 100m/64Mi lim --
+  fits 3300m ns cpu headroom) + svc; manifest deploy/validation-docs.yaml.
+- Ingress: /docs Prefix on EXISTING UI host (user ruling "under ui"):
+  https://bat3-validation.dyn.cloud.e-infra.cz/docs/ LIVE (200; UI at /
+  verified 200 immediately after; TLS unchanged via existing secret).
+  INCIDENT-NOTE: first strategic patch REPLACED ingress path list (~10s
+  UI route gap); fixed within one step by full-desired-state patch;
+  rollback snapshot .tmp/rollback/g2-docs/validation-ui-v2-ingress-
+  pre-docs.yaml. Lesson: kubectl strategic patch on ingress paths list
+  replaces -- always supply complete paths array.
+- Verified: port-forward curls (index/identifiers/configuration/search
+  index 200) + public URL curls post-patch.
+
+### NEW REGISTER ITEM · OQ-13 (2026-10-06, user-added)
+- **OQ-13 · queued · UI-worker sqlite mirror corruption class** --
+  "file is not a database" errors in identification on UI-queued runs:
+  corrupted local DB cache on UI workers ( known failure mode from
+  earlier ops). Remedy per ruling: copy the known-good mirror DB from
+  the validation worker deployment over to the UI workers and wire UI
+  lane config to it (fresh integrity_check + immutable-copy pattern).
+  To be implemented TOGETHER WITH the F-26 dispatch-lane unification
+  (the UI queue lane is the same surface; single maintenance window,
+  single era bump). Evidence to collect at fix time: which DB file
+  (pubchem/current vs chembl/current), corrupt mtime/size, integrity
+  probe output; keep failing example run id for before/after proof.

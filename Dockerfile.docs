@@ -1,0 +1,19 @@
+# G2 mkdocs hosting (2026-10-06): docs image = build stage + nginx.
+# Serves the site under /docs/ on the existing validation UI host
+# (ingress maps /docs Prefix -> validation-docs svc; backend serves docroot/docs).
+
+# NOTE: build context = docs/site (repo-root .dockerignore excludes docs/;
+# api image must never ship docs). Usage:
+#   docker build -f ../../Dockerfile.docs -t cerit.io/tomsko/bat3-docs:<tag> docs/site
+
+FROM squidfunk/mkdocs-material:9 AS build
+WORKDIR /docs
+COPY . /docs/
+RUN mkdocs build --strict --site-dir /out
+
+# Namespace enforces PodSecurity "restricted" -> non-root image on 8080.
+# worker_processes auto (=host cores!) OOMs tiny mem limit -> cap at 2.
+FROM nginxinc/nginx-unprivileged:1.27-alpine
+RUN sed -i 's/^worker_processes  auto;/worker_processes  2;/' /etc/nginx/nginx.conf
+COPY --from=build /out /usr/share/nginx/html/docs
+EXPOSE 8080

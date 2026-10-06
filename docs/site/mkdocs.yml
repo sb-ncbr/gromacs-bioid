@@ -1,6 +1,6 @@
 site_name: BAT3 / BioID Validation
 site_description: Molecular identification & validation pipeline for MD simulation data
-docs_dir: .
+# G2 (2026-10-06): pages moved to docs/ subdir (mkdocs 1.6 rejects docs_dir ".").
 theme:
   name: material
   features:
