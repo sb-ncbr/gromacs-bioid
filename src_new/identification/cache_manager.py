@@ -6,10 +6,46 @@ import logging
 import os
 import sqlite3
 import threading
+from datetime import datetime, timezone
 
 from ..config.loader import RunConfig
 
 logger = logging.getLogger("identifier")
+
+
+def _quarantine_if_corrupt(cache_path: str) -> None:
+    """OQ-13 (2026-10-06): integrity-probe an existing cache; corrupt -> quarantine + recreate.
+
+    "file is not a database" historically killed every identification on a
+    poisoned pod (cache reads were unguarded), and a stale corrupt relic even
+    sat on the shared NFS runs volume (.corrupt-20260910 sibling proves the
+    class recurs). Detection is cheap (PRAGMA quick_check at open). A corrupt
+    file is NEVER deleted - renamed aside next to the original for forensics,
+    then an empty cache is recreated so identification proceeds immediately.
+    """
+    if not os.path.exists(cache_path):
+        return
+    try:
+        with sqlite3.connect(cache_path, timeout=30.0) as conn:
+            verdict = conn.execute("PRAGMA quick_check").fetchone()
+        if verdict and str(verdict[0]).lower() == "ok":
+            return
+    except sqlite3.DatabaseError:
+        pass  # header/page corrupt -> quarantine below
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    aside = f"{cache_path}.corrupt-{ts}"
+    logger.error(
+        "[Cache] resolver cache at '%s' is corrupt ('file is not a database' class); "
+        "quarantining to '%s' and recreating empty (OQ-13 self-heal)",
+        cache_path, aside,
+    )
+    try:
+        os.replace(cache_path, aside)
+    except OSError as exc:
+        logger.error("[Cache] failed to quarantine corrupt cache '%s': %s", cache_path, exc)
+        # Leave the file; recreation will fail loudly below if still broken.
+
 
 
 def create_empty_cache_if_not_exists(cache_path: str) -> None:
@@ -75,6 +111,7 @@ class ResolverCache:
             cache_file: str = self._config.identifiers_cache.file
             self._cache_path = os.path.join(cache_directory, cache_file)
             
+            _quarantine_if_corrupt(self._cache_path)
             create_empty_cache_if_not_exists(self._cache_path)
             self._conn = sqlite3.connect(self._cache_path, timeout=30.0)
             # Enable WAL mode for better concurrent access

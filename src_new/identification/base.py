@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 from abc import ABC, abstractmethod
 
 from ..config.loader import RunConfig
@@ -137,16 +138,24 @@ class IdentifierResolver(ABC):
         self._last_resolution_metadata = None
         self._last_error = None
         
-        # Check cache first
+        # Check cache first. Cache failures (e.g. sqlite corruption surfaced
+        # as DatabaseError "file is not a database", OQ-13) degrade to a cache
+        # MISS - live resolution must never die because of a poisoned cache.
         if cache is not None:
-            if as_similarity:
-                cached = cache.fetch_similarity_identifiers(self.name, signature)
-                if cached:
-                    return cached
-            else:
-                cached = cache.fetch_identity_identifiers(self.name, signature)
-                if cached:
-                    return cached
+            try:
+                if as_similarity:
+                    cached = cache.fetch_similarity_identifiers(self.name, signature)
+                    if cached:
+                        return cached
+                else:
+                    cached = cache.fetch_identity_identifiers(self.name, signature)
+                    if cached:
+                        return cached
+            except sqlite3.Error as exc:
+                logger.warning(
+                    "[Cache] read failed for resolver '%s' (%s); resolving without cache",
+                    self.name, exc,
+                )
         
         # Call appropriate resolve method
         try:
@@ -155,22 +164,29 @@ class IdentifierResolver(ABC):
             else:
                 result = self._resolve_identity(signature, working_directory)
             
-            # Store in cache
+            # Store in cache (best effort; cache corruption must not fail
+            # an otherwise successful live resolution, OQ-13)
             if cache is not None and result is not None:
-                if as_similarity:
-                    cache.save_similarity_identifiers(self.name, signature, result)
-                else:
-                    # Convert to list[str] if needed
-                    if isinstance(result, list) and len(result) > 0:
-                        if isinstance(result[0], tuple):
-                            # Extract just identifiers
-                            cache.save_identity_identifiers(
-                                self.name, 
-                                signature, 
-                                [ident for ident, _ in result]
-                            )
-                        else:
-                            cache.save_identity_identifiers(self.name, signature, result)
+                try:
+                    if as_similarity:
+                        cache.save_similarity_identifiers(self.name, signature, result)
+                    else:
+                        # Convert to list[str] if needed
+                        if isinstance(result, list) and len(result) > 0:
+                            if isinstance(result[0], tuple):
+                                # Extract just identifiers
+                                cache.save_identity_identifiers(
+                                    self.name, 
+                                    signature, 
+                                    [ident for ident, _ in result]
+                                )
+                            else:
+                                cache.save_identity_identifiers(self.name, signature, result)
+                except sqlite3.Error as exc:
+                    logger.warning(
+                        "[Cache] write failed for resolver '%s' (%s); result kept uncached",
+                        self.name, exc,
+                    )
             
             return result
         except IdentifierResolutionError as exc:
