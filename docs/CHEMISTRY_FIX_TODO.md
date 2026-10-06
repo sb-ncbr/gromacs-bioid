@@ -1462,3 +1462,15 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
 - Links for figures (NFS): /data/validation/stats_package_v13{.json,.md},
   /data/validation/per_molecule_stats_v13.csv, mirrored under
   /data/validation/stats_v13/; verification jsons same dir.
+
+## SECTION F8b · Per-species molecule statistics (v13, 2026-10-06)
+
+- per_molecule_by_species_v13.csv + _summary.json (canonical root +
+  stats_v13/ mirror; script `3f9202856`): 26,354 (entry,segment) rows
+  aggregated into 15,987 UNIQUE species (key priority inchikey ->
+  smiles-md5 -> prot-seq-md5 -> nuc-seq-md5 -> seg fallback, 544 'other').
+  Class mix: protein 10,545 | chemical 3,901 | nucleic 997 | other 544;
+  species bearing >=1 verified hit: protein 9,897, chemical 3,792,
+  nucleic 163, other 2. Columns incl. n_entries/n_segments, families,
+  id_distinct_hits, verified_hits (chem/seq split), top_verified_id+score,
+  representative entry/segment.
