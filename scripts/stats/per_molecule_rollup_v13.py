@@ -92,7 +92,11 @@ def scan_one(eid: str):
             if not isinstance(h, dict) or not h.get("is_verified"):
                 continue
             it = (h.get("ident_type") or "").upper()
-            score = h.get("score") or h.get("similarity") or 0
+            score = h.get("final_confidence")
+            if not isinstance(score, (int, float)):
+                score = h.get("similarity_score")
+            if not isinstance(score, (int, float)):
+                score = h.get("score") or h.get("similarity") or 0
             v_tot += 1
             if any(c in it for c in ("PUBCHEM", "CHEMBL", "CHEBI", "INCHI", "SMILES", "IDS")):
                 v_chem += 1
