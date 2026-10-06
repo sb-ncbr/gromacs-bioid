@@ -1431,3 +1431,34 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
 - NEXT: tail monitor until drained (~hours); then double recount
   (official 21-metric + family 4332-metric) -> target 0; formula_chembl
   spot-hits on small-molecule cohort entries; Wave G docs after.
+
+## SECTION F8 · W10 drain (99.65%) + heal verified to ZERO + v13 statistics delivered (2026-10-06)
+
+- DRAIN: batch w10-heal 4305/4324 completed at stats-freeze time (199 frac.
+  tail = scheduler/prefetch-class zombie claims from wave-wide OOMKilled
+  (137) restarts; three dead-man reclaim rounds applied with audits on PVC;
+  ~19 in-flight draining). User decision: tail keeps draining; quarantined
+  sims get re-queued later, stats snapshot now.
+- HEAL VERIFICATION (post-drain recounts, frame 15134):
+  * official N1 21-metric: misflag = **0** (was 21), frame 13899,
+    /data/validation/stats_v13/oq9_postw10_recount.json
+  * full-family 4332-metric (own rescan, same family keys): **0/0/0 total**
+    (na 0, other 0) -> /data/validation/stats_v13/oq9_virtual_misflag_postw10.json
+  5501 (NFS stale-handle failure) cured via reclaim.
+- v13 STATISTICS ARTIFACTS (canonical /data/validation home):
+  * campaign_stats_v13.json (S1-S7 producer @ 08:24; 6674 B)
+  * stats_package_v13.json/.md (assembler v13 `7cb2fade8`; frozen v12 untouched)
+  * per_molecule_stats_v13.csv (26,354 rows; signature family composition,
+    generator attempts, identifier resolver attempts + distinct hits,
+    verified hits chem/seq split w/ real scores; script `78858cfd5`+fix)
+  * stats_v13/ dir mirrors all four + heal-verification jsons.
+- HEADLINE (post-heal era, validated%_of_annotations):
+  inchikey @1 59.2->60.2 @5 88.3->89.4 @10 92.9->93.0 (ann 5784->5988)
+  ion @1=@5=@10 95.9->96.1 (ann 1811->1876)
+  pdb @1 97.3->96.9 @5 98.9->98.7 @10 99.5->99.5 (ann 11186->11392)
+  uniprot @1 94.2->94.0 @5 97.2->97.0 @10 98.2->98.1 (ann 12575->12790)
+  Deltas: chemistry up across inchikey/ion; pdb/uniprot down 0.1-0.4 pts =
+  denominator growth from healed+new entries (honest note for figures).
+- Links for figures (NFS): /data/validation/stats_package_v13{.json,.md},
+  /data/validation/per_molecule_stats_v13.csv, mirrored under
+  /data/validation/stats_v13/; verification jsons same dir.
