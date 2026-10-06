@@ -1688,3 +1688,36 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
 - w10-heal: 4309/4324 completed, 15 processing (organic; user ruling:
   leave). Commits this session: fc3d5f6df, f59d1b19a, cfe766b89,
   38cd151ea (Wave G), 06f72b110 (OQ-13), 5c262f85e (F-26).
+
+### H4 · v3.132 DEPLOYED all-5 (2026-10-06 ~22:05Z) — era closed
+- Image cerit.io/tomsko/bat3-validation-api:v3.132 (=1a6677b8c9c2,
+  built at HEAD 5c262f85e + docs 98acbc88d). Rollback yamls
+  .tmp/rollback/v3.132/ (5x v3.131 pre-state).
+- Staged roll + live gates (ALL GREEN): validation-api -> external
+  start-processing = {"path": "canonical process_validation_queue
+  (F-26)", dispatched: 0} AND legacy /entries/{id}/validate -> 410
+  exact FROZEN_MESSAGE; validation-worker 244/244 (celery gossip
+  healthy, 0 unregistered-task = F-04 intact); bat3-ceitec worker
+  15/15 + api + ui-worker 2/2 (0 errors); w10-heal +1 organic
+  completion ON the new image (4310 done / 14 processing at close).
+- NEW LESSON V-26 (ops, recorded in common-issues): namespace quota
+  sits at the worker-244 ceiling; RollingUpdate maxSurge=1 cannot
+  schedule (+4cpu over). Worker-family rolls REQUIRE temporary
+  maxSurge=0/maxUnavailable=25% (killing pods in chunks = same class
+  as accepted OOM churn); restore strategy after. Remaining 800m
+  overage post-docs(+100m limit) was resolved by deleting the stale
+  bare pod 'perm-sweep' (26d, no owner, 1cpu/4Gi) per user ruling.
+  Scale-dance note: a stuck RS create-backoff is nudged by scaling
+  deployment +1 then back (fresh create attempt).
+- NEW REGISTER ITEM OQ-14 · open (UI/ops drift): live validation-ui
+  nginx conf has NO location /api rewrite (repo
+  deploy/nginx-validation-ui.conf has it); deployed v7.43 bundle mixes
+  '/api/...' and '/validation/...' prefixes => /api/* calls answer
+  FastAPI 404 externally (pre-existing, NOT an H2 regression; all
+  direct-prefix routes work). Decide at UI-maintenance wave: fix the
+  live conf (or the bundle) so start-processing calls actually reach
+  the (now canonical) endpoint from the browser.
+- F-26 status: IMPLEMENTED + DEPLOYED (freeze + canonical reroutes).
+  Remaining per design: post-article hard-delete of the 4 legacy
+  endpoints (Q3 ruled: no preservation needs) + optionally remove the
+  wrapper task body once nothing calls it.

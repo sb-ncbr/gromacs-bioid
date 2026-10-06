@@ -593,3 +593,17 @@ Diagnosis quickies: `redis-cli client list | grep -oE 'cmd=[a-z]+' | sort | uniq
 - Rule: auditing any toggle/constant = grep `getattr(` + `ImportError` + `try:` around
   the config module too, not just the apparent access path. When unifying constants,
   byte-compare ALL sibling copies incl. fallback/hand-copied blocks, or stop and report.
+
+## V-26 · Worker rolls at the quota ceiling (2026-10-06)
+Namespace limits.cpu quota sits at the validation-worker=244 ceiling;
+RollingUpdate maxSurge=1, cannot schedule (+4cpu over). Fix: patch
+worker-family strategy to maxSurge=0/maxUnavailable=25% for the roll,
+restore after. RS create-backoff after FailedCreate(quota) can stall;
+nudge by scaling deployment +1 then back (fresh attempt with freed
+quota). Watch for stale bare pods (e.g. 'perm-sweep', 26d, no owner,
+1cpu/4Gi) silently consuming headroom -- deleted 2026-10-06 per ruling.
+
+## V-27 · kubectl strategic patch REPLACES ingress path lists (2026-10-06)
+`kubectl patch ingress --type=strategic -p '{"spec":{"rules":[...paths...]}}'`
+replaces the paths array (no mergeKey on http paths) — ~10s UI route gap
+before full-desired-state repatch. Always send the COMPLETE paths list.
