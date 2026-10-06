@@ -75,7 +75,9 @@ Resolver errors are collected into `stage_errors/identifiers/<segment>`.
       (`selected_polymer_entity_types in ["Protein (only)"]` / NA-only) which
       historically **excluded mixed-composition entries** (protein+NA
       complexes, RCSB enum `Protein/NA`) in both modes. **F-24 shipped
-      2026-10-05** (default OFF): config flag
+      2026-10-05** (flag default OFF) and **ENABLED live 2026-10-06**
+      (campaign ini; production-shaped proof: 1UBQ merged 466 = 464 base +
+      {7P0V, 8ID2} appended): config flag
       `[pdb] rcsb_include_mixed_complexes` runs a strictly **additive** extra
       `Protein/NA` query and appends unique hits — base list untouched,
       identity-phase neutral (live-proven on frozen RCSB gold set: 1UBQ base

@@ -74,7 +74,7 @@ Special keys:
 | `use_deployment_file_access` | publish input files via this deployment's `/files` route (preferred) |
 | `deployment_file_url` | public base URL of **this** deployment's file route; mis-set value kills the RCSB channel (404). Env `DEPLOYMENT_FILE_URL` overrides |
 | `ssh_host/user/key/remote_path/public_url` | SSH-upload fallback when deployment serving is disabled |
-| `rcsb_include_mixed_complexes` | F-24 additive mixed-complex channel: when `yes`, an **extra** RCSB query (`Protein/NA` entity class) runs after the base query and unique hits are appended (deduped, identity-neutral on real data). Default `no` = byte-identical legacy behavior |
+| `rcsb_include_mixed_complexes` | F-24 additive mixed-complex channel: when `yes`, an **extra** RCSB query (`Protein/NA` entity class) runs after the base query and unique hits are appended (deduped, identity-neutral on real data). Code default `no` (legacy behavior); **campaign `config_shared.ini` = `yes` since 2026-10-06** |
 
 ### `[chembl]` — ChEMBL channel
 | Key | Meaning |

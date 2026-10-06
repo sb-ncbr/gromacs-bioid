@@ -362,3 +362,33 @@ UPDATE 2026-10-05 (AUDIT WAVES A-E ALL COMPLETE, fleet v3.129 era-clean): All 28
 - Ground truth ledger: docs/CHEMISTRY_FIX_TODO.md sections through F9;
   pickup `.tmp/PICKUP_AUDIT_WAVES.md`; next: audit tail close + Wave G
   (docs banners, k8s docs hosting, external incident registry note).
+
+## 2026-10-06 (late) — F-26/OQ-13 implemented + v3.132 era deployed all-5
+
+- Wave G COMPLETE: G1 banners / G2 docs hosting LIVE at
+  bat3-validation.dyn.cloud.e-infra.cz/docs/ (image
+  cerit.io/tomsko/bat3-docs, currently v3.132-g2.3), G3 F-05 terminal
+  datapoints, G4a F-24 ENABLED live (proof 466=464+{7P0V,8ID2}; ini
+  md5 889730df; rollback snapshot on PVC), G4b external incident
+  registry Session-36 note (bat3_validation is NOT a git repo).
+- F-26 dispatch unification (code census: legacy dead since 2026-08-06;
+  UI Start -> main.py:2054, bioid UI -> src_new:541; API split-brain
+  validation-api=main:app vs bat3-ceitec=src_new): legacy endpoints
+  FROZEN by default (VALIDATION_LEGACY_DISPATCH=allow unfreezes; 410s),
+  both start-processing endpoints rerouted to canonical
+  process_validation_queue (commit 5c262f85e). Remaining: post-article
+  hard-delete of 4 legacy endpoints.
+- OQ-13 CLOSED: corrupt-cache class recurring (NFS relics quarantined
+  /app/runs/_quarantine_cache/2026-10-06/); current era = ephemeral
+  per-pod caches; code self-heal (quick_check -> rename-aside +
+  recreate) + base.resolve sqlite guards (commit 06f72b110).
+- v3.132 on all 5 image deployments; gates: external reroute 200
+  {path: canonical}, legacy 410, F-04 intact (0 unregistered), +1
+  organic completion on new image. Rollback .tmp/rollback/v3.132/.
+- Lessons V-26 (quota-ceiling rolls: maxSurge 0 / maxUnavailable 25%,
+  scale-dance nudge; stale 'perm-sweep' pod deleted per ruling) + V-27
+  (ingress strategic patch replaces path lists) in common-issues.md.
+- New register: OQ-14 (live validation-ui nginx lacks /api rewrite;
+  bundle mixes prefixes -> /api/* 404 pre-existing; fix at UI wave).
+- Ground truth ledger through SECTION H4; pickup file refreshed;
+  w10-heal 4310/4324, tail 14 organic per ruling.

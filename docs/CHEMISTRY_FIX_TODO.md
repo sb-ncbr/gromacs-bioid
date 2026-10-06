@@ -1721,3 +1721,19 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   Remaining per design: post-article hard-delete of the 4 legacy
   endpoints (Q3 ruled: no preservation needs) + optionally remove the
   wrapper task body once nothing calls it.
+
+## SECTION H5 · Hygienic close + polish pass (2026-10-06, pre-article freeze)
+- Site docs truth-sync with the live era: identifiers.md + configuration.md
+  now state F-24 ENABLED since 2026-10-06 (was: shipped default-OFF).
+  Docs image rebuilt+rolled: bat3-docs:v3.132-g2.3; live page verified to
+  carry the line; deploy/validation-docs.yaml tag synced (ops-untracked).
+- Context ledger (.opencode) updated with v3.132 era close; V-26/V-27 in
+  common-issues; register current (OQ-12 ops candidate, OQ-13 CLOSED,
+  OQ-14 UI-nginx drift open).
+- Handoff .tmp/PICKUP_AUDIT_WAVES.md refreshed: remaining queue =
+  tail-organic / article phase / post-article legacy hard-delete /
+  OQ-14 UI wave / deferred lanes.
+- Code stable point for article phase: HEAD after this commit; fleet
+  all-v3.132 (5 image deployments) + bat3-docs:v3.132-g2.3; ini
+  md5 889730df (formula_chembl=yes, rcsb_include_mixed_complexes=yes);
+  queues: w10-heal 4310/4324, tail 14 organic per ruling.
