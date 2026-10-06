@@ -1,5 +1,14 @@
 # BioID v2 Code Health Report
 
+> **⚠️ SUPERSEDED — 2026-08-12 prototype-era audit (Wave G banner, 2026-10-06).**
+> This early health report is **superseded in scope** by the 2026-10 final audit:
+> 28 findings (F-01..F-28 + N1 + OQ register) tracked in `.tmp/final_findings.md`
+> and resolved/ruled through `docs/CHEMISTRY_FIX_TODO.md` (§A–§F9), with empirical
+> verification and fleet deployment to v3.131. Several risks listed below are already
+> fixed (resume, canonical signatures, dispatch bookkeeping, resolver contracts);
+> others remain as documented deferred lanes (F-26 dispatch unification: see
+> `.tmp/F26_DESIGN.md`; OQ-4/OQ-5/OQ-8). Keep this file as historical record only.
+
 This report audits the current BioID v2 repository against the intended workflow:
 
 ```text

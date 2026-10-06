@@ -1,5 +1,15 @@
 # `src_new` Pipeline Backbone
 
+> **⚠️ ERA NOTE — content 2026-08-12, pre-final-audit (Wave G banner, 2026-10-06).**
+> Structural description of `src_new/` remains broadly accurate, but behavior details
+> changed during the 2026-10 audit waves: `ResultsManager.start_run` preserves persisted
+> step statuses (F-03 resume works), `results_manager`/`executor` are exercised by the
+> campaign fleet (v3.131), dispatch machinery lives in `queue_processor.py` +
+> `src_new/api/tasks.py:run_pipeline_task` (see `.tmp/F26_DESIGN.md` for dispatch
+> unification state), and resolver-layer fixes (OQ-1..OQ-11) added local mirrors +
+> contract repairs. Consult `docs/CHEMISTRY_FIX_TODO.md` (§F ledger) before relying on
+> any behavioral claim below.
+
 `src_new/` is the new generic execution backbone for BioID v2. It is intentionally independent from the legacy `src/` runtime so future GROMACS, AMBER, PDB, and mmCIF stages can be added without inheriting the old executor/task coupling.
 
 ## Main pieces

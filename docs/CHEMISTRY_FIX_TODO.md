@@ -1506,3 +1506,67 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
 - Era truth at close: 5/5 deployments v3.131; live ini formula_chembl=yes
   (mirror-first), pdb.rcsb_include_mixed_complexes default no (shipped);
   queues: w10-heal 4305 done; stragglers-era completed earlier.
+
+## SECTION G · Wave G closeout + F-26 design lane (2026-10-06)
+
+### G3 · F-05 straggler auto-close datapoints (TERMINAL, 2026-10-06)
+- Batch `nucleic-fix-wave-1` final state: **788 completed / 9 failed**,
+  zero processing; batch window 2026-08-12 -> terminal 2026-10-05T18:38Z.
+- All 9 failures carry `stale_timeout: no completion for >12h (stale
+  cycle 3/3)` with retry_count=3 -- F-05 sweeper working exactly as
+  designed (post-fix: <=3 stale cycles -> quarantine, entry failed,
+  no silent resurrection). The September pathology (infinite 12h requeue
+  of consistently-hanging entries) is dead. Horizon rule "re-check at
+  >=12/24/36h; close when terminal" satisfied by DB state.
+- User ruling 2026-10-06: quarantined entries will be requeued *later*
+  intentionally (with the w10-heal tail or a dedicated wave); keep
+  parked until then. Stats generation for that cohort deferred per
+  OQ-era ruling.
+
+### F-26 · Lane C design delivered (.tmp/F26_DESIGN.md, read-only lane)
+- Empirical census (bat3_validation, 2026-10-06): canonical 14-ts run_id
+  shape = 173,144 bat3_runs (active through today); uuid8 legacy = 66
+  rows, last 2026-08-06; ts-less `validation-<eid>` = 0 rows (legacy
+  schedule_validation never writes Bat3Run at all); queue FK linkage
+  19,068 linked vs 3 NULL ever. => legacy dispatch = armed but disused
+  since 2026-08-06; hazard is LATENT (UI/curl reactivation), not active.
+- Failure chains pinned: both legacy run_id shapes fail serving regex
+  `_UUID_PATH_RE` (ts \d{10,16}) -> /files/validation-... 404 -> RCSB
+  deployment-file evidence absent; main.py:2078 + src_new/api/main.py:541
+  start-processing endpoints create NO Bat3Run + NULL FK (settle blind,
+  sweeper-only lifecycle; 541 doesn't even set started_at and uses an
+  unserved split-brain layout /data/validation/results/<eid>/).
+- Recommendation (user decision pending, Q1-Q4 in the design doc):
+  **C-now + B-lite-post-campaign** -- freeze legacy dispatch (env guard,
+  default frozen) + deprecation notes NOW (zero behavior change);
+  reroute the two start-processing endpoints through
+  process_validation_queue post-campaign; retire old validate/retry
+  endpoints. F-04 registration import (tasks.py:146-152) stays untouched.
+- Line-drift note: brief refs verified; tasks.py schedule_validation body
+  = :33-112 (run_id :93); registration comment = :146-152.
+
+### G1 · Legacy doc banners (2026-10-06)
+- Era-stamped (blockquote banners, non-destructive):
+  docs/ARCHITECTURE.md (pre-audit `src/` map -- historical intent),
+  docs/src_new_backbone.md (structure ok; behavior superseded by F-03
+  resume / campaign machinery / OQ-series), docs/CODE_HEALTH_REPORT.md
+  (SUPERSEDED by the 28-finding final audit; serves as historical record
+  only). Each banner points to this ledger + site + F26_DESIGN.md.
+
+### G2 · k8s mkdocs hosting — probe state + ruling (2026-10-06)
+- Probe: ingress class `nginx` in use (bat3-ceitec-bat3-ingress,
+  validation-ui-v2); hosts under *.dyn.cloud.e-infra.cz. Namespace quota:
+  limits.cpu 1061600/1064900m (3300m headroom) -- a docs pod at
+  10m/32Mi requests + 100m/64Mi limits fits.
+- docs/site: mkdocs material, 9 pages, docs_dir "." (self-contained);
+  mkdocs absent from .venv -> built in image builder stage instead.
+- User ruling: **docs image approach (builder stage + nginx), served
+  under the existing UI host** (no new hostname). Implementation +
+  port-forward verification + ledger entry follow in-session.
+
+### Tail status at G-open (2026-10-06 ~10:00Z)
+- w10-heal: 4306/4324 completed, 18 'processing' = diagnosed this morning
+  as OOM-claim stragglers (pods OOMKilled 137 at 07:21-07:22 mid-run;
+  entries cycle watchdog->claim->OOM; NOT the OQ-9 fix -- 8879 hung
+  pre-fix since 09-12, distinct pathological class). User ruling: leave
+  computing organically; quarantine requeue later (G3 note).

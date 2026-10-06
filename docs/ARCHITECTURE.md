@@ -1,5 +1,14 @@
 # BioID v2 Architecture
 
+> **⚠️ LEGACY DOCUMENT — 2026-08-12, pre-final-audit era (Wave G banner, 2026-10-06).**
+> This page describes the pre-audit codebase (legacy `src/` runtime + early `src_new/`).
+> It has **not** been updated for the 2026-10 audit waves (A–F): canonical-signature
+> unification (F-18), resume semantics (F-03), OQ-1..OQ-11 resolver fixes (incl. OQ-9
+> virtual-segment pipeline fix + OQ-11 local ChEMBL mirror), OQ-10 contract repair, or the
+> v3.131 fleet era. Treat architectural claims here as historical intent, not ground truth.
+> Current ground truth: `docs/CHEMISTRY_FIX_TODO.md` (audit ledger through §F9),
+> `docs/src_new_backbone.md`, the MkDocs site (`docs/site/`), and `.opencode/context/bat3/`.
+
 This document describes the current BioID v2 repository architecture and a cleaner conceptual architecture for continued development. It is intentionally honest about where the current code and the desired architecture do not yet match.
 
 ## Current Repository Map
