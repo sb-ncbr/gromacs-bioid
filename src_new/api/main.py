@@ -510,46 +510,26 @@ async def get_activity_log():
 
 @app.post("/validation/queue/start-processing")
 async def start_processing():
-    """Start queue processing by dispatching Celery tasks."""
-    from tasks import schedule_validation
-    
-    logger.info("Starting queue processing")
-    
-    # Get queued items and dispatch them
+    """Start queue processing via the CANONICAL dispatcher (F-26 reroute, 2026-10-06).
+
+    Previously dispatched legacy schedule_validation directly (20 rows, NO
+    Bat3Run bookkeeping, NULL queue linkage, and an UNSERVED SPLIT-BRAIN
+    layout /data/validation/entries/<id> + /data/validation/results/<id>/ -
+    the path that produced the only 3 unlinked queue rows in the campaign).
+    Now delegates to queue_processor.process_validation_queue: real Bat3Run
+    (validation-<eid>-<14ts>, servable), exact FK linkage, retry budget.
+    External contract preserved: {"success", "message", "dispatched"}.
+    """
     import models as db_models
-    from sqlalchemy import func
-    
+
     db = SessionLocal()
     try:
-        # Get up to 20 queued items
-        queued = db.query(db_models.ValidationQueue).filter(
-            db_models.ValidationQueue.status == "queued"
-        ).limit(20).all()
-        
-        dispatched = 0
-        for item in queued:
-            # Update status to processing
-            item.status = "processing"
-            
-            # Dispatch Celery task for this entry
-            entry = db.query(db_models.MddbEntry).filter(db_models.MddbEntry.id == item.entry_id).first()
-            if entry:
-                input_dir = f"/data/validation/entries/{entry.id}"
-                results_path = f"/data/validation/results/{entry.id}/results.json"
-                config_path = "/app/config.ini"
-                
-                schedule_validation.delay(
-                    entry_id=entry.id,
-                    input_dir=input_dir,
-                    results_path=results_path,
-                    config_path=config_path
-                )
-                dispatched += 1
-        
-        db.commit()
-        logger.info(f"Dispatched {dispatched} validation tasks")
-        
-        return {"success": True, "message": "Processing started", "dispatched": dispatched}
+        from queue_processor import process_validation_queue
+        concurrency = int(os.environ.get("VALIDATION_MANUAL_DISPATCH_CONCURRENCY", "20"))
+        dispatched = process_validation_queue(db, concurrency=concurrency)
+        logger.info(f"Dispatched {dispatched} validation tasks (canonical, F-26)")
+
+        return {"success": True, "message": "Processing started", "dispatched": dispatched, "path": "canonical process_validation_queue (F-26)"}
     except Exception as e:
         db.rollback()
         logger.error(f"Error starting processing: {e}")

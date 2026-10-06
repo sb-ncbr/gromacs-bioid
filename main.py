@@ -1,6 +1,7 @@
 """Validation API - FastAPI application for BAT3 validation scheduling and tracking."""
 
 import logging
+import os
 import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
@@ -343,7 +344,10 @@ def validate_entry(
     request: Optional[ValidateRequest] = None,
     db: Session = Depends(get_db),
 ):
-    """Schedule validation for an entry."""
+    """Schedule validation for an entry. (F-26: legacy dispatch, frozen by default.)"""
+    from src_new.api.legacy_guard import FROZEN_MESSAGE, legacy_dispatch_allowed
+    if not legacy_dispatch_allowed():
+        raise HTTPException(status_code=410, detail=FROZEN_MESSAGE)
     try:
         # Get entry
         entry = db.query(models.MddbEntry).filter(models.MddbEntry.id == entry_id).first()
@@ -416,7 +420,10 @@ def batch_validate(
     request: BatchValidateRequest,
     db: Session = Depends(get_db),
 ):
-    """Start a batch validation run for N entries."""
+    """Start a batch validation run for N entries. (F-26: legacy dispatch, frozen by default.)"""
+    from src_new.api.legacy_guard import FROZEN_MESSAGE, legacy_dispatch_allowed
+    if not legacy_dispatch_allowed():
+        raise HTTPException(status_code=410, detail=FROZEN_MESSAGE)
     try:
         # Get pending entries
         query = db.query(models.MddbEntry).filter(
@@ -564,7 +571,14 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
 # Get Celery task status
 @app.get("/tasks/{task_id}", response_model=TaskStatusResponse)
 def get_task_status(task_id: str):
-    """Get Celery task status."""
+    """Get Celery task status.
+
+    DEPRECATED semantics note (F-26): when used with the legacy
+    schedule_validation wrapper this reports the WRAPPER task, which returns
+    the inner pipeline task id almost immediately - SUCCESS here never meant
+    'pipeline finished'. Canonical runs should be polled via /runs/{run_id}
+    or the queue API instead. Kept for compat; behavior unchanged.
+    """
     from celery.result import AsyncResult
 
     try:
@@ -1302,7 +1316,10 @@ async def fetch_all_missing_ground_truth(
 # Retry endpoints
 @app.post("/runs/{run_id}/retry")
 async def retry_validation_run(run_id: int, db: Session = Depends(get_db)):
-    """Retry a failed validation run."""
+    """Retry a failed validation run. (F-26: legacy dispatch, frozen by default.)"""
+    from src_new.api.legacy_guard import FROZEN_MESSAGE, legacy_dispatch_allowed
+    if not legacy_dispatch_allowed():
+        raise HTTPException(status_code=410, detail=FROZEN_MESSAGE)
     try:
         # Get the run
         run = db.query(models.Bat3Run).filter(models.Bat3Run.id == run_id).first()
@@ -1374,7 +1391,10 @@ async def retry_validation_run(run_id: int, db: Session = Depends(get_db)):
 
 @app.post("/entries/{entry_id}/retry")
 async def retry_entry_validation(entry_id: int, db: Session = Depends(get_db)):
-    """Retry validation for a specific entry."""
+    """Retry validation for a specific entry. (F-26: legacy dispatch, frozen by default.)"""
+    from src_new.api.legacy_guard import FROZEN_MESSAGE, legacy_dispatch_allowed
+    if not legacy_dispatch_allowed():
+        raise HTTPException(status_code=410, detail=FROZEN_MESSAGE)
     try:
         # Get entry
         entry = db.query(models.MddbEntry).filter(models.MddbEntry.id == entry_id).first()
@@ -2054,43 +2074,23 @@ async def stream_activity_log():
 
 @app.post("/validation/queue/start-processing")
 async def start_queue_processing():
-    """Start processing all queued items by dispatching Celery tasks."""
+    """Start processing queued items via the CANONICAL dispatcher (F-26 reroute, 2026-10-06).
+
+    Previously this endpoint dispatched the legacy schedule_validation wrapper
+    directly (up to 100 rows): no Bat3Run rows, ts-less run ids (unservable),
+    NULL queue->run linkage (settle/sweeper blind). It now delegates to
+    queue_processor.process_validation_queue, the same claim/reserve/dispatch
+    machinery the cron dispatcher uses: Bat3Run with validation-<eid>-<14ts>,
+    exact queue_item.run_id linkage, retry budget, UI-queue routing.
+    External contract preserved: {"message", "dispatched", "remaining_queued"}.
+    """
     db = next(get_db())
     try:
-        queued_items = db.query(models.ValidationQueue).filter(
-            models.ValidationQueue.status == "queued"
-        ).limit(100).all()
-        
-        dispatched = 0
-        for item in queued_items:
-            try:
-                entry = db.query(models.MddbEntry).filter(models.MddbEntry.id == item.entry_id).first()
-                if not entry:
-                    item.status = "failed"
-                    item.last_error = "Entry not found"
-                    db.commit()
-                    continue
-                
-                input_dir = f"/data/validation/{entry.id}/input"
-                results_path = f"/data/validation/{entry.id}/results.json"
-                config_path = f"/data/validation/{entry.id}/config.ini"
-                
-                task_result = schedule_validation.delay(
-                    entry_id=entry.id, input_dir=input_dir, results_path=results_path, config_path=config_path
-                )
-                
-                item.status = "processing"
-                item.started_at = datetime.utcnow()
-                db.commit()
-                dispatched += 1
-            except Exception as e:
-                logger.error(f"Failed to dispatch task for entry {item.entry_id}: {e}")
-                item.status = "failed"
-                item.last_error = str(e)
-                db.commit()
-        
+        from queue_processor import process_validation_queue
+        concurrency = int(os.environ.get("VALIDATION_MANUAL_DISPATCH_CONCURRENCY", "100"))
+        dispatched = process_validation_queue(db, concurrency=concurrency)
         remaining = db.query(func.count(models.ValidationQueue.id)).filter(models.ValidationQueue.status == "queued").scalar()
-        return {"message": f"Dispatched {dispatched} tasks", "dispatched": dispatched, "remaining_queued": remaining}
+        return {"message": f"Dispatched {dispatched} tasks", "dispatched": dispatched, "remaining_queued": remaining, "path": "canonical process_validation_queue (F-26)"}
     except Exception as e:
         db.rollback()
         logger.error(f"Start processing failed: {e}")

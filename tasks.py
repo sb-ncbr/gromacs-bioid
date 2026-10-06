@@ -53,9 +53,21 @@ def schedule_validation(
     from src_new.api.tasks import run_pipeline_task
     from sqlalchemy import create_engine, text
     from src_new.config.loader import DATABASE_URL
-    
+
     logger = logging.getLogger(__name__)
-    
+
+    # F-26 (2026-10-06): legacy dispatch is frozen by default. This wrapper
+    # produces ts-less run ids (unservable) and zero Bat3Run bookkeeping;
+    # the canonical path is queue_processor.process_validation_queue.
+    # Re-enable only for forensics via VALIDATION_LEGACY_DISPATCH=allow.
+    from src_new.api.legacy_guard import legacy_dispatch_allowed
+    if not legacy_dispatch_allowed():
+        logger.error(
+            f"schedule_validation called for entry {entry_id} while legacy "
+            f"dispatch is frozen (F-26); refusing"
+        )
+        return f"frozen-legacy-dispatch-{entry_id}"
+
     # First, fetch entry info from database to get local_accession
     try:
         engine = create_engine(DATABASE_URL)
