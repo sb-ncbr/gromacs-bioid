@@ -1639,3 +1639,52 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   G3 datapoints OK, G4a F-24 live OK (f59d1b19a), G4b registry note OK.
   **Wave G COMPLETE.** Open: F-26 Q1-Q5 decision + OQ-13 window
   scheduling; w10-heal 18 rows computing organically per ruling.
+
+## SECTION H · F-26 unification + OQ-13 cache resilience — CODE COMPLETE (2026-10-06, pre-deploy v3.132)
+
+### H1 · OQ-13 root-cause (empirical, resolved in code; register CLOSED)
+- The corrupt file existed: /app/runs/resolver_cache.sqlite3 (36.9MB,
+  md5 553d549e...) failed quickly_check with exactly "file is not a
+  database"; sibling .corrupt-20260910 (20KB) proves the class RECURS on
+  shared-NFS caches. BUT it was a stale relic: current era (empty ini
+  [identifiers_cache] directory -> CWD-relative) uses EPHEMERAL per-pod
+  /app/resolver_cache.sqlite3 (verified: busy worker 55MB mtime today;
+  cold pods lazily create). The user's remembered incident = corrupt
+  per-pod cache raising OUT of base.resolve (unguarded fetch) -> pinned
+  ui-worker pod -> 100% UI-lane identification failure.
+- Fix (commit 06f72b110): quick_check at open -> corrupt quarantined
+  aside (<file>.corrupt-<ts>, never deleted) + recreated empty
+  (self-heal, same shape as the Sept-10 manual repair, now automatic);
+  base.resolve read/write wrapped in sqlite3.Error guards (cache rot =
+  cache miss, never fatal). Tests: 4 new + identification suite
+  192p/4env, api 66+2, executor failure-set stash-proven identical.
+- OPS done: both NFS relics quarantined to
+  /app/runs/_quarantine_cache/2026-10-06/ + README (md5s recorded).
+- NOTE vs literal user remedy ("copy from validation workers"): moot
+  for correctness now (ephemeral caches + live resolution); seeding a
+  warm cache per pod remains an optional perf nicety, not a fix.
+
+### H2 · F-26 user rulings executed (Q1/Q2 code-verified, Q3-5 as ruled)
+- Q1 (code census): NO in-repo consumer of legacy endpoints
+  (web/ui/scripts/docs grep clean) -> freeze now, hard-delete later.
+- Q2 (routing proof): UI "Start" -> /api/validation/queue/
+  start-processing -> validation-api svc -> ROOT main.py:2054 (100-row
+  inline legacy loop); bioid UI -> bat3-ceitec api -> src_new:541
+  (20-row split-brain layout). API split-brain pinned LIVE:
+  validation-api CMD = uvicorn main:app; bat3-ceitec-bat3-api = image
+  default src_new.api.main. BOTH rerouted.
+- Implementation (commit 5c262f85e): legacy_guard (env
+  VALIDATION_LEGACY_DISPATCH, default FROZEN -> 410 / sentinel) on the
+  4 legacy endpoints + schedule_validation body; both start-processing
+  endpoints now delegate to queue_processor.process_validation_queue
+  (canonical Bat3Run/14ts/FK/retry-budget/UI-queue; response shapes
+  preserved); main.py:571 kept + deprecation docstring; F-04 import
+  untouched. Tests: 9 new (410s proven with db=None = zero-db-touch
+  proof; reroutes via stubs; env concurrency override).
+- DEPLOY PENDING: v3.132 era bump carries H1+H2; rollback yamls +
+  staged roll + live e2e gates per era protocol; presented to user.
+
+### H3 · Session state at H-close (2026-10-06 ~19:00Z)
+- w10-heal: 4309/4324 completed, 15 processing (organic; user ruling:
+  leave). Commits this session: fc3d5f6df, f59d1b19a, cfe766b89,
+  38cd151ea (Wave G), 06f72b110 (OQ-13), 5c262f85e (F-26).
