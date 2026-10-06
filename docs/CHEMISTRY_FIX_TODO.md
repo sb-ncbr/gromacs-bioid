@@ -1570,3 +1570,26 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   entries cycle watchdog->claim->OOM; NOT the OQ-9 fix -- 8879 hung
   pre-fix since 09-12, distinct pathological class). User ruling: leave
   computing organically; quarantine requeue later (G3 note).
+
+### G4a · F-24 mixed-complex channel ENABLED live (2026-10-06, user ruling)
+- Config flip (additive, no image): live ini `/data/validation/config_shared.ini`
+  `[pdb] rcsb_include_mixed_complexes = yes` appended with provenance
+  comment. md5 6515685c -> 889730df; rollback snapshot
+  `config_shared.ini.pre-f24-enable-2026-10-06` on PVC (md5-symmetric
+  restore = flip back; also ini-flag-only, no code/image dependency).
+- Effective per-run (queue dispatch resolves shared ini when per-entry
+  config.ini absent -- queue_processor.py:131); in-flight claimed runs
+  keep their task-start config (safe: additive flag).
+- LIVE PROOF (v3.131 worker pod, production-shaped): scratch served uuid
+  on the real W6b route (bioid-ceitec.../files/validation-999999999-<ts>/
+  input/1ubq.pdb, scratch entry id chosen outside DB space, dirs deleted
+  after): 1UBQ -> MERGED 466 hits = 464 base channel (fixture gold)
+  + {7P0V, 8ID2} Protein/NA addon appended at tail; self 1UBQ present.
+  Flag parsed True from live ini; resolver path =
+  `_pdb_fetch_similar_structures` additive branch (code unchanged since
+  33932ebe2). mmCIF-format note: RCSB payload hardcodes format="pdb" --
+  structure files must be PDB-format (a .cif input yields upstream 500;
+  production always feeds PDB; incident-class only, no code change).
+- OQ-7 register thread: F-24 shipped default-OFF (F5) -> now LIVE.
+  Expect: mixed-complex segment structures gain Protein/NA neighbors in
+  new runs only (forward-only, frozen-v12/v13 untouched).
