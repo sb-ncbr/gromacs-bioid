@@ -1628,3 +1628,14 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   single era bump). Evidence to collect at fix time: which DB file
   (pubchem/current vs chembl/current), corrupt mtime/size, integrity
   probe output; keep failing example run id for before/after proof.
+
+### G4b · External incident-registry note POSTED (2026-10-06)
+- `/home/tomsko/work/bat3_validation/docs/INCIDENT_REGISTRY_2026-09.md`
+  appended "Session 36" entry: September zero-results class -> resolved;
+  pointer to this ledger + v13 stats + heal chain (W4->N1->W10) + open
+  tails (F-26/OQ-13 window). NOTE: bat3_validation is NOT a git repo --
+  file-level write only (no commit possible; user informed).
+- Wave G status: G1 banners OK (fc3d5f6df), G2 hosting OK (cfe766b89),
+  G3 datapoints OK, G4a F-24 live OK (f59d1b19a), G4b registry note OK.
+  **Wave G COMPLETE.** Open: F-26 Q1-Q5 decision + OQ-13 window
+  scheduling; w10-heal 18 rows computing organically per ruling.
