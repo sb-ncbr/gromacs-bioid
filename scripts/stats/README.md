@@ -33,3 +33,9 @@ time). See `docs/CHEMISTRY_FIX_TODO.md` §F3.
 **Do not** regenerate official artifacts from these copies without the replay
 protocol: frozen denominators, timestamp normalization in diffs, scratch
 outputs only (never overwrite `/data/validation/*.json` official artifacts).
+
+## Registered additions
+
+| file | added | purpose | deploy state |
+|---|---|---|---|
+| `sigstage_probe.py` | 2026-10-06 (909cf15f6) | S0 analysis: MDDBR ground truth vs **signature-stage** outputs (`data.signatures`) — pre-identification, pre-ranking complement to S5/S7; skelfp>=0.7 chem / align-identity>=0.9 seq / ion element channel; STRICT anchor gate vs `campaign_stats_v13.json`; deterministic shards to `/data/validation/sigstage/` (scratch only). Offline tests: `tests/sigstage/` (21 tests). | repo-first; NFS deploy pending pilot |
