@@ -25,18 +25,27 @@ where possible (log at bottom).
   `a0fc78c8c` pilot fixes, `0fbecefd7` aligner thread race, `c02a05b5f` shard
   metadata, `2c2fa307d` audit, `a39d0e2f0` registry. Full detail in git log.
 
-## Frozen numbers (full GT-covered set, 2026-10-07, 35,121 annotations / 13,957 entries)
+## Frozen numbers (full GT-covered set, **M-1 era, 2026-10-07**; 35,121 annotations / 13,957 entries)
 | type | annotations | attempted | validated | note |
 |---|---|---|---|---|
 | ion | 2,726 | 97.2% | **95.8%** | element channel; near-ceiling |
 | inchikey organic | 6,463 | 94.3% | **85.7%** | skelfp>=0.7 |
-| pdb | 11,895 | 91.6% | **86.1%** | entity seq identity |
-| uniprot | 14,037 | 87.6% | **80.1%** | construct divergence dominant |
-| entry any-validated | 13,957 | | **91.1%** | |
+| pdb | 11,895 | 98.4% | **97.2%** | +11.1pt after M-1 |
+| uniprot | 14,037 | 94.5% | **90.3%** | +10.2pt after M-1 |
+| entry any-validated | 13,957 | | **96.9%** | |
 
-Buckets: validated 29,632 · below_gate 1,771 · no_matching_generator 2,413 ·
+Buckets: validated 32,390 · below_gate 802 · no_matching_generator 624 ·
 unparseable_signature 525 · no_sig_data 586 · unresolved_gt 194.
-Anchor STRICT delta: +5/+5 entries (live-campaign drift, documented).
+Anchor STRICT delta: +5/+5 entries. v1 (pre-M-1) artifacts preserved at
+`/data/validation/sigstage/run_v1/` — do not quote pre-M-1 protein numbers.
+
+## Methodology rulings
+- **M-1 (2026-10-07)** — pairing accepts `fasta_resname_{protein,nucleic}`
+  (resname-fallback sequence signatures) alongside `fasta_map_*`. Evidence:
+  casefiles harvest — 96% of no_matching_generator came from entries having
+  ONLY resname variants (probe blind spot `51083a621`). Effect: pdb
+  86.1→97.2%, uniprot 80.1→90.3%, NMG 2,413→624, oracle cells collapse
+  (uniprot 1,526→225; pdb 1,367→119).
 
 ## Findings ledger
 
@@ -66,17 +75,25 @@ pdb 34 (0.3%), organic 225 (3.6%). Once input is right, verified_hits depth 10
 nearly always retains it.
 
 ## Open items (methodology improvement queue)
-- **S0-OQ-1** `no_matching_generator` (2,413) — entries lacking the segment
-  signature family their GT needs (e.g., uniprot GT but no fasta_map_protein),
-  with stage_errors_present=0. Cause census in progress (casefiles/S0-OQ-1).
-  Suspected: segmentation/fasta-generator coverage gaps for some system types.
-- **S0-OQ-2** `unparseable_signature` (525) — segment `smiles` values RDKit
-  can't parse (valence warnings). Signature-generator output defect; harvest
-  raw strings + error classes (casefiles/S0-OQ-2) → fix generator.
+- **S0-OQ-1** `no_matching_generator` — **CLOSED with census** (post-M-1
+  residual 624): (a) ~530 protein-free **lipid-only systems** carrying protein
+  GT annotations (gensets: lipid_shorthand/fingerprint/mmcif only) —
+  MDDBR annotation-semantics case for curation, list at
+  `casefiles/S0-OQ-1_nmg.jsonl`; (b) 93 chem-side gaps (75
+  chem_present_but_no_smiles, 11 no_chem, 7 macro_only_no_ligand) — real
+  segmentation gap for ligands, owner: signature team. Root cause of the v1
+  bulk: probe blind spot (M-1).
+- **S0-OQ-2** `unparseable_signature` (525) — **root-caused**: ALL 525 are
+  `explicit_valence`; every raw string is charge-explicit zwitterionic SMILES
+  ([NH+]/[C-]/[CH+]...) from the smiles generator (cf. generator
+  `smiles_not_sanitized` exists separately). Action: post-generation
+  normalization (sanitize=False + NormalizeCharges/Aromatize + re-emit) or
+  emit neutral canonical SMILES alongside. Raw strings + segments at
+  `casefiles/S0-OQ-2_unparseable.jsonl`, owner: signature team.
 - **S0-OQ-3** `unresolved_gt` (194) — GT inchikey→SMILES resolution failures
   (mirror+cache+budget exhausted). Recoverable re-pass with higher budget.
-- **S0-OQ-4** `below_gate` uniprot/pdb (1,771 total w/ chem) — divergent
-  constructs; census by sim band ✓ (F-4) — evaluate whether MDDBR annotation
+- **S0-OQ-4** `below_gate` uniprot/pdb (802 post-M-1) — divergent constructs;
+  census by sim band ✓ (F-4) — evaluate whether MDDBR annotation
   or deposit really intends homolog (curation angle).
 - **S0-OQ-5** @10 pipeline-loss cases (292 rows total across types) — each is
   a verification false-negative with input present; list for verification team.
@@ -85,3 +102,10 @@ nearly always retains it.
 - 2026-10-06 — probe built+tested; pilot (n=100) run; 4 pilot-driven fixes.
 - 2026-10-07 — full 50-shard run (aforementioned numbers); thread-race fix;
   audit built+run (36,159 joined rows); F-1..F-5 recorded.
+- 2026-10-07 (2) — casefiles harvest: OQ-2 root-caused (525/525
+  explicit_valence zwitterionic SMILES); OQ-1 exposed probe blind spot →
+  M-1 (`51083a621`); casefiles fd-deadlock fixed (`aee680791`); full S0
+  rerun + audit rerun under M-1; report pack generated
+  (`/data/validation/sigstage/sigstage_report_v1.{md,json}`; tool
+  `9d3c572f3`). Residual NMG census closed; F-4 oracle framing superseded
+  by M-1 numbers (oracle ~= methodology artifact for uniprot/pdb).
