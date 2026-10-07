@@ -297,6 +297,7 @@ class SimEngine:
         self.unmapped = 0
         self.errors = 0
         self._aligner = None
+        self._attempted = set()
         self.pair_path = os.path.join(ROOT, "pairs.jsonl")
         self._load_pairs()
 
@@ -348,7 +349,15 @@ class SimEngine:
         hit = self.pairs.get(key)
         if hit is not None:
             return hit
-        self.new_pairs += 1
+        # A1/F-7: budget counts distinct first-attempts only (recurrences of a
+        # failed pair must not re-burn budget -- a few hot ligands would drain
+        # it on an outage day and the rest of the run would soft-zero).
+        # The budget block and the failure branches below return WITHOUT
+        # touching the pair cache: a failed lookup must never become an
+        # immortal cached zero (F-7 poisoning); it retries on the next call.
+        if key not in self._attempted:
+            self._attempted.add(key)
+            self.new_pairs += 1
         if self.new_pairs > self.budget:
             self.errors += 1
             return 0.0
@@ -371,8 +380,12 @@ class SimEngine:
                            for x in self._seqs_of(*a) for y in self._seqs_of(*b)), default=0.0)
         except LookupError:
             self.unmapped += 1
+            return 0.0  # transient: cache untouched, retried on next call/run
         except Exception:
             self.errors += 1
+            return 0.0  # transient: cache untouched, retried on next call/run
+        # Reached only on successful resolution -- genuinely computed zeros
+        # included, which DO cache (rerun cost control).
         self.pairs[key] = sim
         self._save_pair(key, sim)
         return sim
