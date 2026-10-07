@@ -782,13 +782,22 @@ def main(argv=None, resolver_factory=None):
     elif not args.no_anchor:
         print(f"anchor file missing ({args.anchor}); STRICT gate skipped", file=sys.stderr)
 
+    try:
+        with open(os.path.abspath(__file__), "rb") as fh:
+            probe_sha1 = hashlib.sha1(fh.read()).hexdigest()[:12]
+    except OSError:
+        probe_sha1 = None
+    gate_counts = gating_counts(docs_gate)
     scan_stats = {
         "pattern": args.pattern, "root": args.root, "shard": args.shard,
         "ids": len(ids), "rows": len(results),
         "load_ok": len(docs_gate),
+        "anchor_scanned": gate_counts["scanned"],
+        "anchor_gt_covered": gate_counts["gt_covered"],
         "budget_escalations": sum(gate_meta.values()),
         "scan_seconds": round(time.time() - t0, 1),
         "anchor": None if args.no_anchor else args.anchor,
+        "probe_sha1": probe_sha1,
     }
     os.makedirs(os.path.join(out_dir, "shards"), exist_ok=True)
     shard_path = os.path.join(out_dir, "shards", f"shard_{shard_i:03d}.jsonl")
