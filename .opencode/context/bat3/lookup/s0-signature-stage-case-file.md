@@ -151,3 +151,34 @@ nearly always retains it.
   Open next actions: engine rule change (no persist-on-failure),
   pairs.jsonl purge (dry-run first), mirror refresh + ghost-GT list,
   rerun campaign S7 post-heal for corrected official numbers.
+- 2026-10-07 (4) — **A1 engine rule** (`86f696418`): `_entity_sim` failure
+  branches return transient 0.0, never persisted (memory+disk), retried on
+  fresh instance; budget counts distinct first-attempts. Discovered seq-space
+  analog (empty-alignment IndexError) pinned. 7 acceptance tests (4 proved
+  fail-on-unfixed); deployed md5-verified; live cache untouched (E2E).
+- 2026-10-07 (5) — **A2 purge executed** (`a3ee1a450` purge-driver fix, 4
+  rewrite-contract tests): 118,426 skel zeros → dry-run == real purge
+  byte-deterministic: **healed 20,385 / kept 88,537 computed zeros /
+  dropped 9,504** (mirror-unresolvable). Backup `pairs.jsonl.bak-pre-heal-20261007`
+  md5-verified; cache 1,190,035 → 1,180,531 lines, zero stale skel zeros.
+- 2026-10-07 (6) — warmup + stall forensics: v14 rerun froze twice;
+  root cause = campaign sim work is SINGLE-THREADED in the result loop and
+  ghost pairs re-chained per occurrence (60 TIME_WAIT sockets, caches +0).
+  **A1.1** (`749ed73bc`): in-run negative memo, one chain per distinct
+  ghost pair per run, disk stays pure; 5 tests proved fail-on-unfixed
+  (incl. 100x-recurrence→1-chain amplifier guard); E2E real-ghost 30x
+  ≤1.3s. Warmup tool (`0394300d3`) resolved+appended 2,683 of 9,486
+  dropped keys via the A1 web chain; ghosts 6,782 + unparseable 21 →
+  `sigstage/casefiles/warmup_ghosts.json` (A3 input); cid:0 garbage class
+  = 645 pairs. **v14 rerun completed ~2h** (vs ~26h pre-A1.1 projection).
+- 2026-10-07 (7) — **F-7 CLOSED. campaign_stats_v14.json (healed lineage:
+  purge A1 + warmup + A1.1). Headline correction: organic inchikey
+  S7@1 60.2 → 94.0** (denominators +5/+5 vs v13 exactly as the STRICT gate
+  predicted; entry any@1 97.9 → 98.6; ion/uniprot/pdb unchanged as
+  theorized). `pairs_computed` 38,484→19,395 (warm cache), `unmapped`
+  38→3,309 (honest distinct-failure visibility under A1; v13's poison hid
+  failures as immortal cache hits). The v13 "reranking sensitivity" figures
+  quoted in `lookup/publication-journal.md` are SUPERSEDED — coordinate
+  figure regeneration with the manuscript owner (replay protocol).
+  Residual: seq-space zeros (278,065 non-skel) never purged — poison
+  fraction unknown, flagged; see A7 closeout scope.

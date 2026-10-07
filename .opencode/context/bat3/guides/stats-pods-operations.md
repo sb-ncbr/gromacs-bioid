@@ -62,6 +62,13 @@ in `scripts/stats/` (provenance rule: edit there first, commit, then deploy).
   frozen denominators. Narrowed runs (`--sample`/shards) cannot match
   full-set denominators — gate STRICT on full runs, recorded WARNINGs
   (`--anchor-lax`) on narrowed ones.
+- **campaign_stats sim is SINGLE-THREADED** (engine calls sit in the
+  `as_completed` consumption loop): unresolvable-pair recurrences must be
+  pre-warmed (`sigstage_warmup.py`) and in-run negative memoization
+  (engine A1.1) is load-bearing — without them a rerun freezes on ghost
+  re-chaining (2026-10-07: 60 TIME_WAIT sockets, ~26h projection vs ~2h
+  fixed). Diagnose with socket-state census + identifier-cache growth,
+  NOT wall-time alone.
 
 ## Sharding pattern (hundreds of pods available)
 - One shard per pod: `--shard i/N`, `--threads 16`, budget-capped web

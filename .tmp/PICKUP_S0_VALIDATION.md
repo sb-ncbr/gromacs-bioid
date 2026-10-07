@@ -36,16 +36,21 @@
   deployment E2E on pod (live construct read-only 1,185,518 pairs; forced-fail
   transient in real runtime; real aspirin chain RESOLVED+PERSISTED into tmp ROOT).
 
-### A2. Purge poisoned pairs + corrected S7  [OPS + METRICS]
-- Run `sigstage_heal.py --purge --dry-run` on NFS pair cache; inspect; then
-  real purge (auto backup `.bak-pre-heal-*`).
-- Rerun campaign S7 (`campaign_stats.py --full --sim`, same anchors protocol),
-  expect organic S7@1 ≈ ~91% (heal evidence: 89.6% of 2,143 cohort heals@1).
-- Corrected figures: numbers currently quoted in
-  `lookup/publication-journal.md` (v13 S7) are affected — coordinate with the
-  manuscript owner before regenerating official figures (replay protocol).
-- Acceptance: campaign_stats_v14.json with documented heal lineage;
-  delta table vs v13 attached to case file.
+### A2. Purge poisoned pairs + corrected S7  [DONE 2026-10-07]
+- Purge (dry-run == real, byte-deterministic): healed 20,385 / kept 88,537
+  computed zeros / dropped 9,504; backup `pairs.jsonl.bak-pre-heal-20261007`.
+- Purge driver bug found by dry-run checkpoint + fixed (`a3ee1a450`);
+  warmup tool (`0394300d3`) resolved 2,683/9,486 dropped keys (ghost list →
+  A3: `sigstage/casefiles/warmup_ghosts.json`, 6,782 keys + cid:0 class 645).
+- v14 stalled twice → A1.1 in-run negative memo (`749ed73bc`) fixed the
+  single-thread-loop ghost-rechain amplifier (proven by 5 fail-on-unfixed
+  tests + deployment E2E); rerun then completed in ~2h.
+- **campaign_stats_v14.json: organic inchikey S7@1 60.2 → 94.0** (+5/+5
+  denominators vs v13 exactly as STRICT gate predicted); entry any@1 → 98.6;
+  ion/uniprot/pdb unchanged. Delta table attached to case file (update log 7).
+- OPEN follow-through: v13 organic figures in `lookup/publication-journal.md`
+  are SUPERSEDED — manuscript figure regeneration must be coordinated with
+  the owner (replay protocol); that edit was deliberately NOT made here.
 
 ### A3. PubChem mirror refresh + ghost-GT curation list  [DATA OPS]
 - Evidence: 71 cohort GTs + 112 unique OQ-3 GTs unresolvable via mirror AND
