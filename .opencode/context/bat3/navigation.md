@@ -30,6 +30,7 @@ Quick entry point to all BAT3 context files. Use this to find verification comma
 | What is BAT3 | `concepts/bat3.md` |
 | Validation pipeline | `concepts/validation.md` |
 | Publication (NM paper) | `lookup/publication-journal.md` |
+| S0 signature-stage validation (case file) | `lookup/s0-signature-stage-case-file.md` |
 
 ## Reference
 - `concepts/bat3.md` - BAT3 overview
