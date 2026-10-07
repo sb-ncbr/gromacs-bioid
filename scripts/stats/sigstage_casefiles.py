@@ -21,11 +21,17 @@ import contextlib
 import json
 import os
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 DATA = os.environ.get("VALIDATION_DATA_ROOT", "/data/validation")
 AUDIT_ROWS = os.path.join(DATA, "sigstage", "audit", "shards", "shard_000.jsonl")
 OUT_DIR = os.path.join(DATA, "sigstage", "casefiles")
+
+# fd-level stderr redirection is PROCESS-GLOBAL: serializes capture so other
+# threads' RDKit warnings cannot fill an unread pipe (deadlock evidence:
+# first run froze, 17 threads S-state, main in futex_wait, 2 pipe fds open).
+_CAPTURE_LOCK = threading.Lock()
 
 MACRO_PROT = ("fasta_map_protein",)
 MACRO_NA = ("fasta_map_nucleic",)
@@ -96,25 +102,29 @@ def scan_nmg_entry(eid, rows_for_entry, root, pattern):
 # ---------------------------------------------------------------- unparseable
 
 def _parse_with_error(smiles):
-    """Returns (ok, error_first_line). Captures RDKit stderr at fd level."""
+    """Returns (ok, error_first_line). Captures RDKit stderr at fd level.
+
+    Serialized by _CAPTURE_LOCK: dup2 on fd 2 affects the whole process.
+    """
     from rdkit import Chem
     import io
-    old_fd = os.dup(2)
-    rfd, wfd = os.pipe()
-    try:
-        os.dup2(wfd, 2)
-        with contextlib.redirect_stderr(io.StringIO()):
-            mol = Chem.MolFromSmiles(str(smiles))
-    finally:
+    with _CAPTURE_LOCK:
+        old_fd = os.dup(2)
+        rfd, wfd = os.pipe()
         try:
-            sys.stderr.flush()
-        except Exception:
-            pass
-        os.dup2(old_fd, 2)
-        os.close(old_fd)
-        os.close(wfd)
-    with os.fdopen(rfd) as rf:
-        captured = rf.read()
+            os.dup2(wfd, 2)
+            with contextlib.redirect_stderr(io.StringIO()):
+                mol = Chem.MolFromSmiles(str(smiles))
+        finally:
+            try:
+                sys.stderr.flush()
+            except Exception:
+                pass
+            os.dup2(old_fd, 2)
+            os.close(old_fd)
+            os.close(wfd)
+        with os.fdopen(rfd) as rf:
+            captured = rf.read()
     if mol is not None:
         return True, None
     first = next((ln.strip() for ln in captured.splitlines() if ln.strip()
@@ -177,8 +187,9 @@ def load_targets(bucket):
 
 def run(bucket, scan_fn, out_name, root, pattern, threads, limit):
     targets = load_targets(bucket)
+    n_rows = sum(len(v) for v in targets.values())
     eids = sorted(targets)[: limit or None]
-    print(f"{bucket}: {len(targets)} target rows over {len(targets)} entries "
+    print(f"{bucket}: {n_rows} target rows over {len(targets)} entries "
           f"(processing {len(eids)})", file=sys.stderr)
     rows, errors = [], 0
     with ThreadPoolExecutor(max_workers=threads) as ex:

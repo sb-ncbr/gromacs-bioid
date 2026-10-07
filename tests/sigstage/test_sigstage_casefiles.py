@@ -62,6 +62,18 @@ def test_parse_with_error_valid_and_invalid():
         "smiles_parse_error", "explicit_valence", "other", "unknown"}
 
 
+def test_parse_with_error_thread_safe():
+    """Pod deadlock regression: fd-redirect capture must serialize across
+    threads and still return per-call results identical to sequential."""
+    pytest.importorskip("rdkit")
+    import concurrent.futures
+    smiles = (["c1ccccc1", "C(C(C", "CCO", "O=C([O-])c1ccccc1"] * 16)
+    expected = [cf._parse_with_error(s) for s in smiles]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+        got = list(ex.map(cf._parse_with_error, smiles))
+    assert got == expected
+
+
 # ------------------------------------------------------------ load_targets / scans
 
 def _write_audit_rows(path, rows):
