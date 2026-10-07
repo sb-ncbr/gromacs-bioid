@@ -53,8 +53,13 @@ CHEM_VALIDATED = 0.7      # == S7/F7 skeleton-FP gate
 SEQ_VALIDATED = 0.9       # == S7 validated threshold for sequences
 
 CHEM_GENERATORS = ("smiles",)
-PROT_GENERATORS = ("fasta_map_protein",)
-PDB_GENERATORS = ("fasta_map_protein", "fasta_map_nucleic")
+# M-1 (2026-10-07, case file): resname-fallback fasta generators are
+# legitimate sequence signatures -- casefiles harvest showed 96% of
+# no_matching_generator rows traced to entries having ONLY the resname
+# variants (probe blind spot, not pipeline gap).
+PROT_GENERATORS = ("fasta_map_protein", "fasta_resname_protein")
+PDB_GENERATORS = ("fasta_map_protein", "fasta_resname_protein",
+                  "fasta_map_nucleic", "fasta_resname_nucleic")
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

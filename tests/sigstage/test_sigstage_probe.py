@@ -176,6 +176,17 @@ def test_score_protein_entry_and_length_guard():
     assert pdb["details"]["pairs"] == 4
 
 
+def test_resname_fasta_generator_accepted():
+    """M-1 regression: entries with only fasta_resname_protein must score,
+    not fall into no_matching_generator (96% of OQ-1 traced to this)."""
+    pytest.importorskip("Bio")
+    doc = {"data": {"signatures": {"CH_A": {"generated": {"fasta_resname_protein": SEQ40}}}}}
+    res = FakeResolver(seq_map={"P1": SEQ40}, pdb_map={"1XYZ": ["ACGUACGUACGUACGUACGU"]})
+    rows = sp.score_entry_doc(707, doc, {"uniprot": {"P1"}}, res)
+    assert rows[0]["attempted"] is True and rows[0]["validated"] is True
+    assert rows[0]["best_generator"] == "fasta_resname_protein"
+
+
 def test_no_sig_data_bucket():
     doc = load_fix("entry_nosig.json")
     res = FakeResolver(smiles_map={"IKCAFF": (CAFFEINE, "mirror")})
