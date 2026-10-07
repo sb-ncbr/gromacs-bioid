@@ -8,8 +8,9 @@ this stage is pre-identification, pre-database, pre-ranking: one signature
 per segment, nothing to rerank. The delta S0 - S7 attributes loss to
 identification/verification vs input/annotation inconsistency.
 
-Comparison table (approved 2026-10-06, pattern results-v13.json, full
-GT-covered set):
+Approved frame (2026-10-06): v13-era anchor campaign_stats_v13.json, whose
+own full.pattern (results.json) is the scan pattern unless --pattern is
+given explicitly; full GT-covered set.
   inchikey organic -> GT SMILES (PubChem mirror-first, web-cache fallback)
                       vs segment 'smiles' -> skeleton-FP Tanimoto >= 0.7
   inchikey ion     -> gt_rules.gt_class_for -> element presence
@@ -36,7 +37,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 DATA = os.environ.get("VALIDATION_DATA_ROOT", "/data/validation")
 MIRROR = os.environ.get(
     "PUBCHEM_MIRROR", "/app/databases/pubchem/current/pubchem.sqlite")
-DEFAULT_PATTERN = "results-v13.json"
+# Pattern resolution: explicit --pattern > anchor's own full.pattern > this
+# fallback. (Evidence 2026-10-06: campaign_stats_v13.json anchors were
+# generated with --pattern results.json; "v13" is the campaign version, NOT
+# the results filename.)
+DEFAULT_PATTERN = "results.json"
 DEFAULT_ANCHOR = os.path.join(DATA, "campaign_stats_v13.json")
 DEFAULT_OUT = os.path.join(DATA, "sigstage")
 GUARD_RATIO = 10          # 10x signature-length mismatch guard (comparison.py)
@@ -605,7 +610,9 @@ def main(argv=None, resolver_factory=None):
     resolver_factory = resolver_factory or (lambda budget: ProdResolver(budget=budget))
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--root", default=DATA)
-    ap.add_argument("--pattern", default=DEFAULT_PATTERN)
+    ap.add_argument("--pattern", default=None,
+                    help="results filename to scan; default: anchor's "
+                         "full.pattern, else results.json")
     ap.add_argument("--threads", type=int, default=32)
     ap.add_argument("--sample", type=int, default=0)
     ap.add_argument("--limit", type=int, default=0)
@@ -624,6 +631,14 @@ def main(argv=None, resolver_factory=None):
     out_dir = os.path.abspath(args.out_dir)
     if os.path.abspath(args.root) == out_dir or not os.path.basename(out_dir):
         ap.error("--out-dir must be a dedicated subdirectory (replay protocol)")
+
+    # Pattern resolution: explicit flag > anchor's own pattern > default.
+    anchor_doc = None
+    if not args.no_anchor and os.path.isfile(args.anchor):
+        with open(args.anchor) as fh:
+            anchor_doc = json.load(fh)
+    anchor_pattern = ((anchor_doc or {}).get("full") or {}).get("pattern")
+    args.pattern = args.pattern or anchor_pattern or DEFAULT_PATTERN
 
     from datetime import datetime
     try:
@@ -675,9 +690,8 @@ def main(argv=None, resolver_factory=None):
             if i % 500 == 0:
                 print(f"  ...{i}/{len(ids)} ({time.time()-t0:.0f}s)", file=sys.stderr)
 
-    if not args.no_anchor and os.path.isfile(args.anchor):
-        anchor = json.load(open(args.anchor))
-        check = anchor_check(gating_counts(docs_gate), anchor, args.pattern,
+    if anchor_doc is not None:
+        check = anchor_check(gating_counts(docs_gate), anchor_doc, args.pattern,
                              lax=args.anchor_lax)
         print(f"anchor gate OK: {check}", file=sys.stderr)
     elif not args.no_anchor:
