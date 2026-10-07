@@ -1,0 +1,9 @@
+{
+  "pipeline": {"status": "failed"},
+  "tasks": {
+    "load_simulation": {"status": "success"},
+    "generate_signatures": {"status": "failed"},
+    "verify_results": {"status": "failed"}
+  },
+  "data": {}
+}

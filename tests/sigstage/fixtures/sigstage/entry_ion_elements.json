@@ -1,0 +1,18 @@
+{
+  "pipeline": {"status": "completed"},
+  "tasks": {
+    "load_simulation": {"status": "success"},
+    "generate_signatures": {"status": "success"},
+    "verify_results": {"status": "success"}
+  },
+  "data": {
+    "signatures": {
+      "SYS": {"generated": {"formula": "CaCl2"}}
+    },
+    "fragments": {
+      "unique": {
+        "frag|elements:Ca=2,Cl=4|n=1": {"count": 1}
+      }
+    }
+  }
+}

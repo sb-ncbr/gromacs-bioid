@@ -1,0 +1,17 @@
+{
+  "pipeline": {"status": "completed"},
+  "tasks": {
+    "load_simulation": {"status": "success"},
+    "generate_signatures": {"status": "success"},
+    "verify_results": {"status": "success"}
+  },
+  "data": {
+    "signatures": {
+      "SYS": {"generated": {"formula": "ZN-HIS"}}
+    },
+    "fragments": {
+      "unique": {},
+      "metals": {"present_elements": ["Zn"]}
+    }
+  }
+}

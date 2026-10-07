@@ -1,0 +1,16 @@
+{
+  "pipeline": {"status": "completed"},
+  "tasks": {
+    "load_simulation": {"status": "success"},
+    "generate_signatures": {"status": "success"},
+    "verify_results": {"status": "failed"}
+  },
+  "data": {
+    "signatures": {
+      "SEG_P": {"generated": {"fasta_map_protein": ">SEG_P\nACDEFGHIKLMNPQRSTVWYACDEFGHIKLMNPQRSTVWY"}},
+      "SEG_Q": {"generated": {"fasta_map_protein": ">SEG_Q\nACDEGHIKLM"}},
+      "SEG_R": {"generated": {"fasta_map_protein": "ACD"}},
+      "SEG_N": {"generated": {"fasta_map_nucleic": ">SEG_N\nACGUACGUACGUACGUACGU"}}
+    }
+  }
+}

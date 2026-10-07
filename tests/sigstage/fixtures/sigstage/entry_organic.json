@@ -1,0 +1,15 @@
+{
+  "pipeline": {"status": "completed"},
+  "tasks": {
+    "load_simulation": {"status": "success"},
+    "generate_signatures": {"status": "success"},
+    "verify_results": {"status": "success"}
+  },
+  "data": {
+    "signatures": {
+      "SEG_A": {"generated": {"smiles": "Cn1cnc2c1c(=O)n(C)c(=O)n2C"}},
+      "SEG_A__v1": {"generated": {"smiles": "Cn1cnc2c1c(=O)n(C)c(=O)n2C"}},
+      "SEG_B": {"generated": {"smiles": "c1ccccc1"}}
+    }
+  }
+}
