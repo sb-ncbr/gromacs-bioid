@@ -116,13 +116,20 @@ nearly always retains it.
 - **S0-OQ-4** `below_gate` uniprot/pdb (802 post-M-1) — divergent constructs;
   census by sim band ✓ (F-4) — evaluate whether MDDBR annotation
   or deposit really intends homolog (curation angle).
-- **S0-OQ-5** @10 pipeline-loss cases (292 rows total across types) — each is
-  a verification false-negative with input present; list for verification team.
+- **S0-OQ-5** @10 pipeline-loss cases (339 rows post-M-1: uniprot 67,
+  pdb 47, organic 225, ion 0) — each is a verification false-negative with
+  input present; list for verification team (audit shard rows).
 - **S0-OQ-6** zero-hit selection census — **CLOSED**: of 1,373 zero-hit
   entries, 706 are `completed, clean` (healthy-but-unidentified runs — content
   coverage, not crashes), 174 real errors (152 other + 22 timeout),
   14 processing-timeout in flight. Refines the S7-selection narrative:
   excluded population is mostly clean-but-empty, not failed.
+
+## Reference
+- `../guides/stats-pods-operations.md` — operational playbook distilled from
+  this campaign (pod deploy/poll patterns, threading hazards, cache hygiene)
+- `.tmp/PICKUP_S0_VALIDATION.md` (repo root) — methodical action queue A1–A7
+- `scripts/stats/README.md` — provenance registry & replay protocol
 
 ## Update log
 - 2026-10-06 — probe built+tested; pilot (n=100) run; 4 pilot-driven fixes.
