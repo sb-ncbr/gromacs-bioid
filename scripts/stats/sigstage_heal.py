@@ -247,8 +247,8 @@ def purge(args):
         if budget <= 0:
             new_values[key] = None  # drop stale zero, unseen
             continue
-        sa = smiles_for(*ka, allow_web=False)
-        sb = smiles_for(*kb, allow_web=False)
+        sa = smiles_for(ka, a, allow_web=False)
+        sb = smiles_for(kb, b, allow_web=False)
         sim = fresh_tanimoto(sa, sb)
         if sim is None:
             unresolved += 1
