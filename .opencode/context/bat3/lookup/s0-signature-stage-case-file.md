@@ -52,11 +52,31 @@ Anchor STRICT delta: +5/+5 entries. v1 (pre-M-1) artifacts preserved at
 **F-1 (ion ceiling)** — ion channel validates 95.8%; hypothesis "signature
 stage near-perfect for ions" CONFIRMED. No action.
 
-**F-2 (chem reranking pain CONFIRMED + QUANTIFIED)** — on S7 denominator
-subset: S0 88.6% vs S7@1 60.2% → **2,143 annotations (34%) are input-correct
-but reranked away at verified rank 1**; only 225 persist as lost @10.
-Small-molecule problem is ranking, not finding. Supports near-tie tie-break
-improvements in verification (_fid_key ordering / skeleton-gate placement).
+**F-2 (chem "reranking pain" REVISED 2026-10-07 after cache forensics)** —
+staged story of the 2,143 S0-pass/S7@1-lost organic annotations:
+(1) rank decomposition: 80.2% true hit within top-5, 93% within family-50,
+0 family-routing defects, 3.7% unrecovered;
+(2) confidence is plateau-quantized (94/80/...) with resolver-family ordinal
+stubs setting plateaus; ties fall to string-ident sort;
+(3) **pair-cache forensics (F-7) shows 89.6% of the cohort is a stale-negative
+cache artifact** — heal@1 with poison-free recompute; residual true
+rerank/window/absence ~223 rows + 71 GT mirror gaps.
+Net: organic S7@1 ≈ 60.2 → **~91% estimated post-heal**. The headline
+"reranking sensitivity" was substantially a metric-infrastructure bug;
+verification ranking per se is in far better shape than S7 said.
+
+**F-7 (pair cache poisoning — metric infra bug, ACTIONABLE)** —
+`SimEngine._entity_sim` persists resolution LookupError/Exception as
+sim=0.0 into `sim_cache/pairs.jsonl`; transient web outages (cactus, PUG
+429, idsm) become immortal zeros, poisoning every later metric run.
+Proof: entry 2123 cid 11228026 pair cached 0.0 while fresh skel(GT,cand)=1.0
+at every level (input≡GT≡rank1; racemate vs [C@@H]).
+**Fix actions:** (a) engine rule — never persist zeros on resolution failure
+(retriable; distinguish computed-zero from failed-lookup);
+(b) `sigstage_heal.py --purge` to invalidate/recompute skel zeros
+(backup + atomic rewrite, dry-run support);
+(c) mirror gap: 71 cohort GTs + 112 unique OQ-3 GTs unresolvable even via
+web (ghost records — MDDBR curation; mirror refresh list exists in rows).
 
 **F-3 (ion denominator gap = selection)** — 837 ion annotations sit in
 zero-verified-hit entries; S7 never counts them. S7 ion 1,876 vs S0 2,773
@@ -90,13 +110,19 @@ nearly always retains it.
   normalization (sanitize=False + NormalizeCharges/Aromatize + re-emit) or
   emit neutral canonical SMILES alongside. Raw strings + segments at
   `casefiles/S0-OQ-2_unparseable.jsonl`, owner: signature team.
-- **S0-OQ-3** `unresolved_gt` (194) — GT inchikey→SMILES resolution failures
-  (mirror+cache+budget exhausted). Recoverable re-pass with higher budget.
+- **S0-OQ-3** `unresolved_gt` — **CLOSED**: 112 unique GTs (194 rows);
+  100% unresolvable via mirror + full web chain — ghost PubChem records.
+  Disposition: MDDBR curation (annotation validity), NOT a budget issue.
 - **S0-OQ-4** `below_gate` uniprot/pdb (802 post-M-1) — divergent constructs;
   census by sim band ✓ (F-4) — evaluate whether MDDBR annotation
   or deposit really intends homolog (curation angle).
 - **S0-OQ-5** @10 pipeline-loss cases (292 rows total across types) — each is
   a verification false-negative with input present; list for verification team.
+- **S0-OQ-6** zero-hit selection census — **CLOSED**: of 1,373 zero-hit
+  entries, 706 are `completed, clean` (healthy-but-unidentified runs — content
+  coverage, not crashes), 174 real errors (152 other + 22 timeout),
+  14 processing-timeout in flight. Refines the S7-selection narrative:
+  excluded population is mostly clean-but-empty, not failed.
 
 ## Update log
 - 2026-10-06 — probe built+tested; pilot (n=100) run; 4 pilot-driven fixes.
@@ -109,3 +135,12 @@ nearly always retains it.
   (`/data/validation/sigstage/sigstage_report_v1.{md,json}`; tool
   `9d3c572f3`). Residual NMG census closed; F-4 oracle framing superseded
   by M-1 numbers (oracle ~= methodology artifact for uniprot/pdb).
+- 2026-10-07 (3) — chemrerank decomposition (`3fbc42743`): rerank_2_5
+  dominates; plateau-quantized confidence; zero family-routing defects.
+  Pair-cache forensics (entry 2123 dissection): stale-negative poisoning
+  proven; heal tool (`191541f85`) measures 89.6% heal@1 over the 2,143
+  cohort → F-2 revised, corrected organic S7@1 ≈ ~91%. OQ-3 closed
+  (112 ghost GTs, curation). Selection census closed (706/1373 clean).
+  Open next actions: engine rule change (no persist-on-failure),
+  pairs.jsonl purge (dry-run first), mirror refresh + ghost-GT list,
+  rerun campaign S7 post-heal for corrected official numbers.
