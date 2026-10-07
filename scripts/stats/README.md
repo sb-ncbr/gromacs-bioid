@@ -19,7 +19,7 @@ repo) is how we found drift — see below.
 |---|---|
 | `campaign_stats.py` | identical to `scripts/campaign_stats.py` (the pre-existing single synced case) |
 | `gt_rules.py`, `harvest_chemical_gt.py`, `strip_for_reidentify.py`, `replay_identify_verify.py`, `replay_verification.py` | byte-identical to their `scripts/` copies |
-| `validation_similarity.py` | **repo newer**: repo has `inchikey_smiles` in DIRS + `makedirs` fix; NFS copy lags (reverse drift). Repo copy is canonical. |
+| `validation_similarity.py` | **synced** at 86f696418 (md5 `45dc529416b860c2c8fda9024155ba15`): A1 rule — resolution failures never persist (transient zeros, retried), computed zeros on success do persist; budget counts distinct first-attempts. Repo copy is canonical. |
 | all `n1_*.py`, `audit_*.py`, `rank_audit*.py`, `residue_scan.py`, `offline_hit_k.py`, `coverability_probe.py`, `assemble_stats_package*.py`, `bag_funnel*.py` | **NFS-only** (no repo lineage until now) |
 
 Note: `bag_funnel.py` vs `bag_funnel_v12_run.py` differ by small edits

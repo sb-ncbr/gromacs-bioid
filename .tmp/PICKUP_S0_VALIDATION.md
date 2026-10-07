@@ -22,14 +22,19 @@
 
 ## Action queue (ordered; each item = commit(s) + evidence expectation)
 
-### A1. Engine rule: never persist sim=0.0 on resolution failure  [CODE, small]
-- File: `scripts/validation_similarity.py` (canonical; NFS copy lags — note
-  in README drift table already; deploy to NFS after commit).
-- Change: in `SimEngine._entity_sim`, on `LookupError`/exception → do NOT
-  write to `self.pairs`/`_save_pair`; count as `unmapped` and return 0.0
-  transiently (or persist under a distinct, TTL'd `neg` record).
-- Acceptance: unit test — resolver raising LookupError leaves pairs file
-  untouched and a second call retries; existing tests still green.
+### A1. Engine rule: never persist sim=0.0 on resolution failure  [DONE 2026-10-07]
+- Commit `86f696418` (md5 `45dc529416b860c2c8fda9024155ba15`, deployed + verified
+  on NFS; live pairs.jsonl untouched, md5 `733a0c4cab3de33fe316c3f9ee67151a`
+  before/after).
+- Implemented: LookupError/Exception → transient 0.0 (memory + disk untouched,
+  retried next call/run); computed zeros on success still persist; budget counts
+  distinct first-attempts via `_attempted` (recurrences can't re-burn budget).
+- Discovered + pinned: empty-alignment pairs raise IndexError (LookupError
+  subclass) → were a second poisoning class in seq space; now transient.
+- Evidence: `tests/sigstage/test_engine_failure_cache.py` — 7 tests, 4 verified
+  to fail on the unfixed engine (each pins a defect), 91/91 suite green post-fix;
+  deployment E2E on pod (live construct read-only 1,185,518 pairs; forced-fail
+  transient in real runtime; real aspirin chain RESOLVED+PERSISTED into tmp ROOT).
 
 ### A2. Purge poisoned pairs + corrected S7  [OPS + METRICS]
 - Run `sigstage_heal.py --purge --dry-run` on NFS pair cache; inspect; then
