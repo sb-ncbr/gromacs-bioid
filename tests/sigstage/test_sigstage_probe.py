@@ -193,6 +193,54 @@ def test_unresolved_gt_and_budget_source():
     assert rows[0]["smiles_source"] == "budget_exceeded"
 
 
+def test_polyprotein_gt_not_guarded():
+    """Regression: ~7k-aa polyprotein GT vs 300-aa segment MUST score
+    (pilot bug: ratio-only guard produced pairs=0 / forced 0.0)."""
+    pytest.importorskip("Bio")
+    seg = "ACDEFGHIKLMNPQRSTVWY" * 15                    # 300 aa
+    gt = "G" * 6796 + seg                                # 7096 aa polyprotein
+    doc = {"data": {"signatures": {"CH_A": {"generated": {"fasta_map_protein": seg}}}}}
+    res = FakeResolver(seq_map={"P0DTD1": gt})
+    rows = sp.score_entry_doc(2460, doc, {"uniprot": {"P0DTD1"}}, res)
+    assert rows[0]["details"]["pairs"] == 1
+    assert rows[0]["details"]["guard_skipped"] == 0
+    # currency truth (locked by drift guard vs SimEngine): denominator is
+    # max(len) in this Biopython build, so domain-vs-polyprotein scores
+    # 300/7096 -- a REAL construct-scale divergence, identical to what the
+    # S7 formula yields; NOT a forced zero (pilot bug was pairs==0).
+    assert rows[0]["sim"] == pytest.approx(300 / 7096, abs=1e-4)
+    assert rows[0]["validated"] is False and rows[0]["bucket"] == "below_gate"
+
+
+def test_chem_parse_fail_attributed():
+    """sim==0.0 must be attributable: unparseable SEGMENT smiles counted,
+    unparseable GT smiles bucketed separately."""
+    pytest.importorskip("rdkit")
+    doc = {"data": {"signatures": {
+        "LIG1": {"generated": {"smiles": "C(C(C"}},
+        "LIG2": {"generated": {"smiles": BENZENE}}}}}
+    res = FakeResolver(smiles_map={"IKCAFF": (CAFFEINE, "mirror")})
+    rows = sp.score_entry_doc(42, doc, {"inchikey": {"IKCAFF"}}, res)
+    assert rows[0]["bucket"] == "below_gate"
+    assert rows[0]["details"]["chem_parse_fail"] == 1
+    assert rows[0]["details"]["n_candidates"] == 2
+    res2 = FakeResolver(smiles_map={"IKBAD": ("not a smiles", "mirror")})
+    rows2 = sp.score_entry_doc(42, doc, {"inchikey": {"IKBAD"}}, res2)
+    assert rows2[0]["bucket"] == "unresolved_gt"
+    assert rows2[0]["details"]["note"] == "gt_smiles_unparseable"
+
+
+def test_stage_errors_present_flag():
+    doc = load_fix("entry_organic.json")
+    res = FakeResolver(smiles_map={"IKCAFF": (CAFFEINE, "mirror")})
+    rows = sp.score_entry_doc(900001, doc, {"inchikey": {"IKCAFF"}}, res)
+    assert rows[0]["stage_errors_present"] is False
+    doc2 = json.loads(json.dumps(doc))
+    doc2["data"]["stage_errors"] = {"signatures": {"SEG_A": [{"generator": "smiles", "error": "boom"}]}}
+    rows2 = sp.score_entry_doc(900001, doc2, {"inchikey": {"IKCAFF"}}, res)
+    assert rows2[0]["stage_errors_present"] is True
+
+
 def test_no_matching_generator_bucket():
     doc = load_fix("entry_ion_elements.json")           # pool = {'formula'}
     res = FakeResolver(smiles_map={"IKCAFF": (CAFFEINE, "mirror")})
@@ -226,11 +274,14 @@ def test_aggregate_denominators():
     rows += sp.score_entry_doc(900002, load_fix("entry_ion_elements.json"),
                                {"inchikey": {"IKCA", "IKZN"}}, res)
     agg = sp.aggregate(rows, {"ids": 2})
-    blk = agg["per_type"]["inchikey"]
-    assert blk["annotations"] == 3 and blk["attempted"] == 3
-    assert blk["validated"] == 2 and blk["pct_validated"] == pytest.approx(66.7)
-    assert blk["mean_sim_attempted"] == pytest.approx((1.0 + 1.0 + 0.0) / 3, abs=1e-4)
-    assert blk["buckets"] == {"below_gate": 1, "validated": 2}
+    # ion split (S7-comparable): organic inchikey and ions reported separately
+    chem = agg["per_type"]["inchikey"]
+    assert chem["annotations"] == 1 and chem["validated"] == 1
+    ion = agg["per_type"]["ion"]
+    assert ion["annotations"] == 2 and ion["validated"] == 1
+    assert ion["pct_validated"] == 50.0
+    assert ion["mean_sim_attempted"] == pytest.approx(0.5, abs=1e-4)
+    assert ion["buckets"] == {"below_gate": 1, "validated": 1}
     assert agg["entries"] == {"seen": 2, "any_validated": 2, "any_validated_pct": 100.0}
 
 
@@ -280,7 +331,8 @@ def test_seq_identity_matches_simengine():
         pytest.skip(f"SimEngine not constructible offline: {exc}")
     for a, b in [("ACDEFGHIK", "ACDEFGHIK"),
                  ("ACDEFGHIKLMNPQRSTVWY", "ACDEGHIKLMNPQRSTVWA"),
-                 ("GGGGAAAA", "AAAACCCC")]:
+                 ("GGGGAAAA", "AAAACCCC"),
+                 ("G" * 1000 + "ACDEFGHIK" * 10, "ACDEFGHIK" * 10)]:
         assert sp.align_identity_local(a, b) == pytest.approx(
             engine._align_identity(a, b), abs=1e-9)
 

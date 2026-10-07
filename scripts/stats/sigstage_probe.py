@@ -44,7 +44,11 @@ MIRROR = os.environ.get(
 DEFAULT_PATTERN = "results.json"
 DEFAULT_ANCHOR = os.path.join(DATA, "campaign_stats_v13.json")
 DEFAULT_OUT = os.path.join(DATA, "sigstage")
-GUARD_RATIO = 10          # 10x signature-length mismatch guard (comparison.py)
+GUARD_RATIO = 10          # length-mismatch guard ratio (see GUARD_MIN_LEN)
+GUARD_MIN_LEN = 20        # guard only when shorter seq < 20 aa: blocks peptide
+                          # noise but does NOT fire on domain-vs-polyprotein
+                          # (pilot finding: P0DTD1 ~7k-aa GT vs 300-aa segment
+                          # must still score; ratio-only guard zeroed it)
 CHEM_VALIDATED = 0.7      # == S7/F7 skeleton-FP gate
 SEQ_VALIDATED = 0.9       # == S7 validated threshold for sequences
 
@@ -130,16 +134,11 @@ def skelfp_tanimoto(smiles_a, smiles_b):
     """
     if not smiles_a or not smiles_b:
         return None
-    sk = load_skeletize()
-    mol_a = sk.from_smiles(str(smiles_a).strip())
-    mol_b = sk.from_smiles(str(smiles_b).strip())
-    if mol_a is None or mol_b is None:
-        return None
-    fp_a = sk.skeleton_fp(mol_a)
-    fp_b = sk.skeleton_fp(mol_b)
+    fp_a = _skelfp(smiles_a)
+    fp_b = _skelfp(smiles_b)
     if fp_a is None or fp_b is None:
         return None
-    return float(sk.tanimoto(fp_a, fp_b))
+    return float(load_skeletize().tanimoto(fp_a, fp_b))
 
 
 _ALIGNER = None
@@ -304,16 +303,36 @@ def extract_sig_pool(doc):
     return dict(pool), stats
 
 
-def _best_chem(gt_smiles, candidates, resolver):
+def _skelfp(smiles):
+    """skeleton fingerprint or None (unparseable). Separated so GT-side and
+    segment-side failures can be attributed per row (pilot finding)."""
+    if not smiles:
+        return None
+    sk = load_skeletize()
+    mol = sk.from_smiles(str(smiles).strip())
+    if mol is None:
+        return None
+    return sk.skeleton_fp(mol)
+
+
+def _best_chem(gt_fp, candidates, resolver):
+    """Returns (best, seg_parse_fail): best against segment fingerprints.
+
+    seg_parse_fail counts candidate signature SMILES that failed to parse,
+    so sim==0.0 rows can be told apart: true skeleton divergence vs
+    unparseable segment signatures (RDKit valence warnings in pilot)."""
     best = {"sim": 0.0, "segment": None, "generator": None}
+    seg_parse_fail = 0
     for gen in CHEM_GENERATORS:
         for seg, value in candidates.get(gen, []):
-            sim = skelfp_tanimoto(gt_smiles, value)
-            if sim is None:
+            seg_fp = _skelfp(value)
+            if seg_fp is None:
+                seg_parse_fail += 1
                 continue
+            sim = float(load_skeletize().tanimoto(gt_fp, seg_fp))
             if sim > best["sim"]:
                 best = {"sim": sim, "segment": seg, "generator": gen}
-    return best
+    return best, seg_parse_fail
 
 
 def _best_seq(gt_seqs, generators, pool, resolver, guard_ratio=GUARD_RATIO):
@@ -329,7 +348,7 @@ def _best_seq(gt_seqs, generators, pool, resolver, guard_ratio=GUARD_RATIO):
                 if not gt_seq:
                     continue
                 hi, lo = max(len(gt_seq), len(seg_seq)), min(len(gt_seq), len(seg_seq))
-                if lo > 0 and hi > guard_ratio * lo:
+                if 0 < lo < GUARD_MIN_LEN and hi > guard_ratio * lo:
                     guard_skipped += 1
                     continue
                 sim = resolver.align_identity(gt_seq, seg_seq)
@@ -389,14 +408,21 @@ def score_annotation(gt_type, gt_value, pool, ion_elements, resolver):
         if not any(candidates.values()):
             row["bucket"] = "no_matching_generator"
             return row
+        gt_fp = _skelfp(gt_smiles)
+        if gt_fp is None:
+            row["details"]["note"] = "gt_smiles_unparseable"
+            row["bucket"] = "unresolved_gt"
+            return row
         row["attempted"] = True
-        best = _best_chem(gt_smiles, candidates, resolver)
+        best, seg_parse_fail = _best_chem(gt_fp, candidates, resolver)
         row["sim"] = round(best["sim"], 6)
         row["validated"] = best["sim"] >= CHEM_VALIDATED
         row["best_segment"] = best["segment"]
         row["best_generator"] = best["generator"]
         row["bucket"] = "validated" if row["validated"] else "below_gate"
         row["details"]["n_candidates"] = sum(len(v) for v in candidates.values())
+        if seg_parse_fail:
+            row["details"]["chem_parse_fail"] = seg_parse_fail
         return row
 
     if gt_type == "uniprot":
@@ -446,6 +472,8 @@ def score_entry_doc(eid, doc, gt_map_entry, resolver):
             ion_elements = set()
 
     rows = []
+    stage_errors = ((doc.get("data") or {}).get("stage_errors")) or {}
+    stage_errors_present = any(stage_errors.get(cat) for cat in stage_errors)
     annotations = sorted(
         (t.strip().lower(), v) for t, vals in gt_map_entry.items() for v in vals)
     for gt_type, gt_value in annotations:
@@ -460,6 +488,7 @@ def score_entry_doc(eid, doc, gt_map_entry, resolver):
         else:
             row = score_annotation(gt_type, gt_value, pool, ion_elements, resolver)
         row["entry_id"] = eid
+        row["stage_errors_present"] = stage_errors_present
         row.update(stats)
         rows.append(row)
     return rows
@@ -477,7 +506,10 @@ def aggregate(rows, scan_stats):
     entries_any = collections.defaultdict(bool)
     entries_seen = set()
     for r in rows:
-        per_type[r["gt_type"]].append(r)
+        # ion split (S7-comparable): campaign S7 reports ions separately
+        key = "ion" if (r["gt_type"] == "inchikey" and r["gt_class"] == "ion") \
+            else r["gt_type"]
+        per_type[key].append(r)
         buckets[r["bucket"]] += 1
         entries_seen.add(r["entry_id"])
         if r["validated"]:
