@@ -521,18 +521,24 @@ class AnchorMismatch(Exception):
 
 
 def anchor_check(counts, anchor, pattern, lax=False):
-    """STRICT replay-protocol gate: reproduced denominators must equal anchors.
+    """Replay-protocol gate: reproduced denominators must equal anchors.
 
     counts = {"scanned": int, "gt_covered": int} computed with campaign-stats
     gating (load_simulation==success AND verify_results==success).
+
+    STRICT (default): any denominator mismatch aborts. Only meaningful for
+    unscaffolded full-set runs. lax=True (narrowed runs: --sample/--limit/
+    shard>1, or pilot): mismatches become stderr ANCHOR WARNINGs, run
+    proceeds, and the warning content is returned for the record.
     """
     full = (anchor or {}).get("full") or {}
     anchor_pattern = full.get("pattern")
+    warnings = []
     if anchor_pattern and anchor_pattern != pattern:
         msg = f"pattern mismatch: probe={pattern} anchor={anchor_pattern}"
         if not lax:
             raise AnchorMismatch(msg + " (use --anchor-lax to override)")
-        print(f"ANCHOR WARNING: {msg}", file=sys.stderr)
+        warnings.append(msg)
     problems = []
     for key, ours, theirs in (
             ("scanned_entries", counts.get("scanned"), full.get("scanned_entries")),
@@ -542,8 +548,13 @@ def anchor_check(counts, anchor, pattern, lax=False):
         if ours != theirs:
             problems.append(f"{key}: probe={ours} anchor={theirs}")
     if problems:
-        raise AnchorMismatch("; ".join(problems))
-    return {"pattern": anchor_pattern, "checked": True}
+        msg = "; ".join(problems)
+        if not lax:
+            raise AnchorMismatch(msg)
+        warnings.append(msg)
+    for w in warnings:
+        print(f"ANCHOR WARNING: {w}", file=sys.stderr)
+    return {"pattern": anchor_pattern, "checked": True, "warnings": warnings}
 
 
 def gating_counts(docs_gate):

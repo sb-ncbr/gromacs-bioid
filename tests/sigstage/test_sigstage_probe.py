@@ -247,6 +247,13 @@ def test_anchor_gate_ok_and_reject():
     lax = sp.anchor_check({"scanned": 2, "gt_covered": 1}, anchor, "results-v12.json",
                           lax=True)
     assert lax["checked"] is True
+    # narrowed (sampled/pilot) runs: denominator mismatch warns under lax,
+    # but STRICT must still hard-abort even with matching pattern
+    with pytest.raises(sp.AnchorMismatch):
+        sp.anchor_check({"scanned": 93, "gt_covered": 91}, anchor, "results-v13.json")
+    relaxed = sp.anchor_check({"scanned": 93, "gt_covered": 91}, anchor,
+                              "results-v13.json", lax=True)
+    assert relaxed["checked"] is True and len(relaxed["warnings"]) == 1
 
 
 def test_gating_counts():
