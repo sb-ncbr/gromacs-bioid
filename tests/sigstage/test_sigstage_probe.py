@@ -256,6 +256,20 @@ def test_no_matching_generator_bucket():
 
 # ------------------------------------------------------------ aggregation / io
 
+def test_align_identity_thread_safe():
+    """Full-run bug: shared aligner raced by workers -> IndexError crash.
+    Concurrent calls must not raise and must match sequential results."""
+    pytest.importorskip("Bio")
+    import concurrent.futures
+    pairs = [("ACDEFGHIKLMNPQRSTVWY", "ACDEGHIKLMNPQRSTVWA"),
+             ("G" * 500 + "ACDEFGHIK" * 5, "ACDEFGHIK" * 5),
+             ("MKTL", "CCCCCCCC"), ("QQQQ", "Q")]
+    expected = [sp.align_identity_local(a, b) for a, b in pairs]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+        got = list(ex.map(lambda p: sp.align_identity_local(*p), pairs * 8))
+    assert sorted(got) == sorted(expected * 8)
+
+
 def test_prewarm_imports_idempotent():
     """Deadlock fix evidence: all lazy loaders resolvable + cached (workers
     must never enter import machinery; pilot rerun froze in importlib.acquire)."""

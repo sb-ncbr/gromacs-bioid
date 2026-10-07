@@ -191,7 +191,34 @@ def skelfp_tanimoto(smiles_a, smiles_b):
     return float(load_skeletize().tanimoto(fp_a, fp_b))
 
 
-_ALIGNER = None
+_AL_LOCAL = None
+
+
+def _get_aligner():
+    """Thread-local PairwiseAligner (identical parameters to SimEngine).
+
+    Full-run evidence: a module-global aligner raced by 16 worker threads
+    corrupts the alignment container (IndexError at alignments[0]); and on
+    newer Biopython, indexing the streaming alignments object is itself
+    fragile. Thread-local + next(iter(...)) (first == best) fixes both
+    while staying numerically identical to SimEngine._align_identity.
+    """
+    global _AL_LOCAL
+    import threading
+    if _AL_LOCAL is None:
+        _AL_LOCAL = threading.local()
+    a = getattr(_AL_LOCAL, "aligner", None)
+    if a is None:
+        from Bio.Align import PairwiseAligner
+        a = PairwiseAligner()
+        a.substitution_matrix = None
+        a.match_score = 1.0
+        a.mismatch_score = 0.0
+        a.open_gap_score = -0.5
+        a.extend_gap_score = -0.1
+        a.mode = "local"
+        _AL_LOCAL.aligner = a
+    return a
 
 
 def align_identity_local(s1, s2):
@@ -201,21 +228,13 @@ def align_identity_local(s1, s2):
     same denominator (counts.aligned, fallback max length). Drift-guarded by
     test_seq_identity_matches_simengine when SimEngine is importable.
     """
-    global _ALIGNER
     s1, s2 = (s1 or ""), (s2 or "")
     if not s1 or not s2:
         return 0.0
-    if _ALIGNER is None:
-        from Bio.Align import PairwiseAligner
-        a = PairwiseAligner()
-        a.substitution_matrix = None
-        a.match_score = 1.0
-        a.mismatch_score = 0.0
-        a.open_gap_score = -0.5
-        a.extend_gap_score = -0.1
-        a.mode = "local"
-        _ALIGNER = a
-    p = _ALIGNER.align(s1, s2)[0]
+    try:
+        p = next(iter(_get_aligner().align(s1, s2)))
+    except (StopIteration, IndexError):
+        return 0.0
     counted = p.counts()
     aligned = getattr(counted, "aligned", 0)
     denom = aligned if aligned else max(len(s1), len(s2), 1)
