@@ -298,6 +298,7 @@ class SimEngine:
         self.errors = 0
         self._aligner = None
         self._attempted = set()
+        self._negmemo = {}
         self.pair_path = os.path.join(ROOT, "pairs.jsonl")
         self._load_pairs()
 
@@ -349,6 +350,13 @@ class SimEngine:
         hit = self.pairs.get(key)
         if hit is not None:
             return hit
+        neg = self._negmemo.get(key)
+        if neg is not None:
+            return neg  # A1.1: this engine run already failed this pair;
+            # same-run recurrences return the transient zero WITHOUT re-running
+            # the resolver chain (v14 stall evidence 2026-10-07: single-thread
+            # sim loop re-chained 6.8k ghost pairs per occurrence). Memory only
+            # -- never written to self.pairs or disk; fresh instances retry.
         # A1/F-7: budget counts distinct first-attempts only (recurrences of a
         # failed pair must not re-burn budget -- a few hot ligands would drain
         # it on an outage day and the rest of the run would soft-zero).
@@ -380,10 +388,12 @@ class SimEngine:
                            for x in self._seqs_of(*a) for y in self._seqs_of(*b)), default=0.0)
         except LookupError:
             self.unmapped += 1
-            return 0.0  # transient: cache untouched, retried on next call/run
+            self._negmemo[key] = 0.0  # in-run negative memo; NOT persisted (A1)
+            return 0.0  # transient for this run; fresh instances retry
         except Exception:
             self.errors += 1
-            return 0.0  # transient: cache untouched, retried on next call/run
+            self._negmemo[key] = 0.0
+            return 0.0  # transient for this run; fresh instances retry
         # Reached only on successful resolution -- genuinely computed zeros
         # included, which DO cache (rerun cost control).
         self.pairs[key] = sim

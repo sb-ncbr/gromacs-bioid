@@ -1,11 +1,18 @@
-"""Acceptance tests for A1 / F-7 (pair-cache poisoning fix).
+"""Acceptance tests for A1 / F-7 (pair-cache poisoning fix) and the
+A1.1 amendment (in-run negative memoization).
 
 SimEngine._entity_sim must NEVER persist sim=0.0 on resolution failure
-(LookupError or generic Exception). Failures are transient -- counted and
-retried on the next call/run -- while genuinely computed zeros still cache
-forever. F-7 evidence: ~90% of the organic "rerank-loss" cohort was stale
-cached zeros from transient resolver outages made permanent by the
-persistence bug (see lookup/s0-signature-stage-case-file.md F-7).
+(LookupError or generic Exception). Under A1 failures returned 0.0
+transiently and EVERY recurrence re-ran the resolver chain. Campaign-scale
+evidence (v14 rerun, 2026-10-07): campaign_stats executes sim work
+single-threaded in its result-consumption loop; 6.8k warmup-ghost pairs
+recurring across 14.6k entries re-chained per occurrence and froze forward
+progress (observed: 60 TIME_WAIT sockets from one thread's request churn,
+identifier caches +0, pair writes +0) -- attempt killed twice at ~26h
+projection. A1.1 negative-memoizes failures IN MEMORY for the engine's
+lifetime only: same-run recurrences return the transient zero without a
+second chain; a FRESH instance still retries (disk stays clean -- the F-7
+guarantee). Genuinely computed zeros still persist forever.
 
 Offline: resolver functions are monkeypatched; the skeleton-FP and
 alignment primitives themselves run for real, and the pair file is a
@@ -49,9 +56,11 @@ def _pair_lines(path):
         return [ln.rstrip("\n") for ln in fh if ln.strip()]
 
 
-def test_lookup_error_is_transient_and_second_call_retries(tmp_path, monkeypatch):
-    """A1 acceptance: resolver raising LookupError leaves the pairs file
-    untouched, and a later call RE-RESOLVES (no stale cached zero)."""
+def test_lookup_error_transient_negmemo_fresh_instance_retries(tmp_path, monkeypatch):
+    """A1+A1.1 acceptance: resolver raising LookupError leaves the pairs
+    file untouched; same-run recurrence hits the in-memory negative memo
+    (no second chain, no double-count); a FRESH instance retries and, once
+    healed, persists the real value."""
     eng = _engine(tmp_path)
     state = {"fail": True, "n": 0}
 
@@ -62,25 +71,29 @@ def test_lookup_error_is_transient_and_second_call_retries(tmp_path, monkeypatch
         return "CCO"  # both CIDs resolve to identical skeleton -> sim 1.0
 
     monkeypatch.setattr(vsim, "_cid_smiles", flaky)
-    got = eng._entity_sim(CID_A, CID_B)
-    assert got == 0.0                        # transient zero for THIS call only
+    assert eng._entity_sim(CID_A, CID_B) == 0.0
     assert eng.unmapped == 1 and eng.errors == 0
-    assert eng.pairs == {}                   # not in the in-memory cache either
-    assert _pair_lines(eng.pair_path) == []  # NOT persisted (this was the F-7 bug)
+    assert eng.pairs == {} and _pair_lines(eng.pair_path) == []  # F-7 guard
 
-    state["fail"] = False                    # resolver healed
-    got2 = eng._entity_sim(CID_A, CID_B)     # must retry, not read a cached 0.0
-    assert got2 == 1.0
-    assert eng.pairs["skel-cid:111|skel-cid:222"] == 1.0
+    n1 = state["n"]
+    assert eng._entity_sim(CID_A, CID_B) == 0.0   # A1.1: same-run memo hit
+    assert state["n"] == n1                        #   -> no second chain
+    assert eng.unmapped == 1                       #   -> failure counted once
+    assert eng.pairs == {} and _pair_lines(eng.pair_path) == []
+
+    state["fail"] = False                          # resolver healed
+    eng2 = _engine(tmp_path)                       # FRESH instance = retry
+    assert eng2._entity_sim(CID_A, CID_B) == 1.0
+    assert eng2.pairs["skel-cid:111|skel-cid:222"] == 1.0
     assert _pair_lines(eng.pair_path) == [PAIR_LINE]
 
     n_after = state["n"]
-    assert eng._entity_sim(CID_A, CID_B) == 1.0   # success path still caches
-    assert state["n"] == n_after                  # -> no extra resolver calls
+    assert eng2._entity_sim(CID_A, CID_B) == 1.0   # success path still caches
+    assert state["n"] == n_after                   #   -> no extra calls
 
 
-def test_generic_exception_is_transient_and_counted(tmp_path, monkeypatch):
-    """HTTP 500s / timeouts (non-LookupError) get the same treatment."""
+def test_generic_exception_transient_negmemo_and_counted(tmp_path, monkeypatch):
+    """HTTP 500s / timeouts (non-LookupError) get identical treatment."""
     eng = _engine(tmp_path)
     calls = {"n": 0}
 
@@ -93,11 +106,12 @@ def test_generic_exception_is_transient_and_counted(tmp_path, monkeypatch):
     assert eng.errors == 1 and eng.unmapped == 0
     assert eng.pairs == {} and _pair_lines(eng.pair_path) == []
 
-    assert eng._entity_sim(CID_A, CID_B) == 0.0   # retry re-attempts...
-    assert eng.errors == 2 and calls["n"] >= 2
+    assert eng._entity_sim(CID_A, CID_B) == 0.0   # A1.1 memo hit
+    assert eng.errors == 1 and calls["n"] == 1     # counted/resolved once
 
     monkeypatch.setattr(vsim, "_cid_smiles", lambda cid: "CCO")
-    assert eng._entity_sim(CID_A, CID_B) == 1.0   # ...and heals + persists
+    eng2 = _engine(tmp_path)                       # fresh instance heals
+    assert eng2._entity_sim(CID_A, CID_B) == 1.0
     assert _pair_lines(eng.pair_path) == [PAIR_LINE]
 
 
@@ -157,7 +171,7 @@ def test_budget_counts_distinct_first_attempts_not_recurrences(tmp_path, monkeyp
     monkeypatch.setattr(vsim, "_cid_smiles", always_fail)
     for _ in range(3):
         assert eng._entity_sim(CID_A, CID_B) == 0.0
-    assert eng.unmapped == 3
+    assert eng.unmapped == 1                # A1.1: distinct failure, counted once
     assert eng.new_pairs == 1                      # recurrence did not re-count
 
     monkeypatch.setattr(vsim, "_cid_smiles", lambda cid: "CCO")  # healed
@@ -175,6 +189,48 @@ def test_budget_counts_distinct_first_attempts_not_recurrences(tmp_path, monkeyp
     blocked = eng._entity_sim(("skel-cid", "555"), ("skel-cid", "666"))
     assert blocked == 0.0 and eng.errors == 1      # budget gate still blocks...
     assert calls["n"] == 0                         # ...BEFORE any resolver call
+
+
+def test_ghost_recurrence_costs_one_chain_per_run(tmp_path, monkeypatch):
+    """A1.1 campaign-scale acceptance: an unresolvable pair asked 100x within
+    one run must trigger exactly ONE resolver chain. (v14 runs sim in a
+    single thread; per-occurrence re-chaining of 6.8k ghost pairs across a
+    14.6k-entry scan is what actually stalled it.)"""
+    eng = _engine(tmp_path)
+    calls = {"n": 0}
+
+    def boom(cid):
+        calls["n"] += 1
+        raise LookupError("ghost record / outage")
+
+    monkeypatch.setattr(vsim, "_cid_smiles", boom)
+    for _ in range(100):
+        assert eng._entity_sim(CID_A, CID_B) == 0.0
+    assert calls["n"] == 1          # one chain for the whole run
+    assert eng.unmapped == 1
+    assert eng.new_pairs == 1
+    assert _pair_lines(eng.pair_path) == []
+
+
+def test_negmemo_is_never_persisted_across_kinds(tmp_path, monkeypatch):
+    """Disk-purity guard: an engine session that saw ONLY failures (chem +
+    seq) must leave zero trace in the pair file and in self.pairs."""
+    eng = _engine(tmp_path)
+
+    def boom(cid):
+        raise LookupError("cid ghost")
+
+    monkeypatch.setattr(vsim, "_cid_smiles", boom)
+    seqs = {"A1": ["AAAAAAAAAAAAAAAAAAAA"], "K2": ["KKKKKKKKKKKKKKKKKKKK"]}
+    monkeypatch.setattr(vsim.SimEngine, "_seqs_of",
+                        lambda self, kind, key: seqs[key])
+    for _ in range(3):
+        eng._entity_sim(CID_A, CID_B)                        # chem failure
+        eng._entity_sim(("seq-acc", "A1"), ("seq-acc", "K2"))  # seq failure
+    assert eng.unmapped == 2            # two distinct pairs, counted once each
+    assert eng.errors == 0
+    assert eng.pairs == {}
+    assert _pair_lines(eng.pair_path) == []
 
 
 def test_identity_shortcut_performs_no_io(tmp_path, monkeypatch):
