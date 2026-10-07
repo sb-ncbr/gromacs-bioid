@@ -129,13 +129,36 @@ def create_staging_dir(target_dir: Path) -> Path:
     return staging_dir
 
 
-def _activate(target_dir: Path, version_dir: Path) -> None:
-    """Point 'current' symlink at version_dir atomically."""
+def _backup_label_for_dir_current(path: Path) -> str:
+    """Dated archive label for a legacy real-dir `current` (dir mtime)."""
+    ts = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    return f"v{ts.strftime('%Y-%m-%d')}"
+
+
+def _activate(target_dir: Path, version_dir: Path) -> Path | None:
+    """Point 'current' at version_dir. Pre-states handled:
+    (a) absent            -> create symlink
+    (b) current symlink   -> atomic replace (legacy behavior)
+    (c) current REAL DIR  (legacy NFS layout) -> rename the dir to a dated
+        v-label (inode-safe: open readers keep working), then symlink.
+        NOT atomic for (c) -- callers must gate consumers; the path gap is
+        two filesystem ops. Refuses to overwrite an existing archive label.
+    Returns the archive Path used for (c), else None.
+    """
+    cur = target_dir / "current"
+    backup: Path | None = None
+    if cur.is_dir() and not cur.is_symlink():
+        backup = target_dir / _backup_label_for_dir_current(cur)
+        if backup.exists():
+            raise FileExistsError(f"refusing to overwrite existing backup: {backup}")
+        cur.rename(backup)
+        log(f"Archived legacy dir current -> {backup.name}")
     tmp_link = target_dir / ".current.tmp"
     tmp_link.unlink(missing_ok=True)
     tmp_link.symlink_to(version_dir.name)
-    tmp_link.replace(target_dir / "current")
+    tmp_link.replace(cur)
     log(f"Activated: current -> {version_dir.name}")
+    return backup
 
 
 def _prune_old_versions(target_dir: Path, keep: int = 2) -> None:
@@ -197,12 +220,33 @@ def main(argv: list[str] | None = None) -> int:
                         help="Reuse raw files already in a staging dir")
     parser.add_argument("--staging-dir", default=None,
                         help="Reuse an explicit staging dir (resume after failure)")
+    parser.add_argument("--defer-activate", action="store_true",
+                        help="Stage + build + validate only; print the version "
+                             "dir and leave activation to a gated "
+                             "--activate-only run")
+    parser.add_argument("--activate-only", action="store_true",
+                        help="Only activate --version-label under --target-dir "
+                             "(use after a consumer liveness check)")
     parser.add_argument("--keep-raw", action="store_true", default=True,
                         help="Retain raw .gz files inside the version dir (default: keep)")
     args = parser.parse_args(argv)
 
     target_dir = Path(args.target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.activate_only:
+        label = args.version_label
+        if not label:
+            log("ERROR: --activate-only requires --version-label")
+            return 2
+        version_dir = target_dir / label
+        if not version_dir.is_dir():
+            log(f"ERROR: version dir missing: {version_dir}")
+            return 1
+        _activate(target_dir, version_dir)
+        _prune_old_versions(target_dir, keep=2)
+        log(f"DONE: {version_dir} active")
+        return 0
 
     if args.staging_dir:
         staging_dir = Path(args.staging_dir)
@@ -283,6 +327,10 @@ def main(argv: list[str] | None = None) -> int:
         json.dump(metadata, fh, indent=2)
     staging_dir.rename(version_dir)
     # staging parent may linger; harmless
+    if args.defer_activate:
+        log(f"Built (NOT activated; --defer-activate): {version_dir}")
+        print(str(version_dir))
+        return 0
     _activate(target_dir, version_dir)
     _prune_old_versions(target_dir, keep=2)
     log(f"DONE: {version_dir} active")
