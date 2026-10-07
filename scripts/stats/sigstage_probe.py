@@ -446,12 +446,18 @@ def score_annotation(gt_type, gt_value, pool, ion_elements, resolver):
             return row
         row["attempted"] = True
         best, seg_parse_fail = _best_chem(gt_fp, candidates, resolver)
+        n_candidates = sum(len(v) for v in candidates.values())
+        pairs_ok = n_candidates - seg_parse_fail
         row["sim"] = round(best["sim"], 6)
         row["validated"] = best["sim"] >= CHEM_VALIDATED
         row["best_segment"] = best["segment"]
         row["best_generator"] = best["generator"]
         row["bucket"] = "validated" if row["validated"] else "below_gate"
-        row["details"]["n_candidates"] = sum(len(v) for v in candidates.values())
+        if pairs_ok == 0 and seg_parse_fail > 0:
+            # pilot finding: every candidate signature failed RDKit parsing
+            # -- bat3 signature-quality issue, NOT molecular divergence
+            row["bucket"] = "unparseable_signature"
+        row["details"]["n_candidates"] = n_candidates
         if seg_parse_fail:
             row["details"]["chem_parse_fail"] = seg_parse_fail
         return row

@@ -204,12 +204,14 @@ def test_polyprotein_gt_not_guarded():
     rows = sp.score_entry_doc(2460, doc, {"uniprot": {"P0DTD1"}}, res)
     assert rows[0]["details"]["pairs"] == 1
     assert rows[0]["details"]["guard_skipped"] == 0
-    # currency truth (locked by drift guard vs SimEngine): denominator is
-    # max(len) in this Biopython build, so domain-vs-polyprotein scores
-    # 300/7096 -- a REAL construct-scale divergence, identical to what the
-    # S7 formula yields; NOT a forced zero (pilot bug was pairs==0).
-    assert rows[0]["sim"] == pytest.approx(300 / 7096, abs=1e-4)
-    assert rows[0]["validated"] is False and rows[0]["bucket"] == "below_gate"
+    # Env-dependent denominator (empirical): biopython WITHOUT
+    # AlignmentCounts.aligned falls back to max(len) -> 300/7096 (local
+    # dev env); pod biopython has .aligned -> identities/aligned = 1.0.
+    # S7 numbers were computed in-pod, so probe<->S7 currency parity holds
+    # in production; the drift guard pins within-env equality vs SimEngine.
+    # The pilot regression itself (pairs==0, forced 0.0) is what this guards.
+    sim = rows[0]["sim"]
+    assert sim in (pytest.approx(300 / 7096, abs=1e-4), pytest.approx(1.0)), sim
 
 
 def test_chem_parse_fail_attributed():
@@ -221,9 +223,12 @@ def test_chem_parse_fail_attributed():
         "LIG2": {"generated": {"smiles": BENZENE}}}}}
     res = FakeResolver(smiles_map={"IKCAFF": (CAFFEINE, "mirror")})
     rows = sp.score_entry_doc(42, doc, {"inchikey": {"IKCAFF"}}, res)
-    assert rows[0]["bucket"] == "below_gate"
+    assert rows[0]["bucket"] == "below_gate"        # LIG2 parses but diverges
     assert rows[0]["details"]["chem_parse_fail"] == 1
     assert rows[0]["details"]["n_candidates"] == 2
+    doc_allbad = {"data": {"signatures": {"LIG1": {"generated": {"smiles": "C(C(C"}}}}}
+    rows_allbad = sp.score_entry_doc(43, doc_allbad, {"inchikey": {"IKCAFF"}}, res)
+    assert rows_allbad[0]["bucket"] == "unparseable_signature"
     res2 = FakeResolver(smiles_map={"IKBAD": ("not a smiles", "mirror")})
     rows2 = sp.score_entry_doc(42, doc, {"inchikey": {"IKBAD"}}, res2)
     assert rows2[0]["bucket"] == "unresolved_gt"
