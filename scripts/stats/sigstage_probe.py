@@ -109,6 +109,8 @@ def load_gt_rules():
 
 
 _SKEL = None
+_VSIM = None
+_PUBCHEM_CLS = None
 
 
 def load_skeletize():
@@ -125,6 +127,54 @@ def load_skeletize():
             _SKEL = skeletize
             return _SKEL
     raise RuntimeError("src_new.signatures.skeletize not importable")
+
+
+def load_vsim():
+    """Import validation_similarity (NFS live copy first, repo second)."""
+    global _VSIM
+    if _VSIM is not None:
+        return _VSIM
+    for path in (os.path.join(DATA, "validation_similarity.py"),
+                 os.path.join(_REPO_ROOT, "scripts", "validation_similarity.py")):
+        if os.path.isfile(path):
+            try:
+                _VSIM = _load_module_from(path, "sigstage_vsim")
+                return _VSIM
+            except Exception:
+                continue
+    raise RuntimeError("validation_similarity.py not importable")
+
+
+def load_pubchem_cls():
+    """Import PubChemDB class (module only; sqlite opened per instance)."""
+    global _PUBCHEM_CLS
+    if _PUBCHEM_CLS is not None:
+        return _PUBCHEM_CLS
+    for base in (_REPO_ROOT, "/app"):
+        if os.path.isfile(os.path.join(base, "src_new", "molecules", "pubchem_db.py")):
+            if base not in sys.path:
+                sys.path.insert(0, base)
+            from src_new.molecules.pubchem_db import PubChemDB
+            _PUBCHEM_CLS = PubChemDB
+            return _PUBCHEM_CLS
+    raise RuntimeError("PubChemDB unavailable (no src_new.molecules)")
+
+
+def prewarm_imports():
+    """Resolve ALL lazy imports in the MAIN thread before the worker pool.
+
+    Import-lock deadlock evidence (pilot rerun, faulthandler stacks): 32
+    workers deadlocked in importlib._bootstrap.acquire inside
+    load_campaign_module() on threads. With all globals set here, workers
+    only read cached references and never enter import machinery.
+    """
+    mods = {}
+    mods["skeletize"] = bool(load_skeletize())
+    mods["campaign_stats"] = bool(load_campaign_module())
+    mods["gt_rules"] = bool(load_gt_rules())
+    mods["validation_similarity"] = bool(load_vsim())
+    mods["pubchem_db"] = bool(load_pubchem_cls())
+    return mods
 
 
 def skelfp_tanimoto(smiles_a, smiles_b):
@@ -207,30 +257,11 @@ class ProdResolver:
     # -- chemistry ------------------------------------------------------
     def _pubchem_db(self):
         if self._pubchem is None:
-            for base in (_REPO_ROOT, "/app"):
-                if os.path.isfile(os.path.join(base, "src_new", "molecules", "pubchem_db.py")):
-                    if base not in sys.path:
-                        sys.path.insert(0, base)
-                    from src_new.molecules.pubchem_db import PubChemDB
-                    self._pubchem = PubChemDB(MIRROR)
-                    break
-        if self._pubchem is None:
-            raise RuntimeError("PubChemDB unavailable (no src_new.molecules)")
+            self._pubchem = load_pubchem_cls()(MIRROR)
         return self._pubchem
 
     def _vsim_mod(self):
-        if self._vsim is None:
-            for path in (os.path.join(DATA, "validation_similarity.py"),
-                         os.path.join(_REPO_ROOT, "scripts", "validation_similarity.py")):
-                if os.path.isfile(path):
-                    try:
-                        self._vsim = _load_module_from(path, "sigstage_vsim")
-                        break
-                    except Exception:
-                        continue
-        if self._vsim is None:
-            raise RuntimeError("validation_similarity.py not importable")
-        return self._vsim
+        return load_vsim()
 
     def smiles_for_inchikey(self, ik):
         """-> (smiles|None, source in mirror|webcache|budget_exceeded|fail)."""
@@ -688,6 +719,11 @@ def main(argv=None, resolver_factory=None):
         since_ts = datetime.fromisoformat(args.since).timestamp()
     except Exception:
         since_ts = 0.0
+
+    import time
+    t_pw = time.time()
+    mods = prewarm_imports()
+    print(f"prewarm imports: {mods} ({time.time()-t_pw:.1f}s)", file=sys.stderr)
 
     gt = load_gt_json(args.gt_json) if args.gt_json else load_gt_postgres()
     print(f"GT entries: {len(gt)}", file=sys.stderr)

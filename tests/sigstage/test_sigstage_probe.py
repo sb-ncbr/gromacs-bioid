@@ -251,6 +251,14 @@ def test_no_matching_generator_bucket():
 
 # ------------------------------------------------------------ aggregation / io
 
+def test_prewarm_imports_idempotent():
+    """Deadlock fix evidence: all lazy loaders resolvable + cached (workers
+    must never enter import machinery; pilot rerun froze in importlib.acquire)."""
+    mods1 = sp.prewarm_imports()
+    mods2 = sp.prewarm_imports()
+    assert all(mods1.values()) and mods1 == mods2
+
+
 def test_serialize_determinism():
     doc = load_fix("entry_organic.json")
     res = FakeResolver(smiles_map={"IKCAFF": (CAFFEINE, "mirror")},
