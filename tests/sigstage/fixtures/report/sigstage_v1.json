@@ -1,0 +1,12 @@
+{
+  "scan": {"rows": 7, "pattern": "results.json"},
+  "rows": 7,
+  "per_type": {
+    "uniprot": {"annotations": 4, "attempted": 3, "attempted_pct": 75.0, "validated": 3, "pct_validated": 75.0, "mean_sim_attempted": 0.95, "buckets": {"validated": 3, "below_gate": 1}},
+    "pdb": {"annotations": 2, "attempted": 2, "attempted_pct": 100.0, "validated": 2, "pct_validated": 100.0, "mean_sim_attempted": 0.99, "buckets": {"validated": 2}},
+    "inchikey": {"annotations": 2, "attempted": 2, "attempted_pct": 100.0, "validated": 1, "pct_validated": 50.0, "mean_sim_attempted": 0.8, "buckets": {"validated": 1, "unparseable_signature": 1}},
+    "ion": {"annotations": 1, "attempted": 1, "attempted_pct": 100.0, "validated": 1, "pct_validated": 100.0, "mean_sim_attempted": 1.0, "buckets": {"validated": 1}}
+  },
+  "buckets": {"validated": 6, "below_gate": 1, "unparseable_signature": 1},
+  "entries": {"seen": 3, "any_validated": 3, "any_validated_pct": 100.0}
+}

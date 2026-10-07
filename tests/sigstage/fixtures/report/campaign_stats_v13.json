@@ -1,0 +1,13 @@
+{
+  "full": {
+    "pattern": "results.json",
+    "scanned_entries": 10,
+    "gt_covered_scanned": 9,
+    "S7_similarity_hit_at_k": {
+      "uniprot": {"annotations": 5, "attempted": 5, "pct_validated@1": 90.0, "pct_validated@5": 92.0, "pct_validated@10": 95.0},
+      "pdb": {"annotations": 2, "attempted": 2, "pct_validated@1": 100.0, "pct_validated@5": 100.0, "pct_validated@10": 100.0},
+      "inchikey": {"annotations": 2, "attempted": 2, "pct_validated@1": 60.0, "pct_validated@5": 80.0, "pct_validated@10": 93.0},
+      "ion": {"annotations": 1, "attempted": 1, "pct_validated@1": 96.1, "pct_validated@5": 96.1, "pct_validated@10": 96.1}
+    }
+  }
+}
