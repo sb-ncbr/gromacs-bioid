@@ -182,3 +182,43 @@ nearly always retains it.
   figure regeneration with the manuscript owner (replay protocol).
   Residual: seq-space zeros (278,065 non-skel) never purged — poison
   fraction unknown, flagged; see A7 closeout scope.
+- 2026-10-07 (8) — **A3a ghost curation** (`5a08617f9`): warmup ghosts
+  classified: cid_zero = ONE identifier (`cid:0`) over 645 pairs (single
+  emitter, curation: strip/fix upstream); unresolved_legacy = 7,298 distinct
+  (deprecated/deleted-record candidates); smiles_unparseable 33; zero
+  malformed inchikeys. Artifact `sigstage/casefiles/ghost_curation.{json,md}`.
+  Mirror refresh build running (defer-activate; lifecycle c23e8079c).
+- 2026-10-07 (9) — **A4 smiles salvage** (`1f379895c`): OQ-2 root cause
+  pinned in generator (_fragment_to_rdkit_atoms SetNoImplicit + element-only
+  atoms => every formal charge is DetermineBondOrders compensation).
+  Tiered salvage on the partial-sanitize failure path only: neutral
+  canonical + skeleton collapse with minimal-charge repair ([N+] graphs);
+  success path byte-identical (identification resolvers untouched),
+  smiles_not_sanitized stays raw. E2E all 525 rows: **517 salvaged +
+  re-parseable (98.5%), 8 junk graphs fall back honestly; salvage graph-fidelity
+  100%** (raw_vs_GT == salvage_vs_GT on every checked row). NEW subclass:
+  ~10% of the 525 have raw graph != GT (e.g. entries 4513-4517 tanimoto
+  0.02-0.08) -- perception/mapping defect, NOT salvage; open item for
+  generator work. Faithfulness vs GT median 1.0 (n=75).
+- 2026-10-08 (1) — A3 COMPLETE: mirror v2026-10-07 activated atomically
+  (build+validation pp. populate patch); ghosts re-measured: dominant
+  lineage dead-CID/live-inchikey 76% → successor-CID curation; 153 fully
+  dead; cid:0 645-pair single emitter. Curation artifact
+  `casefiles/ghost_curation.{json,md}`.
+- 2026-10-08 (2) — A7 CLOSEOUT RUNS: sigstage_merge permanent tool
+  (`4fe6fb76b`, +since-window pin `2d92c7f4c`, +page-cache/RSS OOM fixes
+  `cda1daa1b`/`2d46ab6d1`); v2 probe rerun 50/50 shards = **35,121 rows,
+  STRICT +0/+0 vs campaign_stats_v14** (sigstage_v2.json frozen);
+  audit_v2 36,159 joined rows (audit --s0-shards/`9804c26e6`);
+  per_molecule_v2 export (36,159, 0 dups, `ba7804c7c`).
+  **Frozen numbers v2 (audit join, M-1 denominators +0/+0):**
+  inchikey ann 6,416: s0 86.3 / s7@1 93.8 (was 60.2) / @10 95.8;
+  ion 2,773: 94.2 / 98.4 / 98.4; pdb 12,403: 93.2 / 96.9 / 99.5;
+  uniprot 14,567: 87.0 / 94.0 / 98.2. entry channels: id_hit@1 5,083,
+  ver_attempted 33,556, ver@1 31,983. OQ-3/4/5 final counts per this
+  artifact line; S7 reference = campaign_stats_v14.json.
+- 2026-10-08 (3) — handoffs: `lookup/a5-curation-handoff.md` (531
+  protein-GT-in-lipid/struct cohort, 93 chem segmentation gaps, ghost
+  ledger incl. cid:0 class), `lookup/a4-perception-gap-handoff.md`
+  (~10% of OQ-2 rows carry graph≠GT mismatches invisible to traditional
+  checks; article motivation for automatic annotations).

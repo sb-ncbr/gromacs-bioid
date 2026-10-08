@@ -52,24 +52,26 @@
   are SUPERSEDED — manuscript figure regeneration must be coordinated with
   the owner (replay protocol); that edit was deliberately NOT made here.
 
-### A3. PubChem mirror refresh + ghost-GT curation list  [DATA OPS]
-- Evidence: 71 cohort GTs + 112 unique OQ-3 GTs unresolvable via mirror AND
-  web chain (deprecated/deleted records). Mirror at
-  `/app/databases/pubchem/current/pubchem.sqlite` (build scripts:
-  `scripts/populate_pubchem_mirror.py`).
-- Deliver: list of ghost keys to MDDBR curation (from `casefiles` rows +
-  OQ-3 measurement), refresh mirror, re-measure unresolved count.
+### A3. PubChem mirror refresh + ghost-GT curation list  [DONE 2026-10-08]
+- Mirror v2026-10-07 built/validated/activated (lifecycle patch `c23e8079c`,
+  gated --defer/--activate-only); ghost classifier `5a08617f9` →
+  `casefiles/ghost_curation.{json,md}`: cid:0=645-pair single emitter,
+  unresolved_legacy 7,298 (dead-CID lineage 76% → successor-CID mapping),
+  153 fully dead; post-mirror measurement in `ghosts_post_mirror.json`.
 
-### A4. smiles-generator normalization  [CODE, src_new]
-- Evidence: 525/525 unparseable rows, single class `explicit_valence`,
-  charge-explicit zwitterionic SMILES (`S0-OQ-2_unparseable.jsonl`).
-- Fix: post-generation normalization in smiles generator
-  (sanitize=False → NormalizeCharges/Aromatize → canonical emit) or emit
-  companion neutral canonical smiles; keep `smiles_not_sanitized` as raw.
-- Acceptance: the 525 case rows re-parse clean on generator rerun;
-  regression test from 3 raw strings in the case list.
+### A4. smiles-generator normalization  [DONE 2026-10-07]
+- Tiered salvage on the partial-sanitize failure path (`1f379895c`): neutral
+  canonical + skeleton-collapse/minimal-charge repair; success path
+  byte-identical. 517/525 (98.5%) re-parseable, graph-fidelity 100%,
+  8 junk fallbacks. 26 tests. NEW finding: ~10% of the class carry
+  graph≠GT perception defects (`lookup/a4-perception-gap-handoff.md`,
+  article motivation).
 
 ### A5. Curation: lipid-only systems carrying protein GT  [CURATION]
+- HANDOFF WRITTEN: `lookup/a5-curation-handoff.md` (+NFS
+  `sigstage/reports/A5-curation-handoff.md`) — 531 protein-GT-in-lipid
+  cohort + 93 chem segmentation gaps + ghost ledger syndicated.
+  Remaining: MDDBR-side curation decisions (owner action).
 - Evidence: ~530 rows, gensets lipid_shorthand/fingerprint/mmcif only
   (`S0-OQ-1_nmg.jsonl` residual). MDDBR metadata annotates project-level
   protein context; deposited files are membrane-only.
@@ -83,10 +85,15 @@
   supporting_evidence_count desc before final_confidence; evaluate on the
   residual cohort (acceptance: rerank cohort shrink measured with chemrerank).
 
-### A7. Case-file closeouts (after A2/A4)
-- Re-run S0 probe + audit after A2 purge (denominators anchored; STRICT
-  gate expected +5/+5 drift window); update frozen numbers (v2),
-  mark S0-OQ-3/4/5 with final counts; reference corrected S7 (v14).
+### A7. Case-file closeouts (after A2/A4)  [DONE 2026-10-08]
+- v2 probe rerun 50/50 shards → STRICT +0/+0 vs campaign_stats_v14
+  (`sigstage_v2.json`, 35,121 rows) via permanent merger
+  (`4fe6fb76b`+`2d92c7f4c`+`cda1daa1b`+`2d46ab6d1`).
+- audit_v2 36,159 joined rows (`9804c26e6`); per_molecule_v2 export
+  (36,159 rows, sig/id/ver channels, `ba7804c7c`).
+- Frozen v2 numbers in case file (inchikey s7@1 93.8 vs 60.2 v1).
+- Manuscript figures: v14 campaign stats + audit_v2 + per_molecule_v2 are
+  the figure corpus; journal regeneration still owner-gated.
 
 ## Known watchdogs / don't-redo
 - STRICT anchor gate aborts on full-set denominator mismatch — expected
