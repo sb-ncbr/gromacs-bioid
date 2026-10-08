@@ -4,6 +4,7 @@ Campaign machinery is injected as fakes; no network/NFS/DB.
 """
 import collections
 import importlib.util
+import json
 import os
 
 import pytest
@@ -155,3 +156,48 @@ def test_summarize_selection_fields():
     assert uni["s0_validated_pct_on_zero_hit"] == 100.0
     assert "ion" in s["types"]            # ion split applied
     assert "inchikey" not in s["types"]   # single ion row leaves no organic block
+
+
+def test_load_s0_rows_honors_explicit_dir(tmp_path):
+    rows = [
+        {"entry_id": 10, "gt_type": "pdb", "gt_value": "1AAA", "bucket": "validated"},
+        {"entry_id": 11, "gt_type": "uniprot", "gt_value": "P9", "bucket": "below_gate"},
+    ]
+    sd = tmp_path / "some_v2_shards"
+    sd.mkdir()
+    (sd / "shard_000.jsonl").write_text(
+        "".join(json.dumps(r, sort_keys=True) + "\n" for r in rows))
+    (sd / "other.json").write_text("{}")  # non-shard file ignored
+    by_key = au.load_s0_rows(str(sd))
+    assert len(by_key) == 2
+    assert by_key[(10, "pdb", "1AAA")]["bucket"] == "validated"
+
+
+def test_summarize_tag_mode_writes_tagged_artifact(tmp_path, capsys):
+    row = {"entry_id": 1, "gt_type": "uniprot", "gt_value": "P1",
+           "s0_validated": True, "s0_bucket": "validated", "s0_sim": 1.0,
+           "n_hits": 3, "s7_attempted": True, "s7_validated@1": True,
+           "s7_validated@10": True}
+    sd = tmp_path / "out"
+    (sd / "shards").mkdir(parents=True)
+    (sd / "shards" / "shard_000.jsonl").write_text(json.dumps(row) + "\n")
+    (sd / "shards" / "shard_001.jsonl").write_text(json.dumps(row) + "\n")
+
+    import argparse
+    class _A:
+        root = ""; pattern = "results.json"; threads = 1; shard = "0/1"
+        budget = 1; out_dir = str(sd); s0_shards = None; limit = 0
+        summarize_tag = "v2test"
+
+    import builtins
+    real_parse = au.argparse.ArgumentParser.parse_args
+    au.argparse.ArgumentParser.parse_args = lambda self, argv=None: _A()
+    try:
+        au.main([])
+    finally:
+        au.argparse.ArgumentParser.parse_args = real_parse
+    out = json.load(open(sd / "audit_v2test.json"))
+    assert out["rows"] == 2
+    assert out["types"]["uniprot"]["s7_validated@1_pct"] == 100.0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["rows"] == 2 and "audit_v2test.json" in printed["out"]

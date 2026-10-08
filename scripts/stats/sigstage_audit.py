@@ -292,12 +292,16 @@ def summarize(rows):
 
 # ---------------------------------------------------------------- main
 
-def load_s0_rows():
+def load_s0_rows(shards_dir=None):
+    """S0 rows keyed by (entry_id, gt_type, gt_value). shards_dir defaults to
+    the v1 shard location; A7 v2 passes run_v2 shards explicitly (2026-10-08:
+    the hardcoded path silently mixed era-v1 rows into a v2 audit)."""
+    shards_dir = shards_dir or os.path.join(SIG_DIR, "shards")
     by_key = {}
-    shards = sorted(f for f in os.listdir(os.path.join(SIG_DIR, "shards"))
+    shards = sorted(f for f in os.listdir(shards_dir)
                     if f.startswith("shard_") and f.endswith(".jsonl"))
     for f in shards:
-        with open(os.path.join(SIG_DIR, "shards", f)) as fh:
+        with open(os.path.join(shards_dir, f)) as fh:
             for ln in fh:
                 r = json.loads(ln)
                 by_key[(r["entry_id"], r["gt_type"], r["gt_value"])] = r
@@ -312,8 +316,26 @@ def main(argv=None):
     ap.add_argument("--shard", default="0/1")
     ap.add_argument("--budget", type=int, default=50)
     ap.add_argument("--out-dir", default=AUDIT_DIR)
+    ap.add_argument("--s0-shards", default=None,
+                    help="explicit S0 shards dir (v2: sigstage/run_v2/shards)")
+    ap.add_argument("--summarize-tag", default="",
+                    help="merge out-dir/shards and write audit_{tag}.json, then exit")
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args(argv)
+
+    if args.summarize_tag:
+        rows = []
+        shards_dir = os.path.join(args.out_dir, "shards")
+        for f in sorted(os.listdir(shards_dir)):
+            if f.startswith("shard_") and f.endswith(".jsonl"):
+                with open(os.path.join(shards_dir, f)) as fh:
+                    rows.extend(json.loads(ln) for ln in fh if ln.strip())
+        summ = summarize(rows)
+        out_path = os.path.join(args.out_dir, f"audit_{args.summarize_tag}.json")
+        with open(out_path, "w") as fh:
+            json.dump(summ, fh, indent=1, sort_keys=True)
+        print(json.dumps({"out": out_path, "rows": summ["rows"]}, indent=1))
+        return
 
     prewarm()
     campaign = load_campaign()
@@ -331,7 +353,7 @@ def main(argv=None):
     con.close()
     print(f"GT entries: {len(gt)}", file=sys.stderr)
 
-    s0_by_key = load_s0_rows()
+    s0_by_key = load_s0_rows(args.s0_shards)
     print(f"S0 rows loaded: {len(s0_by_key)}", file=sys.stderr)
 
     engine = get_sim_engine(args.budget)
