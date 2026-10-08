@@ -113,16 +113,37 @@ def gate_counts(root, pattern, gt_entry_ids, probe, since_ts=None, threads=16):
     ids = probe.entry_ids(root, pattern, since_ts)
 
     def one(eid):
-        # Memory-bounded read: results.json can exceed 40MB each (max ~98MB,
-        # 2026-10-08) and 16 threads x json.load'd object graphs OOM-killed the
-        # first gate pass against the 25GB cgroup cap. Text-regex the two
-        # status strings (cheap, bounded by raw file bytes); fall back to a
-        # full parse only when the shape is ambiguous (rare).
+        # Memory-bounded read in both senses. Object-graph: text-regex the two
+        # status strings, full parse only on ambiguous shapes (first gate pass
+        # OOM'd on json.load of 40-98MB docs). Page-cache: POSIX_FADV_DONTNEED
+        # after every read keeps our NFS reads out of the pod's cgroup file
+        # cache, which is ALSO the cgroup OOM driver when anon stays tiny
+        # (second kill, anon 122MB vs file 23.9GB, 2026-10-08).
+        path = os.path.join(root, str(eid), pattern)
+        fd = -1
         try:
-            with open(os.path.join(root, str(eid), pattern)) as fh:
-                txt = fh.read()
+            fd = os.open(path, os.O_RDONLY)
+            chunks = []
+            while True:
+                c = os.read(fd, 1 << 22)
+                if not c:
+                    break
+                chunks.append(c)
+            txt = b"".join(chunks).decode("utf-8", "replace")
         except Exception:
+            if fd >= 0:
+                os.close(fd)
             return (False, False, False)
+        finally:
+            if fd >= 0:
+                try:
+                    os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+                except OSError:
+                    pass
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
         lo = _task_status_txt(txt, "load_simulation")
         vo = _task_status_txt(txt, "verify_results")
         if lo is None or vo is None:
@@ -136,9 +157,13 @@ def gate_counts(root, pattern, gt_entry_ids, probe, since_ts=None, threads=16):
         return (lo == "success", vo == "success", eid in gt_entry_ids)
 
     gate = []
+    done = 0
     with ThreadPoolExecutor(max_workers=threads) as ex:
         for res in ex.map(one, ids):
             gate.append((res[2], res[0], res[1]))
+            done += 1
+            if done % 1000 == 0:
+                print(f"  ...gate-pass {done}/{len(ids)}", file=sys.stderr)
     return probe.gating_counts(gate), len(ids)
 
 
