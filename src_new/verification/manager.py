@@ -105,13 +105,24 @@ def _fidelity_order_key(hit):
     ranking, UI owns presentation; the verified flag is never a sort key for
     display purposes (it only defines which hits participate in block 1).
 
-    Chain: skeleton_sim desc -> final_confidence desc -> identifier asc ->
-    ident_type asc. NaN/Inf skeleton_sim sinks to -1.0 (bottom of block 1).
+    Chain: skeleton_sim desc -> supporting_evidence_count desc ->
+    final_confidence desc -> identifier asc -> ident_type asc.
+    NaN/Inf skeleton_sim sinks to -1.0 (bottom of block 1).
+
+    A6 (2026-10-08): evidence count ranks BEFORE confidence within a
+    same-skeleton plateau. Pubchem-family final_confidence is F-07
+    ordinal-stub quantized within a resolver family, so it cannot
+    legitimately arbitrage skeleton-equal candidates -- the residual
+    rerank cohort (F-7 heal analysis) was plateau-lottery losses.
+    supporting_evidence_count = distinct resolvers that found the hit:
+    real corroboration. Hits serialized before the field existed keep
+    the default 1, which degenerates the chain to the legacy behavior.
     """
     s = hit.skeleton_sim
     if s is None or (isinstance(s, float) and (math.isnan(s) or math.isinf(s))):
         s = -1.0
-    return (-s, -hit.final_confidence, str(hit.identifier), str(hit.ident_type))
+    ev = getattr(hit, "supporting_evidence_count", 1) or 1
+    return (-s, -ev, -hit.final_confidence, str(hit.identifier), str(hit.ident_type))
 
 
 def _fidelity_order_hits(hits):

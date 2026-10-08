@@ -169,11 +169,12 @@ class TestManagerRerank:
         assert out == groups
 
 
-def _vh(identifier, ident_type, conf, verified=True, skel=None):
+def _vh(identifier, ident_type, conf, verified=True, skel=None, ev=1):
     """VerifiedHit-shaped test double (only fields the ordering touches)."""
     return SimpleNamespace(
         identifier=identifier, ident_type=ident_type,
         final_confidence=conf, is_verified=verified, skeleton_sim=skel,
+        supporting_evidence_count=ev,
     )
 
 
@@ -223,6 +224,34 @@ class TestFidelityOrderHits:
             ("AAA", "PUBCHEM_CID"),
             ("ZZZ", "PUBCHEM_CID"),
         ]
+
+    def test_tie_break_prefers_evidence_count_over_plateau_confidence(self):
+        """A6 (2026-10-08): within a same-skeleton plateau, pubchem-family
+        final_confidence is F-07 ordinal-stub quantized -- it must NOT
+        arbitrage rank between skeleton-equal candidates. supporting
+        evidence count (distinct resolvers that found the hit) is the real
+        corroboration signal and ranks BEFORE final_confidence. Residual
+        ~223-case rerank cohort (F-7 heal line) was plateau-lottery losses.
+        """
+        from src_new.verification.manager import _fidelity_order_hits
+        hits = [
+            _vh("AAA_PLATEAU", "PUBCHEM_CID", 95.0, skel=1.0, ev=1),
+            _vh("ZZZ_EVIDENCE", "PUBCHEM_CID", 60.0, skel=1.0, ev=4),
+            _vh("MMM_MID", "PUBCHEM_CID", 95.0, skel=1.0, ev=2),
+        ]
+        out = _fidelity_order_hits(hits)
+        assert [h.identifier for h in out] == ["ZZZ_EVIDENCE", "MMM_MID", "AAA_PLATEAU"]
+
+    def test_tie_break_equal_evidence_falls_back_to_confidence(self):
+        """A6 is a strict chain extension: equal evidence counts preserve the
+        old behavior byte-identically (confidence desc -> id -> type)."""
+        from src_new.verification.manager import _fidelity_order_hits
+        hits = [
+            _vh("ZZZ", "PUBCHEM_CID", 90.0, skel=1.0, ev=2),
+            _vh("AAA", "PUBCHEM_CID", 95.0, skel=1.0, ev=2),
+        ]
+        out = _fidelity_order_hits(hits)
+        assert [h.identifier for h in out] == ["AAA", "ZZZ"]
 
     def test_nan_and_none_skeleton_sink_to_block1_bottom(self):
         import math
