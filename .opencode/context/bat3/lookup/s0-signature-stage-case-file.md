@@ -222,3 +222,23 @@ nearly always retains it.
   ledger incl. cid:0 class), `lookup/a4-perception-gap-handoff.md`
   (~10% of OQ-2 rows carry graph≠GT mismatches invisible to traditional
   checks; article motivation for automatic annotations).
+- 2026-10-08 (4) — **A6 evidence-count tie-break** (`dd2b458f9`):
+  `_fidelity_order_key` ranks supporting_evidence_count desc BEFORE
+  final_confidence within same-skeleton plateaus (F-07 plateau rationale);
+  equal-evidence degenerates byte-identically (145/145 verification tests,
+  evidence-over-plateau fail-on-unfixed pinned). E2E replay on the full
+  2,143-row chemrerank cohort, BOTH substrates: stored sims → old@1 == new@1
+  (873); fresh skeleton substrate → 2038/2038 @1 both keys (skeleton-desc
+  already decisive with honest sims). **Zero impairment anywhere; zero
+  measured shrink** — residual losses decompose: GT-unresolved 71,
+  structure-absent 8, no-verified-chem-hits 26. Verdict: prospective
+  isomer-plateau hardening, cost zero. NOTE: A4 (`1f379895c`) and A6
+  (`dd2b458f9`) are repo-verified fixes NOT yet deployed to production
+  /app/src_new — carry in next pipeline release.
+- 2026-10-08 (5) — wave state: queue A1-A4/A6/A7 done; deliverables frozen:
+  campaign_stats_v14.json (figure S7), sigstage_v2.json (STRICT +0/+0),
+  audit_v2.json (36,159), per_molecule_v2.{jsonl,csv} (36,159 mol,
+  sig/id/ver channels), handoffs A5 + A4-discovery. Open externals:
+  MDDBR curation decisions (A5), publication-journal figure regeneration
+  (owner), mirror-refresh cron note (populate job exists), seq-zero
+  census residual (278k non-skel zeros, poison fraction unknown).

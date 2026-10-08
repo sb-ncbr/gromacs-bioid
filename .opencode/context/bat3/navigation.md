@@ -31,6 +31,8 @@ Quick entry point to all BAT3 context files. Use this to find verification comma
 | Validation pipeline | `concepts/validation.md` |
 | Publication (NM paper) | `lookup/publication-journal.md` |
 | S0 signature-stage validation (case file) | `lookup/s0-signature-stage-case-file.md` |
+| MDDBR GT curation handoff (A5 cohorts) | `lookup/a5-curation-handoff.md` |
+| Automatic-annotation motivation (A4 perception gap) | `lookup/a4-perception-gap-handoff.md` |
 | Stats harvester ops playbook (pods/NFS hazards) | `guides/stats-pods-operations.md` |
 
 ## Reference

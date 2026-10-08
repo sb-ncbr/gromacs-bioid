@@ -77,7 +77,7 @@
   protein context; deposited files are membrane-only.
 - Also: 93 chem segmentation gaps (macro_only_no_ligand_signature et al.).
 
-### A6. Verification ranking: evidence-count tie-break  [CODE, optional]
+### A6. Verification ranking: evidence-count tie-break  [DONE 2026-10-08]
 - Evidence: residual ~223 genuine rerank rows post-heal; confidence is
   plateau-quantized with resolver-family ordinal stubs setting plateaus
   (code self-warns in `manager.py` F-07 note).
