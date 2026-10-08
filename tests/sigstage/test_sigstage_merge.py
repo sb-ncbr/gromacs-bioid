@@ -67,6 +67,28 @@ def test_gate_counts_uses_probe_gating(tmp_path):
     assert census == 4
 
 
+def test_task_status_txt_fast_and_fallback_paths():
+    # fast path: status early inside the block
+    t1 = json.dumps({"tasks": {"load_simulation": {"status": "success"},
+                               "verify_results": {"status": "failed"}}})
+    assert mg._task_status_txt(t1, "load_simulation") == "success"
+    assert mg._task_status_txt(t1, "verify_results") == "failed"
+    # ambiguous: nested object BEFORE status -> regex declines, caller falls back
+    t2 = json.dumps({"tasks": {"load_simulation": {"meta": {"a": 1}, "status": "success"}}})
+    assert mg._task_status_txt(t2, "load_simulation") is None
+    assert json.loads(t2)["tasks"]["load_simulation"]["status"] == "success"
+
+
+def test_gate_counts_falls_back_on_nested_block_shape(tmp_path):
+    probe = mg.load_probe()
+    _mk_entry(tmp_path, 1, {"load_simulation": "success", "verify_results": "success"})
+    (tmp_path / "1" / "results.json").write_text(
+        json.dumps({"tasks": {"load_simulation": {"meta": {"x": 1}, "status": "success"},
+                              "verify_results": {"status": "success"}}}))
+    counts, census = mg.gate_counts(str(tmp_path), "results.json", {1}, probe)
+    assert counts == {"scanned": 1, "gt_covered": 1} and census == 1
+
+
 def test_gate_counts_respects_since_window(tmp_path):
     """Pin for the 2026-10-08 STRICT misfire: pre-window entries must be
     excluded from the anchor census (the +508/+508 phantom-drift bug)."""

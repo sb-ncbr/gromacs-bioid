@@ -30,6 +30,7 @@ import glob
 import importlib.util
 import json
 import os
+import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -97,6 +98,13 @@ def default_since_ts():
         return 0.0
 
 
+def _task_status_txt(txt, name):
+    """'"name": { ... "status": "X" }' -> X, or None (no nested-brace crossing)."""
+    m = re.search(r'"' + re.escape(name) + r'"\s*:\s*\{[^{}]*?'
+                  r'"status"\s*:\s*"([^"]+)"', txt)
+    return m.group(1) if m else None
+
+
 def gate_counts(root, pattern, gt_entry_ids, probe, since_ts=None, threads=16):
     """Recompute gating counts (anchor discipline) with probe machinery.
     since_ts MUST come from default_since_ts() for live runs."""
@@ -105,14 +113,27 @@ def gate_counts(root, pattern, gt_entry_ids, probe, since_ts=None, threads=16):
     ids = probe.entry_ids(root, pattern, since_ts)
 
     def one(eid):
+        # Memory-bounded read: results.json can exceed 40MB each (max ~98MB,
+        # 2026-10-08) and 16 threads x json.load'd object graphs OOM-killed the
+        # first gate pass against the 25GB cgroup cap. Text-regex the two
+        # status strings (cheap, bounded by raw file bytes); fall back to a
+        # full parse only when the shape is ambiguous (rare).
         try:
             with open(os.path.join(root, str(eid), pattern)) as fh:
-                doc = json.load(fh)
+                txt = fh.read()
         except Exception:
             return (False, False, False)
-        lo = probe.task_success(doc, "load_simulation")
-        vo = probe.task_success(doc, "verify_results")
-        return (lo, vo, eid in gt_entry_ids)
+        lo = _task_status_txt(txt, "load_simulation")
+        vo = _task_status_txt(txt, "verify_results")
+        if lo is None or vo is None:
+            try:
+                doc = json.loads(txt)
+            except Exception:
+                return (False, False, False)
+            return (probe.task_success(doc, "load_simulation"),
+                    probe.task_success(doc, "verify_results"),
+                    eid in gt_entry_ids)
+        return (lo == "success", vo == "success", eid in gt_entry_ids)
 
     gate = []
     with ThreadPoolExecutor(max_workers=threads) as ex:
