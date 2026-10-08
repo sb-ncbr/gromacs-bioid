@@ -131,12 +131,92 @@ class SimpleSmilesGenerator(SignatureGenerator):
                     sanitizeOps=SanitizeFlags.SANITIZE_ALL ^ SanitizeFlags.SANITIZE_KEKULIZE,
                 )
             except Exception as exc:
-                logger.warning("smiles: partial sanitize failed (%s); returning unsanitized string", exc)
+                salvaged = _canonicalize_for_roundtrip(molecule)
+                if salvaged:
+                    logger.info("smiles: partial sanitize failed (%s); "
+                                "emitted canonical neutral-parent string", exc)
+                    return salvaged
+                logger.warning("smiles: partial sanitize failed (%s) and canonical salvage failed; returning unsanitized string", exc)
         try:
             return Chem.MolToSmiles(molecule, kekuleSmiles=False)
         except Exception as exc:
             logger.warning("smiles: MolToSmiles failed (%s); returning empty", exc)
             return ""
+
+
+def _canonicalize_for_roundtrip(molecule: Mol) -> str | None:
+    """Salvage a re-parseable canonical SMILES from a molecule whose formal
+    charges are ALL generator compensation artifacts.
+
+    Generator molecules are built element-only with SetNoImplicit atoms; the
+    topology carries no charge data, so every formal charge present was
+    assigned by DetermineBondOrders valence compensation (S0-OQ-2: 525/525
+    explicit_valence). Consumers re-parse with FULL sanitize
+    (skeletize.from_smiles), so the emitted string must survive that.
+
+    Tier 1 (neutral canonical): clear compensation charges + NoImplicit,
+    sanitize minus kekulization, canonical emit -- preserves real bond orders
+    whenever the neutral chemistry is legal.
+    Tier 2 (skeleton collapse): the generator's own skeleton-currency
+    collapse (skeletize_mol: single bonds, no charges, no aromaticity,
+    valence-tolerant) -- bond-order information is NOT part of the skelfp
+    metric currency, so the skeleton string is metrically equivalent
+    downstream while being robustly re-parseable.
+    Returns None when neither tier re-parses (caller then falls back to the
+    legacy raw string -- no silent signature loss).
+    """
+    try:
+        work = Chem.Mol(molecule)
+        for atom in work.GetAtoms():
+            atom.SetFormalCharge(0)
+            atom.SetNoImplicit(False)
+        try:
+            from rdkit.Chem import SanitizeFlags
+            Chem.SanitizeMol(
+                work,
+                sanitizeOps=SanitizeFlags.SANITIZE_ALL ^ SanitizeFlags.SANITIZE_KEKULIZE,
+            )
+            return Chem.MolToSmiles(work, kekuleSmiles=False)
+        except Exception:
+            pass
+        from ..skeletize import skeletize_mol
+        collapsed = skeletize_mol(work)
+        if collapsed is None:
+            return None
+        # Minimal-charge repair: some heavy graphs REQUIRE charge even when
+        # neutral-parented (quaternary ammonium [N+] with 4 neighbours, oxonium
+        # [O+] with 3). Zeroing charges makes them unparseable; assign the
+        # minimal legalizing charge instead (consumers collapse charges away
+        # in skelfp currency anyway).
+        out = Chem.MolToSmiles(collapsed, kekuleSmiles=False)
+        for _attempt in range(12):
+            if Chem.MolFromSmiles(out) is not None:
+                return out
+            try:
+                Chem.SanitizeMol(collapsed)
+            except Exception as exc:
+                m = re.search(r"atom # (\d+)", str(exc))
+                if not m:
+                    return None
+                atom = collapsed.GetAtomWithIdx(int(m.group(1)))
+                sym = atom.GetSymbol()
+                nbonds = atom.GetTotalDegree()
+                if sym in ("N", "P") and nbonds >= 4 and atom.GetFormalCharge() == 0:
+                    atom.SetFormalCharge(+1)
+                elif sym in ("O", "S") and nbonds >= 3 and atom.GetFormalCharge() == 0:
+                    atom.SetFormalCharge(+1)
+                elif sym in ("O", "S") and nbonds <= 1 and atom.GetFormalCharge() == 0:
+                    atom.SetFormalCharge(-1)
+                else:
+                    return None
+                collapsed.UpdatePropertyCache(strict=False)
+                out = Chem.MolToSmiles(collapsed, kekuleSmiles=False)
+            else:
+                return out
+        # Contract: downstream parses with FULL sanitize (skeletize.from_smiles)
+        return out if Chem.MolFromSmiles(out) is not None else None
+    except Exception:
+        return None
 
 
 class SimpleSmilesGeneratorNoSanitize(SimpleSmilesGenerator):
