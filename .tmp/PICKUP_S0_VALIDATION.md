@@ -1,5 +1,10 @@
 # PICKUP — S0 Signature-Stage Validation: Methodical Findings Queue
 
+> **WAVE CLOSED 2026-10-08.** A1–A7/A6 all done; deliverables frozen
+> (v14 S7, sigstage_v2 STRICT +0/+0, audit_v2, per_molecule_v2, A5 + A4
+> handoffs). **Next task lives in `.tmp/PICKUP_S0_FAILURE_MODE_AUDIT.md`.**
+> This file remains as the A1–A7 evidence trail.
+>
 > Resume point for the post-compaction session. Context: read
 > `.opencode/context/bat3/lookup/s0-signature-stage-case-file.md` FIRST
 > (findings F-1..F-7, M-1, frozen numbers), then

@@ -70,6 +70,30 @@ in `scripts/stats/` (provenance rule: edit there first, commit, then deploy).
   fixed). Diagnose with socket-state census + identifier-cache growth,
   NOT wall-time alone.
 
+## Failure-mode lessons (2026-10-08 closeout wave)
+1. **Container OOM can be page-cache-driven, not RSS.** `/sys/fs/cgroup/memory.stat`
+   shows `anon` (app/working set) vs `file` (NFS page cache charged to the
+   container) -- a pass died twice at ~24GB of file cache with 122MB anon.
+   Mitigate: `os.posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED)` after every bulk
+   read; prefer a FRESH pod for giant read sweeps over a long-lived one
+   (accumulated cache made the same pass 20x slower then fatal on the old pod).
+2. **results.json can be huge (up to ~98MB).** Never `json.load` sweeps of the
+   full doc from 16 threads against a 25GB cap; text-regex the needed fields
+   with full-parse fallback for ambiguous shapes (merger gate pass pattern).
+3. **`CAMPAIGN_STATS_SINCE` is part of every campaign denominator** (default
+   `2026-09-10T11:00:00`). Any anchor-census replication that ignores it
+   produces phantom drift (measured +508/+508 vs v14 before the fix fired
+   STRICT correctly). STRICT misfires are usually replication bugs: suspect
+   your own replay before suspecting campaign drift.
+4. **Anything used twice belongs in `scripts/stats/` with tests.** The first
+   merger was an ad-hoc `.tmp` script lost to a hygiene pass; rebuilt
+   permanently as `sigstage_merge.py`. Same for the audit summarize mode.
+5. **Dry-run checkpoints pay for themselves.** `sigstage_heal --purge
+   --dry-run` caught a driver crash before any cache write; the real purge
+   then matched the dry-run byte-deterministically. Keep
+   measure->dry-run->real (+expected counts pre-stated) the default pattern
+   for any cache-touching tool.
+
 ## Sharding pattern (hundreds of pods available)
 - One shard per pod: `--shard i/N`, `--threads 16`, budget-capped web
   escalations; collect deterministic per-shard JSONL (sort rows before
