@@ -380,7 +380,7 @@ def aggregate(rows, nmg_map, oq2):
     for r in rows:
         types[row_type(r)].append(r)
         entries[r["entry_id"]].append(r)
-        for fl in advisory_flags(r, nmg_map, oq2, ghost_ik):
+        for fl in advisory_flags(r, nmg_map, oq2):
             adv[fl] += 1
     metrics = {}
     for t in TYPE_ORDER:
@@ -393,18 +393,18 @@ def aggregate(rows, nmg_map, oq2):
 
         t1 = _new_mode_table(S7_MODES)
         for r in f1:
-            m = classify_s7_fail(r, 1, ghost_ik)
+            m = classify_s7_fail(r, 1)
             t1[m]["n"] += 1
             t1[m]["exemplars"].append(r)
         t10 = _new_mode_table(S7_MODES_AT10)
         for r in f10:
-            m = classify_s7_fail(r, 10, ghost_ik)
+            m = classify_s7_fail(r, 10)
             t10[m]["n"] += 1
             t10[m]["exemplars"].append(r)
         t0 = collections.OrderedDict()  # S0 modes are subclassed; dynamic keys
         hist = collections.Counter()
         for r in s0f:
-            m = classify_s0_fail(r, ghost_ik, nmg_map)
+            m = classify_s0_fail(r, nmg_map)
             t0.setdefault(m, {"n": 0, "exemplars": []})
             t0[m]["n"] += 1
             t0[m]["exemplars"].append(r)

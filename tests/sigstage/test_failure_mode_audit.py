@@ -333,3 +333,157 @@ class TestSimBand:
 
     def test_none(self):
         assert fma.sim_band(None) is None
+
+
+# ---------------------------------------------------------------------------
+# end-to-end main() on a synthetic fixture tree
+# ---------------------------------------------------------------------------
+
+class TestEndToEnd:
+    @pytest.fixture
+    def tree(self, tmp_path):
+        rows = [
+            # inchikey @1 fail: rank loss within top-5 (IK deliberately in
+            # the ghost ledger's InChIKey list -- must NOT reclassify it)
+            _mk_row(entry_id=1, gt_value="IK_AAA", n_hits=10,
+                    sim1=0.3, sim5=0.8, sim10=0.8,
+                    s7_v5=True, s7_v10=True,
+                    s0_validated=True, s0_bucket="validated", s0_sim=1.0),
+            # inchikey @1 fail: weak below gate at all depths
+            _mk_row(entry_id=2, gt_value="IK_BBB", n_hits=10,
+                    sim1=0.3, sim5=0.4, sim10=0.5,
+                    s0_validated=False, s0_bucket="below_gate", s0_sim=0.4),
+            # inchikey @1 fail: GT unresolved (both per-row signals)
+            _mk_row(entry_id=3, gt_value="IK_CCC", s7_class="unresolved",
+                    n_hits=5, s0_validated=False,
+                    s0_bucket="unresolved_gt"),
+            # inchikey unattempted: zero-hit entry
+            _mk_row(entry_id=4, gt_value="IK_DDD", s7_attempted=False,
+                    n_hits=0, s0_validated=False,
+                    s0_bucket="no_sig_data"),
+            # ion @1 fail: element absent (all sims 0, hits present)
+            _mk_row(entry_id=5, gt_value="IK_EEE", s7_class="ion",
+                    n_hits=50, s0_validated=False,
+                    s0_bucket="below_gate", s0_sim=0.0),
+            # pdb @1 fail: rank loss within top-5 (seq gate 0.9)
+            _mk_row(entry_id=6, gt_type="pdb", gt_value="1ABC",
+                    s7_class=None, n_hits=100,
+                    sim1=0.8, sim5=1.0, sim10=1.0,
+                    s7_v5=True, s7_v10=True,
+                    s0_validated=True, s0_bucket="validated", s0_sim=1.0),
+            # uniprot @1 pass, S0 below-gate .8-.9
+            _mk_row(entry_id=7, gt_type="uniprot", gt_value="P0001",
+                    s7_class=None, n_hits=50,
+                    sim1=0.95, sim5=0.99, sim10=1.0, s7_v1=True,
+                    s7_v5=True, s7_v10=True,
+                    s0_validated=False, s0_bucket="below_gate", s0_sim=0.85),
+            # uniprot unattempted zero-hit, no S0 row at all
+            _mk_row(entry_id=8, gt_type="uniprot", gt_value="P0002",
+                    s7_class=None, s7_attempted=False, n_hits=0),
+            # uniprot @1 fail: rank loss; S0 = NMG lipid-struct cohort
+            _mk_row(entry_id=9, gt_type="uniprot", gt_value="P0003",
+                    s7_class=None, n_hits=10,
+                    sim1=0.8, sim5=0.9, sim10=0.9,
+                    s7_v5=True, s7_v10=True,
+                    s0_validated=False, s0_bucket="no_matching_generator"),
+            # inchikey @1 fail: weak; S0 = OQ-2 unparseable cohort
+            _mk_row(entry_id=10, gt_value="IK_JJJ", n_hits=20,
+                    sim1=0.1, sim5=0.2, sim10=0.3,
+                    s0_validated=False, s0_bucket="unparseable_signature"),
+        ]
+        sd = tmp_path / "shards"; sd.mkdir()
+        with open(sd / "shard_000.jsonl", "w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        fa = tmp_path / "audit_v2.json"
+        fa.write_text(json.dumps({"rows": len(rows),
+                                  "types": fma.recompute_types_block(rows)}))
+        cf = tmp_path / "casefiles"; cf.mkdir()
+        (cf / "S0-OQ-1_nmg.jsonl").write_text(json.dumps(
+            {"entry_id": 9, "gt_type": "uniprot", "gt_value": "P0003",
+             "nmg_class": "struct_only_no_fasta_generator"}) + "\n")
+        (cf / "S0-OQ-2_unparseable.jsonl").write_text(json.dumps(
+            {"entry_id": 10, "gt_value": "IK_JJJ",
+             "error_class": "explicit_valence", "raw_smiles": "[NH+]",
+             "rdkit_error": "x", "segment": "seg"}) + "\n")
+        (cf / "ghost_curation.json").write_text(json.dumps({
+            "source": "test", "pair_keys": 2,
+            "report": {"classes": {
+                "unresolved_legacy": {"distinct_identifiers": 2, "pairs": 2,
+                    "identifiers": [["cid:10008735", 1], ["inchikey:IK_AAA", 1]]},
+                "cid_zero": {"distinct_identifiers": 1, "pairs": 1,
+                             "identifiers": [["cid:0", 1]]},
+            }}}))
+        cp = tmp_path / "campaign.json"
+        cp.write_text(json.dumps({"full": {"S7_similarity_hit_at_k": {
+            "inchikey": {"annotations": 5, "attempted": 4,
+                          "pct_validated@1": 25.0, "pct_validated@10": 25.0},
+            "entry_any_validated@%": {"1": 98.6}}}}))
+        return rows, sd, fa, cf, cp
+
+    def test_main_pipeline(self, tree, tmp_path):
+        rows, sd, fa, cf, cp = tree
+        outj = tmp_path / "out.json"
+        outmd = tmp_path / "out.md"
+        rc = fma.main(["--shards-dir", str(sd), "--frozen-audit", str(fa),
+                       "--casefiles", str(cf), "--campaign", str(cp),
+                       "--out-json", str(outj), "--out-md", str(outmd)])
+        assert rc == 0
+        rep = json.load(open(outj))
+        assert rep["reconciliation"]["ok"] is True
+
+        # inchikey S7@1: 4 attempted failures; ledger membership of IK_AAA
+        # must NOT pull row 1 into gt_unresolved.
+        by_mode = {r["mode"]: r["n"] for r in rep["metrics"]["inchikey"]["tables"]["s7@1"]}
+        assert by_mode["rank_loss_top5"] == 1
+        assert by_mode["weak_below_gate"] == 2
+        assert by_mode["gt_unresolved"] == 1
+        assert by_mode["structure_absent"] == 0
+
+        ion = {r["mode"]: r["n"] for r in rep["metrics"]["ion"]["tables"]["s7@1"]}
+        assert ion["structure_absent"] == 1
+
+        s0u = {r["mode"]: r["n"] for r in rep["metrics"]["uniprot"]["tables"]["s0"]}
+        assert s0u["no_matching_generator:struct_only_no_fasta_generator"] == 1
+        assert s0u["below_gate:.8-.9"] == 1
+        assert s0u["no_s0_row"] == 1
+
+        s0i = {r["mode"]: r["n"] for r in rep["metrics"]["inchikey"]["tables"]["s0"]}
+        assert s0i["unparseable_signature"] == 1
+        assert s0i["no_sig_data"] == 1
+
+        unatt = {r["mode"]: r["n"] for r in rep["metrics"]["uniprot"]["tables"]["unattempted"]}
+        assert unatt["zero_hit_entry"] == 1
+
+        # advisory: OQ-2 + A5 struct tagged, no per-row ghost tag
+        assert rep["advisory"]["oq2_perception_cohort"] == 1
+        assert rep["advisory"]["a5_curation_lipid_struct"] == 1
+        assert "ghost_ledger_membership" not in rep["advisory"]
+        assert rep["ghost_ledger"]["unresolved_legacy"]["distinct_identifiers"] == 2
+
+        # entry level
+        ent = rep["entry_level"]
+        assert ent["entries_total"] == 10
+        assert ent["entries_participating"] == 8
+        assert ent["entries_any_validated@1"] == 1
+        assert ent["entries_failed"] == 7
+        roll = ent["failed_entry_mode_rollup"]
+        assert roll == {"rank_loss_top5": 3, "weak_below_gate": 2,
+                        "gt_unresolved": 1, "structure_absent": 1}
+
+        md = outmd.read_text()
+        assert "PASS" in md
+        assert "of 4" in md  # numbers-only rendering carries denominator
+        assert "campaign v14 comparator" in md
+
+    def test_reconcile_mismatch_exit_code(self, tree, tmp_path):
+        rows, sd, fa, cf, cp = tree
+        broken = json.loads(fa.read_text())
+        broken["types"]["ion"]["annotations"] = 999
+        fa2 = tmp_path / "audit_bad.json"
+        fa2.write_text(json.dumps(broken))
+        rc = fma.main(["--shards-dir", str(sd), "--frozen-audit", str(fa2),
+                       "--casefiles", str(cf), "--campaign", str(cp),
+                       "--out-json", str(tmp_path / "o.json"),
+                       "--out-md", str(tmp_path / "o.md")])
+        assert rc == 3
