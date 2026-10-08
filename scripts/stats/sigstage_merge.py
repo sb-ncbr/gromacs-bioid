@@ -84,8 +84,24 @@ def read_shard_rows(shards_dir):
     return rows, scanned
 
 
-def gate_counts(root, pattern, gt_entry_ids, probe, since_ts=0.0, threads=16):
-    """Recompute gating counts (anchor discipline) with probe machinery."""
+def default_since_ts():
+    """Mirror campaign_stats.py full_section: CAMPAIGN_STATS_SINCE defines the
+    denominator window; the merger must use the SAME window or STRICT drift
+    measurements count pre-window entries as phantom growth (2026-10-08:
+    gate fired with +508/+508 exactly equal to this difference)."""
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(
+            os.environ.get("CAMPAIGN_STATS_SINCE", "2026-09-10T11:00:00")).timestamp()
+    except Exception:
+        return 0.0
+
+
+def gate_counts(root, pattern, gt_entry_ids, probe, since_ts=None, threads=16):
+    """Recompute gating counts (anchor discipline) with probe machinery.
+    since_ts MUST come from default_since_ts() for live runs."""
+    if since_ts is None:
+        since_ts = default_since_ts()
     ids = probe.entry_ids(root, pattern, since_ts)
 
     def one(eid):

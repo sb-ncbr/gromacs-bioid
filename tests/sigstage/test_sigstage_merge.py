@@ -67,6 +67,19 @@ def test_gate_counts_uses_probe_gating(tmp_path):
     assert census == 4
 
 
+def test_gate_counts_respects_since_window(tmp_path):
+    """Pin for the 2026-10-08 STRICT misfire: pre-window entries must be
+    excluded from the anchor census (the +508/+508 phantom-drift bug)."""
+    probe = mg.load_probe()
+    root = tmp_path
+    _mk_entry(root, 1, {"load_simulation": "success", "verify_results": "success"})
+    _mk_entry(root, 99, {"load_simulation": "success", "verify_results": "success"})
+    old = 946684800  # 2000-01-01, way before the CAMPAIGN_STATS_SINCE window
+    os.utime(root / "99" / "results.json", (old, old))
+    counts, census = mg.gate_counts(str(root), "results.json", {1, 99}, probe)
+    assert counts["scanned"] == 1 and census == 1  # entry 99 excluded by mtime
+
+
 def test_merge_full_pipeline_strict_gate_and_deltas(tmp_path, capsys, monkeypatch):
     sd = tmp_path / "shards"
     sd.mkdir()
