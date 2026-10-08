@@ -242,3 +242,18 @@ nearly always retains it.
   MDDBR curation decisions (A5), publication-journal figure regeneration
   (owner), mirror-refresh cron note (populate job exists), seq-zero
   census residual (278k non-skel zeros, poison fraction unknown).
+- 2026-10-08 (6) — **Failure-mode audit** (`failure_mode_audit.py`, `890e5174e`):
+  final mutually-exclusive decomposition of all residual S0/S7 failure fractions
+  against the frozen `audit_v2` join (36,159 rows). GT-unresolved classified
+  strictly by per-row `s7_class=='unresolved'` or `s0_bucket=='unresolved_gt'`
+  (NOT by ghost-ledger InChIKey membership, which over-tags live GTs per A3).
+  Reconciliation vs frozen types block: PASS (all 4 types). E2E on pod
+  `validation-worker-86f6984689-25hlh` → `reports/failure_mode_audit.{json,md}`.
+  Key results: entry any-validated@1 = 98.7% (audit basis) vs 98.6% (campaign v14).
+  Headline organic inchikey S7@1 gap 6.2% (386/6226): gt_unresolved 148,
+  rank_loss_top5 100, weak_below_gate 80, structure_absent 39, rank_loss_top10 19.
+  S0 organic gap 13.7% (878/6416): unparseable_signature 525 (OQ-2),
+  gt_unresolved 235, no_sig_data 68. Advisory cohort tags: A5 struct 531,
+  A5 chem 93, OQ-2 525. Ghost ledger reported as static pair-level stats only
+  (cid_zero 645 pairs / 1 id; unresolved_legacy 7,298 ids / 6,782 pairs;
+  smiles_unparseable 33 / 21 pairs).
