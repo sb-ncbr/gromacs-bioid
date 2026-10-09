@@ -350,6 +350,20 @@ def build() -> dict[str, tuple]:
     w = d / "waters.pdb"
     register("solvent_only_pdb", lambda: write_solvent_pdb(w), lambda: mda.Universe(str(w)), 9)
 
+    def _write_mmcif(target: Path) -> None:
+        import gemmi
+
+        # charmm_psf_pdb is built earlier in this function, so its pdb exists
+        st = gemmi.read_structure(str(DATA / "charmm_psf_pdb" / "system.pdb"))
+        cif_doc = st.make_mmcif_document()
+        cif_doc.write_file(str(target))
+
+    d = dep("mmcif_single")
+    cif = d / "structure.cif"
+    from src_new.loader.strategies import _load_mmcif_via_gemmi
+
+    register("mmcif_single", lambda: _write_mmcif(cif), lambda: _load_mmcif_via_gemmi(cif), N)
+
     return builds
 
 
