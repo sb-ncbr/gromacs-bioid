@@ -16,6 +16,7 @@ from MDAnalysis import Universe
 from ..config.loader import RunConfig
 from ..input.models import InputKind, InputBundle, LoadDecision
 from ..results.results_manager import ResultsManager
+from .probe import match_atoms
 
 logger = logging.getLogger("base")
 
@@ -32,8 +33,27 @@ class LoadStrategy(str, Enum):
     CHARMM_PSF_PDB = "charmm_psf_pdb"
     CHARMM_PSF_CRD = "charmm_psf_crd"
     CHARMM_PSF_DCD = "charmm_psf_dcd"
+    AMBER_PRMTOP_RST7 = "amber_prmtop_rst7"
+    AMBER_PARM7_RST7 = "amber_parm7_rst7"
+    AMBER_PRMTOP_MDCRD = "amber_prmtop_mdcrd"
+    AMBER_PARM7_MDCRD = "amber_parm7_mdcrd"
+    GROMACS_TPR_TRR = "gromacs_tpr_trr"
     PDB = "pdb"
     MMCIF_GEMMI = "mmcif_gemmi"
+
+
+# topology/trajectory pairings that get atom-count probed before the Universe
+# build (static text coordinate sources are checked by the build itself)
+_PROBE_PAIRS: dict["LoadStrategy", tuple[str, str]] = {
+    LoadStrategy.CHARMM_PSF_DCD: ("psf", "dcd"),
+    LoadStrategy.AMBER_PRMTOP_NC: ("prmtop", "nc"),
+    LoadStrategy.AMBER_PARM7_NC: ("parm7", "nc"),
+    LoadStrategy.AMBER_PRMTOP_XTC: ("prmtop", "xtc"),
+    LoadStrategy.AMBER_PARM7_XTC: ("parm7", "xtc"),
+    LoadStrategy.AMBER_PRMTOP_MDCRD: ("prmtop", "mdcrd"),
+    LoadStrategy.AMBER_PARM7_MDCRD: ("parm7", "mdcrd"),
+    LoadStrategy.GROMACS_TPR_TRR: ("tpr", "trr"),
+}
 
 
 @dataclass
@@ -222,7 +242,7 @@ def validate_for_strategy(bundle: InputBundle, strategy: LoadStrategy) -> FileVa
         case LoadStrategy.AMBER_PARM7_XTC:
             parm7_files = _get_files_by_ext(bundle, ".parm7")
             xtc_files = _get_files_by_ext(bundle, ".xtc")
-            
+
             if len(parm7_files) == 0:
                 errors.append("No .parm7 files found")
             elif len(parm7_files) == 1:
@@ -231,7 +251,7 @@ def validate_for_strategy(bundle: InputBundle, strategy: LoadStrategy) -> FileVa
                 warnings.append("multiple_parm7_files")
                 sorted_parm7 = sorted(parm7_files, key=lambda p: p.name)
                 selected_files["parm7"] = sorted_parm7[0]
-            
+
             if len(xtc_files) == 0:
                 errors.append("No .xtc files found")
             elif len(xtc_files) == 1:
@@ -240,6 +260,55 @@ def validate_for_strategy(bundle: InputBundle, strategy: LoadStrategy) -> FileVa
                 warnings.append("multiple_xtc_files")
                 sorted_xtc = sorted(xtc_files, key=lambda p: p.name)
                 selected_files["xtc"] = sorted_xtc[0]
+
+        case LoadStrategy.AMBER_PRMTOP_RST7 | LoadStrategy.AMBER_PARM7_RST7:
+            topo_key = "prmtop" if strategy == LoadStrategy.AMBER_PRMTOP_RST7 else "parm7"
+            topo_files = _get_files_by_ext(bundle, f".{topo_key}")
+            if len(topo_files) == 0:
+                errors.append(f"No .{topo_key} files found")
+            else:
+                selected_files[topo_key] = sorted(topo_files, key=lambda p: p.name)[0]
+                if len(topo_files) > 1:
+                    warnings.append(f"multiple_{topo_key}_files")
+            # amber restart coordinates: any of the three suffix conventions
+            rst7_files = _get_files_by_ext(bundle, ".rst7") or _get_files_by_ext(bundle, ".inpcrd") or _get_files_by_ext(bundle, ".restrt")
+            if len(rst7_files) == 0:
+                errors.append("No .rst7/.inpcrd/.restrt files found (AMBER restart coordinates)")
+            else:
+                selected_files["rst7"] = sorted(rst7_files, key=lambda p: p.name)[0]
+
+        case LoadStrategy.AMBER_PRMTOP_MDCRD | LoadStrategy.AMBER_PARM7_MDCRD:
+            topo_key = "prmtop" if strategy == LoadStrategy.AMBER_PRMTOP_MDCRD else "parm7"
+            topo_files = _get_files_by_ext(bundle, f".{topo_key}")
+            if len(topo_files) == 0:
+                errors.append(f"No .{topo_key} files found")
+            else:
+                selected_files[topo_key] = sorted(topo_files, key=lambda p: p.name)[0]
+                if len(topo_files) > 1:
+                    warnings.append(f"multiple_{topo_key}_files")
+            mdcrd_files = _get_files_by_ext(bundle, ".mdcrd")
+            if len(mdcrd_files) == 0:
+                errors.append("No .mdcrd files found")
+            else:
+                selected_files["mdcrd"] = sorted(mdcrd_files, key=lambda p: p.name)[0]
+                if len(mdcrd_files) > 1:
+                    warnings.append("multiple_mdcrd_files")
+
+        case LoadStrategy.GROMACS_TPR_TRR:
+            tpr_files = _get_files_by_ext(bundle, ".tpr")
+            if len(tpr_files) == 0:
+                errors.append("No .tpr files found")
+            else:
+                selected_files["tpr"] = sorted(tpr_files, key=lambda p: p.name)[0]
+                if len(tpr_files) > 1:
+                    warnings.append("multiple_tpr_files")
+            trr_files = _get_files_by_ext(bundle, ".trr")
+            if len(trr_files) == 0:
+                errors.append("No .trr files found")
+            else:
+                selected_files["trr"] = sorted(trr_files, key=lambda p: p.name)[0]
+                if len(trr_files) > 1:
+                    warnings.append("multiple_trr_files")
 
         case LoadStrategy.PDB:
             pdb_files = _get_files_by_ext(bundle, ".pdb")
@@ -318,6 +387,7 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_TPR_GRO,
                 LoadStrategy.GROMACS_TOP_GRO,
                 LoadStrategy.GROMACS_ITP_GRO,
+                LoadStrategy.GROMACS_TPR_TRR,
             ]
         elif strategy == "TPR_GRO":
             base_strategies = [
@@ -325,6 +395,7 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_TPR,
                 LoadStrategy.GROMACS_TOP_GRO,
                 LoadStrategy.GROMACS_ITP_GRO,
+                LoadStrategy.GROMACS_TPR_TRR,
             ]
         elif strategy == "TOP_GRO":
             base_strategies = [
@@ -339,6 +410,7 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_TOP_GRO,
                 LoadStrategy.GROMACS_TPR_GRO,
                 LoadStrategy.GROMACS_TPR,
+                LoadStrategy.GROMACS_TPR_TRR,
             ]
         else:
             # Default fallback for GROMACS
@@ -347,21 +419,43 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_TPR_GRO,
                 LoadStrategy.GROMACS_TOP_GRO,
                 LoadStrategy.GROMACS_ITP_GRO,
+                LoadStrategy.GROMACS_TPR_TRR,
             ]
     elif input_kind == InputKind.AMBER:
-        if strategy == "PRMTOP_NC":
+        # static/restart coordinates first, netCDF second, xtc/mdcrd last
+        # (old chains had xtc first); new rst7/mdcrd strategies appended
+        if strategy == "PRMTOP_MDCRD":
             base_strategies = [
+                LoadStrategy.AMBER_PRMTOP_MDCRD,
+                LoadStrategy.AMBER_PRMTOP_RST7,
                 LoadStrategy.AMBER_PRMTOP_XTC,
                 LoadStrategy.AMBER_PRMTOP_NC,
+                LoadStrategy.AMBER_PARM7_MDCRD,
+                LoadStrategy.AMBER_PARM7_RST7,
                 LoadStrategy.AMBER_PARM7_XTC,
                 LoadStrategy.AMBER_PARM7_NC,
             ]
-        else:
+        elif strategy == "PRMTOP_RST7":
+            base_strategies = [
+                LoadStrategy.AMBER_PRMTOP_RST7,
+                LoadStrategy.AMBER_PRMTOP_MDCRD,
+                LoadStrategy.AMBER_PRMTOP_XTC,
+                LoadStrategy.AMBER_PRMTOP_NC,
+                LoadStrategy.AMBER_PARM7_RST7,
+                LoadStrategy.AMBER_PARM7_MDCRD,
+                LoadStrategy.AMBER_PARM7_XTC,
+                LoadStrategy.AMBER_PARM7_NC,
+            ]
+        else:  # PRMTOP_NC / PRMTOP_XTC (existing decisions, order preserved)
             base_strategies = [
                 LoadStrategy.AMBER_PRMTOP_XTC,
                 LoadStrategy.AMBER_PRMTOP_NC,
+                LoadStrategy.AMBER_PRMTOP_MDCRD,
+                LoadStrategy.AMBER_PRMTOP_RST7,
                 LoadStrategy.AMBER_PARM7_XTC,
                 LoadStrategy.AMBER_PARM7_NC,
+                LoadStrategy.AMBER_PARM7_MDCRD,
+                LoadStrategy.AMBER_PARM7_RST7,
             ]
     elif input_kind == InputKind.CHARMM:
         # coordinate-source-first ordering; validation filtering below prunes
@@ -389,17 +483,25 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
             LoadStrategy.GROMACS_TPR_GRO,
             LoadStrategy.GROMACS_TOP_GRO,
             LoadStrategy.GROMACS_ITP_GRO,
+            LoadStrategy.GROMACS_TPR_TRR,
+            LoadStrategy.AMBER_PRMTOP_RST7,
+            LoadStrategy.AMBER_PRMTOP_MDCRD,
             LoadStrategy.AMBER_PRMTOP_XTC,
-                LoadStrategy.AMBER_PRMTOP_NC,
+            LoadStrategy.AMBER_PRMTOP_NC,
+            LoadStrategy.AMBER_PARM7_RST7,
+            LoadStrategy.AMBER_PARM7_MDCRD,
             LoadStrategy.AMBER_PARM7_XTC,
-                LoadStrategy.AMBER_PARM7_NC,
+            LoadStrategy.AMBER_PARM7_NC,
+            LoadStrategy.CHARMM_PSF_PDB,
+            LoadStrategy.CHARMM_PSF_CRD,
+            LoadStrategy.CHARMM_PSF_DCD,
             LoadStrategy.PDB,
             LoadStrategy.MMCIF_GEMMI,
         ]
 
-    # For GROMACS and CHARMM, filter to only include strategies that have
-    # validation ok=True (files may be absent; fallbacks try alternates)
-    if input_kind in (InputKind.GROMACS, InputKind.CHARMM):
+    # For GROMACS, AMBER and CHARMM, filter to only include strategies that
+    # have validation ok=True (files may be absent; fallbacks try alternates)
+    if input_kind in (InputKind.GROMACS, InputKind.AMBER, InputKind.CHARMM):
         filtered_strategies = []
         for strat in base_strategies:
             validation = validate_for_strategy(bundle, strat)
@@ -509,6 +611,30 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
             u = Universe(str(files["psf"]), str(files["dcd"]))
             _ = u.trajectory[0]
             return u
+        case LoadStrategy.AMBER_PRMTOP_RST7:
+            # 2.10 needs explicit formats: prmtop via amber-aware TOPParser,
+            # amber restart via RESTRT (no .rst7/.inpcrd suffix mapping in core)
+            return Universe(
+                str(files["prmtop"]), str(files["rst7"]),
+                topology_format="PRMTOP", format="RESTRT",
+            )
+        case LoadStrategy.AMBER_PARM7_RST7:
+            return Universe(
+                str(files["parm7"]), str(files["rst7"]),
+                topology_format="PRMTOP", format="RESTRT",
+            )
+        case LoadStrategy.AMBER_PRMTOP_MDCRD:
+            u = Universe(str(files["prmtop"]), str(files["mdcrd"]), topology_format="PRMTOP")
+            _ = u.trajectory[0]
+            return u
+        case LoadStrategy.AMBER_PARM7_MDCRD:
+            u = Universe(str(files["parm7"]), str(files["mdcrd"]), topology_format="PRMTOP")
+            _ = u.trajectory[0]
+            return u
+        case LoadStrategy.GROMACS_TPR_TRR:
+            u = Universe(str(files["tpr"]), str(files["trr"]), tpr_resid_from_one=True)
+            _ = u.trajectory[0]
+            return u
         case LoadStrategy.PDB:
             src_pref = None
             try:
@@ -533,10 +659,40 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
             raise ValueError(f"Unknown strategy: {strategy}")
 
 
+def _topology_n_atoms(path: Path) -> int | None:
+    """Parse a (binary) topology to get its declared atom count; None on failure.
+
+    Only used for _PROBE_PAIRS topologies (.psf/.prmtop/.parm7/.tpr) — text
+    topologies (.top/.itp) would need the ITP machinery and are skipped.
+    """
+    try:
+        return Universe(str(path)).atoms.n_atoms
+    except Exception:
+        return None
+
+
+def _record_attempts(results: ResultsManager, attempts: list[LoadAttempt]) -> None:
+    """Persist the attempt table (chosen pair + outcome codes + messages)."""
+    attempt_dicts = []
+    for a in attempts:
+        ad = {
+            "strategy": a.strategy.value,
+            "status": a.status,
+            "used_files": a.used_files,
+            "timestamp": a.timestamp,
+        }
+        if a.error_code:
+            ad["error_code"] = a.error_code
+        if a.error_message:
+            ad["error_message"] = a.error_message
+        attempt_dicts.append(ad)
+    results.set_data("loading/attempts", attempt_dicts)
+
+
 def load_simulation(
-    decision: LoadDecision, 
-    bundle: InputBundle, 
-    config: RunConfig, 
+    decision: LoadDecision,
+    bundle: InputBundle,
+    config: RunConfig,
     results: ResultsManager
 ) -> LoadingResult:
     """Orchestrate loading a simulation with strategy cycling."""
@@ -568,20 +724,7 @@ def load_simulation(
             attempts.append(attempt)
             
             # Record attempt to results
-            attempt_dicts = []
-            for a in attempts:
-                ad = {
-                    "strategy": a.strategy.value,
-                    "status": a.status,
-                    "used_files": a.used_files,
-                    "timestamp": a.timestamp,
-                }
-                if a.error_code:
-                    ad["error_code"] = a.error_code
-                if a.error_message:
-                    ad["error_message"] = a.error_message
-                attempt_dicts.append(ad)
-            results.set_data("loading/attempts", attempt_dicts)
+            _record_attempts(results, attempts)
             
             continue
         
@@ -596,7 +739,24 @@ def load_simulation(
             used_files=used_files,
             timestamp=datetime.datetime.now(timezone.utc).isoformat(),
         )
-        
+
+        # atom-count probe for topology/trajectory pairings (before the
+        # expensive Universe build; mdpc 'rejected_atoms' semantics)
+        if strategy in _PROBE_PAIRS:
+            topo_key, traj_key = _PROBE_PAIRS[strategy]
+            topo_atoms = _topology_n_atoms(validation.selected_files[topo_key])
+            if topo_atoms is not None:
+                probe = match_atoms(topo_atoms, validation.selected_files[traj_key])
+                if not probe.ok:
+                    attempt.status = "failed"
+                    attempt.error_code = probe.error_code
+                    attempt.error_message = probe.error_message
+                    attempts.append(attempt)
+                    _record_attempts(results, attempts)
+                    continue
+                if probe.error_code == "probe_failed":
+                    all_warnings.append(probe.error_message)
+
         try:
             # Try to load
             universe = load_with_strategy(strategy, validation.selected_files, config)
@@ -613,20 +773,7 @@ def load_simulation(
             results.set_data("loading/warnings", all_warnings)
             
             # Record all attempts
-            attempt_dicts = []
-            for a in attempts:
-                ad = {
-                    "strategy": a.strategy.value,
-                    "status": a.status,
-                    "used_files": a.used_files,
-                    "timestamp": a.timestamp,
-                }
-                if a.error_code:
-                    ad["error_code"] = a.error_code
-                if a.error_message:
-                    ad["error_message"] = a.error_message
-                attempt_dicts.append(ad)
-            results.set_data("loading/attempts", attempt_dicts)
+            _record_attempts(results, attempts)
             
             return LoadingResult(
                 success=True,
@@ -648,20 +795,7 @@ def load_simulation(
             attempts.append(attempt)
             
             # Record attempt to results
-            attempt_dicts = []
-            for a in attempts:
-                ad = {
-                    "strategy": a.strategy.value,
-                    "status": a.status,
-                    "used_files": a.used_files,
-                    "timestamp": a.timestamp,
-                }
-                if a.error_code:
-                    ad["error_code"] = a.error_code
-                if a.error_message:
-                    ad["error_message"] = a.error_message
-                attempt_dicts.append(ad)
-            results.set_data("loading/attempts", attempt_dicts)
+            _record_attempts(results, attempts)
             
             # Continue to next strategy
     
@@ -671,21 +805,8 @@ def load_simulation(
     results.set_data("loading/warnings", all_warnings)
     
     # Record all attempts
-    attempt_dicts = []
-    for a in attempts:
-        ad = {
-            "strategy": a.strategy.value,
-            "status": a.status,
-            "used_files": a.used_files,
-            "timestamp": a.timestamp,
-        }
-        if a.error_code:
-            ad["error_code"] = a.error_code
-        if a.error_message:
-            ad["error_message"] = a.error_message
-        attempt_dicts.append(ad)
-    results.set_data("loading/attempts", attempt_dicts)
-    
+    _record_attempts(results, attempts)
+
     return LoadingResult(
         success=False,
         attempts=attempts,

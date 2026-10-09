@@ -165,6 +165,22 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             selected_strategy="PRMTOP_NC",
             topology_files=[prmtop_files[0]] if prmtop_files else [],
         )
+
+    # additive: remaining AMBER coordinate sources (ascii traj, then restarts)
+    if (".prmtop" in exts or ".parm7" in exts) and ".mdcrd" in exts:
+        prmtop_files = [f.path for f in bundle.files if f.path.suffix.lower() in (".prmtop", ".parm7")]
+        return LoadDecision(
+            input_kind=InputKind.AMBER,
+            selected_strategy="PRMTOP_MDCRD",
+            topology_files=[prmtop_files[0]] if prmtop_files else [],
+        )
+    if (".prmtop" in exts or ".parm7" in exts) and (".rst7" in exts or ".inpcrd" in exts or ".restrt" in exts):
+        prmtop_files = [f.path for f in bundle.files if f.path.suffix.lower() in (".prmtop", ".parm7")]
+        return LoadDecision(
+            input_kind=InputKind.AMBER,
+            selected_strategy="PRMTOP_RST7",
+            topology_files=[prmtop_files[0]] if prmtop_files else [],
+        )
     
     # 5c. .psf -> CHARMM. Coordinate source priority: .pdb > .crd > .dcd (frame 0).
     # NOTE: ordered BEFORE the generic .pdb branch — a {psf, pdb} deposit must
