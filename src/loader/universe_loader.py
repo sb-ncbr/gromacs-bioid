@@ -1,3 +1,9 @@
+"""DEPRECATED (frozen 2026-10) — legacy strategy loader, superseded by
+src_new/loader/strategies.py + src_new/input/discovery.py (widened engine
+matrix: CHARMM/LAMMPS support, atom-count probing, success gates).
+Do not extend; see src/loader/README.md. Kept for the legacy api_endpoint
+chain only.
+"""
 import logging
 import json
 import os

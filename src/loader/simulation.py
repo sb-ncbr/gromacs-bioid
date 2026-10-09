@@ -1,3 +1,4 @@
+"""DEPRECATED (frozen 2026-10) — superseded by src_new/loader/. See src/loader/README.md."""
 import logging
 import warnings
 from enum import Enum

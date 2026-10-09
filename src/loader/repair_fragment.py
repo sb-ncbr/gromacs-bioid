@@ -1,3 +1,4 @@
+"""DEPRECATED (frozen 2026-10) — superseded by src_new/loader/. See src/loader/README.md."""
 import itertools
 import string
 from typing import Any
