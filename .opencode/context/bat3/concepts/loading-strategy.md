@@ -92,6 +92,10 @@ _(filled per phase)_
   AMBER rst7/mdcrd + GROMACS trr strategies; AMBER validation gating; probe wired into
   `load_simulation`; `rejected_atoms` e2e (psf 36 vs dcd 30) records both counts; `_record_attempts`
   dedup. Suite rows: 81/81.
+- 2026-10-09 **CP3 ✓** (`4500ccd59`, `a04944fc6`): post-build gates (empty_universe, no_positions —
+  NoDataError mapped); NO protein gate (empty-catalog = valid success, verified by solvent-only e2e:
+  pipeline succeeds, molecules catalog = water only). Note: 0-atom TEXT structures fail at parse time
+  (MDAnalysis IndexError → load_exception); gates guard binary/strategy edge paths.
 
 ## Reference
 - `/loading-strategy-pattern.md` (repo root) — mdpc source pattern + corpus evidence
