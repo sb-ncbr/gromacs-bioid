@@ -101,6 +101,11 @@ _(filled per phase)_
   Predicted consequence HIT: resname-less universes crashed `extract_molecule_instance` /
   `_build_whole_system_instance` (NoDataError) → guarded to UNK placeholders; catalog then carries
   no resname-driven identifications (valid semantic). Suite: 93/93.
+- 2026-10-09 **CP5 ✓** (`6d96791b1`, `0fd7db606`, `cd3eb30b7`, `bddef5a4b`): legacy `src/loader`
+  frozen (README + module headers + src_new↛src.loader guard test); production path verified
+  (celery→src_new.api.tasks only). UI whitelist + per-engine copy (was behind backend); tsc clean.
+  **Live prod bug found & fixed**: gemmi ≥0.7 dropped `num_models()` — MMCIF strategy crashed on .cif;
+  compat shim added, mmcif_single fixture + e2e cover it.
 
 ## Reference
 - `/loading-strategy-pattern.md` (repo root) — mdpc source pattern + corpus evidence
