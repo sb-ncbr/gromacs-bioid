@@ -95,7 +95,9 @@ class TestInspectDirectory:
 
         assert "GROMACS_TOP" in file_types
         assert "GROMACS_GRO" in file_types
-        assert "GROMACS_XTC" in file_types
+        # .xtc is engine-neutral (pairs with gromacs and amber prmtop alike);
+        # the old duplicated dict let AMBER_XTC shadow GROMACS_XTC entirely
+        assert "XTC" in file_types
 
     def test_inspect_computes_checksums(self, tmp_path: Path):
         """File checksums are computed."""
