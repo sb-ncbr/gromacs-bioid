@@ -96,6 +96,11 @@ _(filled per phase)_
   NoDataError mapped); NO protein gate (empty-catalog = valid success, verified by solvent-only e2e:
   pipeline succeeds, molecules catalog = water only). Note: 0-atom TEXT structures fail at parse time
   (MDAnalysis IndexError → load_exception); gates guard binary/strategy edge paths.
+- 2026-10-09 **CP4 ✓** (`926985462`, `83bf9fc84`, `70696faea`): LAMMPS `.data` (file-declared
+  atom_style first, then full/molecular/charge/atomic retries, all failures compiled in message).
+  Predicted consequence HIT: resname-less universes crashed `extract_molecule_instance` /
+  `_build_whole_system_instance` (NoDataError) → guarded to UNK placeholders; catalog then carries
+  no resname-driven identifications (valid semantic). Suite: 93/93.
 
 ## Reference
 - `/loading-strategy-pattern.md` (repo root) — mdpc source pattern + corpus evidence
