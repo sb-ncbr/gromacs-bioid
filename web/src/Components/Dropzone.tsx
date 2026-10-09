@@ -19,13 +19,21 @@ const Dropzone = ({ setUploadedFiles, setUploaded }: DropzoneProps) => {    cons
     getInputProps
 } = useDropzone({
         accept: {
-            'application/octet-stream': [".tpr", ".gro", ".top", ".itp", ".pdb"],
+            // simulation files per engine (must match src_new loader matrix):
+            // GROMACS, AMBER, CHARMM/NAMD, LAMMPS, generic structures
+            'application/octet-stream': [
+                ".tpr", ".gro", ".top", ".itp", ".trr", ".xtc",   // gromacs
+                ".prmtop", ".parm7", ".nc", ".rst7", ".inpcrd", ".restrt", ".mdcrd", // amber
+                ".psf", ".pdb", ".crd", ".dcd",                   // charmm/namd
+                ".data",                                          // lammps
+                ".cif",                                           // mmcif
+            ],
             'application/json': [".json"],
             'text/yaml': [".yaml"],
             'archive/zip': [".zip"],
             'archive/x-tar': [".tar"],
             'application/x-gzip': [".tar.gz"]
-            
+
         }
     });
     
@@ -63,7 +71,7 @@ const Dropzone = ({ setUploadedFiles, setUploaded }: DropzoneProps) => {    cons
                                 </Grid>
                             </Grid>
                             {/* or archives *.zip or *.tar(.gz) */}
-                            <Typography variant="subtitle1"><em>(Only [*.tpr, *.gro, *.top, *.itp, and *.zip] files are accepted.)</em></Typography>
+                            <Typography variant="subtitle1"><em>(GROMACS, AMBER, CHARMM/NAMD, LAMMPS, PDB &amp; mmCIF simulation files, or *.zip / *.tar(.gz) archives, are accepted.)</em></Typography>
                         </div>
                     </Paper>
                 </Stack>

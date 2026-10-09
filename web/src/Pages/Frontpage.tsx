@@ -63,7 +63,7 @@ const Frontpage = () => {
         const storedRequests = JSON.parse(localStorage.getItem('request_ids') || '[]');
         var record: AnnotationSessionRecord = {
             id: request_id,
-            title: customMetadata?.dataset_metadata?.title || uploadedFiles.filter(file => file.name.endsWith('.tpr') || file.name.endsWith('.zip') || file.name.endsWith('.tar') || file.name.endsWith('.gz'))[0]?.name || "Untitled",
+            title: customMetadata?.dataset_metadata?.title || uploadedFiles.filter(file => /\.(tpr|prmtop|parm7|psf|data|zip|tar|gz)$/i.test(file.name))[0]?.name || "Untitled",
             uploadedFiles: uploadedFiles.map(file => file.name),
             date: new Date().toISOString()
         }
@@ -144,19 +144,36 @@ const Frontpage = () => {
                 </Stack>
 
                 <Typography variant="body1">
-                    This tool analyzes GROMACS molecular dynamics simulation files to identify and annotate the biomolecules present.
+                    This tool analyzes molecular dynamics simulation files to identify and annotate the biomolecules present.
+                    It supports <strong>GROMACS</strong>, <strong>AMBER</strong>, <strong>CHARMM/NAMD</strong> and <strong>LAMMPS</strong> simulations,
+                    as well as individual <strong>PDB</strong> and <strong>mmCIF</strong> structures.
                     It is designed to work with a flexible, best-effort approach — simply upload all the files you have from your simulation,
-                    and the tool will make use of as much information as possible. The following files are supported:
+                    and the tool will make use of as much information as possible. The following files are supported per engine:
                 </Typography>
                 <Box component="ul" sx={{ pl: 4, mb: 2 }}>
                     <li>
                         <Typography variant="body1">
-                            <strong>Topology files</strong>: either a <code>.tpr</code> file, a complete <code>.top</code> file, or a <code>.top</code> file with all necessary <code>.itp</code> includes.
+                            <strong>GROMACS</strong>: <code>.tpr</code>, or a complete <code>.top</code> with all <code>.itp</code> includes, plus <code>.gro</code> coordinates.
                         </Typography>
                     </li>
                     <li>
                         <Typography variant="body1">
-                            <strong>Coordinate files</strong>: ideally a <code>.gro</code> file to extract atom positions and structural context.
+                            <strong>AMBER</strong>: <code>.prmtop</code>/<code>.parm7</code> topology plus coordinates (<code>.rst7</code>/<code>.inpcrd</code>, <code>.nc</code> or <code>.mdcrd</code>).
+                        </Typography>
+                    </li>
+                    <li>
+                        <Typography variant="body1">
+                            <strong>CHARMM / NAMD</strong>: <code>.psf</code> topology plus coordinates (<code>.pdb</code> or <code>.crd</code>; a <code>.dcd</code> can also provide the starting frame).
+                        </Typography>
+                    </li>
+                    <li>
+                        <Typography variant="body1">
+                            <strong>LAMMPS</strong>: a single <code>.data</code> file.
+                        </Typography>
+                    </li>
+                    <li>
+                        <Typography variant="body1">
+                            <strong>Structures</strong>: <code>.pdb</code> and <code>.cif</code> files are accepted on their own.
                         </Typography>
                     </li>
                 </Box>
