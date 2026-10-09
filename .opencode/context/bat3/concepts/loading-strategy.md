@@ -72,6 +72,19 @@ trajectory analysis, corpus census (post-launch stats task).
 ## As-Built Log
 _(filled per phase)_
 - 2026-10-09: design record created; plan approved.
+- 2026-10-09 **CP0 ✓** (`63c73bb5e`): 9 synthetic fixtures + `make_fixtures.py` generator, self-verifies 9/9.
+  MDAnalysis 2.10 facts: prmtop parse needs `%FLAG TITLE` + bond/angle/dihedral flags;
+  `.mdcrd` TRJReader wants no natom header + trailing box line; `.rst7`/`RESTRT` explicit format.
+- 2026-10-09 **Phase 1 ✓** (`10c5240e1`, `0f755a658`, `04db2165e`, `b82faf422`): CHARMM discovery +
+  3 strategies; {psf,pdb}→CHARMM precedence; 20-test battery green; e2e psf+pdb & psf+dcd green
+  (frame-0 DCD universe passes unwrap/analyze/export, in_memory=False confirmed safe).
+- **Normalization probe result: zero misses** — existing tables already cover CHARMM
+  (HSD/HSE/HSP→H in KNOWN_RESIDUE_CODES); PROA segment flagged is_protein, segids preserved,
+  no 'SYSTEM' collapse (PSF carries segids). NO constants change required (probe skipped commit 3).
+- Fixture-suite note: `test_inspect_with_gromacs_files` was failing before Phase 1 too
+  (asserted the unreachable `GROMACS_XTC` value shadowed by the old duplicate dict key).
+- MDAnalysis 2.10 nomenclature: `TOPParser` handles AMBER PRMTOP/PARM7 — NOT broken dispatch;
+  GROMACS .top uses `topology_format="ITP"` (existing behavior correct).
 
 ## Reference
 - `/loading-strategy-pattern.md` (repo root) — mdpc source pattern + corpus evidence
