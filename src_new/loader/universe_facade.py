@@ -549,6 +549,15 @@ class LoadedUniverse:
             elif props.atom_count_fragment > 1:
                 mtype = MoleculeType.SMALL_MOLECULE
         
+        # resname-less engines (LAMMPS .data) carry no residue nomenclature:
+        # degrade to UNK per residue instead of crashing (NoDataError from
+        # MDAnalysis __getattr__); downstream catalog then contains no
+        # resname-driven identifications — valid empty-catalog semantic.
+        try:
+            resnames = list(fragment.residues.resnames)
+        except Exception:  # NoDataError in MDAnalysis 2.x
+            resnames = ["UNK"] * len(fragment.residues)
+
         return MoleculeInstance(
             instance_id=f"mol_{segment_name}",
             atom_indices=list(fragment.atoms.indices),
@@ -556,7 +565,7 @@ class LoadedUniverse:
             segment_ids=[segment_name],
             chain_ids=list(set(fragment.atoms.segids)),
             resids=list(fragment.residues.resids),
-            resnames=list(fragment.residues.resnames),
+            resnames=resnames,
             molecule_type=mtype,
             copy_number=props.molecule_count,
             atom_count=props.atom_count_fragment,

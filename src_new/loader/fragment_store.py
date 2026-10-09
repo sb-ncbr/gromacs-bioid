@@ -72,6 +72,12 @@ class FragmentStore:
                 if elem:
                     composition[elem] = composition.get(elem, 0) + 1
 
+        # resname-less engines (LAMMPS .data): UNK instead of NoDataError
+        try:
+            resnames = list(u.residues.resnames)
+        except Exception:  # NoDataError in MDAnalysis 2.x
+            resnames = ["UNK"] * len(u.residues)
+
         return MoleculeInstance(
             instance_id="mol_SYSTEM",
             atom_indices=list(u.atoms.indices),
@@ -79,7 +85,7 @@ class FragmentStore:
             segment_ids=list(self.facade.get_segments()),
             chain_ids=list(set(u.atoms.segids)),
             resids=list(u.residues.resids),
-            resnames=list(u.residues.resnames),
+            resnames=resnames,
             molecule_type=MoleculeType.UNKNOWN,
             copy_number=1,
             atom_count=len(u.atoms),
