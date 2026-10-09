@@ -56,6 +56,14 @@ _PROBE_PAIRS: dict["LoadStrategy", tuple[str, str]] = {
 }
 
 
+class _GateFailure(Exception):
+    """Post-build load-gate rejection carrying a structured error code."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
 @dataclass
 class FileValidation:
     ok: bool
@@ -760,7 +768,19 @@ def load_simulation(
         try:
             # Try to load
             universe = load_with_strategy(strategy, validation.selected_files, config)
-            
+
+            # Post-build success gates (mdpc executor). Deliberately NO protein
+            # gate: bat3 catalogs every molecule, so solvent-only / empty-catalog
+            # deposits are a valid success.
+            if universe.atoms.n_atoms == 0:
+                raise _GateFailure("empty_universe", "Universe built with zero atoms")
+            try:
+                positions = universe.atoms.positions
+            except Exception as no_coords:  # NoDataError in MDAnalysis 2.x
+                raise _GateFailure("no_positions", "Universe built without coordinates") from no_coords
+            if positions is None or len(positions) == 0:
+                raise _GateFailure("no_positions", "Universe built without coordinates")
+
             # Success!
             attempt.status = "success"
             attempt.universe = universe
@@ -783,6 +803,18 @@ def load_simulation(
                 warnings=all_warnings,
             )
             
+        except _GateFailure as gate:
+            # post-build gate rejected: structured outcome, try next strategy
+            attempt.status = "failed"
+            attempt.error_code = gate.code
+            attempt.error_message = str(gate)
+
+            logger.info(f"Strategy {strategy} rejected by gate {gate.code}: {gate}")
+
+            attempts.append(attempt)
+            _record_attempts(results, attempts)
+            # Continue to next strategy
+
         except Exception as exc:
             # Load failed
             attempt.status = "failed"
