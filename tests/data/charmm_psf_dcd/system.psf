@@ -1,0 +1,52 @@
+PSF
+
+       1 !NTITLE
+ REMARKS synthetic bat3 test fixture
+
+      36 !NATOM
+       1 PROA 1    ALA  N    NH1   -0.470000       14.0070           0
+       2 PROA 1    ALA  HN   H      0.310000        1.0080           0
+       3 PROA 1    ALA  CA   CT1    0.070000       12.0110           0
+       4 PROA 1    ALA  HA   HB1    0.090000        1.0080           0
+       5 PROA 1    ALA  CB   CT3   -0.270000       12.0110           0
+       6 PROA 1    ALA  C    C      0.510000       12.0110           0
+       7 PROA 1    ALA  O    O     -0.510000       15.9990           0
+       8 PROA 2    GLY  N    NH1   -0.470000       14.0070           0
+       9 PROA 2    GLY  HN   H      0.310000        1.0080           0
+      10 PROA 2    GLY  CA   CT2   -0.020000       12.0110           0
+      11 PROA 2    GLY  HA2  HB2    0.090000        1.0080           0
+      12 PROA 2    GLY  HA3  HB2    0.090000        1.0080           0
+      13 PROA 2    GLY  C    C      0.510000       12.0110           0
+      14 PROA 2    GLY  O    O     -0.510000       15.9990           0
+      15 PROA 3    HSE  N    NH1   -0.470000       14.0070           0
+      16 PROA 3    HSE  CA   CT1    0.070000       12.0110           0
+      17 PROA 3    HSE  CB   CT2   -0.080000       12.0110           0
+      18 PROA 3    HSE  CG   CPG   -0.050000       12.0110           0
+      19 PROA 3    HSE  ND1  NR1   -0.360000       14.0070           0
+      20 PROA 3    HSE  CE1  CPH    0.320000       12.0110           0
+      21 PROA 3    HSE  CD2  CPT   -0.190000       12.0110           0
+      22 PROA 3    HSE  C    C      0.510000       12.0110           0
+      23 PROA 3    HSE  O    O     -0.510000       15.9990           0
+      24 PROA 4    ALA  N    NH1   -0.470000       14.0070           0
+      25 PROA 4    ALA  CA   CT1    0.070000       12.0110           0
+      26 PROA 4    ALA  CB   CT3   -0.270000       12.0110           0
+      27 PROA 4    ALA  C    C      0.510000       12.0110           0
+      28 PROA 4    ALA  O    O     -0.510000       15.9990           0
+      29 SOLV 5    TIP3 OH2  OT    -0.834000       15.9990           0
+      30 SOLV 5    TIP3 H1   HT     0.417000        1.0080           0
+      31 SOLV 5    TIP3 H2   HT     0.417000        1.0080           0
+      32 SOLV 6    TIP3 OH2  OT    -0.834000       15.9990           0
+      33 SOLV 6    TIP3 H1   HT     0.417000        1.0080           0
+      34 SOLV 6    TIP3 H2   HT     0.417000        1.0080           0
+      35 IONS 7    SOD  SOD  SOD    1.000000       22.9900           0
+      36 IONS 8    CLA  CLA  CLA   -1.000000       35.4500           0
+
+      31 !NBOND: bonds
+       1       2       2       3       3       4       4       5
+       5       6       6       7       7       8       8       9
+       9      10      10      11      11      12      12      13
+      13      14      14      15      15      16      16      17
+      17      18      18      19      19      20      20      21
+      21      22      22      23      23      24      24      25
+      25      26      26      27      27      28      29      30
+      30      31      32      33      33      34
