@@ -10,6 +10,7 @@ class InputKind(str, Enum):
     GROMACS = "gromacs"
     AMBER = "amber"
     CHARMM = "charmm"  # covers NAMD deposits (psf+dcd family)
+    LAMMPS = "lammps"
     PDB = "pdb"
     MMCIF = "mmcif"
 

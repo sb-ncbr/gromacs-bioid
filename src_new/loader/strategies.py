@@ -38,8 +38,20 @@ class LoadStrategy(str, Enum):
     AMBER_PRMTOP_MDCRD = "amber_prmtop_mdcrd"
     AMBER_PARM7_MDCRD = "amber_parm7_mdcrd"
     GROMACS_TPR_TRR = "gromacs_tpr_trr"
+    LAMMPS_DATA = "lammps_data"
     PDB = "pdb"
     MMCIF_GEMMI = "mmcif_gemmi"
+
+
+# LAMMPS .data atom styles tried in order when the file's own "# <style>"
+# comment does not parse (deposits vary in their Masses/Atoms columns)
+_LAMMPS_ATOM_STYLES: tuple[str | None, ...] = (
+    None,  # trust the file's own "Atoms # <style>" declaration first
+    "id resid type q x y z",  # full
+    "id resid type x y z",    # molecular
+    "id type q x y z",        # charge
+    "id type x y z",          # atomic
+)
 
 
 # topology/trajectory pairings that get atom-count probed before the Universe
@@ -302,6 +314,15 @@ def validate_for_strategy(bundle: InputBundle, strategy: LoadStrategy) -> FileVa
                 if len(mdcrd_files) > 1:
                     warnings.append("multiple_mdcrd_files")
 
+        case LoadStrategy.LAMMPS_DATA:
+            data_files = _get_files_by_ext(bundle, ".data")
+            if len(data_files) == 0:
+                errors.append("No .data files found (LAMMPS)")
+            else:
+                selected_files["data"] = sorted(data_files, key=lambda p: p.name)[0]
+                if len(data_files) > 1:
+                    warnings.append("multiple_data_files")
+
         case LoadStrategy.GROMACS_TPR_TRR:
             tpr_files = _get_files_by_ext(bundle, ".tpr")
             if len(tpr_files) == 0:
@@ -465,6 +486,8 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.AMBER_PARM7_MDCRD,
                 LoadStrategy.AMBER_PARM7_RST7,
             ]
+    elif input_kind == InputKind.LAMMPS:
+        base_strategies = [LoadStrategy.LAMMPS_DATA]
     elif input_kind == InputKind.CHARMM:
         # coordinate-source-first ordering; validation filtering below prunes
         # strategies whose files are absent
@@ -503,6 +526,7 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
             LoadStrategy.CHARMM_PSF_PDB,
             LoadStrategy.CHARMM_PSF_CRD,
             LoadStrategy.CHARMM_PSF_DCD,
+            LoadStrategy.LAMMPS_DATA,
             LoadStrategy.PDB,
             LoadStrategy.MMCIF_GEMMI,
         ]
@@ -577,6 +601,27 @@ def _load_mmcif_via_gemmi(cif_path: Path) -> Universe:
         os.unlink(tmp_path)
 
 
+def _load_lammps_data(data_path: Path) -> Universe:
+    """Load a LAMMPS .data file, retrying common atom styles.
+
+    Deposits vary in their Masses/Atoms columns; the file's own
+    'Atoms # <style>' declaration is trusted first, then common styles.
+    All failures are compiled into one sub-attempt record in the raised message.
+    """
+    failures: list[str] = []
+    for style in _LAMMPS_ATOM_STYLES:
+        try:
+            if style is None:
+                return Universe(str(data_path), format="DATA")
+            return Universe(str(data_path), format="DATA", atom_style=style)
+        except Exception as exc:
+            label = style if style is not None else "<file-declared>"
+            failures.append(f"{label}: {type(exc).__name__}: {exc}")
+    raise RuntimeError(
+        f"LAMMPS .data load failed for all atom styles: " + " | ".join(failures)
+    )
+
+
 def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: RunConfig) -> Universe:
     """Load a Universe using the specified strategy and files."""
     match strategy:
@@ -643,6 +688,8 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
             u = Universe(str(files["tpr"]), str(files["trr"]), tpr_resid_from_one=True)
             _ = u.trajectory[0]
             return u
+        case LoadStrategy.LAMMPS_DATA:
+            return _load_lammps_data(files["data"])
         case LoadStrategy.PDB:
             src_pref = None
             try:

@@ -70,6 +70,10 @@ def discover_input_kind(dir_path: Path) -> InputKind | None:
     if ".psf" in extensions:
         return InputKind.CHARMM
 
+    # Check for LAMMPS (.data carries topology + coordinates in one file)
+    if ".data" in extensions:
+        return InputKind.LAMMPS
+
     # Check for PDB (.pdb)
     if ".pdb" in extensions:
         return InputKind.PDB
@@ -182,6 +186,15 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             topology_files=[prmtop_files[0]] if prmtop_files else [],
         )
     
+    # 5b. .data -> LAMMPS (topology + coordinates in one file)
+    if ".data" in exts:
+        data_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".data"]
+        return LoadDecision(
+            input_kind=InputKind.LAMMPS,
+            selected_strategy="DATA_SINGLE",
+            topology_files=data_files[:1],
+        )
+
     # 5c. .psf -> CHARMM. Coordinate source priority: .pdb > .crd > .dcd (frame 0).
     # NOTE: ordered BEFORE the generic .pdb branch — a {psf, pdb} deposit must
     # keep its CHARMM topology instead of degrading to the flat PDB path.
