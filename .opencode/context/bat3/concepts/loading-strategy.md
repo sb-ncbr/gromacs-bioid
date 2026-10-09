@@ -85,6 +85,13 @@ _(filled per phase)_
   (asserted the unreachable `GROMACS_XTC` value shadowed by the old duplicate dict key).
 - MDAnalysis 2.10 nomenclature: `TOPParser` handles AMBER PRMTOP/PARM7 — NOT broken dispatch;
   GROMACS .top uses `topology_format="ITP"` (existing behavior correct).
+- 2026-10-09 **CP2a ✓ (early, via fixtures)**: .rst7→`format="RESTRT"`, .mdcrd→TRJReader (no natom
+  header line, box line required), prmtop→amber-aware TOPParser; ALL native, **no parmed needed**.
+- 2026-10-09 **CP2 ✓** (`934ca1394`, `c855a7936`, `85db70c2e`): probe layer (mdpc port, topology-free
+  readers; `.mdcrd` unprobed by design — TRJReader needs n_atoms upfront → defers to build);
+  AMBER rst7/mdcrd + GROMACS trr strategies; AMBER validation gating; probe wired into
+  `load_simulation`; `rejected_atoms` e2e (psf 36 vs dcd 30) records both counts; `_record_attempts`
+  dedup. Suite rows: 81/81.
 
 ## Reference
 - `/loading-strategy-pattern.md` (repo root) — mdpc source pattern + corpus evidence
