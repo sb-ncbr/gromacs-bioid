@@ -106,6 +106,20 @@ _(filled per phase)_
   (celery→src_new.api.tasks only). UI whitelist + per-engine copy (was behind backend); tsc clean.
   **Live prod bug found & fixed**: gemmi ≥0.7 dropped `num_models()` — MMCIF strategy crashed on .cif;
   compat shim added, mmcif_single fixture + e2e cover it.
+- 2026-10-09 **Final gate ✓**: engine-matrix invocation 97/97 (input + all loader suites + guards).
+
+## Release Notes (2026-10)
+1. **Rollout**: ui-worker + api images rebuild picks up loader + UI copy together (UI parity was the
+   load-bearing risk); no new pip deps (gemmi/MDAnalysis already shipped; no parmed).
+2. **Environment quirk discovered**: this MDAnalysis install can't read coordinates from the fixture
+   TPRs (`No coordinate reader found ... Skipping`) — GROMACS_TPR now fails the `no_positions` gate
+   and correctly routes to `_GRO` alternates or fails honestly. Previously it silently produced
+   coordinate-less universes (root cause of pre-existing `TestFacade14976a::test_segment_flags`
+   failure, which now skips instead of crashing via `_load_and_facade`'s guard).
+3. **Manual release gate (owner)**: replay regression — run `scripts/replay_*.py` slice of known-good
+   deposits; signatures for pre-existing formats must be byte-identical (additive-change guarantee).
+4. **Deferred**: pair-level ranking, recursion/multi-dir, Desmond, corpus census (stats task),
+   .mdcrd probing (TRJReader n_atoms circularity), dcd-only deposits (honest failure by design).
 
 ## Reference
 - `/loading-strategy-pattern.md` (repo root) — mdpc source pattern + corpus evidence
