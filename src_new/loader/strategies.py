@@ -553,8 +553,9 @@ def _load_mmcif_via_gemmi(cif_path: Path) -> Universe:
         raise ImportError("gemmi is required for MMCIF_GEMMI strategy. Install with: pip install gemmi")
 
     st = gemmi.read_structure(str(cif_path))
-    # Use the first model
-    if st.num_models() == 0:
+    # Use the first model (gemmi >= 0.7 dropped num_models(); len(st) is the count)
+    n_models = st.num_models() if hasattr(st, "num_models") else len(st)
+    if n_models == 0:
         raise RuntimeError("No models in mmCIF file")
 
     # Try different approaches to get PDB string from gemmi
