@@ -29,6 +29,9 @@ class LoadStrategy(str, Enum):
     AMBER_PARM7_NC = "amber_parm7_nc"
     AMBER_PRMTOP_XTC = "amber_prmtop_xtc"
     AMBER_PARM7_XTC = "amber_parm7_xtc"
+    CHARMM_PSF_PDB = "charmm_psf_pdb"
+    CHARMM_PSF_CRD = "charmm_psf_crd"
+    CHARMM_PSF_DCD = "charmm_psf_dcd"
     PDB = "pdb"
     MMCIF_GEMMI = "mmcif_gemmi"
 
@@ -269,6 +272,32 @@ def validate_for_strategy(bundle: InputBundle, strategy: LoadStrategy) -> FileVa
                 sorted_cif = sorted(cif_files, key=lambda p: p.name)
                 selected_files["cif"] = sorted_cif[0]
 
+        case LoadStrategy.CHARMM_PSF_PDB | LoadStrategy.CHARMM_PSF_CRD | LoadStrategy.CHARMM_PSF_DCD:
+            psf_files = _get_files_by_ext(bundle, ".psf")
+            if len(psf_files) == 0:
+                errors.append("No .psf files found")
+            elif len(psf_files) == 1:
+                selected_files["psf"] = psf_files[0]
+            else:
+                warnings.append("multiple_psf_files")
+                selected_files["psf"] = sorted(psf_files, key=lambda p: p.name)[0]
+
+            # coordinate source for this strategy: pdb (structure) is required,
+            # crd/dcd optional per strategy
+            coord_ext = {
+                LoadStrategy.CHARMM_PSF_PDB: "pdb",
+                LoadStrategy.CHARMM_PSF_CRD: "crd",
+                LoadStrategy.CHARMM_PSF_DCD: "dcd",
+            }[strategy]
+            coord_files = _get_files_by_ext(bundle, f".{coord_ext}")
+            if len(coord_files) == 0:
+                errors.append(f"No .{coord_ext} files found (CHARMM coordinate source)")
+            elif len(coord_files) == 1:
+                selected_files[coord_ext] = coord_files[0]
+            else:
+                warnings.append(f"multiple_{coord_ext}_files")
+                selected_files[coord_ext] = sorted(coord_files, key=lambda p: p.name)[0]
+
         case _:
             errors.append(f"Unknown strategy: {strategy}")
 
@@ -334,6 +363,15 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.AMBER_PARM7_XTC,
                 LoadStrategy.AMBER_PARM7_NC,
             ]
+    elif input_kind == InputKind.CHARMM:
+        # coordinate-source-first ordering; validation filtering below prunes
+        # strategies whose files are absent
+        if strategy == "PSF_CRD":
+            base_strategies = [LoadStrategy.CHARMM_PSF_CRD, LoadStrategy.CHARMM_PSF_PDB, LoadStrategy.CHARMM_PSF_DCD]
+        elif strategy == "PSF_DCD":
+            base_strategies = [LoadStrategy.CHARMM_PSF_DCD, LoadStrategy.CHARMM_PSF_PDB, LoadStrategy.CHARMM_PSF_CRD]
+        else:  # PSF_PDB (and PSF_ONLY honest-failure path)
+            base_strategies = [LoadStrategy.CHARMM_PSF_PDB, LoadStrategy.CHARMM_PSF_CRD, LoadStrategy.CHARMM_PSF_DCD]
     elif input_kind == InputKind.PDB:
         if strategy == "PDB_SINGLE":
             base_strategies = [LoadStrategy.PDB]
@@ -359,8 +397,9 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
             LoadStrategy.MMCIF_GEMMI,
         ]
 
-    # For GROMACS, filter to only include strategies that have validation ok=True
-    if input_kind == InputKind.GROMACS:
+    # For GROMACS and CHARMM, filter to only include strategies that have
+    # validation ok=True (files may be absent; fallbacks try alternates)
+    if input_kind in (InputKind.GROMACS, InputKind.CHARMM):
         filtered_strategies = []
         for strat in base_strategies:
             validation = validate_for_strategy(bundle, strat)
@@ -460,6 +499,16 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
             return Universe(str(files["prmtop"]), str(files["xtc"]))
         case LoadStrategy.AMBER_PARM7_XTC:
             return Universe(str(files["parm7"]), str(files["xtc"]))
+        case LoadStrategy.CHARMM_PSF_PDB:
+            return Universe(str(files["psf"]), str(files["pdb"]), in_memory=True)
+        case LoadStrategy.CHARMM_PSF_CRD:
+            return Universe(str(files["psf"]), str(files["crd"]), in_memory=True)
+        case LoadStrategy.CHARMM_PSF_DCD:
+            # trajectory as frame-0 coordinate source; NOT in_memory — DCD files
+            # can be GB-scale. Downstream consumes frame-0 positions only.
+            u = Universe(str(files["psf"]), str(files["dcd"]))
+            _ = u.trajectory[0]
+            return u
         case LoadStrategy.PDB:
             src_pref = None
             try:
