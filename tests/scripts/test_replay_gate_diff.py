@@ -99,6 +99,42 @@ class TestCompare:
         assert v["ok"]
         assert any("identifier" in i for i in v["info"])
 
+    def test_bundle_role_widening_is_cosmetic_not_strict(self):
+        """Legacy role 'input' vs new canonical roles must not trip the gate
+        (documented provenance widening); extension-derived roles converge."""
+        a = _base_result()
+        a["data"]["input"]["bundle"] = {"files": [
+            {"path": "/app/runs/x/md.tpr", "file_type": "GROMACS_TPR", "role": "structure"},
+            {"path": "/app/runs/x/md.gro", "file_type": "GROMACS_GRO", "role": "input"},
+        ]}
+        b = copy.deepcopy(a)
+        b["data"]["input"]["bundle"]["files"][1]["role"] = "coordinate"
+        v = compare(a, b)
+        assert v["ok"], v["strict"]
+
+    def test_bundle_filetype_change_stays_strict(self):
+        a = _base_result()
+        a["data"]["input"]["bundle"] = {"files": [
+            {"path": "/app/runs/x/md.tpr", "file_type": "GROMACS_TPR", "role": "structure"},
+        ]}
+        b = copy.deepcopy(a)
+        b["data"]["input"]["bundle"]["files"][0]["file_type"] = "TAMPERED"
+        assert not compare(a, b)["ok"]
+
+    def test_legacy_role_strings_converge_by_extension(self):
+        """role 'input' (legacy) vs 'coordinate' (new provenance) is cosmetic."""
+        a, b = _base_result(), _base_result()
+        a["data"]["input"]["bundle"] = {"files": [
+            {"path": "/app/runs/x/md.tpr", "file_type": "GROMACS_TPR", "role": "structure"},
+            {"path": "/app/runs/x/md.gro", "file_type": "GROMACS_GRO", "role": "input"},
+        ]}
+        b["data"]["input"]["bundle"] = {"files": [
+            {"path": "/app/runs/x/md.tpr", "file_type": "GROMACS_TPR", "role": "structure"},
+            {"path": "/app/runs/x/md.gro", "file_type": "GROMACS_GRO", "role": "coordinate"},
+        ]}
+        v = compare(a, b)
+        assert v["ok"], v["strict"]
+
     def test_baseline_failed_never_passes_loading(self):
         """failed baseline + failed replay at same place = no strict diff
         (no success-invariant to violate)."""

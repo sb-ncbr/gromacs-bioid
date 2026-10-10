@@ -24,6 +24,7 @@ Exit 0 = gate passes, 2 = strict diff found, 3 = usage/io error.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
 from pathlib import Path
@@ -40,6 +41,39 @@ _IGNORED_KEY_PARTS = (
     "results_log",
 )
 _ALLOWED_DRIFT_DATA_KEYS = ("identifiers", "verification")
+
+
+# Canonical container roles by extension (mirrors discovery.py
+# _CANONICAL_SUFFIX_TABLE): bundle file "role" strings were cosmetic-only in
+# legacy results ("input"), richer now ("coordinate"/"topology"/...). The gate
+# must not fail on this documented provenance widening — so bundle roles are
+# RE-DERIVED from the extension on both sides before comparing, making the two
+# vocabularies converge.
+_CANONICAL_ROLE_BY_EXT = {
+    ".tpr": "structure", ".gro": "coordinate", ".top": "topology", ".itp": "topology",
+    ".trr": "trajectory", ".psf": "topology", ".crd": "coordinate", ".dcd": "trajectory",
+    ".prmtop": "topology", ".parm7": "topology", ".nc": "trajectory",
+    ".rst7": "coordinate", ".inpcrd": "coordinate", ".restrt": "coordinate",
+    ".mdcrd": "trajectory", ".data": "structure", ".pdb": "structure",
+    ".cif": "structure", ".xtc": "trajectory",
+}
+
+
+def _canonicalize_bundle_roles(obj: dict) -> dict:
+    """Replace bundle file-role strings by extension-derived canonical roles.
+
+    Works on a results payload (mutates and returns data.input.bundle.files).
+    """
+    files = (
+        ((obj.get("data") or {}).get("input") or {}).get("bundle", {}).get("files")
+    )
+    if isinstance(files, list):
+        for f in files:
+            if isinstance(f, dict):
+                path = f.get("path") or ""
+                ext = ("." + path.rsplit(".", 1)[-1].lower()) if "." in path else ""
+                f["role"] = _CANONICAL_ROLE_BY_EXT.get(ext, f.get("role"))
+    return obj
 
 
 def _norm(value):
@@ -108,6 +142,10 @@ def compare(base: dict, new: dict) -> dict:
     strict: list[str] = []
     info: list[str] = []
 
+    # converge role vocabularies BEFORE comparing (documented provenance widening)
+    base = _canonicalize_bundle_roles(copy.deepcopy(base))
+    new = _canonicalize_bundle_roles(copy.deepcopy(new))
+
     b_data, n_data = base.get("data", {}) or {}, new.get("data", {}) or {}
 
     # --- tier STRICT: pipeline level
@@ -118,6 +156,10 @@ def compare(base: dict, new: dict) -> dict:
         strict.append(f"pipeline.status: {b_pipe.get('status')} -> {n_pipe.get('status')}")
 
     # --- tier STRICT: input decision + bundle typing
+    # (roles canonicalized by extension: legacy 'input' vs richer roles)
+    _canonicalize_bundle_roles(base)
+    _canonicalize_bundle_roles(new)
+    b_data, n_data = base.get("data", {}) or {}, new.get("data", {}) or {}
     b_in, n_in = _norm(b_data.get("input") or {}), _norm(n_data.get("input") or {})
     if b_in != n_in:
         strict.append("data.input differs (decision or bundle file typing)")
