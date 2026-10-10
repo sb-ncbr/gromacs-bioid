@@ -121,6 +121,20 @@ _(filled per phase)_
 4. **Deferred**: pair-level ranking, recursion/multi-dir, Desmond, corpus census (stats task),
    .mdcrd probing (TRJReader n_atoms circularity), dcd-only deposits (honest failure by design).
 
+## Deploy State (2026-10-10)
+- Images: `bat3-validation-api:v3.133` + `bat3-frontend:w13` built+pushed (digests in
+  pickup/journal; ui-worker canary green).
+- **Gate 1 (replay) PASS 5/5** — `/data/validation/replay_gate/` artifacts;
+  v3.132≡v3.133 byte-identical on deposits; sep-17 drift = pre-existing interim changes.
+- Rolled out: `bat3-ui-worker`(2)+`bat3-ceitec-bat3-worker`(15) on v3.133.
+- **PENDING: `bat3-ceitec-bat3-api` still v3.132** — v3.133 crashloops on localhost:5432.
+  Cause: `46b59a0ff` (audit F-06) moved DATABASE_URL default to creds-out-of-repo localhost;
+  api deployment never got the env override (validation-api has it). Fix = add env
+  DATABASE_URL then re-bump api, then frontend w13. Smoke: real UI run via API on ui-worker.
+- Worker/ui-worker deployments also lack DATABASE_URL env — verify via the real-task smoke.
+- Ops: `validation-worker` scaled 244→0 + VALIDATION_DISPATCH_ENABLED=0 (MDDBR validation OFF).
+  Rancher quota `default-d8pcb` was re-mangled 10-09 (infra ticketed).
+
 ## Reference
 - `/loading-strategy-pattern.md` (repo root) — mdpc source pattern + corpus evidence
 - `code-layout.md` — three API copies; src_new = pipeline
