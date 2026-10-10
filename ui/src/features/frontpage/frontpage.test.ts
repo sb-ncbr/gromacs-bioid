@@ -44,12 +44,20 @@ describe("fileTypes", () => {
     expect(out).toContain("…");
   });
 
-  it("ACCEPT_MAP covers the legacy extensions", () => {
-    for (const ext of ["tpr", "gro", "top", "itp", "pdb", "json", "yaml", "yml", "zip", "tar", "ini"]) {
+  it("ACCEPT_MAP covers the engine matrix + legacy config/archives", () => {
+    for (const ext of [
+      "tpr", "gro", "top", "itp", "trr", "xtc",
+      "prmtop", "parm7", "nc", "rst7", "inpcrd", "restrt", "mdcrd",
+      "psf", "pdb", "crd", "dcd", "data", "cif",
+      "json", "yaml", "yml", "zip", "tar", "ini",
+    ]) {
       expect(ACCEPTED_EXTENSIONS).toContain(ext);
     }
     expect(ACCEPT_MAP["application/octet-stream"]).toEqual([
-      ".tpr", ".gro", ".top", ".itp", ".pdb",
+      ".tpr", ".gro", ".top", ".itp", ".trr", ".xtc",
+      ".prmtop", ".parm7", ".nc", ".rst7", ".inpcrd", ".restrt", ".mdcrd",
+      ".psf", ".pdb", ".crd", ".dcd",
+      ".data", ".cif",
     ]);
   });
 });

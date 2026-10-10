@@ -143,10 +143,12 @@ export default function UploadForm() {
           files and start the run.
         </p>
         <ul className="list-disc space-y-1 pl-5 text-sm text-text-muted">
-          <li>Topology: <code className="text-text">.tpr</code>, or <code className="text-text">.top</code> + its <code className="text-text">.itp</code> includes</li>
-          <li>Coordinates: <code className="text-text">.gro</code></li>
-          <li>Structure: <code className="text-text">.pdb</code></li>
-          <li>Bundles: <code className="text-text">.zip</code> / <code className="text-text">.tar</code> / <code className="text-text">.tar.gz</code></li>
+          <li><strong>GROMACS</strong>: <code className="text-text">.tpr</code>, or <code className="text-text">.top</code> + its <code className="text-text">.itp</code> includes, plus <code className="text-text">.gro</code> coordinates</li>
+          <li><strong>AMBER</strong>: <code className="text-text">.prmtop</code>/<code className="text-text">.parm7</code> + <code className="text-text">.rst7</code>/<code className="text-text">.inpcrd</code>/<code className="text-text">.nc</code>/<code className="text-text">.mdcrd</code> coordinates</li>
+          <li><strong>CHARMM / NAMD</strong>: <code className="text-text">.psf</code> + <code className="text-text">.pdb</code>/<code className="text-text">.crd</code> coordinates (a <code className="text-text">.dcd</code> works as the starting frame)</li>
+          <li><strong>LAMMPS</strong>: a single <code className="text-text">.data</code> file</li>
+          <li><strong>Structures</strong>: <code className="text-text">.pdb</code> / <code className="text-text">.cif</code></li>
+          <li><strong>Bundles</strong>: <code className="text-text">.zip</code> / <code className="text-text">.tar</code> / <code className="text-text">.tar.gz</code></li>
         </ul>
 
         <Dropzone
