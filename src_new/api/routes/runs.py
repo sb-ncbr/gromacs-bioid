@@ -1074,6 +1074,7 @@ async def get_verification(run_id: str, segment: Optional[str] = None) -> Verifi
                 rejection_reason=hit.get("rejection_reason"),
                 supporting_evidence_count=hit.get("supporting_evidence_count", 0),
                 database_url=db_url,
+                ground_truth_override=hit.get("ground_truth_override"),
             ))
     
     # Use first segment name or "unknown"

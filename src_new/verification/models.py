@@ -63,6 +63,13 @@ class VerifiedHit:
     # remains verified/identity exactly as before (user ruling); the flag only
     # records that fact for later surfacing (UI/methodology accounting).
     verified_without_corroboration: bool = False
+    # Element ground truth (user ruling 2026-10-11): for a monoatomic segment,
+    # an ELEMENT identity hit IS the ground truth — there is no fetchable
+    # annotation evidence for a bare element by construction, so the weighted
+    # aggregate (resolver 0.4 + similarity 0.4 + annotation 0.2) structurally
+    # caps at 80. VerificationManager lifts such hits to final_confidence=100
+    # and records the rule id here for auditability. None = normal weighted path.
+    ground_truth_override: str | None = None
     
     @classmethod
     def unverified(

@@ -34,6 +34,47 @@ def _molecule_skeleton_fp_hex(results, segment: str):
     return hex_part
 
 
+def _monoatomic_atom_count(results, segment: str):
+    """Atom membership for the segment's molecule fragment, if known.
+
+    Reads universe/segments/<segment>/properties (written by the loader
+    facade: atom_count_fragment, fallback atom_count_total). Returns None
+    when the properties are unavailable, in which case callers must stay
+    on the conservative weighted path.
+    """
+    try:
+        props = results.get_data(f"universe/segments/{segment}/properties") or {}
+    except Exception:
+        return None
+    for key in ("atom_count_fragment", "atom_count_total"):
+        value = props.get(key)
+        if isinstance(value, int) and value >= 0:
+            return value
+    return None
+
+
+def _element_ground_truth(results, segment: str, ident_type: str, hit_type: str) -> bool:
+    """True only for the documented element ground-truth rule.
+
+    User ruling 2026-10-11 ("ion identification is by definition ground
+    truth — we own it; there is nothing to verify"): for a segment whose
+    molecule is a SINGLE atom, an ELEMENT identity hit is the ground truth.
+    Annotation-weight corroboration is unprovable by construction for a bare
+    element, so the weighted aggregate structurally caps at 80; the override
+    lifts final_confidence to 100 (recorded via ground_truth_override).
+
+    Hard scope guards (both must hold, else normal weighted path):
+      * ident_type == "ELEMENT" — never a chemical ident type, so the F7
+        fingerprint gate and all chemistry verification are untouched;
+      * hit_type == "identity" — similarity listings are not assertions;
+      * molecule atom membership == 1 — polyatomic single-element fragments
+        (S8, carbon clusters) stay on the weighted path.
+    """
+    if ident_type != "ELEMENT" or hit_type != "identity":
+        return False
+    return _monoatomic_atom_count(results, segment) == 1
+
+
 def _structure_rerank_groups(sorted_groups, skel_map, threshold):
     """Re-order chemical groups within the consensus-sorted candidate list.
 
@@ -402,6 +443,14 @@ class VerificationManager:
                         and ident_type not in CHEMICAL_IDENT_TYPES
                         and similarity_score is None
                     )
+                    # Element ground truth (user ruling 2026-10-11): monoatomic
+                    # ELEMENT identity hits are ground truth — confidence 100,
+                    # rule recorded in ground_truth_override. Everything else
+                    # keeps the weighted aggregate unchanged.
+                    gt_override = None
+                    if _element_ground_truth(results, segment, ident_type, hit_type):
+                        final_confidence = 100.0
+                        gt_override = "element_monoatomic"
                     # Create verified hit
                     verified_hit = VerifiedHit(
                         identifier=normalized_id,
@@ -416,6 +465,7 @@ class VerificationManager:
                         skeleton_sim=skeleton_sim,
                         skeleton_method=skeleton_method,
                         verified_without_corroboration=verified_without_corroboration,
+                        ground_truth_override=gt_override,
                     )
                 else:
                     # Create unverified hit

@@ -204,6 +204,9 @@ class VerifiedHitItem(BaseModel):
     rejection_reason: Optional[str] = Field(None, description="Reason for rejection if not verified")
     supporting_evidence_count: int = Field(default=0, description="Number of supporting evidence")
     database_url: Optional[str] = Field(None, description="URL to the database entry")
+    ground_truth_override: Optional[str] = Field(
+        None, description="Set to 'element_monoatomic' when the element ground-truth rule (monoatomic ion, documented in verification/models.py) lifted confidence to 100"
+    )
 
 
 class VerificationResponse(BaseModel):

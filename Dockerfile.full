@@ -1,0 +1,27 @@
+# Validation API image, REPO-ROOT context (build: docker build -f Dockerfile.full -t cerit.io/tomsko/bat3-validation-api:<tag> .)
+# Serves BOTH entrypoints:
+#   python -m uvicorn main:app          (validation API + scheduler; /app modules)
+#   uvicorn src_new.api.main:app        (bat3 pipeline api; cwd /app — see V-28:
+#                                        ceitec api deployments must pin this entrypoint
+#                                        as command/args; image CMD is main:app)
+#   celery -A tasks worker              (validation worker; /app/tasks.py)
+# Canonical home: this repo (bat3). The historical copy in ../bat3_validation/api/
+# is legacy and was the source of the v3.133 content regression (V-28/V-29).
+FROM python:3.11-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends build-essential libvips ncbi-blast+ media-types && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+ENV PYTHONPATH=/app
+
+COPY requirements.txt /tmp/req-root.txt
+RUN pip install --no-cache-dir -r /tmp/req-root.txt apscheduler==3.10.4
+
+COPY . /app
+RUN find /app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    find /app -type f -name "*.pyc" -delete
+
+EXPOSE 8000
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
