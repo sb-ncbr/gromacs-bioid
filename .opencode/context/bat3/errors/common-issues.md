@@ -617,5 +617,15 @@ builds — v3.133's first ceitec-api bump crashlooped on (a) `main:app` requirin
 DATABASE_URL (F-06 creds-out-of-repo default = localhost:5432) and (b) probes
 404 (`/health/ready` absent in `main:app`). v3.132 image happened to bake the
 src_new CMD, so nothing had pinned it. Mitigation LIVE: deployment pins
-command/args + DATABASE_URL env. Permanent: pin command/args in bat3-chart
-api-deployment.yaml; treat image-CMD as non-contractual.
+command/args + DATABASE_URL env. Permanent: command/args pinned in bat3-chart
+api-deployment.yaml (793c19387); treat image-CMD as non-contractual.
+
+## V-29 · Image rebuilds must diff package CONTENTS, not just app code (2026-10-11)
+v3.133 (built from an unversioned Dockerfile copy in ../bat3_validation) silently
+dropped `ncbi-blast+` — every protein/nucleic BLAST channel then failed with
+`/usr/bin/blastp` ENOENT, degrading to warning-only unverified proteins while
+the pipeline still logged "success". Post-build content gate added to release
+discipline: `docker run --rm <new-image> which blastp` (extend: diff
+`dpkg -l`/`pip freeze` against the previous tag and eyeball removals). The
+canonical Dockerfile.full now lives IN the bat3 repo (versioned, commit
+793c19387); the ../bat3_validation copy is legacy — do not build from it.
