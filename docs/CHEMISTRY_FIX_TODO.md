@@ -1737,3 +1737,24 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
   all-v3.132 (5 image deployments) + bat3-docs:v3.132-g2.3; ini
   md5 889730df (formula_chembl=yes, rcsb_include_mixed_complexes=yes);
   queues: w10-heal 4310/4324, tail 14 organic per ruling.
+
+## SECTION I · Loading-strategy v3.133 deploy (2026-10-10)
+- Deploy epoch closed: ui-worker(2) + ceitec-worker(15) + ceitec-api(1)
+  on v3.133; web on w13. Replay gate PASS 5/5 pre-deploy; live E2E gates:
+  charmm_psf_pdb SUCCESS (input_kind=charmm, strategy=charmm_psf_pdb),
+  pdb baseline SUCCESS (no regression). Full record:
+  .opencode/context/bat3/concepts/loading-strategy.md §Deploy State.
+- **NEW REGISTER ITEM · OQ-15 · open · amber-coords generate_signatures
+  CPU wedge** (2026-10-10, found in v3.133 live E2E): amber prmtop+mdcrd
+  (c32d0c2d) and prmtop+rst7 (1d0c5d19) fixtures — synthetic, unnamed
+  residues — load correctly (input_kind=amber, expected strategies,
+  analyze/repair green) but generate_signatures spins a full core
+  ≥20 min (memory flat ~164Mi) until cancelled; worker pods restarted to
+  release. charmm+pdb fixtures clear the same stage in ≈1 s. NO prod
+  regression: amber-coords input path is new in v3.133. Follow-up:
+  py-spy profile locally on tests/data/amber_prmtop_mdcrd, guard the
+  hot loop (suspect UNK/unnamed-resname resolution/enumeration path),
+  ship v3.134.
+- **Ops lesson V-28 (→ common-issues)**: shared image, two entrypoints;
+  deployment templates inherit image CMD — pin command/args for any
+  deployment needing the non-default entrypoint (done for ceitec api).

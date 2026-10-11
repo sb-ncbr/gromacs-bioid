@@ -392,3 +392,22 @@ UPDATE 2026-10-05 (AUDIT WAVES A-E ALL COMPLETE, fleet v3.129 era-clean): All 28
   bundle mixes prefixes -> /api/* 404 pre-existing; fix at UI wave).
 - Ground truth ledger through SECTION H4; pickup file refreshed;
   w10-heal 4310/4324, tail 14 organic per ruling.
+
+## 2026-10-10 — loading-strategy widening DEPLOYED 4/4 (v3.133 + w13); OQ-15 opened
+Design/record: .opencode/context/bat3/concepts/loading-strategy.md (Deploy State = FINAL).
+- Fleet: bat3-ui-worker(2) + bat3-ceitec-bat3-worker(15) + bat3-ceitec-bat3-api(1) on
+  v3.133; bat3-ceitec-bat3-web on w13 (dropzone accept incl .psf/.dcd/.data/.rst7/.mdcrd/.cif,
+  verified in served bundle). validation-worker=0 + dispatch=0 remain intentional (MDDBR off).
+- Gates: replay 5/5 byte-identical pre-deploy; live E2E via POST /api/v1/runs:
+  charmm_psf_pdb SUCCESS (input_kind=charmm/strategy=charmm_psf_pdb), solvent-pdb baseline
+  SUCCESS. api healthy (pinned src_new entrypoint, 4 workers).
+- INCIDENT during deploy: first api bump crashlooped — TWO stacked faults: DATABASE_URL
+  env absent (F-06 default localhost:5432) AND v3.133 image CMD = main:app (wrong app for
+  ceitec api; probes 404). Both fixed at ops level (env + pinned command/args); V-28 filed;
+  chart command-pinning = permanent-fix candidate.
+- NEW: OQ-15 open — amber prmtop+mdcrd AND prmtop+rst7 fixtures (synthetic, unnamed
+  residues) wedge generate_signatures (1-core spin >=20min) live; runs cancelled, pods
+  restarted. Not a prod regression (amber-coords input is new in v3.133). Follow-up:
+  local py-spy profile + enumeration guard -> v3.134.
+- Infra noise: Rancher control-plane API flapped 2x mid-deploy (self-healed; workloads
+  unaffected). Port-forward used for API smoke (`svc/bat3-ceitec-bat3-api` 18000:8000).

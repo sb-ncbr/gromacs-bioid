@@ -607,3 +607,15 @@ quota). Watch for stale bare pods (e.g. 'perm-sweep', 26d, no owner,
 `kubectl patch ingress --type=strategic -p '{"spec":{"rules":[...paths...]}}'`
 replaces the paths array (no mergeKey on http paths) — ~10s UI route gap
 before full-desired-state repatch. Always send the COMPLETE paths list.
+
+## V-28 · Shared image, two entrypoints: pods inherit the WRONG CMD (2026-10-10)
+`bat3-validation-api` Dockerfile.full serves both `main:app` (validation API +
+scheduler, only `/health`) and `src_new.api.main:app` (ceitec pipeline api, with
+`/health/live` + `/health/ready`); image CMD = `main:app`. Deployment templates
+that set no command/args silently flip apps when the image CMD changes between
+builds — v3.133's first ceitec-api bump crashlooped on (a) `main:app` requiring
+DATABASE_URL (F-06 creds-out-of-repo default = localhost:5432) and (b) probes
+404 (`/health/ready` absent in `main:app`). v3.132 image happened to bake the
+src_new CMD, so nothing had pinned it. Mitigation LIVE: deployment pins
+command/args + DATABASE_URL env. Permanent: pin command/args in bat3-chart
+api-deployment.yaml; treat image-CMD as non-contractual.
