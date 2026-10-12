@@ -629,7 +629,11 @@ def _verify_results(context):
     # Read signatures data once
     signatures_data = context.results.get_data('signatures') or {}
     
-    # Build work items: (segment, segment_identifiers_data, config_dict, segment_signatures_data)
+    # Build work items: (segment, segment_identifiers_data, config_dict,
+    # segment_signatures_data, segment_properties_data)
+    # segment_properties_data carries universe/segments/<seg>/properties so
+    # universe-aware verification rules (element ground truth) see real facts —
+    # the worker builds a MINIMAL temp manager and would otherwise miss them.
     deadline = budget_deadline(context)
     items = []
     for segment in sorted(identifiers_data.keys()):
@@ -637,7 +641,8 @@ def _verify_results(context):
         cfg = context.config.to_dict()
         if deadline is not None:
             cfg["_stage_deadline_epoch"] = deadline
-        items.append((segment, segment_data, cfg, signatures_data.get(segment)))
+        seg_props = context.results.get_data(f"universe/segments/{segment}/properties")
+        items.append((segment, segment_data, cfg, signatures_data.get(segment), seg_props))
 
     if not items:
         return StepResult(summary={"verified": True})
