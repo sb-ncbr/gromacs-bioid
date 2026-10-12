@@ -1758,3 +1758,29 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
 - **Ops lesson V-28 (→ common-issues)**: shared image, two entrypoints;
   deployment templates inherit image CMD — pin command/args for any
   deployment needing the non-default entrypoint (done for ceitec api).
+
+## SECTION J · Element ground-truth rule LANDED (2026-10-12)
+- Code ruling (user 2026-10-11, approved 2026-10-11): ions are ground
+  truth — their identification cannot be externally corroborated. For a
+  monoatomic segment, ELEMENT identity hits now lift to final_confidence=100
+  with ground_truth_override="element_monoatomic" on VerifiedHit (additive;
+  audit-visible). Hard guards: ident_type==ELEMENT, hit_type==identity,
+  atom_count_fragment==1. All chemistry (F7) gates untouched — CID identity
+  even on monoatomic segments still requires skeleton corroboration.
+  Commits 793c19387 (rule + tests), 9ba873ec8 (propagation fix + e2e).
+- v3.134 LIVE A/B (run 9d90d777, rerun of broken fa3b942d input): blast
+  chain RESTORED (named PDB hits 5HVX/6SXG, sim 95.3, 65 protein hits at
+  conf 78 — v3.133 had zero names at conf 40). It also caught gap below.
+- **BUG FOUND BY A/B**
+  (fixed): _verify_results_worker built a MINIMAL per-segment temp
+  ResultsManager (identifiers + signatures only), so
+  universe/segments/<seg>/properties never reached verify and the rule
+  conservatively stayed at 80. Fix: universe properties are now a 5th item
+  in the worker tuple, fed into the temp manager before verify_all.
+- v3.135 in-pod E2E on the A/B run data (prod code path, real fixtures):
+  seg_6_SOD NA, seg_8_CLA CL, seg_7_PORE_ION NA all verify at conf 100 with
+  ground_truth_override=element_monoatomic; default-registry element path
+  exercised end-to-end (no network). 5 new e2e tests + 80-suite green.
+- Deploy state: worker(15) + ui-worker(2) on v3.135; api on v3.134
+  (verified-hit override passthrough already shipped). OQ-15 (amber wedge)
+  unchanged/open.

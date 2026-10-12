@@ -629,3 +629,14 @@ discipline: `docker run --rm <new-image> which blastp` (extend: diff
 `dpkg -l`/`pip freeze` against the previous tag and eyeball removals). The
 canonical Dockerfile.full now lives IN the bat3 repo (versioned, commit
 793c19387); the ../bat3_validation copy is legacy — do not build from it.
+
+## V-30 · Minimal-payload worker stages silently lose run-wide facts (2026-10-12)
+The verify stage spawns per-segment workers with a MINIMAL temp ResultsManager
+(identifiers + signatures only). Any verification logic reading run-wide facts
+(universe properties, fragments, loading decisions) sees NOTHING and — being
+conservative-by-design — silently degrades (element ground truth stuck at 80
+in a full prod A/B). Unit tests with mocked/full managers NEVER catch this.
+Gate: stages that fan out workers must enumerate transferred data in the
+worker tuple contract, and new fact-consumers get an end-to-end test through
+the REAL worker (tests/src_new/pipeline_steps/test_verify_universe_props.py).
+Same audit applies to any future per-segment workers reading results state.

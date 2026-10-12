@@ -411,3 +411,9 @@ Design/record: .opencode/context/bat3/concepts/loading-strategy.md (Deploy State
   local py-spy profile + enumeration guard -> v3.134.
 - Infra noise: Rancher control-plane API flapped 2x mid-deploy (self-healed; workloads
   unaffected). Port-forward used for API smoke (`svc/bat3-ceitec-bat3-api` 18000:8000).
+
+## 2026-10-12 · Ion ground-truth rule landed live (v3.134/v3.135)
+- Prod failure forensics (run fa3b942d, 2026-10-11): v3.133 image had lost `ncbi-blast+` (unversioned Dockerfile copy in ../bat3_validation lacked it) → all protein BLAST channels ENOENT; proteins verified nameless at conf 40; ions capped at 80 by construction (annotation weight unprovable for bare elements).
+- User ruling (2026-10-11): ions are ground truth. Implemented element ground-truth override (monoatomic ELEMENT identity → conf 100, `ground_truth_override="element_monoatomic"`, hard scope guards; chemistry untouched). Repo `Dockerfile.full` canonicalized with blast restore; chart pins api command/args (V-28 closed).
+- v3.134 live A/B (rerun 9d90d777): BLAST restored (65 named proteins, 5HVX/6SXG sim 95.3). A/B exposed a second bug: verify workers' minimal temp managers never saw universe segment properties (override stayed 80) → fix shipped in v3.135 (worker tuple now carries `universe/segments/<seg>/properties`; 5 e2e tests incl. real worker + real step).
+- Live: worker×15 + ui-worker×2 = v3.135, api = v3.134, web = w13. In-pod E2E on A/B data: SOD/CLA/PORE_ION ions at conf 100 with override flag. Lessons: V-29 (image package-content gate), V-30 (minimal-payload worker stages). OQ-15 (amber signature wedge) still open.
