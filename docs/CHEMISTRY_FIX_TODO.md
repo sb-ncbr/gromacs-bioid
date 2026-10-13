@@ -1784,3 +1784,19 @@ requires-user-ruling questions with anchors. Format: OQ-N · status · question
 - Deploy state: worker(15) + ui-worker(2) on v3.135; api on v3.134
   (verified-hit override passthrough already shipped). OQ-15 (amber wedge)
   unchanged/open.
+### REGISTER · OQ-16 · open · worker SIGBUS => silent task loss, phantom-running runs (2026-10-13)
+Live incident 07:09-12:07 UTC: bat3-ui-worker-...f498l hard-crashed exit 135
+(SIGBUS) 07:17:29Z mid-identify. celery transports messages with default
+task_acks_late=False, so the three in-flight run tasks were already
+acknowledged and are unrecoverable. Unfixable stale state followed: 2 runs
+pinned identify_molecules "running" ~4.7h while all 17 nodes sat idle (one
+dangling `unacked_index` member scored exactly at run enqueue 07:15:27.175Z
+is the forensic remains), and a third run queued forever — its celery message
+already culled, Redis had NO celery/validation.ui.celery lists at all.
+Manual remedy: POST /runs/{id}/cancel on the 2 zombies (freed state), cancel
++ rerun for the message-less queued run (dispatched instantly after: proof the
+fleet/broker were fine). Open: (a) flip task_acks_late=True + idempotent
+stage tasks, or ack-after-completion; (b) state reaper: runs whose status
+is running/queued but have no live celery task >N min get marked failed
+(safe-recancel pattern); (c) SIGBUS (137-class OOM-adjacent? /dev/shm?) root
+cause on ui-worker fleet — happened during identify of a DNA segment type.

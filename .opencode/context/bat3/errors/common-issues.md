@@ -640,3 +640,13 @@ Gate: stages that fan out workers must enumerate transferred data in the
 worker tuple contract, and new fact-consumers get an end-to-end test through
 the REAL worker (tests/src_new/pipeline_steps/test_verify_universe_props.py).
 Same audit applies to any future per-segment workers reading results state.
+
+## V-31 · Hard worker kill = silent run tombstones (2026-10-13)
+celery default acks (task_acks_late default False) mean SIGBUS/SIGKILL on a
+worker DELETES in-flight messages: runs stay "running", queues look empty,
+capacity gates (if any) block forever. Diagnosis path: get pods (all green)
+→ celery inspect active/reserved (all empty) → API runs list for
+non-terminal "running" older than stage norms → redis keys (queue lists
+missing + dangling unacked_index member timed at the victim's enqueue) →
+kubectl logs --previous + lastState.terminated (exitCode 135). Remedy: API
+cancel on zombies, cancel+rerun for message-less queued runs.

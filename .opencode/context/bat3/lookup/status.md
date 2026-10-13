@@ -1,5 +1,7 @@
 # BAT3 Validation Status (2026-09-23 late, legacy wave in flight)
 
+> ⚠️ **STALE for publication numbers** — this document predates the final v14 drain (metrics here are pilot/legacy-wave era). For paper-canonical numbers see `publication-v14-numbers.md`; for campaign history see `publication-journal.md`. Infra notes below (images, pools, downloader) may also be dated — verify against live cluster before acting.
+
 ## Core Concept
 Current truth for the ceitec-biodata-ns validation deployment. **Metric verdict landed 2026-09-23** (S7 v6): inchikey att=58.0% validated@10=19.0% | pdb @10=99.6% | uniprot @10=98.4% | entry-any-validated@10=98.9%. Infra hardened: swallowed-crash cork (enabled_similarity) fixed, prefetch-stacking OOM cured, fleets 15x20Gi both pools, residue reverify 3,444/3,446 renovated.
 
@@ -417,3 +419,6 @@ Design/record: .opencode/context/bat3/concepts/loading-strategy.md (Deploy State
 - User ruling (2026-10-11): ions are ground truth. Implemented element ground-truth override (monoatomic ELEMENT identity → conf 100, `ground_truth_override="element_monoatomic"`, hard scope guards; chemistry untouched). Repo `Dockerfile.full` canonicalized with blast restore; chart pins api command/args (V-28 closed).
 - v3.134 live A/B (rerun 9d90d777): BLAST restored (65 named proteins, 5HVX/6SXG sim 95.3). A/B exposed a second bug: verify workers' minimal temp managers never saw universe segment properties (override stayed 80) → fix shipped in v3.135 (worker tuple now carries `universe/segments/<seg>/properties`; 5 e2e tests incl. real worker + real step).
 - Live: worker×15 + ui-worker×2 = v3.135, api = v3.134, web = w13. In-pod E2E on A/B data: SOD/CLA/PORE_ION ions at conf 100 with override flag. Lessons: V-29 (image package-content gate), V-30 (minimal-payload worker stages). OQ-15 (amber signature wedge) still open.
+
+## 2026-10-13 · Queue "stuck" incident resolved — SIGBUS task-loss (OQ-16 filed)
+ui-worker hard-crashed exit 135 (SIGBUS) 07:17Z; 3 in-flight run tasks acked+lost (celery task_acks_late default false). 2 runs phantom-"running" 4.7h over idle fleet; 1 queued run's message culled (no celery lists in Redis; dangling unacked_index member timed at its enqueue). Remedied: POST cancel ×2; cancel+rerun of the queued run → new run efc63ac2 dispatched instantly and progressing. Registered OQ-16 (acks-late/idempotency, state reaper, SIGBUS source on ui fleet) + lesson V-31.
