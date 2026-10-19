@@ -5,7 +5,9 @@ import type { PluginUIContext } from "molstar/lib/mol-plugin-ui/context";
 import { MVSData } from "molstar/lib/extensions/mvs/mvs-data";
 import { loadMVS } from "molstar/lib/extensions/mvs/load";
 import "molstar/build/viewer/molstar.css";
-import type { RenderPathsResponse, SegmentMeta } from "./hooks";
+import type { RenderPathsResponse, RenderPathsV37, SegmentMeta } from "./hooks";
+import { ATOM_INTERACTIVE_LIMIT } from "./hooks";
+import { isOverInteractivityGate, resolveStaticPngPath } from "./utils/static-render";
 
 export interface MolstarViewerProps {
   runId: string;
@@ -31,6 +33,8 @@ const MolstarViewer: React.FC<MolstarViewerProps> = ({
   const generationRef = useRef(0);
   const [mode, setMode] = useState<ViewerMode>("loading");
   const [ready, setReady] = useState(false);
+  // v3.137: user opt-in to force Mol* despite a system over the interactive gate
+  const [forceInteractive, setForceInteractive] = useState(false);
 
   // Create the Mol* plugin exactly once on mount.
   useEffect(() => {
@@ -81,8 +85,12 @@ const MolstarViewer: React.FC<MolstarViewerProps> = ({
         .join("/")}`,
     [runId],
   );
-
-  const pngUrl = `/files/${encodeURIComponent(runId)}/render/system.png`;
+  // v3.137: resolve the static PNG for the CURRENT view (pure helper; see
+  // utils/static-render.ts for priority rules) + the interactivity gate.
+  const v37 = (renderPaths ?? null) as (RenderPathsResponse & RenderPathsV37) | null;
+  const totalAtoms = v37?.total_atom_count ?? null;
+  const overInteractivityGate = isOverInteractivityGate(totalAtoms);
+  const pngUrl = fileUrl(resolveStaticPngPath(v37, segment));
 
   // Build and load MVS for the current segment whenever dependencies change.
   useEffect(() => {
@@ -101,6 +109,15 @@ const MolstarViewer: React.FC<MolstarViewerProps> = ({
         return false;
       }
     };
+
+    // v3.137 size gate: at/over the system atom limit default to the static
+    // render unless the user explicitly opts into the interactive view.
+    if (overInteractivityGate && !forceInteractive) {
+      checkStatic().then((ok) => {
+        if (gen === generationRef.current) setMode(ok ? "static" : "unavailable");
+      });
+      return;
+    }
 
     // No structural data at all → check static render.
     if (!file) {
@@ -173,7 +190,7 @@ const MolstarViewer: React.FC<MolstarViewerProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [ready, runId, segment, segments, segmentMeta, renderPaths, fileUrl, pngUrl]);
+  }, [ready, runId, segment, segments, segmentMeta, renderPaths, fileUrl, pngUrl, forceInteractive, overInteractivityGate]);
 
   return (
     <Card>
@@ -208,9 +225,28 @@ const MolstarViewer: React.FC<MolstarViewerProps> = ({
                 alt="Static molecular rendering"
                 className="h-full w-full object-contain"
               />
-              <p className="absolute bottom-2 left-0 right-0 text-center text-xs text-text-muted">
-                Static rendering (interactive view unavailable)
+              {!overInteractivityGate && (
+                <p className="absolute bottom-2 left-0 right-0 text-center text-xs text-text-muted">
+                  Static rendering (interactive view unavailable)
+                </p>
+              )}
+            </div>
+          )}
+
+          {overInteractivityGate && !forceInteractive && mode !== "interactive" && mode !== "loading" && (
+            <div className="absolute left-0 right-0 top-0 z-10 border-b border-amber-300 bg-amber-50/95 px-3 py-2">
+              <p className="text-sm text-amber-900">
+                System too large for the interactive viewer (
+                {totalAtoms!.toLocaleString("en")} atoms; limit{" "}
+                {ATOM_INTERACTIVE_LIMIT.toLocaleString("en")}).
               </p>
+              <button
+                type="button"
+                className="mt-1 text-sm font-medium text-amber-900 underline underline-offset-2 hover:text-amber-700"
+                onClick={() => setForceInteractive(true)}
+              >
+                Load interactive view anyway (may be slow or freeze)
+              </button>
             </div>
           )}
 

@@ -35,6 +35,21 @@ export type SignaturesResponse = components["schemas"]["SignaturesResponse"];
 export type IdentifiersResponse = components["schemas"]["IdentifiersResponse"];
 export type VerificationResponse = components["schemas"]["VerificationResponse"];
 export type RenderPathsResponse = components["schemas"]["RenderPathsResponse"];
+
+/**
+ * v3.137 additive render fields (API wave C) — present in the live API ahead
+ * of baseline type regeneration, declared here per the QueueState pattern.
+ *  - system_png / segment_pngs: static PNG previews (served via /files/)
+ *  - total_atom_count: whole-system atom count for the interactivity gate
+ */
+export interface RenderPathsV37 {
+  system_png?: string | null;
+  segment_pngs?: Record<string, string>;
+  total_atom_count?: number | null;
+}
+
+/** Atom ceiling for defaulting to interactive Mol* (user ruling 2026-10-19). */
+export const ATOM_INTERACTIVE_LIMIT = 1_000_000;
 export type RunFilesResponse = components["schemas"]["RunFilesResponse"];
 export type TaskInfo = components["schemas"]["TaskInfo"];
 

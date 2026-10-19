@@ -42,7 +42,7 @@ export const STAGE_GROUPS: StageGroup[] = [
   {
     id: "export",
     display: "Export results",
-    tasks: ["export_results"],
+    tasks: ["export_results", "render_png"],
   },
 ];
 

@@ -130,7 +130,7 @@ export const CATALOG_STAGES: CatalogStage[] = [
   { group: "signatures", display: "Generate signatures", tasks: ["generate_signatures"] },
   { group: "identify", display: "Identify molecules", tasks: ["identify_molecules"] },
   { group: "verify", display: "Verify results", tasks: ["verify_results"] },
-  { group: "export", display: "Export results", tasks: ["export_results"] },
+  { group: "export", display: "Export results", tasks: ["export_results", "render_png"] },
 ];
 
 export const CATALOG_CODES: CatalogCode[] = [

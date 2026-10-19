@@ -81,6 +81,7 @@ export const endpoints = {
   runLogs: (runId: string) => `${API_BASE}/runs/${runId}/logs`,
   runRerun: (runId: string) => `${API_BASE}/runs/${runId}/rerun`,
   runQueue: (runId: string) => `${API_BASE}/runs/${runId}/queue`,
+  runExamples: `${API_BASE}/runs/examples`,
   configDefault: `${API_BASE}/runs/config/default`,
   /** Static run-file mount (served by API container, stays on legacy path). */
   runFileUrl: (runId: string, file: string) =>
