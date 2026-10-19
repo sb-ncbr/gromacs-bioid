@@ -57,7 +57,7 @@ def _mk_run(tmp_path, mmcifs=("system.mmcif", f"{SEG}.mmcif"),
 
 def _stub(tmp_path, body="""#!/bin/sh
 sleep ${SLEEP:-0}
-out=$(grep -o '^png [^ ]*' <&0 2>/dev/null | tail -1 | cut -d' ' -f2 | tr -d ',')
+out=$(grep -o '^png [^ ]*' "$2" 2>/dev/null | tail -1 | cut -d' ' -f2 | tr -d ',')
 [ -n "$out" ] && : > "$out"
 exit ${EXITCODE:-0}
 """):
@@ -108,7 +108,7 @@ def test_render_png_per_image_failure_becomes_warning(tmp_path, monkeypatch):
     # stub that fails for segments (exit code 1), succeeds for system
     stub = tmp_path / "pymol_stub.sh"
     stub.write_text("""#!/bin/sh
-out=$(grep -o '^png [^ ]*' <&0 2>/dev/null | tail -1 | cut -d' ' -f2 | tr -d ',')
+out=$(grep -o '^png [^ ]*' "$2" 2>/dev/null | tail -1 | cut -d' ' -f2 | tr -d ',')
 case "$out" in
   *segments*) exit 1 ;;
 esac

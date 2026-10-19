@@ -198,21 +198,29 @@ def render_image(spec: RenderSpec, cfg: RenderConfig,
     spec.png_path.parent.mkdir(parents=True, exist_ok=True)
     script = build_pymol_script(spec, cfg)
     start = time.monotonic()
+    # pymol-open-source does NOT consume a script from stdin (`pymol -cq -`
+    # silently no-ops, verified 2026-10-19): feed a .pml file instead.
+    import tempfile
+    fd, script_path = tempfile.mkstemp(suffix=".pml",
+                                       dir=str(spec.png_path.parent))
     try:
-        proc = subprocess.run(
-            [cfg.pymol_bin, "-cq", "-"],
-            input=script.encode(), capture_output=True,
-            timeout=timeout_s if timeout_s is not None else spec.timeout_s,
-        )
-        if proc.returncode != 0 or not spec.png_path.is_file():
-            tail = (proc.stderr or proc.stdout or b"")[-800:].decode("utf-8", "ignore")
-            return RenderOutcome(spec.label, spec.is_system, spec.png_path,
-                                 spec.style, ok=False,
-                                 error=f"pymol exited {proc.returncode}: {tail}",
-                                 elapsed_s=time.monotonic() - start)
-        return RenderOutcome(spec.label, spec.is_system, spec.png_path,
-                             spec.style, ok=True,
-                             elapsed_s=time.monotonic() - start)
+        with os.fdopen(fd, "w") as f:
+            f.write(script)
+    except Exception:
+        os.unlink(script_path)
+        raise
+    try:
+        try:
+            proc = subprocess.run(
+                [cfg.pymol_bin, "-cq", script_path],
+                capture_output=True,
+                timeout=timeout_s if timeout_s is not None else spec.timeout_s,
+            )
+        finally:
+            try:
+                os.unlink(script_path)
+            except OSError:
+                pass
     except subprocess.TimeoutExpired:
         return RenderOutcome(spec.label, spec.is_system, spec.png_path,
                              spec.style, ok=False,
@@ -223,6 +231,15 @@ def render_image(spec: RenderSpec, cfg: RenderConfig,
                              spec.style, ok=False,
                              error=f"{type(exc).__name__}: {exc}",
                              elapsed_s=time.monotonic() - start)
+    if proc.returncode != 0 or not spec.png_path.is_file():
+        tail = (proc.stderr or proc.stdout or b"")[-800:].decode("utf-8", "ignore")
+        return RenderOutcome(spec.label, spec.is_system, spec.png_path,
+                             spec.style, ok=False,
+                             error=f"pymol exited {proc.returncode}: {tail}",
+                             elapsed_s=time.monotonic() - start)
+    return RenderOutcome(spec.label, spec.is_system, spec.png_path,
+                         spec.style, ok=True,
+                         elapsed_s=time.monotonic() - start)
 
 
 def render_all(specs: list[RenderSpec], cfg: RenderConfig) -> list[RenderOutcome]:

@@ -48,7 +48,7 @@ def _mk_run(root, mmcifs=("system.mmcif",)):
 def _stub(tmp_path, body="""#!/bin/sh
 # stub pymol: create png from last `png` line; honors SLEEP/EXITCODE env
 sleep ${SLEEP:-0}
-out=$(grep -o '^png [^ ]*' <&0 2>/dev/null | tail -1 | cut -d' ' -f2 | tr -d ',')
+out=$(grep -o '^png [^ ]*' "$2" 2>/dev/null | tail -1 | cut -d' ' -f2 | tr -d ',')
 [ -n "$out" ] && : > "$out"
 exit ${EXITCODE:-0}
 """):

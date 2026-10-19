@@ -10,7 +10,8 @@
 FROM python:3.11-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential libvips ncbi-blast+ media-types && \
+    apt-get install -y --no-install-recommends build-essential libvips ncbi-blast+ media-types \
+        libgl1 libegl1 libglib2.0-0 && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -20,6 +21,14 @@ ENV PIP_DEFAULT_TIMEOUT=600 PIP_RETRIES=20
 
 COPY requirements.txt /tmp/req-root.txt
 RUN pip install --no-cache-dir -r /tmp/req-root.txt apscheduler==3.10.4
+
+# render_png task (v3.137): headless static previews for the UI fallback.
+# pymol-open-source 3.1.0a0 ships a cp311 manylinux_2_34 wheel (glibc 2.36 ok);
+# batch mode `pymol -cq -` with ray=1 needs NO X/GL (software raytrace).
+# Content gate at build time MUST verify: `which pymol` + real mini-cif render
+# (V-29 lesson: image content regressions only surface with explicit probes;
+# see build command notes in docs).
+RUN pip install --no-cache-dir pymol-open-source==3.1.0a0
 
 COPY . /app
 RUN find /app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
