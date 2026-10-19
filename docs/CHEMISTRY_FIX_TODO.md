@@ -1800,3 +1800,26 @@ stage tasks, or ack-after-completion; (b) state reaper: runs whose status
 is running/queued but have no live celery task >N min get marked failed
 (safe-recancel pattern); (c) SIGBUS (137-class OOM-adjacent? /dev/shm?) root
 cause on ui-worker fleet — happened during identify of a DNA segment type.
+
+### OQ-16 CLOSED (2026-10-19) — deadlock class eliminated in v3.136
+RCA (see V-31 + session 2026-10-13): blast-core_nt vs NFS-backed PVC stalled
+io -> mmap page-fault -> SIGBUS (exit 135) on ui-worker; celery default
+early-ack lost the in-flight tasks forever; no reconciliation -> phantom
+"running" runs; queue "looked stuck". Fix landed in 4 layers:
+1. celery_app: task_acks_late + task_reject_on_worker_lost (broker redelivery
+   of hard-killed pipeline tasks; replay-safe stage overwrite)
+2. NEW zombie-run reaper (src_new/api/run_reaper.py; api lifespan): sweeps
+   runs/*/results.json; any running|queued run absent from fleet live tasks
+   for 2 consecutive sweeps -> failed + 'worker_lost' critical + event.
+   Redis leader lock (one sweeper across uvicorn --workers 4; lock observed
+   live). Deliberately no auto-redispatch. Env BAT3_RUN_REAPER=0 / interval.
+3. faulthandler(SIGBUS) all-thread dump armed in workers -> next hard-crash
+   yields full stack in --previous logs (13th left zero evidence).
+4. BLASTDB_MEM_MAP=0 on worker fleets (deploy env): blast reads DB via
+   read() not mmap -> NFS io errors are catchable exceptions, not bus death.
+Deploy 2026-10-19: worker(15)+ui-worker(2)+api on v3.136 (digest 8b3fdc2a).
+Reaper smoke vs prod data+broker: synthetic zombie failed after 2 sweeps,
+32 real run dirs untouched. 10 new reaper unit tests; api suite stable
+(2 pre-existing test_api failures documented as unrelated to this work).
+Residual P3 ideas (NOT done): restart alerting, SIGBUS source deep-dive if
+ever reproduced with the new faulthandler evidence.

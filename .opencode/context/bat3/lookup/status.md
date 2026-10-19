@@ -422,3 +422,9 @@ Design/record: .opencode/context/bat3/concepts/loading-strategy.md (Deploy State
 
 ## 2026-10-13 · Queue "stuck" incident resolved — SIGBUS task-loss (OQ-16 filed)
 ui-worker hard-crashed exit 135 (SIGBUS) 07:17Z; 3 in-flight run tasks acked+lost (celery task_acks_late default false). 2 runs phantom-"running" 4.7h over idle fleet; 1 queued run's message culled (no celery lists in Redis; dangling unacked_index member timed at its enqueue). Remedied: POST cancel ×2; cancel+rerun of the queued run → new run efc63ac2 dispatched instantly and progressing. Registered OQ-16 (acks-late/idempotency, state reaper, SIGBUS source on ui fleet) + lesson V-31.
+
+## 2026-10-19 · OQ-16 CLOSED — deadlock class eliminated (v3.136 live)
+Rolled: api+worker+ui-worker v3.136 (acks-late/reject-on-lost + faulthandler),
+state reaper live in api (redis leader lock verified), BLASTDB_MEM_MAP=0 on
+both worker fleets (NFS-mmap SIGBUS defused). 6-day stable soak since last
+SIGBUS. 3 residual zombies from 10-13 cancelled. Reaper live-smoke PASS.

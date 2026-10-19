@@ -10,9 +10,9 @@ Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-0
 ## Components & Images (pinned; verified 2026-10-12)
 | Deploy | Replicas | Image | Notes |
 |---|---|---|---|
-| bat3-ceitec-bat3-worker | 15 | `cerit.io/tomsko/bat3-validation-api:v3.135` | celery pipeline workers (src_new); NO DATABASE_URL needed; blast chain restored (v3.134+); element ground truth live |
-| bat3-ceitec-bat3-ui-worker | 2 | `cerit.io/tomsko/bat3-validation-api:v3.135` | celery pipeline workers (src_new); NO DATABASE_URL needed; same v3.135 |
-| bat3-ceitec-bat3-api | 1 | `cerit.io/tomsko/bat3-validation-api:v3.134` | **pins command/args `uvicorn src_new.api.main:app --workers 4` + DATABASE_URL env** — image CMD is `main:app` (validation API), wrong app + probes 404 otherwise (V-28); v3.134 ships ground_truth_override passthrough, api unchanged in v3.135 |
+| bat3-ceitec-bat3-worker | 15 | `cerit.io/tomsko/bat3-validation-api:v3.136` | celery pipeline workers (src_new); NO DATABASE_URL needed; blast chain restored (v3.134+); v3.136: acks-late + SIGBUS forensics + BLASTDB_MEM_MAP=0 (NFS-mmap SIGBUS defused) |
+| bat3-ceitec-bat3-ui-worker | 2 | `cerit.io/tomsko/bat3-validation-api:v3.136` | celery pipeline workers (src_new); NO DATABASE_URL needed; same v3.136 |
+| bat3-ceitec-bat3-api | 1 | `cerit.io/tomsko/bat3-validation-api:v3.136` | **pins command/args `uvicorn src_new.api.main:app --workers 4` + DATABASE_URL env** — image CMD is `main:app` (validation API), wrong app + probes 404 otherwise (V-28); v3.134 ships ground_truth_override passthrough, api adds zombie-run reaper + acks-late conf in v3.136 |
 | bat3-ceitec-bat3-web | 1 | `cerit.io/tomsko/bat3-frontend:w13` | UI w/ widened dropzone (.psf/.dcd/.data/.rst7/.mdcrd/.cif) |
 | validation-api | 1 | `bat3-validation-api:v3.132` | `uvicorn main:app`; **VALIDATION_DISPATCH_ENABLED=0 — MDDBR dispatch OFF (intentional, 2026-10-09)** |
 | validation-worker | **0 (was 244)** | `bat3-validation-api:v3.132` | **scaled to 0 2026-10-09 (MDDBR OFF); reverse: scale 244 + dispatch env 1** |
