@@ -11,7 +11,7 @@ Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-0
 | Deploy | Replicas | Image | Notes |
 |---|---|---|---|
 | bat3-ceitec-bat3-worker | 15 | `cerit.io/tomsko/bat3-validation-api:v3.137` | celery pipeline workers (src_new); NO DATABASE_URL needed; blast chain restored (v3.134+); v3.136: acks-late + SIGBUS forensics + BLASTDB_MEM_MAP=0 (NFS-mmap SIGBUS defused) |
-| bat3-ceitec-bat3-ui-worker | 2 | `cerit.io/tomsko/bat3-validation-api:v3.137` | celery pipeline workers (src_new); NO DATABASE_URL needed; same v3.136 |
+| bat3-ceitec-bat3-ui-worker | 2 | `cerit.io/tomsko/bat3-validation-api:v3.137` | celery pipeline workers (src_new); NO DATABASE_URL needed; same v3.137 |
 | bat3-ceitec-bat3-api | 1 | `cerit.io/tomsko/bat3-validation-api:v3.137` | **pins command/args `uvicorn src_new.api.main:app --workers 4` + DATABASE_URL env** — image CMD is `main:app` (validation API), wrong app + probes 404 otherwise (V-28); v3.134 ships ground_truth_override passthrough, api adds zombie-run reaper + acks-late conf in v3.136 |
 | bat3-ceitec-bat3-web | 1 | `cerit.io/tomsko/bat3-frontend:w14` | UI w/ widened dropzone (.psf/.dcd/.data/.rst7/.mdcrd/.cif) |
 | validation-api | 1 | `bat3-validation-api:v3.132` | `uvicorn main:app`; **VALIDATION_DISPATCH_ENABLED=0 — MDDBR dispatch OFF (intentional, 2026-10-09)** |
@@ -60,3 +60,4 @@ Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-0
 - API: `GET /{run_id}/render` += system_png, segment_pngs, total_atom_count; NEW `GET /runs/examples?limit=N` (auto = newest success+png; env `BAT3_EXAMPLE_RUNS` JSON list overrides, deploy-time curation of landing cards).
 - UI w14: TaskBar groups render_png under Export; MolstarViewer per-segment static fallback + 1M-atom gate (static + opt-in banner); Frontpage examples cards.
 - **Same-day deploy hazard hit twice**: port-forward dies when the api deployment rolls; re-establish before API work (known pattern).
+- **Same-tag redeploy trap**: `kubectl set image` to the identical string is a spec no-op — use `kubectl rollout restart` and VERIFY pod `.status.containerStatuses[0].imageID` digest (v3.137 hit this for the api re-roll to `46c71596`).

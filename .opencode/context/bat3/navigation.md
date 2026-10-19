@@ -34,6 +34,7 @@ Quick entry point to all BAT3 context files. Use this to find verification comma
 | Validation pipeline | `concepts/validation.md` |
 | Publication (NM paper) | `lookup/publication-journal.md` |
 | Loading strategy (MD coverage widening) | `concepts/loading-strategy.md` |
+| Static render pipeline (worker PNGs / Mol* fallback / examples) | `concepts/static-render-pipeline.md` |
 | Pipeline dispatch & crash robustness (OQ-16 model) | `concepts/pipeline-dispatch-and-reaper.md` |
 | S0 signature-stage validation (case file) | `lookup/s0-signature-stage-case-file.md` |
 | Failure-mode audit report + data links (journal handoff) | `lookup/failure-mode-audit-handoff.md` |
