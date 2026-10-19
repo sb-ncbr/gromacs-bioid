@@ -650,3 +650,8 @@ non-terminal "running" older than stage norms → redis keys (queue lists
 missing + dangling unacked_index member timed at the victim's enqueue) →
 kubectl logs --previous + lastState.terminated (exitCode 135). Remedy: API
 cancel on zombies, cancel+rerun for message-less queued runs.
+ CLOSED 2026-10-19 (v3.136 deployed): task_acks_late+reject_on_worker_lost,
+zombie-run reaper in api (leader-locked, fails lost runs as 'worker_lost'),
+faulthandler SIGBUS dump armed (next crash leaves a stack), BLASTDB_MEM_MAP=0
+on worker fleets defuses the NFS-mmap bus-death path itself. See OQ-16 in
+docs/CHEMISTRY_FIX_TODO.md + concepts/pipeline-dispatch-and-reaper.md.

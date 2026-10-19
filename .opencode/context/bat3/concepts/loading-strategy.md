@@ -121,7 +121,7 @@ _(filled per phase)_
 4. **Deferred**: pair-level ranking, recursion/multi-dir, Desmond, corpus census (stats task),
    .mdcrd probing (TRJReader n_atoms circularity), dcd-only deposits (honest failure by design).
 
-## Deploy State (2026-10-10, FINAL — deployed 4/4)
+## Deploy State (2026-10-10, FINAL — deployed 4/4; 10-19: v3.136 adds OQ-16 robustness: late-acks/reject-on-lost + reaper + BLASTDB_MEM_MAP=0; images table in ceitec-deployment.md is canonical)
 - Images: `bat3-validation-api:v3.133` + `bat3-frontend:w13` built+pushed (digests in
   pickup/journal; ui-worker canary green).
 - **Gate 1 (replay) PASS 5/5** — `/data/validation/replay_gate/` artifacts;

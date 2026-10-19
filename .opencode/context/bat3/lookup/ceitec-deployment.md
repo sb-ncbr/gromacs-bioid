@@ -7,7 +7,7 @@ Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-0
 - Kubeconfig context: `kuba-cluster` (namespace-scoped user; `kubectl get nodes` forbidden = normal)
 - Namespace: `ceitec-biodata-ns`; Ingress hosts: `bioid-ceitec.dyn.cloud.e-infra.cz` (SPA on /, API on /api+/files+/health+/docs+/openapi.json; /runs/* deep-links are SPA routes since ui-rework WS7), `bat3-validation.dyn.cloud.e-infra.cz`
 
-## Components & Images (pinned; verified 2026-10-12)
+## Components & Images (pinned; verified 2026-10-19)
 | Deploy | Replicas | Image | Notes |
 |---|---|---|---|
 | bat3-ceitec-bat3-worker | 15 | `cerit.io/tomsko/bat3-validation-api:v3.136` | celery pipeline workers (src_new); NO DATABASE_URL needed; blast chain restored (v3.134+); v3.136: acks-late + SIGBUS forensics + BLASTDB_MEM_MAP=0 (NFS-mmap SIGBUS defused) |
@@ -51,3 +51,5 @@ Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-0
 - nginx-frontend: SPA fallback + proxy ONLY `/api` and `/files` → `bat3-ceitec-bat3-api:8000`; old per-path proxies removed (deploy/nginx-frontend.conf).
 - UI image/tag discipline: build from clean worktree only; unique tags per wave; never recycle `:latest`.
 - Old UI drift tag `:ui1` retired via provenance diff (source ≡ live, FULL DOCUMENT identical).
+- **Gotcha (2026-10-19, OQ-16)**: worker fleets pin `BLASTDB_MEM_MAP=0` — blast reads the NFS-mounted `/app/databases` via read() not mmap; without it an NFS stall on a mapped page = SIGBUS process death. Keep this env on any blast-capable worker fleet.
+- **Reaper**: api runs zombie-run reconciler from startup (`BAT3_RUN_REAPER=0` disables, interval env `BAT3_RUN_REAPER_INTERVAL_S` default 300s). Redis leader lock `bat3:run_reaper:leader`.
