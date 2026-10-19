@@ -736,6 +736,69 @@ def _export_results(context):
     )
 
 
+def _render_png(context):
+    """Render transparent PNG previews (system + segments) from exported mmcifs.
+
+    v3.137 feature: the UI uses these images as static fallbacks whenever the
+    interactive Mol* view is unavailable, too slow, or the system is too large
+    (>= render reduced-style threshold). This task NEVER fails a run: every
+    image failure/skip/timeout becomes a warning, and if export produced no
+    mmcifs the task completes with a note. See src_new/render/png_renderer.py.
+    """
+    from ..render.png_renderer import RenderConfig, plan_renders, render_all, summarize
+
+    facade = context.get_value("facade")
+    if not facade:
+        # No structure loaded — nothing to render; not an error for the pipeline.
+        context.add_warning("render_no_facade", "No facade available; skipping PNG render")
+        return StepResult(summary={"rendered": 0, "reason": "no_facade"})
+
+    run_root = Path(context.output_directory)
+    cfg = RenderConfig.from_env()
+    if not cfg.pymol_bin:
+        context.add_warning(
+            "render_pymol_unavailable",
+            "PyMOL binary not found (BAT3_RENDER_PYMOL_BIN / PATH); skipping PNG render",
+        )
+        return StepResult(summary={"rendered": 0, "reason": "pymol_unavailable"})
+
+    segments = list(facade.get_segments())
+    n_atoms = context.results.get_data("simulation/n_atoms")
+    specs = plan_renders(run_root, segments, n_atoms, cfg)
+    if not specs:
+        context.add_warning(
+            "render_no_mmcifs",
+            "No exported mmcifs found at run root; skipping PNG render",
+        )
+        return StepResult(summary={"rendered": 0, "reason": "no_mmcifs"})
+
+    outcomes = render_all(specs, cfg)
+    stats = summarize(outcomes)
+
+    # Record paths to results.json under data.render.* (same convention as mmcif)
+    for o in outcomes:
+        if o.ok:
+            if o.is_system:
+                context.results.set_data("render/system_png", str(o.png_path))
+            else:
+                context.results.set_data(f"render/segments/{o.label}/png", str(o.png_path))
+            context.add_artifact(o.png_path, description=f"Static PNG render ({o.label})", kind="render")
+        elif not o.skipped:
+            context.add_warning(
+                "render_failed", f"{o.label}: {o.error}",
+                {"label": o.label, "error": o.error},
+            )
+
+    if stats["skipped"]:
+        context.add_warning(
+            "render_budget_exhausted",
+            f"PNG render total budget exhausted; {stats['skipped']} image(s) skipped",
+            {"skipped": stats["skipped"]},
+        )
+
+    return StepResult(summary={"png": True, **stats})
+
+
 def build_load_and_export_tasks():
     """Build the tasks list for the load-and-export pipeline."""
     return [
@@ -791,5 +854,11 @@ def build_load_and_export_tasks():
             name="Export Results",
             handler=_export_results,
             requires_tasks=("verify_results",),
+        ),
+        Task(
+            task_id="render_png",
+            name="Render PNGs",
+            handler=_render_png,
+            requires_tasks=("export_results",),
         ),
     ]
