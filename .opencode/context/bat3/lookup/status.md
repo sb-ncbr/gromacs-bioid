@@ -446,3 +446,9 @@ lineage (also the 10-13 zombie producers). Budget policy correctly degraded to
 render warnings; runs unaffected. Example set swapped to healthy sources:
 POPC + OSF q4m9w + A001UD. Pipeline-level render "finish=0" mitigation was
 CONSIDERED and rejected (breaks cartoon/sticks derivation without bonds).
+
+## 2026-10-19d · v3.137 wave CLOSED — full E2E green
+Examples live: POPC (4ef9a8cc), OSF q4m9w (2abd8adf, 209 838 atoms, 11 renders),
+A001UD (9f4ed38a). /runs/examples + render fields + /files PNG verified (1.9MB
+system ray PNG served). api digest 46c71596 (same-tag redeploy needs rollout
+restart — hits V-32 corollary). A003ZR family degenerate: warning-by-design.

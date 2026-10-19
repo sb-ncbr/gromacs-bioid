@@ -666,3 +666,6 @@ ALL commits of the wave land; content gate must probe the NEWEST feature bit
 (e.g. `grep -c "def get_run_examples" .../runs.py`), not just binaries. If a
 rollout smells stale: compare live pod responses vs repo grep FIRST, before
 debugging app logic.
+Corollary (same session): re-deploying the SAME tag after re-push does NOT
+refresh pods — `kubectl set image` to the identical string is a spec no-op; run
+`kubectl rollout restart deployment/...` and VERIFY pod imageID by digest.
