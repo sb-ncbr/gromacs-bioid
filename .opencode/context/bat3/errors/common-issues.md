@@ -655,3 +655,14 @@ zombie-run reaper in api (leader-locked, fails lost runs as 'worker_lost'),
 faulthandler SIGBUS dump armed (next crash leaves a stack), BLASTDB_MEM_MAP=0
 on worker fleets defuses the NFS-mmap bus-death path itself. See OQ-16 in
 docs/CHEMISTRY_FIX_TODO.md + concepts/pipeline-dispatch-and-reaper.md.
+
+## V-32 (2026-10-19): image built before the wave's last commit = half-features live
+Symptom (post-rollout): API 404s on a NEW endpoint that is committed and
+green in tests; render extension fields all None; TaskBar knows the task but
+API doesn't. Cause: docker build context is snapshotted at build start; any
+code written "while the build runs" is silently ABSENT from the image. Guard
+(already the discipline here, reaffirmed): a wave's image is built ONCE, after
+ALL commits of the wave land; content gate must probe the NEWEST feature bit
+(e.g. `grep -c "def get_run_examples" .../runs.py`), not just binaries. If a
+rollout smells stale: compare live pod responses vs repo grep FIRST, before
+debugging app logic.
