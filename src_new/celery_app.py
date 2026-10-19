@@ -78,6 +78,17 @@ celery.conf.update(
     # bat3-worker deployment command also pins --prefetch-multiplier=1 and
     # --concurrency=2 explicitly.
     worker_prefetch_multiplier=1,
+    # OQ-16 deadlock fix (2026-10-13 incident): a hard worker kill (SIGBUS,
+    # exit 135, NFS-mmap blast IO) used to EVAPORATE in-flight pipeline tasks
+    # — celery's default early-ack had already acknowledged the message, the
+    # run then claimed "running" forever over an idle fleet and the queue
+    # appeared stuck. acks-late + reject-on-lost = broker-side redelivery of
+    # hard-killed work (within visibility_timeout), so killed runs requeue
+    # instead of tombstoning. Pipeline steps re-execute and overwrite their
+    # stage state, i.e. replay-safe; duplicated compute beats guaranteed-stuck.
+    # The fast guarantee stays with src_new/api/run_reaper.py (minutes).
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
     # Reconnect on broker loss instead of dying (and silence the 5.3+
     # deprecation warning); pairs with retry_on_timeout in transport opts.
     broker_connection_retry=True,
@@ -85,3 +96,23 @@ celery.conf.update(
     broker_transport_options=redis_broker_transport_opts(),
     result_backend_transport_options=redis_broker_transport_opts(),
 )
+
+
+def _install_crash_dump_hook():
+    """OQ-16 forensics: dump ALL thread stacks to stderr on fatal signals
+    (notably SIGBUS) so `kubectl logs --previous` shows exactly where a worker
+    died. The 2026-10-13 SIGBUS-on-NFS-mmap incident left zero traceback —
+    exit 135 and nothing else. Closing that blind spot: next hard-crash prints
+    full task/thread context into the pod log. No-op where unavailable."""
+    try:
+        import faulthandler
+        import signal
+
+        faulthandler.enable()
+        if hasattr(signal, "SIGBUS"):
+            faulthandler.register(signal.SIGBUS, all_threads=True)
+    except Exception:  # pragma: no cover — platform without faulthandler
+        pass
+
+
+_install_crash_dump_hook()

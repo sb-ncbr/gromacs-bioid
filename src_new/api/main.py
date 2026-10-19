@@ -40,7 +40,15 @@ async def lifespan(app: FastAPI):
     runs_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/files", StaticFiles(directory=str(runs_dir)), name="files")
     logger.info("Initializing database tables...")
+    # Zombie-run reconciler (OQ-16): marks runs failed whose celery task
+    # vanished (worker hard-kill). Redis leader-locked inside; one sweeper
+    # cluster-wide despite --workers 4. BAT3_RUN_REAPER=0 disables.
+    from src_new.celery_app import celery as celery_app
+    from src_new.api.run_reaper import start_reaper
+    reaper_task = start_reaper(celery_app, runs_dir)
     yield
+    if reaper_task is not None:
+        reaper_task.cancel()
 
 
 app = FastAPI(title="BAT3 Pipeline API", version="0.1.0", lifespan=lifespan)
