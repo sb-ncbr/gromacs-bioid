@@ -435,3 +435,14 @@ produces render/{system,segments}.png (Mol*-style transparent), 1M-atom UI gate
 defaults big systems to static + opt-in override; landing page examples from
 /runs/examples (auto newestsuccess+png or BAT3_EXAMPLE_RUNS env). E2E: 3 example
 reruns queued (4ef9a8cc POPC, 22c4fade R2, 32066449 R0).
+
+## 2026-10-19c · v3.137 E2E finding — pathological A003ZR geometry (render-hang class)
+E2E reruns proved the budget design: POPC rendered fully (5/5 in minutes), but
+the MD-A003ZR family (R0/R1/R2 incl. re-runs) hung INSIDE pymol's mmcif load —
+root cause: degenerate coordinates (residue-1 LEU atoms at ~6 A, whole 73k-atom
+"system" compressed to a few A^3) → spatial hashing explodes. system.mmcif of
+the family is byte-size-identical (6 221 075 B) across runs → same broken input
+lineage (also the 10-13 zombie producers). Budget policy correctly degraded to
+render warnings; runs unaffected. Example set swapped to healthy sources:
+POPC + OSF q4m9w + A001UD. Pipeline-level render "finish=0" mitigation was
+CONSIDERED and rejected (breaks cartoon/sticks derivation without bonds).
