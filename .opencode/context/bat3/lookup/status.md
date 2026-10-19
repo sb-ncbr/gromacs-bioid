@@ -428,3 +428,10 @@ Rolled: api+worker+ui-worker v3.136 (acks-late/reject-on-lost + faulthandler),
 state reaper live in api (redis leader lock verified), BLASTDB_MEM_MAP=0 on
 both worker fleets (NFS-mmap SIGBUS defused). 6-day stable soak since last
 SIGBUS. 3 residual zombies from 10-13 cancelled. Reaper live-smoke PASS.
+
+## 2026-10-19b · v3.137 wave live — static PNG renders, Mol* gate, landing examples
+Workers(15)+ui(2)+api -> v3.137 (pymol headless); web -> w14. render_png task
+produces render/{system,segments}.png (Mol*-style transparent), 1M-atom UI gate
+defaults big systems to static + opt-in override; landing page examples from
+/runs/examples (auto newestsuccess+png or BAT3_EXAMPLE_RUNS env). E2E: 3 example
+reruns queued (4ef9a8cc POPC, 22c4fade R2, 32066449 R0).

@@ -7,13 +7,13 @@ Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-0
 - Kubeconfig context: `kuba-cluster` (namespace-scoped user; `kubectl get nodes` forbidden = normal)
 - Namespace: `ceitec-biodata-ns`; Ingress hosts: `bioid-ceitec.dyn.cloud.e-infra.cz` (SPA on /, API on /api+/files+/health+/docs+/openapi.json; /runs/* deep-links are SPA routes since ui-rework WS7), `bat3-validation.dyn.cloud.e-infra.cz`
 
-## Components & Images (pinned; verified 2026-10-19)
+## Components & Images (pinned; verified 2026-10-19, v3.137 wave)
 | Deploy | Replicas | Image | Notes |
 |---|---|---|---|
-| bat3-ceitec-bat3-worker | 15 | `cerit.io/tomsko/bat3-validation-api:v3.136` | celery pipeline workers (src_new); NO DATABASE_URL needed; blast chain restored (v3.134+); v3.136: acks-late + SIGBUS forensics + BLASTDB_MEM_MAP=0 (NFS-mmap SIGBUS defused) |
-| bat3-ceitec-bat3-ui-worker | 2 | `cerit.io/tomsko/bat3-validation-api:v3.136` | celery pipeline workers (src_new); NO DATABASE_URL needed; same v3.136 |
-| bat3-ceitec-bat3-api | 1 | `cerit.io/tomsko/bat3-validation-api:v3.136` | **pins command/args `uvicorn src_new.api.main:app --workers 4` + DATABASE_URL env** — image CMD is `main:app` (validation API), wrong app + probes 404 otherwise (V-28); v3.134 ships ground_truth_override passthrough, api adds zombie-run reaper + acks-late conf in v3.136 |
-| bat3-ceitec-bat3-web | 1 | `cerit.io/tomsko/bat3-frontend:w13` | UI w/ widened dropzone (.psf/.dcd/.data/.rst7/.mdcrd/.cif) |
+| bat3-ceitec-bat3-worker | 15 | `cerit.io/tomsko/bat3-validation-api:v3.137` | celery pipeline workers (src_new); NO DATABASE_URL needed; blast chain restored (v3.134+); v3.136: acks-late + SIGBUS forensics + BLASTDB_MEM_MAP=0 (NFS-mmap SIGBUS defused) |
+| bat3-ceitec-bat3-ui-worker | 2 | `cerit.io/tomsko/bat3-validation-api:v3.137` | celery pipeline workers (src_new); NO DATABASE_URL needed; same v3.136 |
+| bat3-ceitec-bat3-api | 1 | `cerit.io/tomsko/bat3-validation-api:v3.137` | **pins command/args `uvicorn src_new.api.main:app --workers 4` + DATABASE_URL env** — image CMD is `main:app` (validation API), wrong app + probes 404 otherwise (V-28); v3.134 ships ground_truth_override passthrough, api adds zombie-run reaper + acks-late conf in v3.136 |
+| bat3-ceitec-bat3-web | 1 | `cerit.io/tomsko/bat3-frontend:w14` | UI w/ widened dropzone (.psf/.dcd/.data/.rst7/.mdcrd/.cif) |
 | validation-api | 1 | `bat3-validation-api:v3.132` | `uvicorn main:app`; **VALIDATION_DISPATCH_ENABLED=0 — MDDBR dispatch OFF (intentional, 2026-10-09)** |
 | validation-worker | **0 (was 244)** | `bat3-validation-api:v3.132` | **scaled to 0 2026-10-09 (MDDBR OFF); reverse: scale 244 + dispatch env 1** |
 | validation-ui | 1 | `bat3-validation-ui:latest` | |
@@ -53,3 +53,10 @@ Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-0
 - Old UI drift tag `:ui1` retired via provenance diff (source ≡ live, FULL DOCUMENT identical).
 - **Gotcha (2026-10-19, OQ-16)**: worker fleets pin `BLASTDB_MEM_MAP=0` — blast reads the NFS-mounted `/app/databases` via read() not mmap; without it an NFS stall on a mapped page = SIGBUS process death. Keep this env on any blast-capable worker fleet.
 - **Reaper**: api runs zombie-run reconciler from startup (`BAT3_RUN_REAPER=0` disables, interval env `BAT3_RUN_REAPER_INTERVAL_S` default 300s). Redis leader lock `bat3:run_reaper:leader`.
+
+### v3.137 (2026-10-19) — static renders + landing examples (UI/PNG wave)
+- **`pymol-open-source==3.1.0a0` wheel NEEDS system mesa libs** (`libgl1 libegl1 libglib2.0-0`) even in batch mode — import links libGL.so.1. Wheel = only PyPI cp311 Linux build.
+- **`pymol -cq -` (script on stdin) silently no-ops** — feed .pml file. New `render_png` task (after export_results) renders runs/<id>/render/{system.png,segments/<seg>.png}; mol*-style, transparent; budgets 300s/120s/900s env knobs `BAT3_RENDER_*`; >=1M atoms -> reduced system style. Never fails a run (warnings only).
+- API: `GET /{run_id}/render` += system_png, segment_pngs, total_atom_count; NEW `GET /runs/examples?limit=N` (auto = newest success+png; env `BAT3_EXAMPLE_RUNS` JSON list overrides, deploy-time curation of landing cards).
+- UI w14: TaskBar groups render_png under Export; MolstarViewer per-segment static fallback + 1M-atom gate (static + opt-in banner); Frontpage examples cards.
+- **Same-day deploy hazard hit twice**: port-forward dies when the api deployment rolls; re-establish before API work (known pattern).
