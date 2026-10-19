@@ -123,13 +123,36 @@ class MoleculeSummaryResponse(BaseModel):
 
 
 class RenderPathsResponse(BaseModel):
-    """Response model for render paths."""
+    """Response model for render paths (v3.137: static PNG + atom-count gate)."""
 
     run_id: str = Field(..., description="Unique run identifier")
     system_mmcif: Optional[str] = Field(None, description="Path to system mmCIF file")
     segments: Dict[str, str] = Field(
         default_factory=dict, description="Mapping of segment name to mmCIF path"
     )
+    system_png: Optional[str] = Field(
+        None, description="Static system PNG (path relative to run dir, served under /files/)"
+    )
+    segment_pngs: Dict[str, str] = Field(
+        default_factory=dict, description="Mapping of segment name to static PNG path"
+    )
+    total_atom_count: Optional[int] = Field(
+        None, description="System-wide atom count incl. solvent (UI interactivity gate)"
+    )
+
+
+class ExampleRun(BaseModel):
+    """One landing-page example card (v3.137)."""
+
+    run_id: str
+    title: str
+    description: Optional[str] = None
+    image_url: str
+    created_at: str = ""
+
+
+class ExamplesResponse(BaseModel):
+    examples: List[ExampleRun] = []
 
 
 class SignatureInfo(BaseModel):

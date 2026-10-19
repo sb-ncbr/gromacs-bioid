@@ -35,6 +35,8 @@ from ..models import (
     MoleculeInstanceInfo,
     MoleculeInfoResponse,
     RenderPathsResponse,
+    ExampleRun,
+    ExamplesResponse,
     SignaturesResponse,
     SignatureInfo,
     IdentifiersResponse,
@@ -358,6 +360,97 @@ async def list_runs(request: Request, mine: int = Query(0)) -> RunListResponse:
             continue
 
     return RunListResponse(runs=runs)
+
+# ---------------------------------------------------------------------------
+# Landing-page example cards (v3.137)
+# ---------------------------------------------------------------------------
+
+TITLE_DESC_SEP = ">"      # run_name convention: "My Title>Some description"
+_EXAMPLE_IMAGE = "render/system.png"
+
+
+def parse_run_title(run_name: Optional[str], run_id: str) -> tuple:
+    """Split 'Title>Description'; missing '>' -> description None; missing name -> run id."""
+    name = (run_name or "").strip()
+    if not name:
+        return run_id[:8], None
+    title, _, desc = name.partition(TITLE_DESC_SEP)
+    return title.strip() or run_id[:8], (desc.strip() or None)
+
+
+def _example_candidates(runs_dir: Path) -> List[dict]:
+    """Successful runs that have render/system.png on disk (newest first)."""
+    out = []
+    if not runs_dir.is_dir():
+        return out
+    for entry in runs_dir.iterdir():
+        results_path = entry / "results.json"
+        if not (results_path.is_file() and (entry / _EXAMPLE_IMAGE).is_file()):
+            continue
+        try:
+            with open(results_path, encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception:
+            continue
+        pipeline = payload.get("pipeline", {}) or {}
+        if pipeline.get("status") != "success":
+            continue
+        out.append({
+            "run_id": entry.name,
+            "run_name": pipeline.get("run_name"),
+            "created_at": payload.get("created_at", "") or str(results_path.stat().st_mtime_ns / 1e9),
+        })
+    out.sort(key=lambda r: r["created_at"], reverse=True)
+    return out
+
+
+def get_example_runs(runs_dir: Path, limit: int, explicit_ids: Optional[List[str]] = None) -> List[dict]:
+    """Pick up to `limit` examples: explicit ids first (in order), then by recency."""
+    candidates = _example_candidates(runs_dir)
+    by_id = {c["run_id"]: c for c in candidates}
+    picked: List[dict] = []
+    for rid in explicit_ids or []:
+        if rid in by_id and len(picked) < limit:
+            picked.append(by_id.pop(rid))
+    for cand in candidates:
+        if len(picked) >= limit:
+            break
+        if cand["run_id"] in by_id:
+            picked.append(cand)
+    return picked
+
+
+@router.get("/examples", response_model=ExamplesResponse)
+async def get_run_examples(limit: int = 3) -> ExamplesResponse:
+    """Landing-page example cards (v3.137).
+
+    Auto: newest *successful* runs that have render/system.png. Override for
+    curated cards: env BAT3_EXAMPLE_RUNS as JSON list of run ids (deploy-time
+    changeable, no code edit). Titles parse from run_name 'Title>Description'.
+    """
+    explicit: Optional[List[str]] = None
+    raw = os.environ.get("BAT3_EXAMPLE_RUNS")
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            explicit = parsed if isinstance(parsed, list) else None
+        except (json.JSONDecodeError, TypeError):
+            explicit = None
+    limit = max(1, min(limit, 10))
+    picks = get_example_runs(get_runs_dir(), limit, explicit)
+    examples = [
+        ExampleRun(
+            run_id=p["run_id"],
+            title=parse_run_title(p["run_name"], p["run_id"])[0],
+            description=parse_run_title(p["run_name"], p["run_id"])[1],
+            image_url=f"/files/{p['run_id']}/{_EXAMPLE_IMAGE}",
+            created_at=str(p["created_at"]),
+        )
+        for p in picks
+    ]
+    return ExamplesResponse(examples=examples)
+
+
 
 @router.delete("/{run_id}")
 async def delete_run(run_id: str) -> dict:
@@ -852,7 +945,36 @@ async def get_render_paths(run_id: str) -> RenderPathsResponse:
         run_id=run_id,
         system_mmcif=system_mmcif,
         segments=segments,
+        system_png=_relativize_run_path(render_data.get("system_png"), run_id),
+        segment_pngs=_extract_segment_pngs(render_data.get("segments", {}), run_id),
+        total_atom_count=(data.get("data", {}).get("simulation", {}) or {}).get("n_atoms"),
     )
+
+
+def _relativize_run_path(path: Optional[str], run_id: str) -> Optional[str]:
+    """Render paths are absolute in results.json; /files serves them relative to run dir."""
+    if not path:
+        return None
+    runs_dir = get_runs_dir()
+    run_dir = runs_dir / run_id
+    if Path(path).is_absolute() and str(path).startswith(str(runs_dir)):
+        return str(Path(path).relative_to(run_dir))
+    return path
+
+
+def _extract_segment_pngs(segments_data: Dict[str, Any], run_id: str) -> Dict[str, str]:
+    """Pair recorded render.segments.<seg>.png paths with the /files form."""
+    out = {}
+    if not isinstance(segments_data, dict):
+        return out
+    for name, info in segments_data.items():
+        if isinstance(info, dict):
+            png = _relativize_run_path(info.get("png"), run_id)
+            if png:
+                out[name] = png
+    return out
+
+
 
 
 @router.get("/{run_id}/signatures", response_model=SignaturesResponse)
