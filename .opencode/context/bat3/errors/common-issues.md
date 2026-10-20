@@ -683,3 +683,33 @@ loader falls back to per-molecule ITP segids (SOL_1...) species aggregation
 lives in molecules/discovery. fix_names O(n^2) ban: never index
 atomgroup.<attr>[i] inside a per-atom loop (full-array materialization per
 access) — hoist once (measured 60.6s->0.03s @82k atoms).
+
+## V-34 (2026-10-20, v3.138): foldseek channel — layered deadness, every layer found by a live probe
+An external-tool channel that "never worked" can hide MULTIPLE independent
+tombstones; each fix exposes the next. Observed stack (foldseek):
+1. DEP: binary absent from image (V-33 class; dev venv masked it)
+2. CODE: duplicated method definition — the workflow wrapper shadowed the
+   executor, guaranteed TypeError for all time
+3. INTERFACE: `foldseek --version` does not exist (subcommand is `version`)
+4. RUNTIME DEP: `foldseek databases` shells out to curl/wget/aria2c — slim
+   image has none
+5. ARCHITECTURE: `createdb` rejects FASTA outright ("No structures found in
+   given input") — 3Di-string queries are UNSUPPORTED; only structure input
+   (CA-only is sufficient, identical hits to full PDB)
+6. PIPELINE: tdi.py generator scrambles encode_atoms args ((n,ca,c,cb) vs
+   (ca,cb,n,c)) AND joins uint8 indices as digit-strings — the 3di_sequence
+   signature is invalid 3Di anyway (now unconsumed; TODO fix-or-retire)
+7. WIRE: REST payload uses nested per-query alignments + PERCENT-scale seqId
+   (97.8), contradicting an earlier recorded "0.978 fraction" probe note —
+   probe the LIVE payload, don't trust yesterday's notes
+8. CLI: plain `search` has NO `--format-output`; TSV comes from `convertalis`
+   (arg-shape pitfalls: createdb takes input+output ONLY, no tmpDir)
+Deployment layer (V-32 corollary, harder): a Job with image `repo:tag` +
+IfNotPresent runs the NODE-CACHED copy of the tag — two failed Job attempts
+while everything "looked" right; events/pods vanish fast (BackoffLimitExceeded
+garbage-collects) → repro the exact command in local docker FIRST, and pin
+Job images by @sha256 digest.
+Channel takeaway: hermetic unit tests (stub binary/mocked HTTP) prove
+JSON logic only. The binary's arg contract, the server's payload shape, and
+the DB contents all need IN-POD probes with the REAL artifacts before a
+rollback-worthy failure becomes someone else's afternoon.

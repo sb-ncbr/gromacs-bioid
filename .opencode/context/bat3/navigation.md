@@ -36,6 +36,7 @@ Quick entry point to all BAT3 context files. Use this to find verification comma
 | Loading strategy (MD coverage widening) | `concepts/loading-strategy.md` |
 | Static render pipeline (worker PNGs / Mol* fallback / examples) | `concepts/static-render-pipeline.md` |
 | Pipeline dispatch & crash robustness (OQ-16 model) | `concepts/pipeline-dispatch-and-reaper.md` |
+| Foldseek DB ops + resolver modes (v3.138) | `docs/FOLDSEEK_DATABASE.md` |
 | S0 signature-stage validation (case file) | `lookup/s0-signature-stage-case-file.md` |
 | Failure-mode audit report + data links (journal handoff) | `lookup/failure-mode-audit-handoff.md` |
 | MDDBR GT curation handoff (A5 cohorts) | `lookup/a5-curation-handoff.md` |
