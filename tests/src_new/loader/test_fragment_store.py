@@ -77,31 +77,34 @@ class TestFragmentStore14976a:
 
 
 class TestFragmentStore16319:
+    """TOP+GRO fixture. Per-molecule segment contract (triaged 2026-10-20,
+    A' wave): MDAnalysis >= 2.9 names each molecule its own segment
+    ('SOL_1', ...), so the store holds one instance per molecule segment;
+    species aggregation lives in the molecules/discovery layer. The former
+    aggregated {'DPPC','SOL','Na','Cl'} expectations predated that parser
+    behavior (ledger entry 2026-10-02)."""
+
     def test_instances_count(self, tmp_path: Path):
         store, _, _ = _build_store("tests/data/16319", tmp_path)
-        assert len(store.get_all_instances()) == 4
+        # one instance per per-molecule segment (72 DPPC + 2864 SOL + 8 Na + 8 Cl)
+        assert len(store.get_all_instances()) == 2952
 
     def test_unique_segments(self, tmp_path: Path):
         store, _, _ = _build_store("tests/data/16319", tmp_path)
         instances = store.get_all_instances()
-        names = [inst.segment_ids[0] for inst in instances]
-        assert set(names) == {"DPPC", "SOL", "Na", "Cl"}
+        prefixes = {inst.segment_ids[0].rsplit('_', 1)[0] for inst in instances}
+        assert prefixes == {"DPPC", "SOL", "Na", "Cl"}
 
     def test_copy_numbers(self, tmp_path: Path):
         store, facade, _ = _build_store("tests/data/16319", tmp_path)
         instances = store.get_all_instances()
-        
-        # DPPC should have multiple molecules per segment
-        dppc = next(i for i in instances if i.segment_ids == ["DPPC"])
-        props = facade.get_segment_properties("DPPC")
-        assert dppc.copy_number == props.molecule_count
-        
-        # SOL might have many fragments (many water molecules)
-        sol = next(i for i in instances if i.segment_ids == ["SOL"])
-        # copy_number should reflect actual water count from facade
-        props = facade.get_segment_properties("SOL")
-        assert sol.copy_number == props.molecule_count
-        assert sol.atom_count == 3  # TIP3P water = 3 atoms
+        groups = {}
+        for inst in instances:
+            groups.setdefault(inst.segment_ids[0].rsplit('_', 1)[0], []).append(inst)
+        # one instance per molecule; species multiplicities from the fixture
+        assert {k: len(v) for k, v in groups.items()} == {"DPPC": 72, "SOL": 2864, "Na": 8, "Cl": 8}
+        assert all(inst.copy_number == 1 for inst in instances)
+        assert all(inst.atom_count == 3 for inst in groups["SOL"])  # 3-site water
 
     def test_whole_system(self, tmp_path: Path):
         store, _, _ = _build_store("tests/data/16319", tmp_path)
