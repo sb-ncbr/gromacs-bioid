@@ -311,21 +311,33 @@ class Foldseek3DiResolver(IdentifierResolver):
     def _parse_rest_result(self, payload: dict) -> list[tuple[str, float]]:
         """Parse the REST /result payload into (UniProt acc, 0-100) tuples.
 
-        Payload shape (probed 2026-10-19):
-        ``results[0].alignments[i]`` with keys ``target``, ``seqId`` (0..1
-        fraction), ``eval``, ``prob``, coordinates, etc.
+        Verified live payload shape (2026-10-20, structuresearch mode):
+        ``results[i].alignments`` is a list PER QUERY of alignment dicts
+        with keys ``target``, ``seqId``, ``eval``, ``alnLength``, etc.
+
+        seqId scale is server-version dependent (0.978 fraction vs 97.8
+        percent — both observed on the public server); normalize to 0-100.
         """
         results: list[tuple[str, float]] = []
         for entry in (payload or {}).get("results", []):
-            for aln in entry.get("alignments", []):
-                acc = normalize_foldseek_target(aln.get("target", ""))
-                if acc is None:
+            for aln_group in entry.get("alignments", []):
+                if isinstance(aln_group, dict):  # flat variant (older server shape)
+                    aln_group = [aln_group]
+                if not isinstance(aln_group, list):
                     continue
-                try:
-                    seqid = float(aln.get("seqId", 0.0))
-                except (TypeError, ValueError):
-                    continue
-                results.append((acc, seqid * 100.0))
-                if len(results) >= self.foldseek_config.max_target_hits:
-                    return results
+                for aln in aln_group:
+                    if not isinstance(aln, dict):
+                        continue
+                    acc = normalize_foldseek_target(aln.get("target", ""))
+                    if acc is None:
+                        continue
+                    try:
+                        seqid = float(aln.get("seqId", 0.0))
+                    except (TypeError, ValueError):
+                        continue
+                    if 0.0 < seqid <= 1.0:  # fraction variant -> percent
+                        seqid *= 100.0
+                    results.append((acc, seqid))
+                    if len(results) >= self.foldseek_config.max_target_hits:
+                        return results
         return results

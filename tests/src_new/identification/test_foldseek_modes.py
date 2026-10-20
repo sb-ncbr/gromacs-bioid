@@ -211,13 +211,33 @@ class TestRemoteSearch:
         return post_resp, get_side
 
     def test_remote_happy_path(self, tmp_path):
+        """Live payload shape (2026-10-20): alignments nested per query,
+        seqId on a PERCENT scale (97.8, not 0.978)."""
+        resolver = _make_resolver(tmp_path, mode="remote")
+        payload = {
+            "results": [{
+                "db": "afdb-swissprot",
+                "alignments": [[
+                    {"target": "AF-P01542-F1-model_v6 Crambin", "seqId": 97.8, "alnLength": 46},
+                    {"target": "AF-P01541-F1-model_v6", "seqId": 50.0, "alnLength": 46},
+                    {"target": "6VXX", "seqId": 0.9},  # dropped: not UniProt-space
+                ]],
+            }]
+        }
+        post_resp, get_side = self._patch_http(payload=payload)
+        with patch("src_new.identification.resolvers.foldseek.requests.post", return_value=post_resp), \
+             patch("src_new.identification.resolvers.foldseek.requests.get", side_effect=get_side):
+            results = resolver._resolve_similarity(CRAMBIN_CA_PDB, str(tmp_path))
+        assert results == [("P01542", 97.8), ("P01541", 50.0)]
+
+    def test_remote_fraction_seqid_variant_normalized(self, tmp_path):
+        """Older shape: flat alignments + fraction seqId -> still 0-100."""
         resolver = _make_resolver(tmp_path, mode="remote")
         payload = {
             "results": [{
                 "alignments": [
-                    {"target": "AF-P01542-F1-model_v6 Crambin", "seqId": 0.978, "eval": 1e-20},
-                    {"target": "6VXX", "seqId": 0.9},  # dropped: not UniProt-space
-                ]
+                    {"target": "AF-P01542-F1-model_v6 Crambin", "seqId": 0.978},
+                ],
             }]
         }
         post_resp, get_side = self._patch_http(payload=payload)
