@@ -283,11 +283,17 @@ class TopologyRepair:
         # Check for duplicates within residues
         fixed_count = 0
 
-        # Group atoms by residue
+        # Group atoms by residue. Hoist attribute arrays ONCE before the
+        # O(n) loop: atomgroup.resids[i]/resnames[i] per-iteration triggers a
+        # full-array materialization per access (O(n^2)) — measured 60.6 s on
+        # an 82k-atom GROMACS TPR fixing 0 names; hoisted form is sub-second
+        # (empirical A'-wave diagnosis, 2026-10-20).
+        resids_arr = self.u.atoms.resids if hasattr(self.u.atoms, 'resids') else None
+        resnames_arr = self.u.atoms.resnames if hasattr(self.u.atoms, 'resnames') else None
         residue_atoms = {}
         for i in range(n_atoms):
-            resid = self.u.atoms.resids[i] if hasattr(self.u.atoms, 'resids') else 0
-            resname = self.u.atoms.resnames[i] if hasattr(self.u.atoms, 'resnames') else ""
+            resid = int(resids_arr[i]) if resids_arr is not None else 0
+            resname = str(resnames_arr[i]) if resnames_arr is not None else ""
             key = (resid, resname)
             if key not in residue_atoms:
                 residue_atoms[key] = []
