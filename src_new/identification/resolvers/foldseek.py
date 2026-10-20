@@ -8,13 +8,23 @@ v3.138 rewrite. Two execution modes (config.foldseek.mode):
   (missing binary, missing DB, nonzero exit, malformed output) falls back
   to remote mode so a run never loses the whole channel silently.
 - "remote": public foldseek REST server (search.foldseek.com). Field name
-  is ``database[]`` (validated 2026-10-19: ``Database``/``databases`` are
-  rejected with "JobRequest.Job.Database required").
+  is ``database[]`` (validated 2026-10-19-20: ``Database``/``databases``
+  are rejected with "JobRequest.Job.Database required").
 - "off": resolver disabled.
 
+IMPORTANT (empirically established 2026-10-20 against foldseek 9-427df8a):
+foldseek 3Di search consumes STRUCTURE input — ``createdb`` on a PDB
+computes the 3Di encoding internally and **rejects FASTA input outright**
+("No structures found in given input"). There is no supported path that
+takes a 3Di letter string (and the pipeline's tdi generator additionally
+passes encode_atoms args in the wrong order — see ledger; that signature is
+NOT consumed here). The resolver therefore accepts ``ca_only_pdb``
+signatures and hands the raw structure text to foldseek / the REST server,
+mirroring the AlphaFind resolver. Proven in-pod: 1CRN ->
+AF-P01542-F1-model_v6 (fident 0.978) against the Swiss-Prot PVC DB.
+
 Targets are normalized to bare UniProt accessions (``AF-P01542-F1-model_vN``
--> ``P01542``) so local-DB (v4-era names) and REST (v6-era names) hits land
-in the same identifier space.
+-> ``P01542``) so local-DB and REST hits land in the same identifier space.
 """
 
 from __future__ import annotations
@@ -41,7 +51,7 @@ _AF_TARGET_RE = re.compile(r"^AF-([A-Z0-9]+)-F\d+-model_v\d+", re.IGNORECASE)
 # Bare UniProt accession (canonical + isoform), e.g. P01542, A0A023GPI8.
 _UNIPROT_ACC_RE = re.compile(r"^[OPQ][0-9][A-Z0-9]{3}[0-9](-\d+)?$|^[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}(-\d+)?$")
 
-_M8_FORMAT_OUTPUT = "query,target,fident,qcov,evalue"
+_M8_FORMAT_OUTPUT = "query,target,fident"
 
 
 def normalize_foldseek_target(target: str) -> str | None:
@@ -64,14 +74,15 @@ def normalize_foldseek_target(target: str) -> str | None:
 
 
 class Foldseek3DiResolver(IdentifierResolver):
-    """Identifies 3Di sequences using Foldseek (local subprocess or REST)."""
+    """Identifies structures via Foldseek 3Di search (local subprocess or REST)."""
 
     def __init__(self, config: RunConfig) -> None:
         super().__init__(config)
 
         self.name = "foldseek_3di"
         self.identifier_type = "UNIPROT_ID"
-        self.accepted_signatures = ["3di_sequence"]
+        # Structure-text input (foldseek computes 3Di internally; see module docstring).
+        self.accepted_signatures = ["ca_only_pdb"]
 
         self.config = config
         self.foldseek_config = config.foldseek
@@ -113,8 +124,8 @@ class Foldseek3DiResolver(IdentifierResolver):
         )
 
     def _is_applicable(self, signature: str) -> bool:
-        """Check if signature is a non-empty 3Di sequence string."""
-        return bool(signature and signature.strip())
+        """Check if signature is a non-empty PDB/structure text."""
+        return bool(signature and "ATOM" in signature)
 
     # ------------------------------------------------------------------ #
     # resolution entry points                                             #
@@ -122,7 +133,7 @@ class Foldseek3DiResolver(IdentifierResolver):
 
     def _resolve_identity(self, signature: str, working_directory: str) -> list[str]:
         """Exact-match is not practical for 3Di; always empty."""
-        logger.debug("Foldseek identity search not implemented for 3Di sequences")
+        logger.debug("Foldseek identity search not implemented for 3Di queries")
         return []
 
     def _resolve_similarity(self, signature: str, working_directory: str) -> list[tuple[str, float]]:
@@ -162,47 +173,50 @@ class Foldseek3DiResolver(IdentifierResolver):
     # ------------------------------------------------------------------ #
 
     def _local_search(self, signature: str, working_directory: str) -> list[tuple[str, float]] | None:
-        """Run createdb+search against the local DB.
+        """createdb(structure) -> search -> convertalis(TSV) against the local DB.
 
         Returns:
-            List of (UniProt accession, score 0-100) tuples, possibly empty;
+            List of (UniProt accession, fident*100) tuples, possibly empty;
             None on any local-stage failure (triggers remote fallback).
         """
         tmp_dir = tempfile.mkdtemp(prefix="foldseek_", dir=safe_tmp_dir(working_directory))
         try:
-            query_fasta = os.path.join(tmp_dir, "query.fasta")
+            query_pdb = os.path.join(tmp_dir, "query.pdb")
             query_db = os.path.join(tmp_dir, "query_db")
+            result_db = os.path.join(tmp_dir, "result_db")
             output_m8 = os.path.join(tmp_dir, "results.m8")
 
-            with open(query_fasta, "w") as f:
-                f.write(">query\n" + signature.strip() + "\n")
+            with open(query_pdb, "w") as f:
+                f.write(signature if signature.endswith("\n") else signature + "\n")
 
+            exe = self.foldseek_config.foldseek_exec
             createdb = subprocess.run(
-                [self.foldseek_config.foldseek_exec, "createdb", query_fasta, query_db],
-                capture_output=True,
-                text=True,
-                timeout=60,
+                [exe, "createdb", query_pdb, query_db],
+                capture_output=True, text=True, timeout=120, cwd=tmp_dir,
             )
             if createdb.returncode != 0:
-                logger.error(f"Foldseek createdb failed: {createdb.stderr}")
+                logger.error(f"Foldseek createdb failed: {(createdb.stderr or '')[-300:]}")
                 return None
 
             search = subprocess.run(
-                [
-                    self.foldseek_config.foldseek_exec,
-                    "search",
-                    query_db,
-                    self.foldseek_config.db_path,
-                    output_m8,
-                    "--format-output",
-                    _M8_FORMAT_OUTPUT,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=self.foldseek_config.search_timeout_s,
+                [exe, "search", query_db, self.foldseek_config.db_path, result_db, tmp_dir],
+                capture_output=True, text=True,
+                timeout=self.foldseek_config.search_timeout_s, cwd=tmp_dir,
             )
             if search.returncode != 0:
-                logger.error(f"Foldseek search failed: {search.stderr}")
+                logger.error(f"Foldseek search failed: {(search.stderr or '')[-300:]}")
+                return None
+
+            convert = subprocess.run(
+                [exe, "convertalis", query_db, self.foldseek_config.db_path,
+                 result_db, output_m8, "--format-output", _M8_FORMAT_OUTPUT],
+                capture_output=True, text=True, timeout=120, cwd=tmp_dir,
+            )
+            if convert.returncode != 0:
+                logger.error(f"Foldseek convertalis failed: {(convert.stderr or '')[-300:]}")
+                return None
+            if not os.path.exists(output_m8):
+                logger.error("Foldseek convertalis produced no output file")
                 return None
 
             return self._parse_m8(output_m8)
@@ -213,7 +227,7 @@ class Foldseek3DiResolver(IdentifierResolver):
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def _parse_m8(self, m8_path: str) -> list[tuple[str, float]]:
-        """Parse query,target,fident,... TSV rows into (UniProt acc, 0-100) tuples."""
+        """Parse query,target,fident TSV rows into (UniProt acc, 0-100) tuples."""
         results: list[tuple[str, float]] = []
         try:
             with open(m8_path, "r") as f:
@@ -243,10 +257,14 @@ class Foldseek3DiResolver(IdentifierResolver):
     # ------------------------------------------------------------------ #
 
     def _remote_search(self, signature: str) -> list[tuple[str, float]] | None:
-        """Submit a 3diaa job to the foldseek REST server and collect hits.
+        """Submit a structure (3diaa mode) to the foldseek REST server.
+
+        The server computes the 3Di encoding from the uploaded structure —
+        proven 2026-10-19-20 with a crambin PDB returning
+        AF-P01542-F1-model_v6 (seqId 0.978).
 
         Returns:
-            List of (UniProt accession, score 0-100) tuples, possibly empty;
+            List of (UniProt accession, seqId*100) tuples, possibly empty;
             None when the remote channel itself fails.
         """
         cfg = self.foldseek_config
@@ -254,7 +272,7 @@ class Foldseek3DiResolver(IdentifierResolver):
         try:
             submit = requests.post(
                 f"{url}/ticket",
-                files={"q": ("query.fasta", f">query\n{signature.strip()}\n")},
+                files={"q": ("query.pdb", signature)},
                 data={"mode": "3diaa", "database[]": cfg.remote_database},
                 timeout=cfg.remote_timeout_s,
             )
