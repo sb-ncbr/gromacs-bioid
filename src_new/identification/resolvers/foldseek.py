@@ -83,10 +83,15 @@ class Foldseek3DiResolver(IdentifierResolver):
     # ------------------------------------------------------------------ #
 
     def _check_binary(self) -> bool:
-        """Check if the foldseek executable is available."""
+        """Check if the foldseek executable is available.
+
+        Uses the ``version`` subcommand — foldseek has no ``--version`` flag
+        (rc=1, "Did you mean convertalis"; empirically verified on the
+        9-427df8a static build while gating the v3.138 image).
+        """
         try:
             result = subprocess.run(
-                [self.foldseek_config.foldseek_exec, "--version"],
+                [self.foldseek_config.foldseek_exec, "version"],
                 capture_output=True,
                 timeout=10,
             )

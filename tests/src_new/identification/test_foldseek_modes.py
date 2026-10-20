@@ -73,6 +73,27 @@ class TestNormalizeTarget:
         assert normalize_foldseek_target("???") is None
 
 
+class TestBinaryCheck:
+    def test_version_subcommand_not_dashdash(self, tmp_path):
+        """foldseek has no --version flag; availability probe must use the
+        `version` subcommand (empirically verified on build 9-427df8a)."""
+        config = RunConfig()
+        config.foldseek.db_path = str(tmp_path / "swissprot")
+        with patch("src_new.identification.resolvers.foldseek.subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0)
+            resolver = Foldseek3DiResolver(config)
+        assert resolver._binary_available is True
+        assert run.call_args.args[0][1] == "version"
+
+    def test_nonzero_rc_marks_unavailable(self, tmp_path):
+        config = RunConfig()
+        config.foldseek.db_path = str(tmp_path / "swissprot")
+        with patch("src_new.identification.resolvers.foldseek.subprocess.run") as run:
+            run.return_value = MagicMock(returncode=1)
+            resolver = Foldseek3DiResolver(config)
+        assert resolver._binary_available is False
+
+
 class TestModeDispatch:
     def test_off_mode_returns_empty_without_work(self, tmp_path):
         resolver = _make_resolver(tmp_path, mode="off")
