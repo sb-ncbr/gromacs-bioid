@@ -467,3 +467,54 @@ image (dev venv masked it) — AlphaFind hits dead at no_worker via
 ALPHAFOLD_ID vs ALPHAFIND_ID taxonomy split + ca_only_pdb sig type + stale
 "hits are PDB IDs" fetcher design (live API evidence: object_id = UniProt
 acc; AFDB v6 fetchable; aligned_percentage now 0..1 scale).
+
+## 2026-10-20c · v3.138 wave — foldseek / gemmi / tmtools / AlphaFind revival
+Image v3.138 @ sha256:053c2d8fc3627269847cab6f35a6b27ca14200ef0236756ef02732aa3e44fa33
+(rolled onto worker x15 / ui-worker x2 / api x1; tag is mutable, deploy specs
+now carry the digest-pin).
+DEPS+IMAGE: gemmi, tmtools, mini3di, numpy<2 (pin; image had numpy 1.26.4
+only by pip-luck), static foldseek build 9-427df8a (avx2+sse2 layers +
+ISA wrapper + build gates: `foldseek version` AND `curl --version` —
+`foldseek databases` shells out to a downloader; slim carries none).
+Swiss-Prot AFDB DB seeded on the databases PVC at
+/app/databases/foldseek/swissprot* (one-shot Job:
+k8s/foldseek-db-seed-job.yaml — image MUST be digest-pinned: same tag on
+node cache = old image, same failure twice (BackoffLimitExceeded)).
+ALPHAFIND (Phase B, 57c958b8c): stage API aligned_percentage is 0..1 scale
+-> normalize x100; identity filter >=99.5 (==100.0 was unreachable).
+object_id = UniProt accession; fetcher does AFDB v6->v5->v4 fallback.
+Taxonomy: ALPHAFOLD_ID end-to-end (worker+fetcher+ca_only_pdb sig type).
+TM-SCORE REPAIR: worker called `from tmtools import tmscore` — a SUBMODULE,
+not callable; TM path silently fallen back to sequence proxy since
+forever. Real API: tm_align(x, y, seqx, seqy) coords-first; seq+coords
+must be extracted in ONE aligned pass; use tm_norm_chain2.
+Offline fixture proof: 1CRN CA vs AF-P01542-F1-model_v6 tm=0.96
+(server probe 0.9589).
+FOLDSEEK (Phase C, 543370f74 + architecture fix + parser fix):
+- pre-state was dead-by-design: duplicated _run_foldseek_search definition
+  (wrapper shadowed executor => TypeError), invalid default DB 'afdb',
+  no binary, no DB, and NO FASTA QUERY SUPPORT at all.
+- createdb REJECTS fasta ("No structures found in given input") — the
+  only supported query input is a STRUCTURE (createdb computes 3Di
+  internally; CA-ONLY pdb works fine, proven vs full pdb: identical hits).
+- tdi.py generator independently broken (encode_atoms called with
+  (n,ca,c,cb) vs signature (ca,cb,n,c) + joins uint8 state indices as
+  DIGITS not letters) — signature type 3di_sequence now unconsumed by
+  any resolver; left as dead channel (TODO: fix or retire, low value).
+- resolver: accepts ca_only_pdb; local = createdb->search->convertalis
+  (--format-output lives on convertalis, NOT on plain search), remote =
+  POST structure mode=3diaa database[]=afdb-swissprot. mode=local|remote|off
+  (+remote_* tunables) in FoldseekConfig/[foldseek] ini section.
+- REST payload shape (live 2026-10-20): results[i].alignments = nested
+  per-query list; seqId on PERCENT scale (97.8, both scales normalized).
+- Target normalization AF-<ACC>-F1-model_vN -> <ACC> unifies local-DB and
+  REST identifier spaces.
+TESTS: test_foldseek_modes.py (23, incl. arg-layout-pinning stub binary),
+AlphaFind resolution/fetch/tm-chain suites; identification+verification
+= 394/394. Pre-existing remaining red: 2 api + 2 executor (documented
+baseline from earlier waves, untouched).
+E2E (in-pod, prod image+PVC): A) AlphaFind chain: hits P01542@100 ->
+AFDB fetch 30698B -> tm_score 0.96 (E2E-A PASS). B/C) foldseek
+local+remote: P01542@97.8 identical tops (E2E-BC PASS). D) gemmi mmcif:
+LoadStrategy.MMCIF_GEMMI loads 327-atom cif in prod image (E2E-D PASS).
+Full-run rerun of OSF q4m9w: run f08cbeb3-4f7a-4290-8b4b-8331e64c6411.

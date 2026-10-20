@@ -1,0 +1,58 @@
+# One-shot Job: seed the local foldseek Alphafold/Swiss-Prot database onto the
+# shared databases PVC (v3.138). Schedules against the NEW v3.138 image which
+# contains the static foldseek binary (/usr/local/bin/foldseek wrapper).
+# Apply AFTER pushing v3.138; delete+re-apply to force a refresh of the DB.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bat3-foldseek-db-seed-v3138c
+  namespace: ceitec-biodata-ns
+  labels:
+    app: bat3-foldseek-db-seed
+spec:
+  ttlSecondsAfterFinished: 86400
+  activeDeadlineSeconds: 7200
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: bat3-foldseek-db-seed
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: foldseek-db-seed
+          image: "cerit.io/tomsko/bat3-validation-api@sha256:5d4f15eff691699e34bd7c7be067e0ba206b517366de91d97d8454ee10ae865b"
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -eux
+              mkdir -p /tmp/foldseek-tmp /app/databases/foldseek
+              foldseek databases Alphafold/Swiss-Prot /app/databases/foldseek/swissprot /tmp/foldseek-tmp
+              ls -la /app/databases/foldseek/
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsUser: 1000
+          resources:
+            requests:
+              cpu: "4"
+              memory: 8Gi
+            limits:
+              cpu: "8"
+              memory: 32Gi
+          volumeMounts:
+            - name: databases-data
+              mountPath: /app/databases
+      volumes:
+        - name: databases-data
+          persistentVolumeClaim:
+            claimName: bat3-databases-data-ceitec
