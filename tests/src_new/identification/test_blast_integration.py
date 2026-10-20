@@ -628,25 +628,35 @@ class TestBlastResolverClasses:
 class TestBlastPreflight:
     """Tests for preflight checks (empty/missing database paths)."""
 
-    def test_preflight_empty_db_path(self, config: RunConfig) -> None:
-        """resolver with db_path="" raises IdentifierResolutionError from resolve()."""
+    def test_preflight_empty_db_path(self, config: RunConfig, caplog) -> None:
+        """resolver with db_path="" skips gracefully: empty hits + ERROR log.
+
+        Graceful-degradation contract (test updated 2026-10-20): a
+        misconfigured resolver logs and contributes no hits instead of
+        raising — identification continues with the remaining resolvers.
+        """
+        import logging
+        caplog.set_level(logging.ERROR, logger="identifier")
         config.blast.pdb_aa_db = ""
         resolver = BLASTResolverPDBAA(config)
-        
-        with pytest.raises(IdentifierResolutionError) as exc_info:
-            resolver.resolve("MKWVTFISLLFLFSSAYS", as_similarity=False)
-        
-        assert "BLAST database path not configured" in str(exc_info.value)
 
-    def test_preflight_missing_database_files(self, config: RunConfig) -> None:
-        """resolver with db_path="/nonexistent/db" raises IdentifierResolutionError."""
+        result = resolver.resolve("MKWVTFISLLFLFSSAYS", as_similarity=False)
+
+        assert result is None
+        assert "BLAST database path not configured" in caplog.text
+        assert "BLAST database path not configured" in (resolver.get_last_error() or "")
+
+    def test_preflight_missing_database_files(self, config: RunConfig, caplog) -> None:
+        """resolver with db_path="/nonexistent/db" skips gracefully (same contract)."""
+        import logging
+        caplog.set_level(logging.ERROR, logger="identifier")
         config.blast.pdb_aa_db = "/nonexistent/db"
         resolver = BLASTResolverPDBAA(config)
-        
-        with pytest.raises(IdentifierResolutionError) as exc_info:
-            resolver.resolve("MKWVTFISLLFLFSSAYS", as_similarity=False)
-        
-        assert "BLAST database not found" in str(exc_info.value)
+
+        result = resolver.resolve("MKWVTFISLLFLFSSAYS", as_similarity=False)
+
+        assert result is None
+        assert "BLAST database not found" in caplog.text
 
     def test_preflight_valid_db_path_still_runs(self, tmp_path: Path, config: RunConfig) -> None:
         """With valid-looking path, reaches subprocess (mock subprocess to avoid real blast)."""
@@ -708,13 +718,12 @@ class TestBlastPreflight:
         mock_result.stdout = ""
         
         with patch("subprocess.run", return_value=mock_result):
-            with pytest.raises(IdentifierResolutionError) as exc_info:
-                resolver.resolve("MKWVTFISLLFLFSSAYS", as_similarity=False)
-        
-        # Exception propagates to resolve() which logs and re-raises
-        assert "BLAST failed with return code 1" in str(exc_info.value)
-        assert "BLAST Database error: File not found" in str(exc_info.value)
-        # Check that the error log also contains the message
+            result = resolver.resolve("MKWVTFISLLFLFSSAYS", as_similarity=False)
+
+        # Graceful contract (test updated 2026-10-20): subprocess failure is
+        # logged with the BLAST stderr captured; resolve() returns None
+        # (OQ-10 contract) instead of raising.
+        assert result is None
         assert "BLAST failed with return code 1" in caplog.text
         assert "BLAST Database error: File not found" in caplog.text
 
@@ -930,17 +939,19 @@ class TestBlastAlphabetValidation:
     """Test _is_applicable query alphabet validation (BLAST-1)."""
 
     def test_protein_resolver_rejects_nucleic_only_sequence(self, config: RunConfig) -> None:
-        """Protein resolver should reject sequence containing only nucleic-specific codes (T, U).
-        
-        Note: A, C, G are valid amino acids (Alanine, Cysteine, Glycine), so we use
-        T (Thymine) and U (Uracil) which are nucleic-specific.
+        """Tolerant alphabet contract (post P0-6, test updated 2026-10-20).
+
+        T (Thr) and U (Sec) ARE valid protein codes, so "nucleic-looking"
+        sequences stay applicable — worst case blastp returns no hits.
+        Applicability only rejects empty/too-short sequences or sequences
+        with > _MAX_INVALID_CHAR_FRACTION (0.5) invalid characters.
         """
         resolver = BLASTResolverPDBAA(config)
-        
-        # Pure nucleic acid sequence with T and U (not valid amino acids)
-        nucleic_seq = "TTTTUUUUAAAA"
-        
-        assert resolver._is_applicable(nucleic_seq) is False
+
+        assert resolver._is_applicable("TTTTUUUUAAAA") is True
+        assert resolver._is_applicable("") is False
+        assert resolver._is_applicable("MKW") is False  # < _MIN_SEQUENCE_LENGTH
+        assert resolver._is_applicable("!!!###$$$%%%**(") is False  # >50% invalid
 
     def test_nucleic_resolver_rejects_protein_only_sequence(self, config: RunConfig) -> None:
         """Nucleotide resolver should reject sequence containing only protein-specific residues."""

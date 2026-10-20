@@ -18,6 +18,24 @@ from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
 logger = logging.getLogger("identifier")
 
 
+def _normalize_aligned_percentage(value) -> float:
+    """Normalize AlphaFind's aligned_percentage to a 0-100 scale.
+
+    Live stage-API evidence (2026-10-19 probe, crambin/1CRN): the endpoint
+    returns fractions on a 0..1 scale ("aligned_percentage": 1.0). Historical
+    consumers of these tuples expect percentages 0..100. Values <= 1.0 are
+    treated as fractions and scaled up; larger values pass through. This also
+    fixes the identity filter, which compared against exactly 100.0 and
+    could therefore never fire on 0..1 input."""
+    try:
+        pct = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if pct <= 1.0:
+        pct *= 100.0
+    return pct
+
+
 class AlphaFindStructResolver(IdentifierResolver):
     """
     AlphaFindStructResolver identifies protein structures using AlphaFind structure database search.
@@ -286,7 +304,10 @@ class AlphaFindStructResolver(IdentifierResolver):
         results: list[tuple[str, float]] = []
         for entry in response['results']:
             if 'object_id' in entry and 'aligned_percentage' in entry:
-                results.append((entry['object_id'], entry['aligned_percentage']))
+                results.append((
+                    entry['object_id'],
+                    _normalize_aligned_percentage(entry['aligned_percentage']),
+                ))
         
         return results
 
@@ -302,11 +323,13 @@ class AlphaFindStructResolver(IdentifierResolver):
         """
         similar_results = self._alphafind_similarity(pdb_path)
         
-        # Filter for exact matches (100% aligned)
+        # Filter for exact matches. aligned_percentage is normalized to 0-100
+        # (see _normalize_aligned_percentage); 99.5 tolerance absorbs server
+        # rounding while still requiring effectively full-length alignment.
         identical = [
             entry_id 
             for entry_id, aligned_pct in similar_results 
-            if aligned_pct == 100.0
+            if aligned_pct >= 99.5
         ]
         
         return identical

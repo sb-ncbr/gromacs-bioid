@@ -335,13 +335,19 @@ class TestStructureFetcher:
         assert "ATOM" in result
     
     @patch("src_new.verification.fetchers.structure_fetcher.rcsb_cache.get_cached")
-    def test_structure_fetcher_alphafold_returns_none(self, mock_get) -> None:
-        """ALPHAFOLD_ID returns None."""
-        mock_response = Mock()
-        mock_response.raise_for_status = Mock()
+    def test_structure_fetcher_alphafold_fetches_afdb(self, mock_get) -> None:
+        """ALPHAFOLD_ID fetches the AFDB model (v3.138 taxonomy fix).
+
+        Pre-v3.138 this asserted a None return, encoding the stale
+        "AlphaFind hits are PDB IDs" assumption; live stage-API evidence
+        (2026-10-19) shows object_id = UniProt accession, fetchable from
+        AFDB — see test_alphafold_structure_chain.py for full coverage."""
+        mock_response = Mock(status_code=200, text="HEADER AF\nATOM      1  N   GLY A   1\nEND\n")
         mock_get.return_value = mock_response
         
         fetcher = StructureSignatureFetcher()
         result = fetcher.fetch("AF-P04637-F1-model_v4", "ALPHAFOLD_ID")
         
-        assert result is None
+        assert result == mock_response.text
+        # wrapped identifier is unwrapped to the bare UniProt accession
+        assert mock_get.call_args_list[0].args[0].endswith("AF-P04637-F1-model_v6.pdb")

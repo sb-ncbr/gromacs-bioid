@@ -325,8 +325,11 @@ END
         """Test that PairwiseAligner is used instead of deprecated pairwise2 in sequence proxy."""
         worker = StructureVerificationWorker()
         
-        # Mock PairwiseAligner to verify it's called in the sequence proxy fallback
-        with patch('src_new.verification.workers.structure_worker.PairwiseAligner') as mock_aligner_class:
+        # Mock PairwiseAligner to verify it's called in the sequence proxy fallback.
+        # v3.138 note: the tm_align path is functional now, so force the fallback
+        # condition explicitly instead of relying on it failing silently.
+        with patch("src_new.verification.workers.structure_worker._TMTOOLS_AVAILABLE", False), \
+             patch('src_new.verification.workers.structure_worker.PairwiseAligner') as mock_aligner_class:
             mock_aligner = MagicMock()
             mock_aligner_class.return_value = mock_aligner
             
