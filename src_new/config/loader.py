@@ -279,7 +279,23 @@ class PDBConfig:
 @dataclass
 class FoldseekConfig:
     foldseek_exec: str = "foldseek"
-    db_path: str = ""  # empty = use default AFDB
+    # Local-mode database prefix as created by
+    # `foldseek databases Alphafold/Swiss-Prot <prefix>` (v3.138: populated on
+    # the cluster PVC by a one-shot bootstrap Job). Missing/empty disables
+    # local mode; the resolver then falls back to remote (see `mode`).
+    db_path: str = "/app/databases/foldseek/swissprot"
+    # "local" (subprocess vs db_path, falls back to remote on local failure),
+    # "remote" (public foldseek REST only), "off" (resolver disabled).
+    mode: str = "local"
+    # Remote-mode REST parameters (public foldseek server, 3Di/AA mode).
+    remote_url: str = "https://search.foldseek.com/api"
+    remote_database: str = "afdb-swissprot"
+    remote_polls: int = 12
+    remote_poll_interval_s: float = 5.0
+    remote_timeout_s: float = 10.0
+    # Caps for both modes.
+    max_target_hits: int = 20
+    search_timeout_s: int = 300
 
 
 @dataclass
