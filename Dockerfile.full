@@ -38,12 +38,14 @@ RUN pip install --no-cache-dir pymol-open-source==3.1.0a0
 ARG FOLDSEEK_VERSION=9-427df8a
 RUN set -eux; \
     base="https://github.com/steineggerlab/foldseek/releases/download/${FOLDSEEK_VERSION}"; \
-    mkdir -p /opt/foldseek; \
+    mkdir -p /opt/foldseek /tmp/foldseek-dl; \
     for isa in avx2 sse2; do \
-      curl -fsSL "${base}/foldseek-linux-${isa}.tar.gz" | tar xz -C /opt/foldseek; \
+      curl -fL --retry 6 --retry-delay 3 --retry-all-errors -o "/tmp/foldseek-dl/${isa}.tar.gz" "${base}/foldseek-linux-${isa}.tar.gz"; \
+      tar xzf "/tmp/foldseek-dl/${isa}.tar.gz" -C /opt/foldseek; \
       mv /opt/foldseek/foldseek/bin/foldseek "/opt/foldseek/foldseek-${isa}"; \
-      rm -rf /opt/foldseek/foldseek; \
-    done
+      rm -rf /opt/foldseek/foldseek "/tmp/foldseek-dl/${isa}.tar.gz"; \
+    done; \
+    rmdir /tmp/foldseek-dl
 COPY scripts/docker/foldseek-wrapper.sh /usr/local/bin/foldseek
 RUN chmod +x /usr/local/bin/foldseek && foldseek version
 
