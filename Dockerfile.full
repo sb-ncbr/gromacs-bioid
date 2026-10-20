@@ -10,7 +10,7 @@
 FROM python:3.11-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential libvips ncbi-blast+ media-types \
+    apt-get install -y --no-install-recommends build-essential libvips ncbi-blast+ media-types curl ca-certificates \
         libgl1 libegl1 libglib2.0-0 && \
     rm -rf /var/lib/apt/lists/*
 
@@ -48,7 +48,9 @@ RUN set -eux; \
     done; \
     rmdir /tmp/foldseek-dl
 COPY scripts/docker/foldseek-wrapper.sh /usr/local/bin/foldseek
-RUN chmod +x /usr/local/bin/foldseek && foldseek version
+# Gates: binary runs AND a download tool exists (databases shells out to
+# curl/wget/aria2c; slim carries none by default — caught live 2026-10-20).
+RUN chmod +x /usr/local/bin/foldseek && foldseek version && curl --version >/dev/null
 
 COPY . /app
 RUN find /app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
