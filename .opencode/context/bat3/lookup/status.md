@@ -452,3 +452,18 @@ Examples live: POPC (4ef9a8cc), OSF q4m9w (2abd8adf, 209 838 atoms, 11 renders),
 A001UD (9f4ed38a). /runs/examples + render fields + /files PNG verified (1.9MB
 system ray PNG served). api digest 46c71596 (same-tag redeploy needs rollout
 restart — hits V-32 corollary). A003ZR family degenerate: warning-by-design.
+
+## 2026-10-20a · A' loader-stabilization wave (v3.138 prerequisite)
+fix_names O(n^2) wedge removed (60.6s->0.03s @82k atoms — was the suite-hang
+AND a production latency class). venv aligned to image (MDAnalysis 2.10 +
+numpy 1.26.4; numpy<2 now PINNED in requirements). Loader suite: finite,
+172/175 green (was: non-terminating). The 2026-10-02 ledger "7 pre-existing
+fragment_store/universe_facade failures — awaiting triage owner" is CLOSED
+BY TRIAGE: root = MDAnalysis TOP/ITP parser drift on legacy fixtures (plain
+.top unparsable since %VERSION requirement; per-molecule segids since ~2.9);
+tests rewritten to the today's per-molecule contract with era markers.
+ALSO EXPOSED (v3.138 scope): gemmi/tmtools/mini3di/foldseek absent from prod
+image (dev venv masked it) — AlphaFind hits dead at no_worker via
+ALPHAFOLD_ID vs ALPHAFIND_ID taxonomy split + ca_only_pdb sig type + stale
+"hits are PDB IDs" fetcher design (live API evidence: object_id = UniProt
+acc; AFDB v6 fetchable; aligned_percentage now 0..1 scale).

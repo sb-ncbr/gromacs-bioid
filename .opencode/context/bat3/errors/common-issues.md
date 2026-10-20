@@ -669,3 +669,17 @@ debugging app logic.
 Corollary (same session): re-deploying the SAME tag after re-push does NOT
 refresh pods — `kubectl set image` to the identical string is a spec no-op; run
 `kubectl rollout restart deployment/...` and VERIFY pod imageID by digest.
+
+## V-33 (2026-10-20): graceful-degradation masks dead channels + venv/image drift
+Class: optional imports (gemmi/tmtools/mini3di), binary checks (foldseek),
+and parser fallbacks (MDAnalysis TOP->ITP) degrade SILENTLY — dev venv had
+deps the prod image lacked and vice-versa, so "tests green" + "runs succeed"
+both lied. Guards landed: pin numpy<2 in requirements (image resolved 1.26.4
+only by luck; a rebuild pulling numpy 2.x silently re-breaks bare-TPR loads);
+dev venv must mirror the image (MDAnalysis 2.10 + numpy 1.26.4 verified);
+v3.138 adds image import gates per V-32. Related: MDAnalysis TOPParser is a
+%VERSION-header (gmx dump) parser — plain .top files NEVER parse under it;
+loader falls back to per-molecule ITP segids (SOL_1...) species aggregation
+lives in molecules/discovery. fix_names O(n^2) ban: never index
+atomgroup.<attr>[i] inside a per-atom loop (full-array materialization per
+access) — hoist once (measured 60.6s->0.03s @82k atoms).
