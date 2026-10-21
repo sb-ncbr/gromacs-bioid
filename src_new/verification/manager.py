@@ -53,6 +53,26 @@ def _monoatomic_atom_count(results, segment: str):
     return None
 
 
+def _water_segment(results, segment: str) -> bool:
+    """True when the analyzed segment is typed water (fragments/segments record
+    written by analyze_universe via the loader facade's molecule typing).
+
+    Used by the water ground-truth rule: skeleton fingerprints IDENTICAL to
+    the molecule's fp mean exactly one chemical identity (water) regardless of
+    which database record supplied the canonical smiles — all skel==1.0 hits
+    are the same molecule, one is ground truth, the rest are duplicate records."""
+
+    for key in ("fragments/segments",):
+        try:
+            segments = results.get_data(key) or []
+        except Exception:
+            return False
+        for entry in segments:
+            if isinstance(entry, dict) and entry.get("segment") == segment:
+                return entry.get("type") == "water"
+    return False
+
+
 def _element_ground_truth(results, segment: str, ident_type: str, hit_type: str) -> bool:
     """True only for the documented element ground-truth rule.
 
@@ -299,6 +319,13 @@ class VerificationManager:
                 logger.warning(f"chemical prefetch failed (non-fatal): {warm_exc}")
             
             verified_hits: list[VerifiedHit] = []
+            # Water ground-truth rule (v3.140): on water segments, the FIRST
+            # fingerprint-identical (skel==1.0) chemical hit is promoted as the
+            # water identity; subsequent fingerprint-identical hits are database
+            # duplicates of that identity, demoted to unverified with a clear
+            # reason instead of 67 near-identical rows (run b4813beb / TIP3).
+            water_seg = _water_segment(results, segment)
+            water_pinned = False
 
             for (normalized_id, ident_type), metadata in top_groups:
                 if _over_budget():
@@ -432,6 +459,11 @@ class VerificationManager:
                             "fingerprint_mismatch" if skeleton_sim is not None
                             else "fingerprint_unavailable"
                         )
+                    # Water duplicate demotion: fingerprint-identical hits after
+                    # the pinned water identity are duplicate db records of it.
+                    elif water_seg and skeleton_sim == 1.0 and water_pinned:
+                        has_positive_evidence = False
+                        rejection_reason = "water_duplicate_identity"
                 
                 if final_confidence >= min_confidence and has_positive_evidence:
                     # F-17: telemetry flag (ruling 2026-10-04: identity stays
@@ -451,6 +483,15 @@ class VerificationManager:
                     if _element_ground_truth(results, segment, ident_type, hit_type):
                         final_confidence = 100.0
                         gt_override = "element_monoatomic"
+                    # Water ground truth (v3.140): on water segments the first
+                    # fingerprint-identical chemical hit IS the water identity;
+                    # same confidence lift as element_monoatomic, same rationale
+                    # (identity is owned ground truth, corroboration unprovable).
+                    elif (water_seg and ident_type in CHEMICAL_IDENT_TYPES
+                          and skeleton_sim == 1.0 and not water_pinned):
+                        final_confidence = 100.0
+                        gt_override = "water_triatomic"
+                        water_pinned = True
                     # Create verified hit
                     verified_hit = VerifiedHit(
                         identifier=normalized_id,
