@@ -139,6 +139,15 @@ class RenderPathsResponse(BaseModel):
     total_atom_count: Optional[int] = Field(
         None, description="System-wide atom count incl. solvent (UI interactivity gate)"
     )
+    geometry: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "Geometry status of the exported system mmCIF (v3.139). Keys: status "
+            "('ok'|'degenerate'|'unknown'), density_a3_per_atom, atom_count, span. "
+            "Absent for runs predating the scale-guard wave — the UI falls back "
+            "to its client-side probe."
+        ),
+    )
 
 
 class ExampleRun(BaseModel):

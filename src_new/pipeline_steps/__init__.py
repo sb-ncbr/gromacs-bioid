@@ -733,6 +733,16 @@ def _export_results(context):
     # Record render paths for Mol* Web UI
     if system_path.exists():
         context.results.set_data("render/system_mmcif", str(system_path))
+        # Geometry status of the exported system (UI pre-flight / degenerate
+        # gate); mirrors ui geometry-check.ts thresholds.
+        try:
+            from ..loader.scale_guard import geometry_status_from_positions
+            context.results.set_data(
+                "render/geometry",
+                geometry_status_from_positions(facade.universe.atoms.positions),
+            )
+        except Exception as exc:
+            logger.warning(f"geometry status probe failed: {exc}")
     for segment in facade.get_segments():
         segment_path = output_dir / f"{segment}.mmcif"
         if segment_path.exists():

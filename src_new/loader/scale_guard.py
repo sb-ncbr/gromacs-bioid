@@ -208,6 +208,31 @@ def _try_attach_gromacs_box(universe, factor: float, source_files: dict | None) 
         return False
 
 
+_FROM_POSITIONS_MIN_ATOMS = MIN_ATOMS_FOR_DENSITY
+
+
+def geometry_status_from_positions(positions: np.ndarray) -> dict:
+    """Density-based geometry status for a positions array (export-time record).
+
+    Mirrors the client-side probe in ui/.../geometry-check.ts so server and
+    UI use identical thresholds (Phase-0 evidence: healthy 10-40 A^3/atom,
+    collapsed 0.016; cutoff 1.0).
+    """
+    n = len(positions)
+    if n < _FROM_POSITIONS_MIN_ATOMS:
+        return {"status": "ok", "atom_count": n, "density_a3_per_atom": None}
+    span = positions.max(axis=0) - positions.min(axis=0)
+    if not np.all(np.isfinite(span)):
+        return {"status": "unknown", "atom_count": n, "density_a3_per_atom": None}
+    density = float(np.prod(span) / n)
+    return {
+        "status": "degenerate" if density < DENSITY_COLLAPSED_MAX_A3_PER_ATOM else "ok",
+        "atom_count": n,
+        "density_a3_per_atom": density,
+        "span": [float(x) for x in span],
+    }
+
+
 def run_scale_guard(universe, strategy=None, source_files: dict | None = None) -> ScaleGuardReport:
     """Detect and heal nm-collapsed coordinates on a freshly loaded Universe.
 

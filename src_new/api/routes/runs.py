@@ -948,6 +948,7 @@ async def get_render_paths(run_id: str) -> RenderPathsResponse:
         system_png=_relativize_run_path(render_data.get("system_png"), run_id),
         segment_pngs=_extract_segment_pngs(render_data.get("segments", {}), run_id),
         total_atom_count=(data.get("data", {}).get("simulation", {}) or {}).get("n_atoms"),
+        geometry=render_data.get("geometry") if isinstance(render_data.get("geometry"), dict) else None,
     )
 
 

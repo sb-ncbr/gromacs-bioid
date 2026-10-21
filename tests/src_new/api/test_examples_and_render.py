@@ -156,3 +156,36 @@ def test_render_endpoint_tolerates_missing_render_block(tmp_path):
     assert body["system_png"] is None
     assert body["segment_pngs"] == {}
     assert body["total_atom_count"] is None
+
+
+def test_render_endpoint_passes_geometry_status(tmp_path):
+    """v3.139: server-side geometry flag (recorded at export) reaches the UI."""
+    d = _mk_fake_run(tmp_path, "geo")
+    payload = json.loads((d / "results.json").read_text())
+    payload["data"]["render"]["geometry"] = {
+        "status": "degenerate", "atom_count": 58500, "density_a3_per_atom": 0.0161,
+    }
+    (d / "results.json").write_text(json.dumps(payload))
+    resp = _client(tmp_path).get("/api/v1/runs/geo/render")
+    assert resp.status_code == 200
+    geo = resp.json()["geometry"]
+    assert geo["status"] == "degenerate" and geo["density_a3_per_atom"] == 0.0161
+
+
+def test_render_endpoint_geometry_absent_for_legacy_runs(tmp_path):
+    """Pre-scale-guard runs have no recorded geometry -> field is None
+    (UI falls back to its client-side probe)."""
+    _mk_fake_run(tmp_path, "legacy")
+    resp = _client(tmp_path).get("/api/v1/runs/legacy/render")
+    assert resp.status_code == 200
+    assert resp.json()["geometry"] is None
+
+
+def test_render_endpoint_ignores_malformed_geometry(tmp_path):
+    d = _mk_fake_run(tmp_path, "mal")
+    payload = json.loads((d / "results.json").read_text())
+    payload["data"]["render"]["geometry"] = "not-a-dict"
+    (d / "results.json").write_text(json.dumps(payload))
+    resp = _client(tmp_path).get("/api/v1/runs/mal/render")
+    assert resp.status_code == 200
+    assert resp.json()["geometry"] is None

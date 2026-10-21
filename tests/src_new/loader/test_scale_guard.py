@@ -181,3 +181,27 @@ class TestRealTprFixtureEndToEnd:
             pytest.skip(f"pairing resolved differently: {result.final_strategy}")
         sr = result.scale_report
         assert sr is not None and not sr["corrected"] and sr["warning_code"] is None
+
+
+# ------------------------------------------------- export-time status probe ----
+
+from src_new.loader.scale_guard import geometry_status_from_positions
+
+
+class TestGeometryStatusFromPositions:
+    def test_collapsed_density_flagged(self):
+        # a5b785cc shape: 58500 atoms compressed into ~0.016 A^3/atom
+        pos = np.random.default_rng(1).uniform(0, 15, (20_000, 3)).astype(np.float32)
+        st = geometry_status_from_positions(pos)
+        assert st["status"] == "degenerate" and st["density_a3_per_atom"] < 1.0
+
+    def test_healthy_density_ok(self):
+        pos = np.random.default_rng(2).uniform(0, 80, (20_000, 3)).astype(np.float32)
+        st = geometry_status_from_positions(pos)
+        assert st["status"] == "ok" and st["density_a3_per_atom"] > 1.0
+        assert st["span"][0] > 40
+
+    def test_tiny_system_ok_no_density(self):
+        pos = np.random.default_rng(3).uniform(0, 0.5, (50, 3)).astype(np.float32)
+        st = geometry_status_from_positions(pos)
+        assert st["status"] == "ok" and st["density_a3_per_atom"] is None
