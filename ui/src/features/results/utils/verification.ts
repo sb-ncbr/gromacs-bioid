@@ -31,6 +31,20 @@ export function presentHits(
 }
 
 /**
+ * Main-table subset: verified hits only, stored order preserved.
+ * Presentation-side filtering (allowed: filtering != sorting); the full
+ * hit list stays available in the Identifiers tab (supplementary).
+ * v3.140: main table shows ONLY verified matches (user requirement);
+ * zero verified rows -> "failed to identify" empty-state alert.
+ */
+export function verifiedOnlyHits(
+  hits: VerifiedHit[] | null | undefined,
+): VerifiedHit[] {
+  const arr = Array.isArray(hits) ? hits : [];
+  return arr.filter((h) => h.is_verified);
+}
+
+/**
  * Best confidence = final_confidence of the first hit (hits[0]).
  * Returns null when confidence is not informative (v3.140 plateau nulling:
  * backend emits null when the value is a deterministic family constant);

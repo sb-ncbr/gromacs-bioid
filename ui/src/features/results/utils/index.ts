@@ -14,6 +14,7 @@ export {
 } from "./links";
 export {
   presentHits,
+  verifiedOnlyHits,
   bestConfidence,
   truncateName,
   TRUNCATE_AT,

@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import {
   presentHits,
+  verifiedOnlyHits,
   bestConfidence,
   truncateName,
   resolveHitUrl,
@@ -106,8 +107,11 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
 }) => {
   // fidelity-first: presentHits preserves the server's stored order (no re-sort)
   const hits = presentHits(verification?.hits);
+  // v3.140: main table shows verified matches only; the full candidate list
+  // (rejected/unverified incl. reasons) stays in the Identifiers tab.
+  const tableHits = verifiedOnlyHits(hits);
   const failedResolvers: ResolverErrorItem[] = identifiers?.failed_resolvers || [];
-  const best = bestConfidence(hits);
+  const best = bestConfidence(tableHits);
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -138,7 +142,7 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
             <Progress value={best ?? 0} className="h-2" />
           </div>
 
-          {hits.length === 0 ? (
+          {tableHits.length === 0 ? (
             failedResolvers.length > 0 ? (
               <Alert variant="error">
                 <AlertTitle>
@@ -160,9 +164,19 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
               </Alert>
             ) : (
               <Alert>
-                <AlertTitle>No confident identifications.</AlertTitle>
+                <AlertTitle>Failed to identify molecule &mdash; see supplementary information below.</AlertTitle>
                 <AlertDescription>
-                  No verified matches were found for this segment.
+                  No verified matches were found for this segment. Rejected and unverified
+                  candidates, with reasons, are listed in the Identifiers tab.
+                  {onJumpToIdentifiers && (
+                    <button
+                      type="button"
+                      onClick={onJumpToIdentifiers}
+                      className="ml-1 font-medium text-[#2E7D32] underline"
+                    >
+                      View details in the Identifiers tab
+                    </button>
+                  )}
                 </AlertDescription>
               </Alert>
             )
@@ -179,7 +193,7 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {hits.map((h, i) => {
+                {tableHits.map((h, i) => {
                   const url = resolveHitUrl(h);
                   const name = h.name ?? h.identifier;
                   return (

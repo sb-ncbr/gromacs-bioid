@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bestConfidence, presentHits, truncateName, type VerifiedHit } from "./verification";
+import { bestConfidence, presentHits, verifiedOnlyHits, truncateName, type VerifiedHit } from "./verification";
 
 function makeHit(overrides: Partial<VerifiedHit>): VerifiedHit {
   return {
@@ -34,6 +34,38 @@ describe("presentHits", () => {
     const result = presentHits(hits);
     expect(result).not.toBe(hits);
     expect(result).toEqual(hits);
+  });
+});
+
+describe("verifiedOnlyHits", () => {
+  it("keeps verified hits only, preserving stored order (filtering != sorting)", () => {
+    const hits: VerifiedHit[] = [
+      makeHit({ identifier: "Z", is_verified: true }),
+      makeHit({ identifier: "A", is_verified: false }),
+      makeHit({ identifier: "M", is_verified: true }),
+    ];
+    expect(verifiedOnlyHits(hits).map((h) => h.identifier)).toEqual(["Z", "M"]);
+  });
+
+  it("SOD shape (run b4813beb): single verified ELEMENT among rejected rows -> one row", () => {
+    const hits: VerifiedHit[] = [
+      ...Array.from({ length: 3 }, (_, i) =>
+        makeHit({ identifier: `REJ_${i}`, is_verified: false, rejection_reason: "fingerprint_unavailable" })),
+      makeHit({ identifier: "NA", ident_type: "ELEMENT", is_verified: true, final_confidence: 100 }),
+    ];
+    const out = verifiedOnlyHits(hits);
+    expect(out).toHaveLength(1);
+    expect(out[0].identifier).toBe("NA");
+  });
+
+  it("empty state: no verified rows -> empty list (panel shows failed-to-identify copy)", () => {
+    const hits: VerifiedHit[] = [makeHit({ is_verified: false }), makeHit({ is_verified: false })];
+    expect(verifiedOnlyHits(hits)).toEqual([]);
+  });
+
+  it("null/undefined -> empty list", () => {
+    expect(verifiedOnlyHits(null)).toEqual([]);
+    expect(verifiedOnlyHits(undefined)).toEqual([]);
   });
 });
 
