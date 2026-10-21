@@ -49,6 +49,7 @@ export const RESOLVER_HUMAN_NAMES: Record<string, string> = {
   formula_chembl: "ChEMBL formula search",
   formula_hfamily: "formula search (host-guest family)",
   mmcif_struct: "mmCIF structure search",
+  foldseek_3di: "foldseek structure similarity search (AlphaFold DB)",
   name_ccd: "ligand name lookup (CCD)",
   name_maps: "name lookup",
   name_manual: "manual name lookup",
@@ -283,6 +284,36 @@ export const CATALOG_CODES: CatalogCode[] = [
     user_what: "The processing job failed before completion.",
     user_action: "Please re-run; contact us with the run ID if it repeats.",
     details_show: [],
+  },
+  {
+    code: "coords_rescaled_nm_to_angstrom",
+    kind: "info",
+    stage: "prepare",
+    user_title: "Coordinates were converted to ångströms",
+    user_what:
+      "The input coordinates appeared to be in nanometres (a known behaviour of GROMACS .tpr-only inputs) and were converted automatically. The structure is otherwise fine.",
+    user_action: null,
+    details_show: ["factor", "signal"],
+  },
+  {
+    code: "coords_rescaled_unexpected",
+    kind: "warning",
+    stage: "prepare",
+    user_title: "Input coordinates were auto-rescaled",
+    user_what:
+      "The uploaded coordinates looked like nanometres rather than ångströms and were corrected. This format is not expected to need rescaling, so the input files may be malformed.",
+    user_action: "Verify the source files; if structures or results look wrong, re-run with corrected inputs.",
+    details_show: ["factor", "signal"],
+  },
+  {
+    code: "geometry_scale_anomalous",
+    kind: "warning",
+    stage: "prepare",
+    user_title: "Coordinate scale looks unusual, left unchanged",
+    user_what:
+      "Distances in the uploaded coordinates match neither ångströms nor nanometres, so they were left as-is. Visualization and identification may be degraded.",
+    user_action: "Check the coordinate units of the input files and re-run if necessary.",
+    details_show: ["bond_median", "density_a3_per_atom", "signal"],
   },
 ];
 

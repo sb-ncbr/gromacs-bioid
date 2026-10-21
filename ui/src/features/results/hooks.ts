@@ -48,6 +48,22 @@ export interface RenderPathsV37 {
   total_atom_count?: number | null;
 }
 
+/**
+ * v3.139 additive render field — server-side geometry status recorded at
+ * export time (scale-guard wave). Absent for legacy runs; the Mol* viewer
+ * then falls back to its client-side text probe (utils/geometry-check.ts).
+ */
+export interface RenderGeometryStatus {
+  status: "ok" | "degenerate" | "unknown";
+  atom_count?: number;
+  density_a3_per_atom?: number | null;
+  span?: [number, number, number];
+}
+
+export interface RenderPathsV39 {
+  geometry?: RenderGeometryStatus | null;
+}
+
 /** Atom ceiling for defaulting to interactive Mol* (user ruling 2026-10-19). */
 export const ATOM_INTERACTIVE_LIMIT = 1_000_000;
 export type RunFilesResponse = components["schemas"]["RunFilesResponse"];

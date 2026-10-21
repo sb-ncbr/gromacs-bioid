@@ -5,9 +5,10 @@ import type { PluginUIContext } from "molstar/lib/mol-plugin-ui/context";
 import { MVSData } from "molstar/lib/extensions/mvs/mvs-data";
 import { loadMVS } from "molstar/lib/extensions/mvs/load";
 import "molstar/build/viewer/molstar.css";
-import type { RenderPathsResponse, RenderPathsV37, SegmentMeta } from "./hooks";
+import type { RenderPathsResponse, RenderPathsV37, RenderPathsV39, SegmentMeta } from "./hooks";
 import { ATOM_INTERACTIVE_LIMIT } from "./hooks";
 import { isOverInteractivityGate, resolveStaticPngPath } from "./utils/static-render";
+import { probeStructureGeometry, type GeometryProbe } from "./utils/geometry-check";
 
 export interface MolstarViewerProps {
   runId: string;
@@ -20,7 +21,6 @@ export interface MolstarViewerProps {
 const LOAD_TIMEOUT_MS = 25000;
 
 type ViewerMode = "loading" | "interactive" | "static" | "unavailable";
-
 const MolstarViewer: React.FC<MolstarViewerProps> = ({
   runId,
   segment,
@@ -35,6 +35,8 @@ const MolstarViewer: React.FC<MolstarViewerProps> = ({
   const [ready, setReady] = useState(false);
   // v3.137: user opt-in to force Mol* despite a system over the interactive gate
   const [forceInteractive, setForceInteractive] = useState(false);
+  // v3.139+: geometry pre-flight result for the current system file (reset per load)
+  const [geometryStatus, setGeometryStatus] = useState<GeometryProbe | null>(null);
 
   // Create the Mol* plugin exactly once on mount.
   useEffect(() => {
@@ -88,6 +90,8 @@ const MolstarViewer: React.FC<MolstarViewerProps> = ({
   // v3.137: resolve the static PNG for the CURRENT view (pure helper; see
   // utils/static-render.ts for priority rules) + the interactivity gate.
   const v37 = (renderPaths ?? null) as (RenderPathsResponse & RenderPathsV37) | null;
+  const v39 = (renderPaths ?? null) as (RenderPathsResponse & RenderPathsV39) | null;
+  const serverGeometry = v39?.geometry ?? null;
   const totalAtoms = v37?.total_atom_count ?? null;
   const overInteractivityGate = isOverInteractivityGate(totalAtoms);
   const pngUrl = fileUrl(resolveStaticPngPath(v37, segment));
@@ -98,6 +102,7 @@ const MolstarViewer: React.FC<MolstarViewerProps> = ({
 
     const gen = ++generationRef.current;
     setMode("loading");
+    setGeometryStatus(null);
 
     const file: string | null = renderPaths.system_mmcif ?? null;
 
@@ -128,13 +133,52 @@ const MolstarViewer: React.FC<MolstarViewerProps> = ({
     }
 
     let cancelled = false;
+    const url = fileUrl(file!);
 
     const load = async (): Promise<void> => {
       const plugin = pluginRef.current;
       if (!plugin) return;
 
+      // Geometry pre-flight (2026-10-21): degenerate (e.g. nm-collapsed)
+      // coordinates make Mol* bond inference explode on the MAIN THREAD, where
+      // the 25 s watchdog below cannot fire — the tab froze instead of
+      // degrading. Detect degeneracy BEFORE engaging Mol* — server-side flag
+      // (v3.139) when available, else a cheap client text scan; on degenerate
+      // input fall straight through to the static path.
+      if (geometryStatus === null) {
+        if (serverGeometry) {
+          if (gen === generationRef.current) {
+            setGeometryStatus({
+              status: serverGeometry.status,
+              atomCount: serverGeometry.atom_count ?? 0,
+              densityA3PerAtom: serverGeometry.density_a3_per_atom ?? null,
+              span: serverGeometry.span ?? null,
+            });
+          }
+          if (serverGeometry.status === "degenerate") {
+            console.warn("Mol*: skipping interactive load, degenerate geometry (server flag)");
+            const ok = await checkStatic();
+            if (!cancelled && gen === generationRef.current) setMode(ok ? "static" : "unavailable");
+            return;
+          }
+        } else {
+          try {
+            const res = await fetch(url);
+            const probe = probeStructureGeometry(await res.text());
+            if (gen === generationRef.current) setGeometryStatus(probe);
+            if (probe.status === "degenerate") {
+              console.warn("Mol*: skipping interactive load, degenerate geometry:", probe);
+              const ok = await checkStatic();
+              if (!cancelled && gen === generationRef.current) setMode(ok ? "static" : "unavailable");
+              return;
+            }
+          } catch (err) {
+            console.warn("Mol*: geometry preflight failed, proceeding with load:", err);
+          }
+        }
+      }
+
       const builder = MVSData.createBuilder();
-      const url = fileUrl(file!);
       const structure = builder
         .download({ url })
         .parse({ format: "mmcif" })
@@ -251,8 +295,14 @@ const MolstarViewer: React.FC<MolstarViewerProps> = ({
           )}
 
           {mode === "unavailable" && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-gray-100 px-4">
               <p className="text-sm text-text-muted">Structural data not available</p>
+              {geometryStatus?.status === "degenerate" && (
+                <p className="text-center text-xs text-text-muted">
+                  The exported geometry is degenerate (implausible coordinate scale) and
+                  cannot be rendered interactively.
+                </p>
+              )}
             </div>
           )}
         </div>
