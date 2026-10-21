@@ -518,3 +518,17 @@ AFDB fetch 30698B -> tm_score 0.96 (E2E-A PASS). B/C) foldseek
 local+remote: P01542@97.8 identical tops (E2E-BC PASS). D) gemmi mmcif:
 LoadStrategy.MMCIF_GEMMI loads 327-atom cif in prod image (E2E-D PASS).
 Full-run rerun of OSF q4m9w: run f08cbeb3-4f7a-4290-8b4b-8331e64c6411.
+
+## 2026-10-21a · v3.138 final confirmation — full-run E2E green
+Rerun f08cbeb3 (OSF q4m9w, trigger = POST /runs/<old>/rerun) COMPLETE:
+success in ~90min wall (identify 84min: 2x blast_nr 300s timeouts + AlphaFind
+stage pacing; load_simulation 3s — fix_names O(n) fix visible at run level).
+Run-level assertions (probe of results.json on runs PVC):
+- ca_only_pdb signature consumed by BOTH alphafind_struct and foldseek_3di
+  per protein segment (wiring live)
+- consensus identical to the v3.137 example run: 3ALB2 x4 (LRRC8 complex),
+  conf 0.99 ['blast_pdb_protein','idsm_search'] — no regression in chosen ids
+- zero `no_worker / not verified` entries in verification
+- foldseek-on-ca_only_pdb works in-run (AlphaFind/foldseek refused the
+  user-library fingerprint hits by design; 3ALB2 substructure identity wins)
+v3.138 wave fully CLOSED (code, image @053c2d8f, DB seeded, docs, ledger).
