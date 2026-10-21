@@ -5,13 +5,17 @@ import {
   AlertDescription,
   AlertTitle,
   Badge,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
   Skeleton,
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from "@e-infra/design-system";
-import { Clock } from "lucide-react";
+import { Boxes, Clock } from "lucide-react";
 import { DEFAULT_SEGMENT, DEFAULT_TAB, TABS, parseRunQuery, type TabKey } from "../lib/nav";
 import TaskBar from "../features/results/TaskBar";
 import MoleculeSelector, { type SegmentMeta } from "../features/results/MoleculeSelector";
@@ -89,15 +93,30 @@ export default function RunResultsPage() {
 
   const queueQ = useRunQueue(runId, pending);
   const moleculesQ = useRunMolecules(runId, live);
+
+  /* Whole-system handling (v3.140, user ruling on run 99abca31 feedback):
+     - "Whole system" is a viewer/selection concept; verification lives under
+       real segment keys (never under SYSTEM).
+     - Single-segment analysis: the system IS that molecule -> the pane shows
+       its results (panelSegment = the sole segment).
+     - Multi-segment: system has no own results -> the pane shows a neutral
+       "select a molecule" empty state (no fabricated alerts/bars).
+     - Guard: if the backend ever records SYSTEM-level signatures, the system
+       genuinely was analyzed as a molecule -> keep the pane for it. */
+  const isSystem = segment === DEFAULT_SEGMENT;
+  const moleculeSegments: string[] = moleculesQ.data?.segments ?? [];
+  const singleSegment = moleculeSegments.length === 1;
+  const panelSegment = isSystem && singleSegment ? moleculeSegments[0] : segment;
+
   const verificationQ = useRunVerification(
     runId,
-    segment,
+    panelSegment,
     stageActive(statusQ.data, "verify_results"),
     live,
   );
   const identifiersQ = useRunIdentifiers(
     runId,
-    segment,
+    panelSegment,
     stageActive(statusQ.data, "identify_molecules"),
     live,
   );
@@ -116,7 +135,10 @@ export default function RunResultsPage() {
   const rawMeta = moleculesQ.data?.segment_meta ?? null;
   const segMeta = (rawMeta ?? null) as Record<string, SegmentMeta> | null;
   const molecule =
-    segment === DEFAULT_SEGMENT ? null : segmentMeta(moleculesQ.data ?? null, segment);
+    panelSegment === DEFAULT_SEGMENT ? null : segmentMeta(moleculesQ.data ?? null, panelSegment);
+  const systemHasSignatures = isSystem
+    && (signaturesQ.data?.signatures ?? []).some((s) => s.segment === DEFAULT_SEGMENT);
+  const showSystemEmpty = isSystem && !singleSegment && !systemHasSignatures;
 
   /* ---------- TaskBar → Warnings tab + anchor ---------- */
   const handleGroupClick = useCallback(
@@ -260,17 +282,32 @@ export default function RunResultsPage() {
 
         {/* RIGHT: ResultsPanel (per-segment hits) */}
         <div className="min-h-0 xl:relative xl:col-span-5">
-          <ResultsPanel
-            segment={segment}
-            molecule={molecule}
-            verification={
-              verificationQ.data
-                ? { hits: (verificationQ.data.hits ?? []) as never[] }
-                : null
-            }
-            identifiers={identifiersQ.data ?? null}
-            onJumpToIdentifiers={() => patchQuery({ tab: "identifiers" })}
-          />
+          {showSystemEmpty ? (
+            <Card className="flex h-full flex-col xl:absolute xl:inset-0">
+              <CardHeader>
+                <CardTitle className="text-lg">Segment: Whole system</CardTitle>
+              </CardHeader>
+              <CardContent className="flex min-h-0 flex-1 flex-col items-center justify-center text-center">
+                <Boxes size={28} className="mb-3 text-gray-300" aria-hidden />
+                <p className="text-sm font-medium text-text-heading">Select a molecule to show result.</p>
+                <p className="mt-1 text-sm text-text-muted">
+                  Identification runs per molecule &mdash; pick a segment in the list on the left.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <ResultsPanel
+              segment={panelSegment}
+              molecule={molecule}
+              verification={
+                verificationQ.data
+                  ? { hits: (verificationQ.data.hits ?? []) as never[] }
+                  : null
+              }
+              identifiers={identifiersQ.data ?? null}
+              onJumpToIdentifiers={() => patchQuery({ tab: "identifiers" })}
+            />
+          )}
         </div>
       </div>
 
