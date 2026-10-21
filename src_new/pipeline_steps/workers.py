@@ -551,12 +551,15 @@ def _verify_results_worker(item: tuple) -> dict[str, Any]:
     
     Args:
         item: Tuple of (segment, segment_identifiers_data, config_dict,
-              segment_signatures_data, segment_properties_data).
+              segment_signatures_data, segment_properties_data, segments_summary).
               segment_identifiers_data is the data under identifiers/{segment}/.
               segment_signatures_data is the data under signatures/{segment}/ (or None).
               segment_properties_data is universe/segments/{segment}/properties
               (or None) — universe facts consumed by universe-aware verification
               rules (element ground truth reads atom_count_fragment here).
+              segments_summary is fragments/segments (or None) — the molecule-type
+              summary consumed by the water ground-truth rule (v3.140; same
+              minimal-manager gap class as segment_properties_data).
 
     Returns:
         Dict with segment name, verified_hits list, and errors.
@@ -569,7 +572,10 @@ def _verify_results_worker(item: tuple) -> dict[str, Any]:
         import tempfile
         import os
 
-        segment, segment_identifiers_data, config_dict, segment_signatures_data, segment_properties_data = item
+        # 6-tuple; tolerate 5-tuples from any stale caller (pre-v3.140 shape)
+        if len(item) == 5:
+            item = (*item, None)
+        segment, segment_identifiers_data, config_dict, segment_signatures_data, segment_properties_data, segments_summary = item
         deadline_epoch = config_dict.pop("_stage_deadline_epoch", None) if isinstance(config_dict, dict) else None
         config = RunConfig.from_dict(config_dict)
 
@@ -599,6 +605,13 @@ def _verify_results_worker(item: tuple) -> dict[str, Any]:
             # atom_count_fragment from here). None = pre-fix behavior (no facts).
             if segment_properties_data:
                 temp_manager.set_data(f"universe/segments/{segment}/properties", segment_properties_data)
+            # Water ground-truth rule (v3.140): same document-the-gap pattern as
+            # segment_properties_data above — verification reads fragments/segments
+            # for segment typing; without threading it, water segments silently
+            # verify as generic chemicals (observed run 99abca31: TIP3 produced
+            # 67 verified duplicates instead of 1 pinned water identity).
+            if segments_summary is not None:
+                temp_manager.set_data("fragments/segments", segments_summary)
             
             # Create VerificationManager and run verification
             manager = VerificationManager(config)

@@ -642,7 +642,10 @@ def _verify_results(context):
     # segment_properties_data carries universe/segments/<seg>/properties so
     # universe-aware verification rules (element ground truth) see real facts —
     # the worker builds a MINIMAL temp manager and would otherwise miss them.
+    # segments_summary does the same for fragments/segments (water ground-truth
+    # rule, v3.140) — built once here so every worker sees the full type list.
     deadline = budget_deadline(context)
+    segments_summary = context.results.get_data("fragments/segments") or None
     items = []
     for segment in sorted(identifiers_data.keys()):
         segment_data = identifiers_data[segment]
@@ -650,7 +653,7 @@ def _verify_results(context):
         if deadline is not None:
             cfg["_stage_deadline_epoch"] = deadline
         seg_props = context.results.get_data(f"universe/segments/{segment}/properties")
-        items.append((segment, segment_data, cfg, signatures_data.get(segment), seg_props))
+        items.append((segment, segment_data, cfg, signatures_data.get(segment), seg_props, segments_summary))
 
     if not items:
         return StepResult(summary={"verified": True})
