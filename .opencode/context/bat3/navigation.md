@@ -34,6 +34,7 @@ Quick entry point to all BAT3 context files. Use this to find verification comma
 | Validation pipeline | `concepts/validation.md` |
 | Publication (NM paper) | `lookup/publication-journal.md` |
 | Loading strategy (MD coverage widening) | `concepts/loading-strategy.md` |
+| Coordinate scale guard (v3.139, nm/Å collapse) | `concepts/loading-strategy.md` → "Coordinate Scale Guard" + `errors/common-issues.md` V-35 |
 | Static render pipeline (worker PNGs / Mol* fallback / examples) | `concepts/static-render-pipeline.md` |
 | Pipeline dispatch & crash robustness (OQ-16 model) | `concepts/pipeline-dispatch-and-reaper.md` |
 | Foldseek DB ops + resolver modes (v3.138) | `docs/FOLDSEEK_DATABASE.md` |
