@@ -11,7 +11,12 @@ from MDAnalysis import Universe, AtomGroup
 from ..config.loader import RunConfig
 from ..input.models import LoadDecision
 from ..loader.repair import RepairReport
-from ..molecules.instances import MoleculeInstance, MoleculeType
+from ..molecules.instances import (
+    LIPID_RESNAMES,
+    WATER_RESNAMES,
+    MoleculeInstance,
+    MoleculeType,
+)
 from ..molecules.nucleic_acid import (
     has_cross_residue_phosphodiester,
     normalize_nucleic_resname,
@@ -501,53 +506,87 @@ class LoadedUniverse:
             case _:
                 raise ValueError(f"Unknown parameter: {kind}")
     
+    # --- segment typing (v3.140 rewrite; V-36) ------------------------------
+    # Flat decision list — replaces a nested-if that had an unreachable-branch
+    # blind spot: molecules with C>10, O>4 but C/O outside (1,3) matched the
+    # OUTER if and fell through every branch as UNKNOWN (real phospholipids and
+    # cardiolipins live at C/O ~ 4.5-5: TOCL2 81/17=4.76, POPE 39/8=4.88 in the
+    # PE_CL regression run a5b785cc/b4813beb).
+    #
+    # Order (first hit wins):
+    #   1. protein/nucleic flags   2. monoatomic ion
+    #   3. water (resname table, else structural 1O+2H)
+    #   4. lipid resname knowledge (forcefield_maps ground truth)
+    #   5. composition bands: legacy glycerol lipid band (1,C/O,3), phospholipid
+    #      band (P>0, 2.5<=C/O<=12), sugar band (no P, C/O>2)
+    #   6. small molecule           7. UNKNOWN (never silently guessed)
+    @staticmethod
+    def _classify_molecule_type(props, fragment) -> MoleculeType:
+        if props.flags.get(SegmentProperty.IS_PROTEIN.value):
+            return MoleculeType.PROTEIN
+        if props.flags.get(SegmentProperty.IS_NUCLEIC.value):
+            return MoleculeType.NUCLEIC
+        if props.atom_count_fragment == 1:
+            return MoleculeType.ION
+
+        composition = {}
+        if hasattr(fragment.atoms, "elements"):
+            for elem in fragment.atoms.elements:
+                if elem:
+                    composition[elem] = composition.get(elem, 0) + 1
+        try:
+            resnames = {str(rn).upper() for rn in fragment.residues.resnames}
+        except Exception:
+            resnames = set()
+
+        # 3. Water
+        if props.atom_count_fragment == 3 and (
+            resnames & WATER_RESNAMES
+            or (composition.get("O", 0) == 1 and composition.get("H", 0) == 2
+                and composition.get("C", 0) == 0)
+        ):
+            return MoleculeType.WATER
+
+        # 4. Lipid nomenclature beats composition heuristics when known
+        if resnames & LIPID_RESNAMES:
+            return MoleculeType.LIPID
+
+        # 5. Composition bands (flat; every branch yields a verdict or falls
+        #    through — no unreachable elif chain)
+        c_cnt = composition.get("C", 0)
+        o_cnt = composition.get("O", 0)
+        if c_cnt > 10 and o_cnt > 4:
+            ratio = c_cnt / o_cnt
+            if 1.0 < ratio < 3.0:
+                return MoleculeType.LIPID          # O-rich band (legacy parity; see note)
+            if composition.get("P", 0) > 0 and 2.5 <= ratio <= 12.0:
+                return MoleculeType.LIPID          # phospho/cardiolipin band
+        # NOTE: no carbohydrate band here. The legacy `c>5, o>4, ratio>2` band
+        # is provably unreachable (o>=5 AND c>2*o forces c>10, which the band
+        # above always matches first) — it was dead code whose flat reform
+        # would newly misclassify mid-range non-P molecules as sugar.
+        # MoleculeType.CARBOHYDRATE remains reserved for future resname-table
+        # typing; the O-rich band above keeping sysugars-dubious verdicts is a
+        # documented legacy quirk, not an endorsement (never-wrong doctrine).
+
+        # 6./7.
+        if props.atom_count_fragment > 1:
+            return MoleculeType.SMALL_MOLECULE
+        return MoleculeType.UNKNOWN
+
     def extract_molecule_instance(self, segment_name: str) -> MoleculeInstance:
         """Extract a MoleculeInstance from a segment."""
         fragment = self.get_fragment(segment_name)
         props = self.get_segment_properties(segment_name)
-        
-        # Determine molecule type
-        mtype = MoleculeType.UNKNOWN
-        if props.flags.get(SegmentProperty.IS_PROTEIN.value):
-            mtype = MoleculeType.PROTEIN
-        elif props.flags.get(SegmentProperty.IS_NUCLEIC.value):
-            mtype = MoleculeType.NUCLEIC
-        elif props.atom_count_fragment == 1:
-            mtype = MoleculeType.ION
-        elif props.atom_count_fragment == 3 and any(rn in ("SOL", "HOH", "WAT") for rn in fragment.residues.resnames):
-            mtype = MoleculeType.WATER
-        # Element composition
+
+        mtype = self._classify_molecule_type(props, fragment)
+
+        # Element composition (recorded on the instance regardless of type)
         composition = {}
         if hasattr(fragment.atoms, 'elements'):
             for elem in fragment.atoms.elements:
                 if elem:
                     composition[elem] = composition.get(elem, 0) + 1
-
-        # Non-protein/nucleic classification using element composition.
-        # Wave-7 fix: this block must only run as a fallback - previously it
-        # overwrote PROTEIN/NUCLEIC verdicts whenever C/O heuristics matched
-        # (DNA C/O ~= 2.4 hit the lipid band -> nucleic instances were
-        # stamped LIPID and even emitted lipid_shorthand signatures).
-        # Count C and O atoms from element_composition
-        atom_c_cnt = composition.get("C", 0)
-        atom_o_cnt = composition.get("O", 0)
-
-        if mtype == MoleculeType.UNKNOWN:
-            # Lipid detection: >10 C, >4 O, C/O ratio between 1 and 3
-            if atom_c_cnt > 10 and atom_o_cnt > 4:
-                c_o_ratio = atom_c_cnt / atom_o_cnt if atom_o_cnt > 0 else float('inf')
-                if 1.0 < c_o_ratio < 3.0:
-                    mtype = MoleculeType.LIPID
-
-            # Carbohydrate detection: >5 C, >4 O, C/O ratio > 2
-            elif atom_c_cnt > 5 and atom_o_cnt > 4:
-                c_o_ratio = atom_c_cnt / atom_o_cnt if atom_o_cnt > 0 else float('inf')
-                if c_o_ratio > 2.0:
-                    mtype = MoleculeType.CARBOHYDRATE
-
-            # Small molecule detection: not any of the above, atom_count > 1
-            elif props.atom_count_fragment > 1:
-                mtype = MoleculeType.SMALL_MOLECULE
         
         # resname-less engines (LAMMPS .data) carry no residue nomenclature:
         # degrade to UNK per residue instead of crashing (NoDataError from
