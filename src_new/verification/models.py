@@ -49,7 +49,7 @@ class VerifiedHit:
     resolver_score: float  # original resolver confidence, 0-100
     similarity_score: float | None
     annotation_quality_score: float | None
-    final_confidence: float
+    final_confidence: float | None  # None = deterministic plateau (v3.140, no per-hit information)
     supporting_evidence_count: int  # how many distinct resolvers found this hit
     is_verified: bool
     rejection_reason: str | None = None

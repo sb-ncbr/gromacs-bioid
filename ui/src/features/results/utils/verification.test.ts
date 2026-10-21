@@ -46,6 +46,17 @@ describe("bestConfidence", () => {
     expect(bestConfidence(hits)).toBe(87.5);
   });
 
+  it("returns null when the top hit carries no informative confidence (v3.140 plateau)", () => {
+    // backend nulls final_confidence when the value is the deterministic
+    // family plateau (skel==1.0 + resolver capped) — the panel must render
+    // "—", not a fabricated 0%
+    const hits = [
+      makeHit({ final_confidence: null }),
+      makeHit({ final_confidence: 99 }),
+    ];
+    expect(bestConfidence(hits)).toBeNull();
+  });
+
   it("returns 0 for empty array", () => {
     expect(bestConfidence([])).toBe(0);
   });

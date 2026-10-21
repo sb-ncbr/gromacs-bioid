@@ -135,7 +135,7 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
               <span>Best confidence</span>
               <span className="tabular-nums">{pct(best)}</span>
             </div>
-            <Progress value={best} className="h-2" />
+            <Progress value={best ?? 0} className="h-2" />
           </div>
 
           {hits.length === 0 ? (
@@ -233,7 +233,7 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
                       <TableCell className="tabular-nums">{pct(h.similarity_score)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Progress value={h.final_confidence} className="h-1.5 flex-1" />
+                          <Progress value={h.final_confidence ?? 0} className="h-1.5 flex-1" />
                           <span className="w-11 text-right text-xs tabular-nums">
                             {pct(h.final_confidence)}
                           </span>

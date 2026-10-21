@@ -76,7 +76,7 @@ def _grp(atom_score=100.0):
 
 
 # canonical tokens -> skeleton sim for _chemical_corroboration patch
-_SKEL = {"WATER_A": 1.0, "WATER_B": 1.0, "NOT_WATER": 0.3}
+_SKEL = {"WATER_A": 1.0, "WATER_B": 1.0, "CID_A": 1.0, "NOT_WATER": 0.3}
 
 
 def _chemical_stub(results, segment, canonical_signature):
@@ -174,3 +174,62 @@ def test_element_rule_unchanged_on_monoatomic():
     assert hits[0].is_verified is True
     assert hits[0].ground_truth_override == "element_monoatomic"
     assert hits[0].final_confidence == 100.0
+
+
+# --- plateau-honesty (v3.140): deterministic 94% => None ---------------------
+
+def test_plateau_confidence_emitted_as_none():
+    """skel==1.0 + resolver capped at 100 + no ground-truth override is the
+    F-07 deterministic plateau (94.0 for every member of a family) — the
+    composed number carries zero per-hit information and must be None."""
+    mgr = _mk_manager()
+    seg = "seg_9_TOCL2"
+    results = _mk_results(seg=seg, seg_type="lipid")
+    results.get_data.side_effect = None
+
+    def gd(path, default=None):
+        if path == "identifiers":
+            return {seg: {}}
+        if path == f"universe/segments/{seg}/properties":
+            return {"atom_count_fragment": 248}
+        if path == "fragments/segments":
+            return [{"segment": seg, "type": "lipid", "copies": 60, "atoms_per_copy": 248}]
+        return default
+    results.get_data.side_effect = gd
+    out = _verify(mgr, results, {("CID_A", "PUBCHEM_CID"): _grp()})
+    hit = _hits(out, seg)[0]
+    assert hit.is_verified is True
+    assert hit.final_confidence is None
+    assert hit.ground_truth_override is None  # plateau is not a verdict
+
+
+def test_ground_truth_override_keeps_its_100():
+    # covered indirectly by test_water_segment_pins_first_identical_hit;
+    # explicit guard that plateau nulling never touches overrides:
+    mgr = _mk_manager()
+    seg = "seg_2_TIP3"
+    out = _verify(mgr, _mk_results(seg=seg), {("WATER_A", "PUBCHEM_CID"): _grp()})
+    hit = _hits(out, seg)[0]
+    assert hit.final_confidence == 100.0
+    assert hit.ground_truth_override == "water_triatomic"
+
+
+def test_non_plateau_confidence_preserved():
+    """skel below 1.0 (but >= verify threshold) keeps a real composed value."""
+    mgr = _mk_manager()
+    seg = "seg_7_LIG"
+    results = _mk_results(seg=seg, seg_type="lipid")
+    results.get_data.side_effect = lambda path, default=None: (
+        {seg: {}} if path == "identifiers"
+        else {"atom_count_fragment": 40} if path == f"universe/segments/{seg}/properties"
+        else [{"segment": seg, "type": "lipid", "copies": 1, "atoms_per_copy": 40}] if path == "fragments/segments"
+        else default
+    )
+    with patch("src_new.verification.manager.collect_hits", return_value=[MagicMock()]), \
+         patch("src_new.verification.manager.deduplicate_and_score",
+               return_value={("CID_X", "PUBCHEM_CID"): _grp()}), \
+         patch("src_new.verification.manager._chemical_corroboration",
+               return_value=(0.9, "skelfp:v1")):
+        hit = _hits(mgr.verify_all(results), seg)[0]
+    assert hit.is_verified is True
+    assert hit.final_confidence == 80.0  # 0.4*100(resolver) + 0.4*100(sim worker) + 0

@@ -231,7 +231,7 @@ class VerifiedHitItem(BaseModel):
     annotation_quality_score: Optional[float] = Field(
         None, description="Annotation quality score"
     )
-    final_confidence: float = Field(..., description="Final confidence score")
+    final_confidence: Optional[float] = Field(None, description="Final confidence score (null = deterministic plateau, no per-hit information)")
     is_verified: bool = Field(..., description="Whether the hit passed verification")
     rejection_reason: Optional[str] = Field(None, description="Reason for rejection if not verified")
     supporting_evidence_count: int = Field(default=0, description="Number of supporting evidence")

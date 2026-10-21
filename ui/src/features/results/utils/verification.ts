@@ -12,7 +12,7 @@ export interface VerifiedHit {
   resolver_score?: number | null;
   similarity_score?: number | null;
   annotation_quality_score?: number | null;
-  final_confidence: number;
+  final_confidence: number | null;  // null = deterministic plateau (v3.140), render "—"
   is_verified: boolean;
   rejection_reason?: string | null;
   supporting_evidence_count?: number;
@@ -32,16 +32,18 @@ export function presentHits(
 
 /**
  * Best confidence = final_confidence of the first hit (hits[0]).
- * Returns 0 when the list is empty or the first hit has no numeric confidence.
+ * Returns null when confidence is not informative (v3.140 plateau nulling:
+ * backend emits null when the value is a deterministic family constant);
+ * the caller renders "—" for null. Returns 0 only for empty lists.
  */
 export function bestConfidence(
   hits: VerifiedHit[] | null | undefined,
-): number {
+): number | null {
   const arr = Array.isArray(hits) ? hits : [];
   if (arr.length === 0) return 0;
   return typeof arr[0].final_confidence === "number"
     ? arr[0].final_confidence
-    : 0;
+    : null;
 }
 
 export const TRUNCATE_AT = 60;
