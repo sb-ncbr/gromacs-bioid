@@ -17,6 +17,7 @@ from ..config.loader import RunConfig
 from ..input.models import InputKind, InputBundle, LoadDecision
 from ..results.results_manager import ResultsManager
 from .probe import match_atoms
+from .scale_guard import run_scale_guard
 
 logger = logging.getLogger("base")
 
@@ -104,6 +105,7 @@ class LoadingResult:
     final_strategy: LoadStrategy | None = None
     attempts: list[LoadAttempt] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    scale_report: dict | None = None
 
 
 def _get_files_by_ext(bundle: InputBundle, ext: str) -> list[Path]:
@@ -829,6 +831,13 @@ def load_simulation(
             if positions is None or len(positions) == 0:
                 raise _GateFailure("no_positions", "Universe built without coordinates")
 
+            # Universal coordinate-scale guard (geometry-only detection; heals
+            # nm/angstrom collapse for any strategy, codes per severity).
+            scale_report = run_scale_guard(universe, strategy, validation.selected_files)
+            results.set_data("loading/scale_correction", scale_report.to_dict())
+            if scale_report.warning_message:
+                all_warnings.append(scale_report.warning_message)
+
             # Success!
             attempt.status = "success"
             attempt.universe = universe
@@ -849,6 +858,7 @@ def load_simulation(
                 final_strategy=strategy,
                 attempts=attempts,
                 warnings=all_warnings,
+                scale_report=scale_report.to_dict(),
             )
             
         except _GateFailure as gate:

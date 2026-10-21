@@ -159,6 +159,14 @@ def _load_simulation(context):
     if not result.success:
         context.fail("load_failed", f"No loading strategy succeeded after {len(result.attempts)} attempts")
 
+    # Surface coordinate-scale corrections as coded run warnings (UI catalog).
+    if result.scale_report and result.scale_report.get("warning_code"):
+        context.add_warning(
+            result.scale_report["warning_code"],
+            result.scale_report["warning_message"],
+            details=result.scale_report,
+        )
+
     context.record_data("simulation/n_atoms", result.universe.atoms.n_atoms)
     return StepResult(
         summary={"loaded": True, "strategy": result.final_strategy.value if result.final_strategy else None},
