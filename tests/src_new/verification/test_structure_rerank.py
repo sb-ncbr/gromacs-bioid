@@ -205,9 +205,39 @@ class TestFidelityOrderHits:
             _vh("CID_OK", "PUBCHEM_CID", 50.0, skel=0.80),
         ]
         out = _fidelity_order_hits(hits)
-        # verified chem first; then ORIGINAL relative order of the rest,
-        # even though REJ1 has a higher skeleton_sim and confidence
-        assert [h.identifier for h in out] == ["CID_OK", "REJ1", "1ABC"]
+        # v3.140-2: block1 = ALL verified hits (any ident class), sorted.
+        # CID_OK (skel .8) tops; verified non-chem 1ABC (skel None -> -1) next;
+        # unverified REJ1 keeps block-2 position even with higher skel/conf.
+        assert [h.identifier for h in out] == ["CID_OK", "1ABC", "REJ1"]
+
+    def test_ground_truth_element_hit_promoted_above_rejected_chemicals(self):
+        """SOD scenario (run b4813beb/seg_3): verified ELEMENT ground truth sat
+        beneath 33 rejected chemical candidates because block-1 was chemical-
+        ident-only. Under v3.140-2 it must top the list."""
+        from src_new.verification.manager import _fidelity_order_hits
+        hits = [
+            _vh("REJ_A", "PUBCHEM_CID", None, verified=False, skel=None),
+            _vh("REJ_B", "INCHIKEY", None, verified=False, skel=None),
+            _vh("NA", "ELEMENT", 100.0, verified=True, skel=None),
+        ]
+        out = _fidelity_order_hits(hits)
+        assert [h.identifier for h in out] == ["NA", "REJ_A", "REJ_B"]
+        # idempotence under repeated application
+        assert [h.identifier for h in _fidelity_order_hits(out)] == ["NA", "REJ_A", "REJ_B"]
+
+    def test_similarity_breaks_skeleton_tie_before_evidence(self):
+        """v3.140-1 (run b4813beb/seg_0_TOCL2): all-skel-1.0 plateau fell back
+        to identifier-ascending, leaving sim=None rows above sim=62.9 rows.
+        similarity_score desc now arbitrates before evidence/confidence."""
+        from src_new.verification.manager import _fidelity_order_hits
+        hits = [
+            _vh("CID_NOSIM", "PUBCHEM_CID", None, skel=1.0, ev=3),
+            _vh("AAA_SIM", "PUBCHEM_CID", None, skel=1.0, ev=1),
+        ]
+        hits[0].similarity_score = None
+        hits[1].similarity_score = 62.9
+        out = _fidelity_order_hits(hits)
+        assert [h.identifier for h in out] == ["AAA_SIM", "CID_NOSIM"]
 
     def test_tie_break_chain_conf_then_identifier_then_type(self):
         from src_new.verification.manager import _fidelity_order_hits

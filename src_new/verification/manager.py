@@ -166,40 +166,45 @@ def _fidelity_order_key(hit):
     ranking, UI owns presentation; the verified flag is never a sort key for
     display purposes (it only defines which hits participate in block 1).
 
-    Chain: skeleton_sim desc -> supporting_evidence_count desc ->
-    final_confidence desc -> identifier asc -> ident_type asc.
-    NaN/Inf skeleton_sim sinks to -1.0 (bottom of block 1).
+    Chain: skeleton_sim desc -> similarity_score desc -> supporting_evidence_count
+    desc -> final_confidence desc -> identifier asc -> ident_type asc.
+    None skeleton_sim/similarity_score sinks to -1.0 within their slot.
 
-    A6 (2026-10-08): evidence count ranks BEFORE confidence within a
-    same-skeleton plateau. Pubchem-family final_confidence is F-07
-    ordinal-stub quantized within a resolver family, so it cannot
-    legitimately arbitrage skeleton-equal candidates -- the residual
-    rerank cohort (F-7 heal analysis) was plateau-lottery losses.
-    supporting_evidence_count = distinct resolvers that found the hit:
-    real corroboration. Hits serialized before the field existed keep
-    the default 1, which degenerates the chain to the legacy behavior.
+    v3.140-1 (observed run b4813beb): similarity_score joins the chain. With
+    skel all-equal and confidence plateau-nulled, the prior chain degenerated
+    to identifier-ascending — hits carrying real resolver similarity (62.9)
+    sorted BELOW sim=None rows purely by CID number accident.
+    A6 (2026-10-08): evidence count ranks before confidence within a
+    same-skeleton plateau (pubchem-family final_confidence is quantized).
     """
     s = hit.skeleton_sim
     if s is None or (isinstance(s, float) and (math.isnan(s) or math.isinf(s))):
         s = -1.0
+    sim = getattr(hit, "similarity_score", None)
+    if sim is None or (isinstance(sim, float) and (math.isnan(sim) or math.isinf(sim))):
+        sim = -1.0
     ev = getattr(hit, "supporting_evidence_count", 1) or 1
-    return (-s, -ev, -(hit.final_confidence or 0.0), str(hit.identifier), str(hit.ident_type))
+    return (-s, -sim, -ev, -(hit.final_confidence or 0.0), str(hit.identifier), str(hit.ident_type))
 
 
 def _fidelity_order_hits(hits):
-    """Stable repartition: verified chemical hits first, fidelity-sorted.
+    """Stable repartition: verified hits first, fidelity-sorted.
 
-    Block 1: verified hits with ident_type in CHEMICAL_IDENT_TYPES, sorted by
-             _fidelity_order_key (skeleton fidelity to the simulated molecule).
+    Block 1: all verified hits, sorted by _fidelity_order_key.
     Block 2: everything else, original relative order preserved.
 
+    v3.140-2: eligibility widened from verified chemical ident_types to ALL
+    verified hits (observed run b4813beb/seg_3_SOD: the ground-truth ELEMENT
+    hit — ident_type ELEMENT, outside CHEMICAL_IDENT_TYPES — stayed in block 2
+    beneath 33 rejected chemical candidates even though it was the only true
+    answer; for monoatomic segments verified==ELEMENT by construction).
     Ordering-only: no verification state, score, or schema is modified.
     Idempotent: re-application returns the identical order.
-    Projection-validated (rerank_projection.json, 2026-09-30): @5 82.5 /
-    @10 88.5 validated (gate 0.7) without touching any gate/threshold.
+    Projection-validated (rerank_projection_v3140.json, 2026-10-21, 5,993
+    campaign annotations, cache-only): D-chain validated@5/@10 = 95.9/96.0
+    vs baseline 95.8/95.9 (gate 0.7) — at-or-above on every metric.
     """
-    block1 = [h for h in hits
-              if h.is_verified and h.ident_type in CHEMICAL_IDENT_TYPES]
+    block1 = [h for h in hits if h.is_verified]
     if not block1:
         return list(hits)
     block1.sort(key=_fidelity_order_key)
