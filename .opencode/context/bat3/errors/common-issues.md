@@ -731,3 +731,31 @@ Two stacked traps, one incident:
 Detection signature: web UI tab OOM/freeze on a run whose segments "aren't
 that big"; exported mmcif density ~0.016 A^3/atom (healthy 10-40);
 render_png stage takes ~10 min with tiny/degenerate output PNGs.
+
+## V-36 — verify-stage minimal-manager data gaps (pattern); composition nested-if blind spot; plateau constants
+
+Pattern (TWICE now): the verify stage fans out per-segment workers on a
+MINIMAL temp ResultsManager. Any verification rule reading results keys
+outside {identifiers, signatures, universe/segments/*/properties} is
+silently blind in-pipeline while passing every full-manager test/replay.
+Element rule hit it (9d90d777), water ground-truth hit it again (99abca31).
+Doctrine: when adding a results-reading rule to verification, thread the
+key through `_verify_results` item tuple + worker temp manager, and add a
+WORKER-level wiring test (not just manager-level).
+
+Typing: C/O composition classifiers must be FLAT decision lists with an
+explicit verdict-or-fallthrough per band. A nested `if C>10 and O>4`
+with inner bands left phospho/cardiolipins (C/O 4.5-5) reachable-but-
+verdictless => UNKNOWN. Empirical anchors live in
+tests/src_new/loader/test_molecule_classification.py.
+
+Presentation: a confidence that composes to a family constant (resolver
+cap 100 + skel-floored 100 + mirror-annotation 70 => 94.0 for EVERY hit)
+carries zero ranking information — emit null, render "—", never display
+plateau constants as confidence. Ground-truth overrides (element/water)
+keep their 100: verdicts, not measurements.
+Ordering chains that end in ties must not silently degrade to
+identifier-ascending: every tie-break slot needs a justification, and
+block-1 of the presentation repartition means ALL verified hits (an
+ELEMENT ground truth beneath rejected candidates is indistinguishable
+from "no answer" to the user).

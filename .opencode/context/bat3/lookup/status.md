@@ -573,3 +573,45 @@ Open follow-ups:
   browser check (evidence gate for a possible solvent representation cap).
 - MDAnalysis 2.11.0 pin-up = separate wave (full venv==prod revalidation).
 - tdi.py fix-or-retire (carried from v3.138).
+
+## 2026-10-21c · v3.140/v3.141 — identification correctness & presentation overhaul (V-36)
+Trigger: delivered rerun b4813beb looked broken to the user — TOCL2/POPE
+typed `unknown`, TIP3 typed small_molecule with 67 "verified" duplicate
+chemical hits, flat 94% confidence everywhere, verified sim=None rows above
+sim=62.9 rows, SOD ground-truth NA at the bottom, main table full of
+unverified rows. Phase-0 probes pinned every claim before code (fixture
+compositions C81/O17/P2, C39/O8/P1/N1; water skel fp exact-1.0 exclusive;
+94 = 0.4*100 stub + 0.4*100 skel + 0.2*70 mirror cap).
+
+Fixes (per-phase commits): 689861776 flat classifier kills the nested-if
+composition blind spot (lipid resname knowledge incl. cardiolipin family +
+P-guarded band 2.5<=C/O<=12 + water resnames/structural 1O+2H); c935449be
+water ground-truth rule (first skel==1.0 chemical hit on water segment =
+water_triatomic verdict @100; rest demoted water_duplicate_identity);
+cfa25943e plateau honesty (skel==1.0 + resolver==100 => deterministic
+family constant => final_confidence null, UI "—"; overrides keep 100);
+a7ac80f4b fidelity order: similarity_score enters the tie chain after
+skel, block-1 admits ALL verified hits (SOD ELEMENT on top).
+Gate: campaign projection replay (5,993 annotations, cache-only): D-chain
+validated@5/@10 95.9/96.0 vs baseline 95.8/95.9 — at-or-above everywhere.
+3f4eb2232 UI main table = verified-only (filtering != sorting doctrine);
+zero verified => "Failed to identify molecule — see supplementary info".
+
+v3.141 follow-through from first E2E (run 99abca31 exposed it):
+b6817bd48 verify worker minimal-manager gap — fragments/segments never
+reached per-segment workers, water rule blind in-pipeline (same gap class
+as element rule 9d90d777); threaded as 6th tuple item + regression tests.
+6ac2a2ed2 whole-system pane: neutral "Select a molecule" empty state for
+multi-segment; single-segment maps pane to the sole molecule (user ruling).
+
+Deploy (digest-pinned): worker/ui-worker/api @888287a6 (v3.141),
+web @ff5fef64 (w17). E2E rerun 6258aee6-a4e4-4e3c-a51e-20dbf4b2b5fc
+(success ~2.75 min): types lipid/lipid/water/ion, SOD NA pinned top,
+TIP3 exactly 1 verified (962 water @100, 66 demoted), TOCL2 sim-ordered
+with conf null-by-design, scale guard + geometry green (battery
+.tmp/e2e_assert_v3140.sh, 9/9).
+Suites: loader 199, verification 175, pipeline+verification 213, ui 116;
+2 api + 2 executor baseline reds unchanged (reproduced pre-wave).
+Known follow-ups: TOCL2 not in LIPID_FORCEFIELD_MAPS shorthand content
+(signature_generator_failed x4 is PRE-EXISTING, v3.139-identical);
+TdI fix-or-retire; MDAnalysis 2.11 pin-up wave.
