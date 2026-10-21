@@ -532,3 +532,44 @@ Run-level assertions (probe of results.json on runs PVC):
 - foldseek-on-ca_only_pdb works in-run (AlphaFind/foldseek refused the
   user-library fingerprint hits by design; 3ALB2 substructure identity wins)
 v3.138 wave fully CLOSED (code, image @053c2d8f, DB seeded, docs, ledger).
+
+## 2026-10-21b · v3.139 — universal coordinate-scale guard + Mol* degenerate-geometry hardening
+Trigger: run a5b785cc (tpr-only upload, PE_CL membrane; 58,500 atoms) OOM-froze
+the web UI. Root cause (Phase-0, all empirically pinned): MDAnalysis 2.10.0's
+NEW TPRReader (versionadded 2.10.0) delivers positions in nm — upstream
+MDAnalysis/mdanalysis#5374 (fixed in 2.11; we stay pinned 2.10.0 this wave,
+guard is reader-independent) — and reads-then-discards the box (#5466).
+Collapsed geometry then poisoned every downstream consumer; Mol* proximity
+bond inference exploded on the MAIN THREAD (the 25s watchdog literally cannot
+fire during a main-thread block) => hard tab freeze, no graceful degradation.
+
+Fix (per-phase commits; loader suite 182/182, pipeline_steps 35, api render
+26, ui 111/111):
+- 6ccf7d98a scale_guard.py wired at load_simulation post-gates for EVERY
+  strategy: geometry-only detection (bond-median <0.4A or bbox-density
+  <1.0 A^3/atom; margins 630-2300x; clashy-A003ZR-shaped systems verified
+  no-false-positive), clean-x10-only correction (positions+velocities),
+  tpr box recovery; anomaly => geometry_scale_anomalous, NEVER mutate.
+  Codes: coords_rescaled_nm_to_angstrom (known-tpr path, info) /
+  coords_rescaled_unexpected (any other strategy, loud). Reader-reported
+  units deliberately NOT a trigger (GRO readers report 'nm' but deliver A).
+- 07a5752c7 render/geometry recorded at export; additive
+  RenderPathsResponse.geometry; openapi additive gate: zero removals/breaking.
+- 33a561ab2 ui geometry-check.ts pre-flight BEFORE loadMVS (server flag
+  first, client text-scan fallback for legacy runs) + catalog codes
+  (+foldseek_3di resolver-name backfill).
+
+Deploy (digest-pinned): worker/ui-worker/api @371cfc94 (v3.139), web w15
+@56298d8f — html-asset-hash parity OK. E2E rerun of the failing run:
+b4813beb-2159-43e5-8764-bed430a9c6c7 SUCCESS in ~2.9 min (was 12 min):
+load_simulation emits coords_rescaled_nm_to_angstrom; exported O-H 0.9510 A;
+_cell present (box recovered); render/geometry ok (15.84 A^3/atom);
+render_png 38s success; legacy run geometry=null (UI probe covers).
+Open follow-ups:
+- seg_2_TIP3 static PNG STILL degenerate (~8KB) even post-fix — waters
+  36k atoms render near-blank: SEPARATE png-renderer water issue, ledger.
+  UI impact bounded (system png 1.9MB healthy; interactive path preferred).
+- UI interactive behavior on the fixed 58.5k-atom system pending user
+  browser check (evidence gate for a possible solvent representation cap).
+- MDAnalysis 2.11.0 pin-up = separate wave (full venv==prod revalidation).
+- tdi.py fix-or-retire (carried from v3.138).

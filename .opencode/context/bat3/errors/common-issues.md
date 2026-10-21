@@ -713,3 +713,21 @@ Channel takeaway: hermetic unit tests (stub binary/mocked HTTP) prove
 JSON logic only. The binary's arg contract, the server's payload shape, and
 the DB contents all need IN-POD probes with the REAL artifacts before a
 rollback-worthy failure becomes someone else's afternoon.
+
+## V-35 (2026-10-21): trust-new-upstream-reader + main-thread watchdog illusion
+Two stacked traps, one incident:
+1. A `versionadded` upstream feature (MDAnalysis 2.10.0 TPRReader) violated
+   the library's own unit convention: positions in nm, units attr says so,
+   box read-then-discarded. NOTHING raised — every consumer downstream got
+   syntactically valid, geometrically absurd data (V-33 silent-degradation
+   class). Defense: measure geometry (bond medians, bbox density), never
+   trust reader-declared units as evidence about delivered values (they
+   describe FILE units — GRO readers report 'nm' while delivering A).
+2. A Promise.race(timeout) watchdog around Mol* load gave FALSE COMFORT:
+   the failure mode it exists for (geometry inference explosion) blocks the
+   main thread, where setTimeout callbacks queue forever. Any timeout-based
+   guard whose trigger can starve the event loop is decorative — the gate
+   must PREVENT engaging (pre-flight input validation), not react.
+Detection signature: web UI tab OOM/freeze on a run whose segments "aren't
+that big"; exported mmcif density ~0.016 A^3/atom (healthy 10-40);
+render_png stage takes ~10 min with tiny/degenerate output PNGs.

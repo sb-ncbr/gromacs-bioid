@@ -7,20 +7,20 @@ Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-0
 - Kubeconfig context: `kuba-cluster` (namespace-scoped user; `kubectl get nodes` forbidden = normal)
 - Namespace: `ceitec-biodata-ns`; Ingress hosts: `bioid-ceitec.dyn.cloud.e-infra.cz` (SPA on /, API on /api+/files+/health+/docs+/openapi.json; /runs/* deep-links are SPA routes since ui-rework WS7), `bat3-validation.dyn.cloud.e-infra.cz`
 
-## Components & Images (pinned; verified 2026-10-20, v3.138 wave)
+## Components & Images (pinned; verified 2026-10-21, v3.139 wave)
 | Deploy | Replicas | Image | Notes |
 |---|---|---|---|
-| bat3-ceitec-bat3-worker | 15 | `bat3-validation-api@sha256:053c2d8f` (tag `v3.138`) | celery pipeline workers (src_new); blast chain restored; v3.138: gemmi/tmtools/mini3di/numpy<2 + static foldseek (avx2/sse2 wrapper, curl for `databases`) |
-| bat3-ceitec-bat3-ui-worker | 2 | `bat3-validation-api@sha256:053c2d8f` (tag `v3.138`) | celery pipeline workers (src_new); same v3.138 |
-| bat3-ceitec-bat3-api | 1 | `bat3-validation-api@sha256:053c2d8f` (tag `v3.138`) | **pins command/args `uvicorn src_new.api.main:app --workers 4` + DATABASE_URL env** — image CMD is `main:app` (validation API), wrong app + probes 404 otherwise (V-28) |
-| bat3-ceitec-bat3-web | 1 | `cerit.io/tomsko/bat3-frontend:w14` | UI w/ widened dropzone (.psf/.dcd/.data/.rst7/.mdcrd/.cif) |
+| bat3-ceitec-bat3-worker | 15 | `bat3-validation-api@sha256:371cfc94` (tag `v3.139`) | celery pipeline workers (src_new); blast chain restored; v3.138: gemmi/tmtools/mini3di/numpy<2 + static foldseek (avx2/sse2 wrapper, curl for `databases`) |
+| bat3-ceitec-bat3-ui-worker | 2 | `bat3-validation-api@sha256:371cfc94` (tag `v3.139`) | celery pipeline workers (src_new); same v3.138 |
+| bat3-ceitec-bat3-api | 1 | `bat3-validation-api@sha256:371cfc94` (tag `v3.139`) | **pins command/args `uvicorn src_new.api.main:app --workers 4` + DATABASE_URL env** — image CMD is `main:app` (validation API), wrong app + probes 404 otherwise (V-28) |
+| bat3-ceitec-bat3-web | 1 | `bat3-frontend@sha256:56298d8f` (tag `w15`) | UI w/ widened dropzone (.psf/.dcd/.data/.rst7/.mdcrd/.cif) |
 | validation-api | 1 | `bat3-validation-api:v3.132` | `uvicorn main:app`; **VALIDATION_DISPATCH_ENABLED=0 — MDDBR dispatch OFF (intentional, 2026-10-09)** |
 | validation-worker | **0 (was 244)** | `bat3-validation-api:v3.132` | **scaled to 0 2026-10-09 (MDDBR OFF); reverse: scale 244 + dispatch env 1** |
 | validation-ui | 1 | `bat3-validation-ui:latest` | |
 | validation-postgres | 1 | `postgres:15-alpine` | DB `bat3_validation` |
 | bat3-redis | 1 | `redis:8-alpine` | broker+backend; orphan `bat3-ceitec-bat3-redis` scaled 0 |
 
-NOTE (v3.138): worker/ui-worker/api specs now carry a DIGEST ref (`@sha256:053c2d8f...`) — same-tag re-push + `set image` is a spec no-op and node image caches serve OLD tag content (ate 2 foldseek-db Job attempts). Future revisions: prefer digest refs, else `rollout restart` + imageID verification (V-32 corollary).
+NOTE (v3.139): backend now @371cfc94 with the universal scale guard + render/geometry flag; web @56298d8f with the Mol* degenerate pre-flight (V-35). v3.138 note: worker/ui-worker/api specs continue to carry DIGEST refs (`@sha256:053c2d8f...`) — same-tag re-push + `set image` is a spec no-op and node image caches serve OLD tag content (ate 2 foldseek-db Job attempts). Future revisions: prefer digest refs, else `rollout restart` + imageID verification (V-32 corollary).
 
 ## Storage (PVCs)
 - `bat3-databases-data-ceitec` (2Ti) = REAL BLAST DBs (2.1TB: nr/, nt/, core_nt/, pdbaa/, pdbnt/, swissprot/ symlinks → `.staging/`) + **foldseek Swiss-Prot AFDB at `foldseek/swissprot*`** (v3.138, seeded 2026-10-20 by `k8s/foldseek-db-seed-job.yaml`, ~1GB; refresh = delete + re-apply the Job)

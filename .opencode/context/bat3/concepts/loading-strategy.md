@@ -108,6 +108,23 @@ _(filled per phase)_
   compat shim added, mmcif_single fixture + e2e cover it.
 - 2026-10-09 **Final gate ✓**: engine-matrix invocation 97/97 (input + all loader suites + guards).
 
+## Coordinate Scale Guard (v3.139, 2026-10-21)
+Universal post-load geometry check (`src_new/loader/scale_guard.py`) running
+for EVERY strategy at the load_simulation post-gates — NOT strategy sniffing.
+Detection is geometry-only (reader-reported units are file-format metadata,
+not delivery truth): bond-length median <0.4 A, else (bondless) bbox density
+<1.0 A^3/atom (~630x margins vs healthy 10-40). Correction: clean x10 only
+(positions+velocities), GROMACS box recovery for tpr; anything not a clean
+x10 => `geometry_scale_anomalous` and NEVER mutate. Codes reach the UI
+catalog: coords_rescaled_nm_to_angstrom (known-tpr path, info),
+coords_rescaled_unexpected (other strategies, loud). Report persisted at
+`loading/scale_correction`; export also records `render/geometry` (UI
+pre-flight flag). Motivation: MDAnalysis 2.10.0 TPRReader delivered nm
+(upstream #5374) and dropped the box (#5466) — run a5b785cc. Fixture:
+tests/data/gromacs_tpr_only/PE_CL_530Run.tpr (+gromacs_tpr_gro/ healthy pair).
+TODO later: MDAnalysis 2.11.0 pin-up (contains both upstream fixes) as a
+standalone wave with full venv==prod revalidation.
+
 ## Release Notes (2026-10)
 1. **Rollout**: ui-worker + api images rebuild picks up loader + UI copy together (UI parity was the
    load-bearing risk); no new pip deps (gemmi/MDAnalysis already shipped; no parmed).
