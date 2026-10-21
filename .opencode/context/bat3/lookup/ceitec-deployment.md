@@ -7,13 +7,13 @@ Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-0
 - Kubeconfig context: `kuba-cluster` (namespace-scoped user; `kubectl get nodes` forbidden = normal)
 - Namespace: `ceitec-biodata-ns`; Ingress hosts: `bioid-ceitec.dyn.cloud.e-infra.cz` (SPA on /, API on /api+/files+/health+/docs+/openapi.json; /runs/* deep-links are SPA routes since ui-rework WS7), `bat3-validation.dyn.cloud.e-infra.cz`
 
-## Components & Images (pinned; verified 2026-10-21, v3.139 wave)
+## Components & Images (pinned; verified 2026-10-21, v3.140/141 wave)
 | Deploy | Replicas | Image | Notes |
 |---|---|---|---|
-| bat3-ceitec-bat3-worker | 15 | `bat3-validation-api@sha256:371cfc94` (tag `v3.139`) | celery pipeline workers (src_new); blast chain restored; v3.138: gemmi/tmtools/mini3di/numpy<2 + static foldseek (avx2/sse2 wrapper, curl for `databases`) |
-| bat3-ceitec-bat3-ui-worker | 2 | `bat3-validation-api@sha256:371cfc94` (tag `v3.139`) | celery pipeline workers (src_new); same v3.138 |
-| bat3-ceitec-bat3-api | 1 | `bat3-validation-api@sha256:371cfc94` (tag `v3.139`) | **pins command/args `uvicorn src_new.api.main:app --workers 4` + DATABASE_URL env** — image CMD is `main:app` (validation API), wrong app + probes 404 otherwise (V-28) |
-| bat3-ceitec-bat3-web | 1 | `bat3-frontend@sha256:56298d8f` (tag `w15`) | UI w/ widened dropzone (.psf/.dcd/.data/.rst7/.mdcrd/.cif) |
+| bat3-ceitec-bat3-worker | 15 | `bat3-validation-api@sha256:888287a6` (tag `v3.141`) | celery pipeline workers (src_new); v3.140/141 typing+verification+presentation overhaul; v3.138: gemmi/tmtools/mini3di/numpy<2 + static foldseek (avx2/sse2 wrapper, curl for `databases`) |
+| bat3-ceitec-bat3-ui-worker | 2 | `bat3-validation-api@sha256:888287a6` (tag `v3.141`) | celery pipeline workers (src_new) |
+| bat3-ceitec-bat3-api | 1 | `bat3-validation-api@sha256:888287a6` (tag `v3.141`) | **pins command/args `uvicorn src_new.api.main:app --workers 4` + DATABASE_URL env** — image CMD is `main:app` (validation API), wrong app + probes 404 otherwise (V-28) |
+| bat3-ceitec-bat3-web | 1 | `bat3-frontend@sha256:ff5fef64` (tag `w17`) | verified-only main table + whole-system empty state (v3.140/141) |
 | validation-api | 1 | `bat3-validation-api:v3.132` | `uvicorn main:app`; **VALIDATION_DISPATCH_ENABLED=0 — MDDBR dispatch OFF (intentional, 2026-10-09)** |
 | validation-worker | **0 (was 244)** | `bat3-validation-api:v3.132` | **scaled to 0 2026-10-09 (MDDBR OFF); reverse: scale 244 + dispatch env 1** |
 | validation-ui | 1 | `bat3-validation-ui:latest` | |
