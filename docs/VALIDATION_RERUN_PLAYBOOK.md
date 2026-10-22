@@ -29,6 +29,7 @@ Read `docs/CHEMISTRY_FIX_TODO.md` for the metric history; this file is ops-only.
 - Resources both worker pools: requests 2CPU/12Gi, limits 4CPU/20Gi (15 replicas ≈ same
   cluster budget as 30×10Gi; rule: scale RAM by trading replicas, never by adding total)
 - Build/push: `docker build -t cerit.io/tomsko/bat3-<worker|validation-api>:vX.Y -f Dockerfile.<worker|api> .` from repo root, on this workstation; deployment image tags set via strategic-merge patch.
+  ⚠️ **2026-10-22 correction — ceitec `bat3-validation-api` images MUST be built from `Dockerfile.full`** (canonical backend image: pymol-open-source for render_png + content gate, mini3di/foldseek, apscheduler; ~3GB). `Dockerfile.api` is the thin variant (no PyMOL) — deploying it silently breaks PNG rendering (`render_pymol_unavailable`); that regression shipped as v3.142 build #1 and was caught by the E2E battery. After every backend build, content-gate: `docker run --rm --entrypoint sh <image> -c 'which pymol && echo OK'`.
 
 ## 3. Failure classes that burned days (detection → fix)
 
