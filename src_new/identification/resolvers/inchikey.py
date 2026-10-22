@@ -170,8 +170,11 @@ def _sparql_reverse_lookup(
         '?c <http://semanticscience.org/resource/SIO_000008> ?d . '
         '?d a ?t . FILTER(CONTAINS(STR(?t), "InChIKey")) '
         '?d <http://semanticscience.org/resource/SIO_000300> ?v . '
+        # v3.143 (red-team C-05): was the plain string '}} LIMIT 2' — a
+        # literal double brace; IDSM answered HTTP 400 to every call and the
+        # PUG->IDSM fallback channel has been dead since introduction.
         f'FILTER(?v = "{inchikey_variant}") '
-        '}} LIMIT 2'
+        '} LIMIT 2'
     )
     url = (
         "https://idsm.elixir-czech.cz/sparql/endpoint/idsm"

@@ -10,7 +10,6 @@ __all__ = [
     "name",
     "fingerprint",
     "inchi",
-    "morgan",
     "selfies",
     "formula",
     "tdi",

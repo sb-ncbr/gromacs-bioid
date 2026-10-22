@@ -258,6 +258,7 @@ def idsm_fetch_similarity_match(
           [ sachem:compound ?COMPOUND;
             sachem:score ?SCORE ] sachem:similaritySearch [
                   sachem:query "{escaped_smiles}";
+                  sachem:topn "200"^^xsd:int;
                   sachem:cutoff "{cutoff}"^^xsd:double ].
         }}
         '''
@@ -303,7 +304,11 @@ def idsm_fetch_similarity_match(
                 else:
                     ret.append(id_val)
 
-        return ret
+        # v3.143 (red-team C-23): cap + rank client-side as well — aspirin@0.8
+        # flooded 3430 rows (2878 CIDs) into the candidate window.
+        if include_similarity:
+            ret.sort(key=lambda t: t[1], reverse=True)
+        return ret[:200]
     except Exception as exc:
         logger.error("IDSM search failed!")
         logger.exception(exc)

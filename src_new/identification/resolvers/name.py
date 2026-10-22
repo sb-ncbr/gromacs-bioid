@@ -67,7 +67,21 @@ class NameResolver(IdentifierResolver):
         """
         global _db_cache
         if path not in _db_cache:
-            with open(path, "r") as fd:
+            # v3.143 (red-team C-22): config paths are CWD-relative, which in
+            # pods depends on WORKDIR *and* on whether the PVC/PVC-absent
+            # image layout matches. Fall back to the package/image root
+            # (…/src_new/identification/resolvers/name.py -> repo root).
+            import os
+            from pathlib import Path
+            cand = Path(path)
+            if not cand.is_absolute() and not cand.exists():
+                alt = Path(__file__).resolve().parents[3] / path
+                if alt.exists():
+                    logger.warning(
+                        f"[Identifier] name DB not found at CWD-relative "
+                        f"{path}; using package-relative {alt}")
+                    cand = alt
+            with open(cand, "r") as fd:
                 _db_cache[path] = json.load(fd)
         return _db_cache[path]
 

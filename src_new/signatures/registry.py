@@ -91,7 +91,6 @@ def get_default_generators(config: SignaturesConfig) -> list[SignatureGenerator]
     from .generators.name import ChainNameGenerator, MoleculeNameGenerator, SegmentNameGenerator
     from .generators.fingerprint import FingerprintGenerator
     from .generators.inchi import InchiKeyGenerator
-    from .generators.morgan import MorganFingerprintGenerator
     from .generators.formula import MolecularFormulaGenerator
     from .generators.skeleton_fp import SkeletonFingerprintGenerator
     from .generators.resname import ResnameGenerator
@@ -109,7 +108,6 @@ def get_default_generators(config: SignaturesConfig) -> list[SignatureGenerator]
     generators.append(SimpleSmilesGenerator(config))
     generators.append(SimpleSmilesGeneratorNoSanitize(config))
     generators.append(InchiKeyGenerator(config))
-    generators.append(MorganFingerprintGenerator(config))
     if SelfiesGenerator:
         generators.append(SelfiesGenerator(config))
     generators.append(MolecularFormulaGenerator(config))

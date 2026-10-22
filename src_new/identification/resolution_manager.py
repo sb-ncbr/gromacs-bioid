@@ -26,9 +26,13 @@ logger = logging.getLogger("identifier")
 # Note: inchikey_pubchem is now PUG-optional (has IDSM SPARQL fallback) and
 # is therefore excluded from this set.
 # ---------------------------------------------------------------------------
+# v3.143 (red-team C-07): removed "idsm_pubchem" (IDSM is an ELIXIR-CZ
+# SPARQL service — it indexes PubChem but never calls NCBI/PUG; the permanent
+# 2026-09-24 PUG blacklist was blinding the ONLY working PubChem-space
+# similarity channel) and the phantom "pubchem" (matches no resolver).
 _PUBCHEM_RESOLVERS = {
     "formula_pubchem", "formula_hfamily",
-    "pubchem_struct", "idsm_pubchem", "pubchem",
+    "pubchem_struct",
 }
 _PUG_PROBE_URL = ("https://pubchem.ncbi.nlm.nih.gov/rest/pug/"
                   "compound/cid/702/property/CanonicalSMILES/TXT")
@@ -192,6 +196,9 @@ class IdentifierResolutionManager:
                 break
             if _blocked(resolver):
                 logger.debug(f"Skipping {resolver.name}: PubChem circuit breaker open")
+                # v3.143 (red-team C-07/C-10): breaker skips must be visible —
+                # record them in `attempted` instead of vanishing silently.
+                attempted_resolvers.append(f"{resolver.name}:skipped:breaker")
                 continue
             resolver._stage_deadline_epoch = deadline_epoch
             # Check if resolver is applicable for this specific signature
@@ -259,6 +266,7 @@ class IdentifierResolutionManager:
                 break
             if _blocked(resolver):
                 logger.debug(f"Skipping {resolver.name}: PubChem circuit breaker open")
+                attempted_resolvers.append(f"{resolver.name}:skipped:breaker")
                 continue
             resolver._stage_deadline_epoch = deadline_epoch
             # Check if resolver is applicable for this specific signature

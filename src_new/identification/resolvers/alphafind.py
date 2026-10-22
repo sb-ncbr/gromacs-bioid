@@ -235,8 +235,14 @@ class AlphaFindStructResolver(IdentifierResolver):
         if response is None:
             return None
         
-        # Case 1: Search completed immediately - has 'results'
-        if 'results' in response:
+        # Case 1: Search completed - has 'results' and is NOT a queued ticket.
+        # v3.143 (red-team C-04): a queued reply carries BOTH 'results': []
+        # AND 'queue_position' (live probe P0CG48 2026-10); testing 'results'
+        # alone returned the empty ticket as final and the poll branch was
+        # unreachable. Complete == no queue_position, or results populated.
+        if 'results' in response and 'queue_position' not in response:
+            return response
+        if response.get('results'):
             return response
         
         # Case 2: Error response - has 'code' and 'message'
@@ -255,6 +261,11 @@ class AlphaFindStructResolver(IdentifierResolver):
             max_polls = self.alphafind_config.max_poll_attempts
             
             for attempt in range(max_polls):
+                # v3.143: honor the stage deadline while polling (C-04/E-01).
+                _dl = getattr(self, "_stage_deadline_epoch", None)
+                if _dl is not None and time.time() > _dl:
+                    logger.warning("AlphaFind poll aborted: stage deadline exceeded")
+                    return None
                 time.sleep(poll_interval)
                 logger.debug(f"AlphaFind poll attempt {attempt + 1}/{max_polls}")
                 
