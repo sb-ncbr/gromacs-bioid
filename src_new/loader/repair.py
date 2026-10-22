@@ -290,11 +290,18 @@ class TopologyRepair:
         # (empirical A'-wave diagnosis, 2026-10-20).
         resids_arr = self.u.atoms.resids if hasattr(self.u.atoms, 'resids') else None
         resnames_arr = self.u.atoms.resnames if hasattr(self.u.atoms, 'resnames') else None
+        # v3.143 (red-team A-02): group by true residue identity (resindex),
+        # not (resid, resname) — homo-oligomers / per-chain numbering must not
+        # have chain B atoms renamed (name CA needed intact for ca_only_pdb).
+        resindex_arr = self.u.atoms.resindices if hasattr(self.u.atoms, 'resindices') else None
         residue_atoms = {}
         for i in range(n_atoms):
-            resid = int(resids_arr[i]) if resids_arr is not None else 0
-            resname = str(resnames_arr[i]) if resnames_arr is not None else ""
-            key = (resid, resname)
+            if resindex_arr is not None:
+                key = int(resindex_arr[i])
+            else:
+                resid = int(resids_arr[i]) if resids_arr is not None else 0
+                resname = str(resnames_arr[i]) if resnames_arr is not None else ""
+                key = (resid, resname)
             if key not in residue_atoms:
                 residue_atoms[key] = []
             residue_atoms[key].append(i)

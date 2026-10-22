@@ -160,8 +160,8 @@ class LoadedUniverse:
             # Get representative fragment using same logic as get_fragment
             fragment = self.get_fragment(segment_name)
             
-            if fragment is selected:
-                # Fallback case: no bonds or full segment returned
+            if len(fragment.atoms) == len(selected.atoms):
+                # Fallback case: no bonds or representative == whole segment
                 props.atom_count_fragment = len(selected.atoms)
                 props.bond_count_fragment = len(selected.bonds) if hasattr(selected.atoms, "bonds") else 0
                 try:
@@ -199,9 +199,14 @@ class LoadedUniverse:
         flags = {}
         na_meta = {"na_detection": "none", "na_structural_promotions": 0}
         
+        # Chemistry/typing flags are computed on the representative fragment
+        # (v3.143: was the whole segment — ions/waters/virtual sites sharing a
+        # segid silently untyped the real molecule, red-team A-01/A-03).
+        flag_scope = representative if representative is not None else selected
+        
         # HAS_ELEMENTS: all non-empty
-        if hasattr(selected.atoms, 'elements'):
-            flags[SegmentProperty.HAS_ELEMENTS.value] = all(e for e in selected.atoms.elements)
+        if hasattr(flag_scope.atoms, 'elements'):
+            flags[SegmentProperty.HAS_ELEMENTS.value] = all(e for e in flag_scope.atoms.elements)
         else:
             flags[SegmentProperty.HAS_ELEMENTS.value] = False
         
@@ -233,8 +238,8 @@ class LoadedUniverse:
             flags[SegmentProperty.HAS_UNIQUE_NAMES.value] = False
         
         # IS_PROTEIN (use 80% threshold like _is_polymer_segment)
-        if hasattr(selected.atoms, 'resnames'):
-            resnames = selected.atoms.resnames
+        if hasattr(flag_scope.atoms, 'resnames'):
+            resnames = flag_scope.atoms.resnames
             known_count = sum(
                 1 for rn in resnames if rn.upper() in KNOWN_RESIDUE_CODES
             )
@@ -246,7 +251,7 @@ class LoadedUniverse:
         
         # IS_NUCLEIC (80% atom-resname threshold; wave-7 two-tier logic)
         is_nucleic, na_detection, na_promotions = self._classify_nucleic(
-            selected, representative
+            flag_scope, representative
         )
         flags[SegmentProperty.IS_NUCLEIC.value] = is_nucleic
         na_meta = {
