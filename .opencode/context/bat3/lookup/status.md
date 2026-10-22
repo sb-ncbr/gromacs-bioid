@@ -615,3 +615,12 @@ Suites: loader 199, verification 175, pipeline+verification 213, ui 116;
 Known follow-ups: TOCL2 not in LIPID_FORCEFIELD_MAPS shorthand content
 (signature_generator_failed x4 is PRE-EXISTING, v3.139-identical);
 TdI fix-or-retire; MDAnalysis 2.11 pin-up wave.
+
+## NEXT (queued, 2026-10-22) · confidence-scoring rework + equivalence-class collapse
+Pickup file: `.tmp/PICKUP_v3142_confidence_rework.md` — audit -> brainstorm
+(user approval gate) -> phased plan. Goals: always-numeric confidence; user-
+editable weights surfaced in webUI config; resolver/similarity/annotation term
+audits for ALL hit kinds (no local-mirror-cap artifacts); methodology soundness
+(resolver outputs = proposals, never verification evidence); equivalence-class
+collapse presentation; reference run 6258aee6. Un-confirmed leftovers:
+single-segment pane click-test (4964c437), .tmp scratch prune.
