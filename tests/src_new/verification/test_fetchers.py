@@ -102,15 +102,38 @@ class TestSequenceFetcher:
         
         assert result == "MVLSPADK"
     
-    @patch("src_new.verification.fetchers.sequence_fetcher.rcsb_cache.get_cached")
-    def test_sequence_fetcher_alphafold_returns_none(self, mock_get) -> None:
-        """AlphaFold ID format should extract UniProt ID and fetch, but we test that malformed IDs return None."""
+    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    def test_sequence_fetcher_alphafold_malformed_wrapper_returns_none(self, mock_get) -> None:
+        """A malformed AF- wrapper (no accession part) cannot be resolved."""
         fetcher = SequenceSignatureFetcher()
-        # Malformed AlphaFold ID without proper format
-        result = fetcher.fetch("INVALID", "ALPHAFOLD_ID")
-        
-        # Should return None due to parsing error
+        result = fetcher.fetch("AF-X", "ALPHAFOLD_ID")
         assert result is None
+
+    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    def test_sequence_fetcher_alphafold_bare_accession_fetches_uniprot(self, mock_get) -> None:
+        """AlphaFind emits bare UniProt accessions (live probe 2026-10-19):
+        fetch resolves via UniProt — this is the corpus-reality path
+        (9,161-row ALPHAFOLD coverage hole in calibration census, v3.142)."""
+        mock_response = Mock()
+        mock_response.text = ">sp|P99999|CYC_HUMAN\nMGDVEKGKKIF\n"
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+        fetcher = SequenceSignatureFetcher()
+        result = fetcher.fetch("P99999", "ALPHAFOLD_ID")
+        assert result == "MGDVEKGKKIF"
+        assert "P99999" in mock_get.call_args[0][0]
+
+    @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
+    def test_sequence_fetcher_alphafold_wrapped_form_fetches_uniprot(self, mock_get) -> None:
+        """Wrapped AF-<ACC>-F1-model_vN form extracts the UniProt accession."""
+        mock_response = Mock()
+        mock_response.text = ">sp|Q9NRA1|\nACDEFGHIK\n"
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+        fetcher = SequenceSignatureFetcher()
+        result = fetcher.fetch("AF-Q9NRA1-F1-model_v4", "ALPHAFOLD_ID")
+        assert result == "ACDEFGHIK"
+        assert "Q9NRA1" in mock_get.call_args[0][0]
     
     @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
     def test_sequence_fetcher_nr_id(self, mock_get) -> None:

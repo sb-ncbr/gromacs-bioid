@@ -149,15 +149,28 @@ class SequenceSignatureFetcher(SignatureFetcher):
             return None
     
     def _fetch_alphafold(self, alphafold_id: str) -> str | None:
-        """Fetch sequence from AlphaFold (via UniProt)."""
+        """Fetch sequence for an AlphaFold identifier (via UniProt).
+
+        (v3.142) AlphaFind emits BARE UniProt accessions as identifiers
+        (live probe 2026-10-19, see structure_fetcher._alphafold_accession);
+        the previous strict "AF-<ACC>-F1-model_vN" parsing returned None for
+        every real-world hit of that kind — corpus census: 9,161 ALPHAFOLD_ID
+        rows, 0 verified / 0 worker scores / 0 annotation (total coverage
+        hole). Accept both forms; a v4/v6 model's sequence is the UniProt
+        canonical sequence either way. Only a malformed AF- wrapper is truly
+        unusable.
+        """
         try:
-            # Extract UniProt ID from AlphaFold ID (format: AF-UNIPROTID-F1-model_vX)
-            parts = alphafold_id.split('-')
-            if len(parts) < 3 or not alphafold_id.startswith("AF-"):
-                logger.warning(f"AlphaFold ID '{alphafold_id}' does not match expected format AF-UNIPROT-F1-model_vX")
-                return None
-            uniprot_id = parts[1]
-            return self._fetch_uniprot(uniprot_id)
+            ident = alphafold_id.strip().upper()
+            if ident.startswith("AF-"):
+                parts = ident.split('-')
+                if len(parts) < 3:
+                    logger.warning(
+                        f"AlphaFold ID '{alphafold_id}' malformed (AF- wrapper "
+                        "without accession part)")
+                    return None
+                ident = parts[1]
+            return self._fetch_uniprot(ident)
         except Exception as e:
             logger.warning(f"AlphaFold {alphafold_id} fetch FASTA failed: {e}")
             return None
