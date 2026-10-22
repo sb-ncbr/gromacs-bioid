@@ -690,6 +690,10 @@ def _verify_results(context):
         
         segment = result["segment"]
         verified_hits = result["verified_hits"]
+        # v3.143 (red-team E-01/D-04): the worker surfaces budget cuts on the
+        # parallel path as partial=True; fold into the step-level flag.
+        if result.get("partial"):
+            budget_hit = True
         
         # Record warnings from errors
         for error in result.get("errors", []):

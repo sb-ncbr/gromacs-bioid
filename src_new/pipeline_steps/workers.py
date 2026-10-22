@@ -565,6 +565,13 @@ def _verify_results_worker(item: tuple) -> dict[str, Any]:
         Dict with segment name, verified_hits list, and errors.
         Never returns None - errors are collected in the 'errors' field.
     """
+    # v3.143 (red-team D-14): capture the segment BEFORE the try so failures
+    # are attributed to the real segment instead of being filed (and
+    # overwritten by each other) under "unknown".
+    try:
+        segment = item[0]
+    except Exception:
+        segment = "unknown"
     try:
         from ..config.loader import RunConfig
         from ..verification.manager import VerificationManager
@@ -619,10 +626,15 @@ def _verify_results_worker(item: tuple) -> dict[str, Any]:
             
             # Extract verified hits
             verified_hits = temp_manager.get_data(f"verification/{segment}/verified_hits", [])
+            # v3.143 (red-team E-01/D-04): propagate the budget-cut marker so
+            # the step can set budget_hit on the PARALLEL path too (it
+            # previously only ever fired on the serial path).
+            partial = bool(temp_manager.get_data(f"verification/{segment}/partial", False))
             
             return {
                 "segment": segment,
                 "verified_hits": verified_hits,
+                "partial": partial,
                 "errors": errors,
             }
         finally:
@@ -636,4 +648,5 @@ def _verify_results_worker(item: tuple) -> dict[str, Any]:
                     os.unlink(wal_path)
                     
     except Exception as e:
-        return {"segment": "unknown", "verified_hits": [], "errors": [{"error": str(e)}]}
+        return {"segment": segment, "verified_hits": [], "partial": False,
+                "errors": [{"error": str(e)}]}

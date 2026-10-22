@@ -373,6 +373,15 @@ class VerificationManager:
         for segment in segment_names:
             if _over_budget():
                 logger.warning(f"verify_all: deadline exceeded before segment {segment}; returning partial results")
+                # v3.143 (red-team D-04): segments cut by the budget are NOT
+                # "searched and empty" — mark them partial so consumers can
+                # tell a budget cut from a true no-hit.
+                for skipped in segment_names[segment_names.index(segment):]:
+                    if not results.data_exists(f"identifiers/{skipped}"):
+                        continue
+                    if results.get_data(f"verification/{skipped}/verified_hits") is None:
+                        results.set_data(f"verification/{skipped}/verified_hits", [])
+                    results.set_data(f"verification/{skipped}/partial", True)
                 return per_segment_results
             # Check if identifiers/{segment}/ exists
             segment_path = f"identifiers/{segment}"
@@ -433,6 +442,7 @@ class VerificationManager:
                 logger.warning(f"chemical prefetch failed (non-fatal): {warm_exc}")
             
             verified_hits: list[VerifiedHit] = []
+            seg_budget_hit = False
             # Water ground-truth rule (v3.140): on water segments, the FIRST
             # fingerprint-identical (skel==1.0) chemical hit is promoted as the
             # water identity; subsequent fingerprint-identical hits are database
@@ -445,9 +455,13 @@ class VerificationManager:
                 if _over_budget():
                     logger.warning(
                         f"verify_all: deadline exceeded mid-segment {segment} "
-                        f"({len(verified_hits)}/{len(top_groups)} verified); returning partial results"
+                        f"({len(verified_hits)}/{len(top_groups)} verified); keeping partial results"
                     )
-                    return per_segment_results
+                    # v3.143 (red-team D-04): keep the gathered hits — the
+                    # normal tail below stores them; then flag the segment as
+                    # partial and stop (later segments would also be cut).
+                    seg_budget_hit = True
+                    break
                 signature = metadata["signature"]
                 signature_type = metadata["signature_type"]
                 consensus_score = metadata["consensus_score"]
@@ -699,6 +713,9 @@ class VerificationManager:
                 pass  # class sizes are presentation-only; never block verify
             
             per_segment_results[segment] = verified_hits
+            if seg_budget_hit:
+                results.set_data(f"verification/{segment}/partial", True)
+                return per_segment_results
         
         return per_segment_results
 

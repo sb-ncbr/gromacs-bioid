@@ -43,6 +43,15 @@ class StepContext:
     def get_value(self, key: str, default=None):
         return self.state.get(key, default)
 
+    def set_value(self, key: str, value) -> None:
+        """Store a value in the task state (v3.143, red-team E-01).
+
+        set_stage_budget() has always written the stage deadline through this
+        method, but it never existed on the real context (only on MagicMock),
+        so per-stage time budgets silently never armed since 2026-09-19.
+        """
+        self.state[key] = value
+
     def require_value(self, key: str):
         if key not in self.state:
             raise KeyError(key)

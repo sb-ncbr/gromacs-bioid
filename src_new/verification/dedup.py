@@ -176,7 +176,17 @@ def collect_hits(results: ResultsManager, segment: str) -> list[RawHit]:
                 for item in hit_list:
                     if isinstance(item, (list, tuple)) and len(item) >= 2:
                         identifier = item[0]
-                        score = float(item[1])
+                        try:
+                            score = float(item[1])
+                        except (TypeError, ValueError):
+                            # v3.143 (red-team D-14): one malformed score must
+                            # not abort the whole segment — skip it, count the
+                            # skip in the logs, keep the good hits.
+                            logger.warning(
+                                f"collect_hits: skipping malformed score "
+                                f"{item!r} from {resolver_name}/{generator_name}"
+                            )
+                            continue
                         hits.append(RawHit(
                             identifier=identifier,
                             ident_type=ident_type,
