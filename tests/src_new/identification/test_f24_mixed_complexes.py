@@ -96,13 +96,13 @@ def test_flag_on_addon_failure_keeps_base_intact() -> None:
 
 
 def test_identity_path_inherits_addon() -> None:
-    """Identical-structures phase reuses the merged similarity list and keeps
-    its >=99.9 filter over base+addon."""
+    """v3.143 (red-team C-01): identity-by-rank retired — the channel is
+    always empty; addon merge over the SIMILARITY list is covered by
+    test_replay_arbitrary_addon_shapes_merge_safely."""
     r = PDBStructResolverProtein(_config(True))
     _patch_fetch(r, [])
     out = r._pdb_fetch_identical_structures("/tmp/x.pdb", deployment_file_access=True)
-    assert "1UBQ" in out and "1HLV" in out  # 100.0 and 99.9 -> both pass >=99.9
-    assert "1S72" not in out and "1BBB" not in out
+    assert out == []
 
 
 def test_config_default_is_off() -> None:

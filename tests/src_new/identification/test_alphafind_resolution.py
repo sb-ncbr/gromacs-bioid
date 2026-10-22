@@ -64,18 +64,32 @@ class TestIdentityFilter:
         assert resolver._alphafind_identity("/tmp/x.pdb") == ["P01542"]
 
     def test_boundary_tolerance(self, resolver):
-        resolver._alphafind_similarity = lambda _p: [
-            ("A", 99.5),
-            ("B", 99.49),
-        ]
+        # v3.143 (red-team C-02): identity = TM >= 0.98 AND sequence-aligned
+        # >= 0.99 (coverage no longer counts). Boundary check on the new
+        # thresholds: 0.98/0.99 passes, just-below fails on either axis.
+        resolver._alphafind_fetch_response = lambda _p: {
+            "results": [
+                {"object_id": "A", "aligned_percentage": 100.0,
+                 "tm_score": 0.98, "sequence_aligned_percentage": 0.99},
+                {"object_id": "B", "aligned_percentage": 100.0,
+                 "tm_score": 0.9799, "sequence_aligned_percentage": 0.99},
+                {"object_id": "C", "aligned_percentage": 100.0,
+                 "tm_score": 0.99, "sequence_aligned_percentage": 0.989},
+            ]
+        }
         assert resolver._alphafind_identity("/tmp/x.pdb") == ["A"]
 
     def test_fraction_input_no_longer_dropped(self, resolver):
-        # the exact regression: 1.0-scale input used to die at == 100.0
+        # the exact regression: 1.0-scale input used to die at == 100.0.
+        # v3.143 (red-team C-02): coverage is no longer identity — assert the
+        # fraction still reaches the SIMILARITY channel normalized to 100,
+        # while identity stays [] without tm/sequence-aligned fields.
         resolver._alphafind_fetch_response = lambda _p: {
             "results": [{"object_id": "P01542", "aligned_percentage": 1.0}]
         }
-        assert resolver._alphafind_identity("/tmp/x.pdb") == ["P01542"]
+        sim = dict(resolver._alphafind_similarity("/tmp/x.pdb"))
+        assert sim["P01542"] == 100.0
+        assert resolver._alphafind_identity("/tmp/x.pdb") == []
 
     def test_resolver_declares_alphafold_id_type(self, resolver):
         # taxonomy decision (2026-10-20): AlphaFind emits ALPHAFOLD_ID and

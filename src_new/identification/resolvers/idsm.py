@@ -119,19 +119,15 @@ class IDSMResolver(IdentifierResolver):
         Raises:
             IdentifierResolutionError: If resolution fails.
         """
-        # Decode SELFIES to SMILES if needed
-        smiles = self._decode_selfies(signature)
-        # Identity = 100% similarity
-        results = idsm_fetch_similarity_match(
-            smiles,
-            threshold=100,
-            include_similarity=False,
-            as_pubchem=self._use_pubchem,
-            as_chembl=self._use_chembl,
-            as_chebi=self._use_chebi,
-        )
-        # Convert to strings
-        return [str(r[0]) if isinstance(r, tuple) else str(r) for r in results]
+        # v3.143 (red-team C-17): RETIRED. "Identity" was Tanimoto == 1.0,
+        # which lumps stereoisomers, isotopologues, tautomers and charge
+        # forms (live probe: L-alanine -> 141 PubChem CIDs as 'identity').
+        # Exact matches still surface through the SIMILARITY channel with
+        # score 100, where they compete on evidence — not on a mislabeled
+        # identity belief bump. Real identity here is defined by full
+        # InChIKey equality, which the inchikey resolvers already provide.
+        logger.debug("IDSM identity lookup retired (Tanimoto 1.0 is not identity, C-17)")
+        return []
 
     def _resolve_similarity(self, signature: str, working_directory: str) -> list[tuple[str, float]]:
         """Resolve SMILES/SELFIES to similar identifiers via IDSM.

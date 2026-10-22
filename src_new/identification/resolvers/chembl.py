@@ -61,10 +61,10 @@ class ChemblResolver(IdentifierResolver):
         Raises:
             IdentifierResolutionError: If resolution fails.
         """
-        # Decode SELFIES to SMILES if needed
-        smiles = self._decode_selfies(signature)
-        # Identity = 100% similarity
-        return chembl_fetch_similarity_match(smiles, threshold=100, include_similarity=False)
+        # v3.143 (red-team C-17): RETIRED — Tanimoto 1.0 is not identity
+        # (see idsm.py note; exact matches remain available as similarity=100).
+        logger.debug("ChEMBL identity lookup retired (Tanimoto 1.0 is not identity, C-17)")
+        return []
 
     def _resolve_similarity(self, signature: str, working_directory: str) -> list[tuple[str, float]]:
         """Resolve SMILES/SELFIES to similar ChEMBL IDs.

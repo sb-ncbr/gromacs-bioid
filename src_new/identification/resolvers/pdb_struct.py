@@ -355,18 +355,22 @@ class PDBStructResolver(IdentifierResolver):
         Returns:
             List of PDB identifiers with >= 99.9% similarity.
         """
-        logger.debug(f"Resolving PDB identity search for '{pdb_path}'")
-        
-        similar_results = self._pdb_fetch_similar_structures(pdb_path, deployment_file_access)
-        
-        # Use >= 99.9 tolerance instead of exact == 100 float equality
-        identical = [
-            pdb_id
-            for pdb_id, similarity in similar_results
-            if similarity >= 99.9
-        ]
-        
-        return identical
+        # v3.143 (red-team C-01): RETIRED. RCSB Search `score` is rank-
+        # normalized per result set — the top hit is ALWAYS 1.0 and the last
+        # 0.5, independent of actual structural closeness (live probes:
+        # AF-Q5VSL9 model -> '7WO9' at 1.0 with no true PDB match; 1UBQ query
+        # -> the real near-copy 1UBI at 0.9953, BELOW this gate). Deriving
+        # identity from score*100 >= 99.9 therefore minted "verified identity"
+        # PDB rows for every query, bumped n_id/belief, and (via the
+        # identity-hits-present short-circuit) suppressed the similarity
+        # phase entirely. Until identity is defined on an absolute measure
+        # (TM-score/RMSD or strict_shape_match + sequence check), structure
+        # channels contribute similarity ranks only — as Foldseek already
+        # does. The similarity list still flows in full.
+        logger.debug(
+            f"PDB identity search skipped for '{pdb_path}': rank-normalized "
+            f"RCS B scores are not an absolute identity measure (C-01)")
+        return []
 
 
 class PDBStructResolverProtein(PDBStructResolver):

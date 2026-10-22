@@ -84,14 +84,15 @@ def test_replay_flag_on_additive_invariant(gold: dict) -> None:
 
 
 def test_replay_identity_phase_unchanged_by_addon(gold: dict) -> None:
-    """Real-data proof the addon cannot pollute identity results: the live
-    1UBQ addon hits (7P0V/8ID2 ~0.79/0.74) sit below the 99.9 identity bar,
-    so identity output is the same with the flag on or off."""
+    """v3.143 (red-team C-01): the identity channel is RETIRED wholesale —
+    RCSB `score` is rank-normalized, so even the 1.0 self-hit carried no
+    absolute identity information. Identical output in both flag modes = [],
+    which a fortiori keeps the addon from polluting identity results."""
     for flag in (False, True):
         r = PDBStructResolverProtein(_config(flag))
         _wire(r, gold)
         ids = r._pdb_fetch_identical_structures("/tmp/gold.pdb", deployment_file_access=True)
-        assert ids == ["1UBQ"]  # only the 1.0 self-hit passes >= 99.9 in both modes
+        assert ids == []
 
 
 def test_replay_arbitrary_addon_shapes_merge_safely(gold: dict) -> None:

@@ -313,12 +313,22 @@ class AlphaFindStructResolver(IdentifierResolver):
             return []
 
         results: list[tuple[str, float]] = []
+        # v3.143 (red-team C-02): keep the absolute measures per entry for the
+        # identity rule; aligned_percentage is COVERAGE, not identity.
+        self._last_entry_metrics = {}
         for entry in response['results']:
             if 'object_id' in entry and 'aligned_percentage' in entry:
-                results.append((
-                    entry['object_id'],
-                    _normalize_aligned_percentage(entry['aligned_percentage']),
-                ))
+                oid = entry['object_id']
+                tm = entry.get('tm_score')
+                seq_aln = entry.get('sequence_aligned_percentage')
+                self._last_entry_metrics[oid] = {"tm": tm, "seq": seq_aln}
+                # v3.143: similarity score = TM-score x100 when available
+                # (auditor-recommended); coverage percentage as fallback.
+                if isinstance(tm, (int, float)):
+                    score = round(tm * 100, 4)
+                else:
+                    score = _normalize_aligned_percentage(entry['aligned_percentage'])
+                results.append((oid, score))
         
         return results
 
@@ -334,13 +344,19 @@ class AlphaFindStructResolver(IdentifierResolver):
         """
         similar_results = self._alphafind_similarity(pdb_path)
         
-        # Filter for exact matches. aligned_percentage is normalized to 0-100
-        # (see _normalize_aligned_percentage); 99.5 tolerance absorbs server
-        # rounding while still requiring effectively full-length alignment.
-        identical = [
-            entry_id 
-            for entry_id, aligned_pct in similar_results 
-            if aligned_pct >= 99.5
-        ]
+        # v3.143 (red-team C-02): aligned_percentage is the fraction of query
+        # residues structurally aligned — well-folded ORTHOLOGS align fully,
+        # so coverage >= 99.5 minted up to 50 false "identity" rows per query.
+        # Identity now requires the absolute measures the API already returns:
+        #   TM-score >= 0.98  AND  sequence-aligned percentage >= 0.99.
+        # Entries lacking these fields are conservatively NOT identity.
+        metrics = getattr(self, "_last_entry_metrics", {}) or {}
+        identical = []
+        for entry_id, _score in similar_results:
+            m = metrics.get(entry_id) or {}
+            tm, seq_aln = m.get("tm"), m.get("seq")
+            if (isinstance(tm, (int, float)) and tm >= 0.98
+                    and isinstance(seq_aln, (int, float)) and seq_aln >= 0.99):
+                identical.append(entry_id)
         
         return identical
