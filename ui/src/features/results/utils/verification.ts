@@ -12,7 +12,7 @@ export interface VerifiedHit {
   resolver_score?: number | null;
   similarity_score?: number | null;
   annotation_quality_score?: number | null;
-  final_confidence: number | null;  // v3.142+: always numeric; null only on legacy v3.140 plateau rows, render "—"
+  final_confidence?: number | null;  // v3.142+: always numeric; absent/null on legacy rows, render "—" (mirrors pydantic Optional)
   belief?: number | null;           // v3.142 (R-a): resolver component (calibrated agreement structure)
   skeleton_sim?: number | null;     // v3.142: skeleton-fp Tanimoto corroboration (chemical rows)
   equivalence_class_id?: string | null;  // v3.142 (Phase 4): visual-collapse class id
