@@ -696,6 +696,31 @@ def _verify_results(context):
             context.add_warning("verification_failed", f"{segment}: {error_msg}")
         
         context.results.set_data(f"verification/{segment}/verified_hits", verified_hits)
+        # v3.142 (Phase 4): per-segment class sizes. The parallel worker path
+        # discards the per-segment temp ResultsManager (only hits return), so
+        # verify_all's own additive writes never reach the final results.json —
+        # the step must persist them itself from the returned hit dicts.
+        try:
+            class_sizes: dict[str, int] = {}
+            for h in verified_hits:
+                cid = h.get("equivalence_class_id")
+                if h.get("is_verified") and cid:
+                    class_sizes[cid] = class_sizes.get(cid, 0) + 1
+            context.results.set_data(f"verification/{segment}/class_sizes", class_sizes)
+        except Exception:
+            logger.warning("verify_results: class_sizes persist failed (additive only)",
+                           exc_info=True)
+
+    # v3.142 (Phase 3): composition provenance — identical dict verify_all
+    # writes; the step re-persists it on the REAL results manager because the
+    # worker's temp-manager write is discarded in the parallel path.
+    try:
+        from ..verification.manager import build_confidence_meta
+        context.results.set_data("verification/_meta",
+                                 build_confidence_meta(context.config.verification))
+    except Exception:
+        logger.warning("verify_results: confidence meta persist failed (additive only)",
+                       exc_info=True)
 
     if budget_hit:
         context.add_warning(

@@ -83,6 +83,30 @@ def normalize_weights(w_resolver: float, w_similarity: float,
     if total <= 0.0:
         return (1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0)
     return (cleaned[0] / total, cleaned[1] / total, cleaned[2] / total)
+
+
+def build_confidence_meta(cfg) -> dict:
+    """v3.142 (Phase 3): confidence composition provenance dict for
+    verification/_meta — raw user weights, sum-normalized effective weights,
+    formula version and belief/annotation-live constants. Shared by
+    VerificationManager.verify_all (monolithic/tests) and the verify_results
+    STEP (parallel worker path discards the per-segment temp manager — the
+    step must persist meta + class sizes itself).
+    """
+    weights_raw = (cfg.resolver_weight, cfg.similarity_weight, cfg.annotation_weight)
+    w_r, w_s, w_a = normalize_weights(*weights_raw)
+    return {
+        "confidence_formula_version": CONFIDENCE_FORMULA_VERSION,
+        "confidence_formula": "w_r*belief + w_s*match + w_a*annotation",
+        "weights_raw": [float(w) if isinstance(w, (int, float)) and math.isfinite(w) else None
+                        for w in weights_raw],
+        "weights_effective": [w_r, w_s, w_a],
+        "belief_constants": {"rho": BELIEF_RHO, "kappa": BELIEF_KAPPA},
+        "annotation_live_fetch": cfg.annotation_live_fetch,
+        "annotation_live_budget_per_segment": cfg.annotation_live_budget_per_segment,
+        "annotation_fetch_timeout_s": cfg.annotation_fetch_timeout_s,
+        "min_final_confidence": cfg.min_final_confidence,
+    }
 from ..signatures.skeletize import from_smiles, hex_to_fp, parse_signature, skeleton_fp as _skel_fp, tanimoto as _skel_tanimoto, fp_to_hex as _fp_to_hex
 from .models import CHEMICAL_IDENT_TYPES, SKELF_VERIFY_THRESHOLD
 from .registry import VerificationRegistry, get_default_registry
@@ -339,21 +363,12 @@ class VerificationManager:
         # normalized by their sum once per run (never per candidate), with
         # provenance written to verification/_meta so any stored row can be
         # traced back to the exact formula + weights that produced it.
+        # NOTE: in the parallel step path this temp-manager write is discarded;
+        # the step re-persists the identical dict via build_confidence_meta.
         cfg = self._verification_config
-        weights_raw = (cfg.resolver_weight, cfg.similarity_weight, cfg.annotation_weight)
-        w_resolver, w_similarity, w_annotation = normalize_weights(*weights_raw)
-        results.set_data("verification/_meta", {
-            "confidence_formula_version": CONFIDENCE_FORMULA_VERSION,
-            "confidence_formula": "w_r*belief + w_s*match + w_a*annotation",
-            "weights_raw": [float(w) if isinstance(w, (int, float)) and math.isfinite(w) else None
-                            for w in weights_raw],
-            "weights_effective": [w_resolver, w_similarity, w_annotation],
-            "belief_constants": {"rho": BELIEF_RHO, "kappa": BELIEF_KAPPA},
-            "annotation_live_fetch": cfg.annotation_live_fetch,
-            "annotation_live_budget_per_segment": cfg.annotation_live_budget_per_segment,
-            "annotation_fetch_timeout_s": cfg.annotation_fetch_timeout_s,
-            "min_final_confidence": cfg.min_final_confidence,
-        })
+        meta = build_confidence_meta(cfg)
+        w_resolver, w_similarity, w_annotation = meta["weights_effective"]
+        results.set_data("verification/_meta", meta)
         
         for segment in segment_names:
             if _over_budget():
