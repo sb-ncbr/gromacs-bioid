@@ -157,6 +157,7 @@ class TestPubChemScorer:
         mock_get.side_effect = [props_response, synonyms_response]
         
         scorer = PubChemAnnotationScorer()
+        scorer.begin_segment(25)  # v3.142: live calls are budget-armed
         quality = scorer.score("962", "PUBCHEM_CID")
 
         assert quality is not None
@@ -211,7 +212,9 @@ class TestPubChemScorerLocalMirror:
 
         with patch.object(mod.requests, "get",
                           side_effect=[props_response, synonyms_response]):
-            quality = PubChemAnnotationScorer().score("962", "PUBCHEM_CID")
+            scorer = PubChemAnnotationScorer()
+            scorer.begin_segment(25)  # v3.142: budget-armed live fill
+            quality = scorer.score("962", "PUBCHEM_CID")
 
         assert quality is not None
         assert quality.score == 100.0
@@ -221,11 +224,13 @@ class TestPubChemScorerLocalMirror:
 
         monkeypatch.setattr(mod, "_local_db", lambda: None)
         with patch.object(mod.requests, "get", side_effect=Exception("banned")):
-            quality = PubChemAnnotationScorer().score("962", "PUBCHEM_CID")
+            scorer = PubChemAnnotationScorer()
+            scorer.begin_segment(25)  # armed, but every call fails silently
+            quality = scorer.score("962", "PUBCHEM_CID")
 
-        assert quality is not None
-        assert quality.score == 0.0
-        assert quality.signals == []
+        # v3.142: nothing provable about the record -> None (component reads
+        # it as 0); the scorer never raises and never fabricates a 0-record.
+        assert quality is None
 
 
 class TestChemblScorer:

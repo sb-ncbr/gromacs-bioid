@@ -12,8 +12,13 @@ class UniProtAnnotationScorer(AnnotationQualityScorer):
     """Scores annotation quality for UniProt entries (including AlphaFold)."""
 
     def supports(self, ident_type: str) -> bool:
-        """Check if this scorer supports the given identifier type."""
-        return ident_type in ("UNIPROT_ID", "ALPHAFOLD_ID")
+        """Check if this scorer supports the given identifier type.
+
+        (v3.142 1c) SWISSPROT_ID added: swiss-prot accessions are UniProt
+        accessions — rest.uniprot.org resolves them directly (corpus census
+        gap: 64,430 SWISSPROT rows with zero annotation signal).
+        """
+        return ident_type in ("UNIPROT_ID", "ALPHAFOLD_ID", "SWISSPROT_ID")
 
     def score(self, identifier: str, ident_type: str) -> AnnotationQuality | None:
         """Score the annotation quality for a UniProt identifier.
@@ -31,13 +36,15 @@ class UniProtAnnotationScorer(AnnotationQualityScorer):
         
         # For AlphaFold IDs, extract the UniProt ID
         if ident_type == "ALPHAFOLD_ID":
-            # AlphaFold ID format: AF-P04637-F1-model_v4
-            # Extract UniProt ID from second part after splitting by '-'
+            # Wrapped form: AF-P04637-F1-model_v4 -> P04637.
+            # (v3.142) AlphaFind emits BARE UniProt accessions (live probe
+            # 2026-10-19); passthrough instead of failing the split-guard —
+            # this is the corpus-reality path (9,161 rows, previously 0 ann).
             parts = identifier.split("-")
-            if len(parts) >= 2:
+            if identifier.upper().startswith("AF-") and len(parts) >= 2:
                 uniprot_id = parts[1]
             else:
-                return AnnotationQuality(database="uniprot", score=0.0, signals=[])
+                uniprot_id = identifier
         else:
             uniprot_id = identifier
         

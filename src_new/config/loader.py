@@ -317,6 +317,14 @@ class VerificationConfig:
     verify_top_n: int = 100
     similarity_top_n: int = 10
     enable_annotation_quality: bool = True
+    # v3.142 (1c): bounded live-API enrichment for annotation signals the
+    # local mirrors structurally lack (PUG IUPAC/synonyms). ON by default
+    # (user ruling 2026-10-22); every live call counts against a per-segment
+    # budget and uses a short timeout; failure falls back silently to the
+    # mirror schema (NCBI ban history 2026-09-25 is why mirrors exist).
+    annotation_live_fetch: bool = True
+    annotation_live_budget_per_segment: int = 25
+    annotation_fetch_timeout_s: float = 3.0
     resolver_weight: float = 0.4
     similarity_weight: float = 0.4
     annotation_weight: float = 0.2

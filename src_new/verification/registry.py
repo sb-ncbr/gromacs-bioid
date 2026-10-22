@@ -76,6 +76,22 @@ class VerificationRegistry:
                 return scorer
         return None
 
+    def begin_segment(self, *, live_fetch: bool, budget: int,
+                      timeout_s: float) -> None:
+        """Per-segment wiring for budget-aware scorers (v3.142 1c).
+
+        Scorers that consume live API budget (PubChem mirror live-fill)
+        expose configure()/begin_segment(); scorers without those hooks are
+        untouched. Called by the manager once per segment from config.
+        """
+        for scorer in self._scorers:
+            configure = getattr(scorer, "configure", None)
+            if callable(configure):
+                configure(live_fetch=live_fetch, timeout_s=timeout_s)
+            begin = getattr(scorer, "begin_segment", None)
+            if callable(begin):
+                begin(budget)
+
 
 def get_default_registry() -> VerificationRegistry:
     """Get a default registry with compound, sequence, structure, and element workers/fetchers/scorers.

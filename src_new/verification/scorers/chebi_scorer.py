@@ -13,7 +13,7 @@ class ChebiAnnotationScorer(AnnotationQualityScorer):
 
     def supports(self, ident_type: str) -> bool:
         """Check if this scorer supports the given identifier type."""
-        return ident_type == "CHEBI_ID"
+        return ident_type in ("CHEBI_ID", "CHEBI")
 
     def score(self, identifier: str, ident_type: str) -> AnnotationQuality | None:
         """Score the annotation quality for a ChEBI identifier.

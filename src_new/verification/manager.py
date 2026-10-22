@@ -278,6 +278,14 @@ class VerificationManager:
             if not results.data_exists(segment_path):
                 continue
             
+            # v3.142 (1c): re-arm per-segment live-annotation budget + policy
+            cfg = self._verification_config
+            begin = getattr(self._registry, "begin_segment", None)
+            if callable(begin):
+                begin(live_fetch=cfg.annotation_live_fetch,
+                      budget=cfg.annotation_live_budget_per_segment,
+                      timeout_s=cfg.annotation_fetch_timeout_s)
+            
             # Collect and deduplicate hits
             raw_hits = collect_hits(results, segment)
             if not raw_hits:
@@ -389,8 +397,10 @@ class VerificationManager:
                     rejection_reason = "no_worker"
                 
                 
-                # Look up AnnotationQualityScorer
-                scorer = self._registry.get_scorer(ident_type)
+                # Look up AnnotationQualityScorer (v3.142: honor the
+                # enable_annotation_quality config knob — previously unread)
+                scorer = (self._registry.get_scorer(ident_type)
+                          if cfg.enable_annotation_quality else None)
                 annotation_score: float | None = None
                 if scorer:
                     try:
