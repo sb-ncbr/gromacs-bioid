@@ -413,18 +413,24 @@ class VerificationManager:
                 # dicts that predate the belief field.
                 resolver_component = float(metadata.get(
                     "belief", min(consensus_score, 100.0)))
-                similarity_component = (
-                    similarity_score.normalized_score if similarity_score else 0.0
-                )
+                # v3.142 (M-a): similarity component = the verification
+                # WORKER's measurement, with skeleton_sim*100 as fallback for
+                # chemical rows that never got a worker score. The skeleton
+                # fp still gates CHEMICAL verification (SKELF_VERIFY_THRESHOLD)
+                # and still leads the fidelity ordering — but it no longer
+                # FLOORS the displayed term: raising worker signals (62-64 on
+                # skeleton-saturated plateaux) to a constant 100 destroyed the
+                # only row-level information exactly at saturated classes.
+                # Corpus proof that no ranking changes (5,993 annotations,
+                # floor-vs-nofloor identical on all 12 validated@k cells):
+                # .tmp/CALIBRATION_v3142.md (checkpoint 0).
+                if similarity_score is not None:
+                    similarity_component = similarity_score.normalized_score
+                elif ident_type in CHEMICAL_IDENT_TYPES and skeleton_sim is not None:
+                    similarity_component = skeleton_sim * 100.0
+                else:
+                    similarity_component = 0.0
                 annotation_component = annotation_score if annotation_score else 0.0
-
-                # Structure-anchored reranking for chemical candidates:
-                # the skeleton-Tanimoto between Molecule and candidate (F7 evidence)
-                # is truth the worker's signature-vs-canonical proxy lacks when
-                # the generated SMILES is corrupted. Raise-only: rescues correct
-                # hits buried in formula floods; never lets junk sink below legacy.
-                if ident_type in CHEMICAL_IDENT_TYPES and skeleton_sim is not None:
-                    similarity_component = max(similarity_component, skeleton_sim * 100.0)
                 
                 # Sanitize NaN/Inf in components
                 if similarity_component is not None and (math.isnan(similarity_component) or math.isinf(similarity_component)):
