@@ -70,6 +70,10 @@ def _grp(atom_score=100.0):
         "signature": "O",
         "signature_type": "smiles",
         "consensus_score": 100.0,
+        # v3.142 (R-a): production-path resolver component is the chain-count
+        # belief term; one identity chain -> calibrated 50.0 (dedup tests
+        # cover the computation itself).
+        "belief": 50.0,
         "source_resolvers": ["idsm_pubchem"],
         "hit_type": "identity",
     }
@@ -176,12 +180,14 @@ def test_element_rule_unchanged_on_monoatomic():
     assert hits[0].final_confidence == 100.0
 
 
-# --- plateau-honesty (v3.140): deterministic 94% => None ---------------------
+# --- always-numeric confidence (v3.142, supersedes v3.140 plateau-null) ----
 
-def test_plateau_confidence_emitted_as_none():
-    """skel==1.0 + resolver capped at 100 + no ground-truth override is the
-    F-07 deterministic plateau (94.0 for every member of a family) — the
-    composed number carries zero per-hit information and must be None."""
+def test_plateau_confidence_always_numeric():
+    """skel==1.0 + legacy 94-plateau shape emits a NUMERIC confidence now
+    (user ruling 2026-10-22: no null / no "—" anywhere). With the calibrated
+    belief term (R-a) and worker-primary similarity (M-a) the flat-94 family
+    constant cannot even form; intra-class sameness is a presentation concern
+    owned by the Phase-4 equivalence collapse, not by hiding the number."""
     mgr = _mk_manager()
     seg = "seg_9_TOCL2"
     results = _mk_results(seg=seg, seg_type="lipid")
@@ -199,7 +205,8 @@ def test_plateau_confidence_emitted_as_none():
     out = _verify(mgr, results, {("CID_A", "PUBCHEM_CID"): _grp()})
     hit = _hits(out, seg)[0]
     assert hit.is_verified is True
-    assert hit.final_confidence is None
+    # 0.4*belief(50) + 0.4*worker(100) + 0.2*annotation(0) = 60
+    assert hit.final_confidence == 60.0
     assert hit.ground_truth_override is None  # plateau is not a verdict
 
 
@@ -232,4 +239,6 @@ def test_non_plateau_confidence_preserved():
                return_value=(0.9, "skelfp:v1")):
         hit = _hits(mgr.verify_all(results), seg)[0]
     assert hit.is_verified is True
-    assert hit.final_confidence == 80.0  # 0.4*100(resolver) + 0.4*100(sim worker) + 0
+    # 0.4*belief(50) + 0.4*worker(100) + 0.2*0: worker-primary (M-a) keeps
+    # the real composed value instead of the old skel-floored 80/94 band.
+    assert hit.final_confidence == 60.0

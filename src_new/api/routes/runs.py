@@ -1193,6 +1193,11 @@ async def get_verification(run_id: str, segment: Optional[str] = None) -> Verifi
                 similarity_score=hit.get("similarity_score"),
                 annotation_quality_score=hit.get("annotation_quality_score"),
                 final_confidence=hit.get("final_confidence"),
+                # v3.142 additive surfaces (Phase 2): skeleton corroboration +
+                # calibrated agreement-structure belief (legacy runner rows
+                # simply omit both -> None).
+                skeleton_sim=hit.get("skeleton_sim"),
+                belief=hit.get("belief"),
                 is_verified=hit.get("is_verified", False),
                 rejection_reason=hit.get("rejection_reason"),
                 supporting_evidence_count=hit.get("supporting_evidence_count", 0),

@@ -231,13 +231,19 @@ class VerifiedHitItem(BaseModel):
     annotation_quality_score: Optional[float] = Field(
         None, description="Annotation quality score"
     )
-    final_confidence: Optional[float] = Field(None, description="Final confidence score (null = deterministic plateau, no per-hit information)")
+    final_confidence: Optional[float] = Field(None, description="Final confidence score (always numeric as of v3.142; null only on legacy v3.140 plateau rows)")
     is_verified: bool = Field(..., description="Whether the hit passed verification")
     rejection_reason: Optional[str] = Field(None, description="Reason for rejection if not verified")
     supporting_evidence_count: int = Field(default=0, description="Number of supporting evidence")
     database_url: Optional[str] = Field(None, description="URL to the database entry")
     ground_truth_override: Optional[str] = Field(
         None, description="Set to 'element_monoatomic' when the element ground-truth rule (monoatomic ion, documented in verification/models.py) lifted confidence to 100"
+    )
+    skeleton_sim: Optional[float] = Field(
+        None, description="v3.142: skeleton-fingerprint Tanimoto vs the simulated molecule (chemical corroboration signal; null on pre-v3.142 rows or non-chemical kinds)"
+    )
+    belief: Optional[float] = Field(
+        None, description="v3.142 (R-a): calibrated agreement-structure belief 0-100 — the resolver component of final_confidence (null on pre-v3.142 rows)"
     )
 
 

@@ -521,18 +521,15 @@ class VerificationManager:
                         final_confidence = 100.0
                         gt_override = "water_triatomic"
                         water_pinned = True
-                    # Plateau honesty (v3.140, F-07 composition): when the
-                    # resolver component is capped at 100 AND similarity is
-                    # floored to 100 by an exact skeleton match, final_confidence
-                    # is a deterministic family constant (94 with the local
-                    # annotation mirror) carrying ZERO per-hit information —
-                    # emit None (UI renders "—"). Ground-truth overrides keep
-                    # their 100: a verdict, not a measurement.
+                    # v3.142: confidence is ALWAYS numeric (user ruling: no
+                    # "—"/null anywhere). The v3.140 plateau-null block is
+                    # removed: with the calibrated belief term (R-a,
+                    # never ==100) and the worker-primary similarity term
+                    # (M-a, row-varying on plateaux) the former flat-94
+                    # family constant cannot form; intra-class sameness is
+                    # presented by the equivalence-class collapse instead
+                    # (Phase 4), not by hiding the number.
                     emitted_confidence: float | None = min(final_confidence, 100.0)
-                    if (gt_override is None
-                            and skeleton_sim == 1.0
-                            and resolver_component == 100.0):
-                        emitted_confidence = None
                     # Create verified hit
                     verified_hit = VerifiedHit(
                         identifier=normalized_id,
