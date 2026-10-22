@@ -129,6 +129,10 @@ export const MINIMAL_DEFAULT_CONFIG: RunConfig = {
     resolver_weight: 0.4,
     similarity_weight: 0.4,
     annotation_weight: 0.2,
+    // v3.142 (1c): bounded live annotation enrichment (backend defaults)
+    annotation_live_fetch: true,
+    annotation_live_budget_per_segment: 25,
+    annotation_fetch_timeout_s: 3.0,
     tm_score_threshold: 0.5,
     min_final_confidence: 0.0,
   },
@@ -222,6 +226,49 @@ export function humanLabel(key: string): string {
   return key
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Per-field help text for ConfigEditor, keyed "section.field"
+ * (v3.142 Phase 3). Backend doctrine: the three confidence weights are
+ * normalized by their sum at use-time (raw values are recorded in the
+ * run's verification/_meta for provenance); all-zero falls back to equal
+ * thirds — so only the ratio matters here.
+ */
+export const FIELD_HELP: Record<string, string> = {
+  "verification.resolver_weight":
+    "Weight of the database-belief term (resolver agreement structure). Weights are normalized by their sum at runtime — only the ratio matters; all-zero falls back to equal thirds.",
+  "verification.similarity_weight":
+    "Weight of the match term (worker measurement: fingerprint Tanimoto / alignment identity-coverage / TM-score). Normalized by the sum with the other weights.",
+  "verification.annotation_weight":
+    "Weight of the annotation term (completeness of the database record). Normalized by the sum with the other weights.",
+  "verification.annotation_live_fetch":
+    "Allow bounded live-API fetch for annotation signals missing from the local mirrors (default on; silent mirror fallback on failure).",
+  "verification.annotation_live_budget_per_segment":
+    "Maximum live annotation calls per segment; once exhausted, further candidates silently use mirror data only.",
+  "verification.annotation_fetch_timeout_s":
+    "Per-call timeout in seconds for live annotation fetches.",
+};
+
+export interface WeightTriple {
+  resolver_weight?: number;
+  similarity_weight?: number;
+  annotation_weight?: number;
+}
+
+/**
+ * Effective (sum-normalized) confidence weights — mirrors
+ * verification.manager.normalize_weights so the UI can preview exactly
+ * what the run will use. Returns null when any field is not a finite
+ * number; all-zero/negative falls back to equal thirds.
+ */
+export function normalizedWeights(v: WeightTriple): [number, number, number] | null {
+  const raw = [v.resolver_weight, v.similarity_weight, v.annotation_weight];
+  if (raw.some((w) => typeof w !== "number" || !isFinite(w as number))) return null;
+  const cleaned = raw.map((w) => ((w as number) > 0 ? (w as number) : 0));
+  const total = cleaned.reduce((a, b) => a + b, 0);
+  if (total <= 0) return [1 / 3, 1 / 3, 1 / 3];
+  return [cleaned[0] / total, cleaned[1] / total, cleaned[2] / total];
 }
 
 /**

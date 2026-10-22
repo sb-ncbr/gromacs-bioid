@@ -14,6 +14,9 @@ import {
   shouldRequireNonNegative,
   validateNumberInput,
   type RunConfig,
+  normalizedWeights,
+  FIELD_HELP,
+  MINIMAL_DEFAULT_CONFIG,
 } from "./config";
 import {
   formatCreated,
@@ -62,8 +65,7 @@ describe("fileTypes", () => {
   });
 });
 
-describe("config: non-negative rules", () => {
-  it("bounds fields whose names imply a floor", () => {
+describe("config: non-negative rules", () => {  it("bounds fields whose names imply a floor", () => {
     expect(shouldRequireNonNegative("global_timeout_s")).toBe(true);
     expect(shouldRequireNonNegative("tm_score_threshold")).toBe(true);
     expect(shouldRequireNonNegative("verify_top_n")).toBe(true);
@@ -209,5 +211,34 @@ describe("status: queueChipText", () => {
     expect(queueChipText({ state: "queued", position: 3 })).toBe("in queue · #3");
     expect(queueChipText({ state: "queued", ahead: 2 })).toBe("in queue · 2 ahead");
     expect(queueChipText({ state: "running" })).toBe("starting…");
+  });
+});
+
+describe("config: v3.142 Phase 3 weights helper", () => {
+  it("normalizedWeights mirrors backend sum-normalization", () => {
+    expect(normalizedWeights({ resolver_weight: 0.4, similarity_weight: 0.4, annotation_weight: 0.2 }))
+      .toEqual([0.4, 0.4, 0.2]);
+    expect(normalizedWeights({ resolver_weight: 0.5, similarity_weight: 0.5, annotation_weight: 0.5 }))
+      .toEqual([1 / 3, 1 / 3, 1 / 3]);
+  });
+  it("normalizedWeights falls back to equal thirds on zero/negative sums", () => {
+    expect(normalizedWeights({ resolver_weight: 0, similarity_weight: 0, annotation_weight: 0 }))
+      .toEqual([1 / 3, 1 / 3, 1 / 3]);
+    expect(normalizedWeights({ resolver_weight: -1, similarity_weight: 0.1, annotation_weight: 0.1 }))
+      .toEqual([0, 0.5, 0.5]);
+  });
+  it("normalizedWeights returns null on non-finite input", () => {
+    expect(normalizedWeights({ resolver_weight: NaN, similarity_weight: 0.4, annotation_weight: 0.2 })).toBeNull();
+  });
+  it("FIELD_HELP documents the three confidence weights", () => {
+    for (const k of ["verification.resolver_weight", "verification.similarity_weight", "verification.annotation_weight"]) {
+      expect(FIELD_HELP[k], k).toBeTruthy();
+    }
+  });
+  it("default config carries the v3.142 live-annotation fields into the form", () => {
+    const v = MINIMAL_DEFAULT_CONFIG.verification as Record<string, unknown>;
+    expect(v.annotation_live_fetch).toBe(true);
+    expect(v.annotation_live_budget_per_segment).toBe(25);
+    expect(v.annotation_fetch_timeout_s).toBe(3.0);
   });
 });

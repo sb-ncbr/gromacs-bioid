@@ -8,7 +8,29 @@ import {
   Label,
   Switch,
 } from "@e-infra/design-system";
-import { humanLabel, validateNumberInput, type RunConfig } from "./config";
+import {
+  humanLabel,
+  validateNumberInput,
+  FIELD_HELP,
+  normalizedWeights,
+  type RunConfig,
+  type WeightTriple,
+} from "./config";
+
+/** Live effective-weights hint for the verification section (v3.142 Phase 3).
+ * Non-blocking: mirrors backend normalize_weights so the user sees the exact
+ * ratios the run will compose with. */
+function WeightSumNote({ sectionData }: { sectionData: unknown }) {
+  const eff = normalizedWeights((sectionData ?? {}) as WeightTriple);
+  if (!eff) return null;
+  const pctOf = (w: number) => `${Math.round(w * 1000) / 10}%`;
+  return (
+    <p className="mt-1 text-xs text-text-muted">
+      Confidence weights are normalized by their sum —
+      effective {pctOf(eff[0])} resolver / {pctOf(eff[1])} similarity / {pctOf(eff[2])} annotation.
+    </p>
+  );
+}
 
 interface ConfigEditorProps {
   config: RunConfig | null;
@@ -24,10 +46,12 @@ function NumberField({
   fieldName,
   value,
   onValid,
+  help,
 }: {
   fieldName: string;
   value: number;
   onValid: (n: number) => void;
+  help?: string;
 }) {
   const [text, setText] = useState<string>(String(value));
   const [err, setErr] = useState<string | undefined>(undefined);
@@ -65,6 +89,7 @@ function NumberField({
         onChange={(e) => handle(e.target.value)}
         className={err ? "border-error-500" : ""}
       />
+      {help && <span className="text-xs text-text-muted">{help}</span>}
       {err && <span className="text-xs text-error-600">{err}</span>}
     </div>
   );
@@ -132,6 +157,7 @@ export default function ConfigEditor({ config, onChange }: ConfigEditorProps) {
                           fieldName={fieldName}
                           value={v}
                           onValid={(n) => setField(sectionName, fieldName, n)}
+                          help={FIELD_HELP[`${sectionName}.${fieldName}`]}
                         />
                       );
                     }
@@ -156,6 +182,9 @@ export default function ConfigEditor({ config, onChange }: ConfigEditorProps) {
                     );
                   })}
                 </div>
+                {sectionName === "verification" && (
+                  <WeightSumNote sectionData={sectionData} />
+                )}
               </AccordionContent>
             </AccordionItem>
           </Accordion>
