@@ -229,6 +229,69 @@ def fragment_to_protseq_resname_based(fragment: AtomGroup) -> str:
         raise
 
 
+def _backbone_chain_sequences(
+    fragment: AtomGroup, residue_indices_to_code: dict[int, str]
+) -> list[str]:
+    """Walk the chain(s) over BACKBONE link bonds only (v3.143, B-02/B-03).
+
+    The legacy graph used ALL inter-residue bonds: disulfides, heme thioethers,
+    isopeptides and cyclisations give degree-3 residues, sequentiality
+    verification failed, and the BFS fallback returned truncated/reversed/
+    chimeric sequences (fixture 4725: 160 aa -> 62-aa reversed fragment).
+    Here the NEXT map is built only from peptide C(i)-N(i+1) / nucleic
+    O3'(i)-P(i+1) name-exact bonds, which also fixes the direction (B-03):
+    the chain start is the residue with no incoming backbone link — the
+    N-terminus — so set-iteration order can never reverse a sequence.
+    Returns chains sorted by (-len, sequence); empty when no backbone bonds
+    exist (caller then falls back to the legacy graph path).
+    """
+    try:
+        names = fragment.atoms.names
+        resindices = fragment.atoms.resindices
+        bond_indices = fragment.bonds.indices
+    except Exception:
+        return []
+
+    nxt: dict[int, int] = {}
+    prev: dict[int, int] = {}
+    for a1, a2 in bond_indices:
+        a1, a2 = int(a1), int(a2)
+        n1 = str(names[a1]).strip()
+        n2 = str(names[a2]).strip()
+        r1 = int(resindices[a1])
+        r2 = int(resindices[a2])
+        if r1 == r2 or r1 not in residue_indices_to_code or r2 not in residue_indices_to_code:
+            continue
+        if {n1, n2} == {"C", "N"}:            # peptide bond C(i)-N(i+1)
+            early, late = (r1, r2) if n1 == "C" else (r2, r1)
+        elif {n1, n2} in ({"O3'", "P"}, {"O3*", "P"}):  # nucleic O3'(i)-P(i+1)
+            early, late = (r1, r2) if n1.startswith("O3") else (r2, r1)
+        else:
+            continue
+        if early in nxt:  # branch via backbone should not happen; keep first
+            continue
+        nxt[early] = late
+        prev[late] = early
+
+    if not nxt:
+        return []
+
+    chains: list[str] = []
+    for start in sorted((r for r in residue_indices_to_code if r not in prev),
+                        key=lambda r: -len(residue_indices_to_code.get(r, ""))):
+        seq = []
+        seen: set[int] = set()
+        r: int | None = start
+        while r is not None and r not in seen:
+            seen.add(r)
+            seq.append(residue_indices_to_code[r])
+            r = nxt.get(r)
+        if seq:
+            chains.append("".join(seq))
+    chains.sort(key=lambda c: (-len(c), c))
+    return chains
+
+
 def fragment_to_protseq_map_based(
     fragment: AtomGroup, config: SignaturesConfig, anchor: str | None = "M"
 ) -> str:
@@ -252,6 +315,14 @@ def fragment_to_protseq_map_based(
         residue_indices_to_index,
         residue_adjacency_matrix,
     ) = _fragment_to_protein_mk_adjacency_matrices(fragment)
+
+    # v3.143 (B-02/B-03): a full-coverage backbone walk short-circuits the
+    # fragile all-bonds graph (disulfide degree-3 failures, set-order
+    # direction, partial BFS fallbacks). Partial/multi-chain cases fall
+    # through to the legacy machinery (per-chain split is B-05's scope).
+    backbone = _backbone_chain_sequences(fragment, residue_indices_to_code)
+    if backbone and len(backbone[0]) == len(residue_indices_to_code):
+        return backbone[0]
 
     try:
         _fragment_to_protein_sequence_verify_sequentiality(

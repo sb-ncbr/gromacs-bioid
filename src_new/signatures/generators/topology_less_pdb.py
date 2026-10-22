@@ -124,10 +124,12 @@ def fragment_to_pdb_topology_less(fragment: AtomGroup) -> str:
     fd.write("HEADER    export\n")
     
     serial = 1
+    # B-04: clean 1..n residue numbering (resSeq is a 4-column field)
+    resnum_map = _renumber_writer_residues(fragment.atoms.resnums)
     
     for atom_i in range(fragment.n_atoms):
         resname = str(fragment.atoms.resnames[atom_i])
-        resnum = int(fragment.atoms.resnums[atom_i])
+        resnum = resnum_map[int(fragment.atoms.resnums[atom_i])]
         atom_name = str(fragment.atoms.names[atom_i])
         pos = fragment.atoms.positions[atom_i]
         
@@ -165,6 +167,8 @@ def fragment_to_pdb_ca_only(fragment: AtomGroup) -> str:
     fd.write("HEADER    export\n")
     
     serial = 1
+    # B-04: clean 1..n residue numbering (resSeq is a 4-column field)
+    resnum_map = _renumber_writer_residues(fragment.atoms.resnums)
     
     for atom_i in range(fragment.n_atoms):
         atom_name = str(fragment.atoms.names[atom_i])
@@ -174,7 +178,7 @@ def fragment_to_pdb_ca_only(fragment: AtomGroup) -> str:
             continue
         
         resname = str(fragment.atoms.resnames[atom_i])
-        resnum = int(fragment.atoms.resnums[atom_i])
+        resnum = resnum_map[int(fragment.atoms.resnums[atom_i])]
         pos = fragment.atoms.positions[atom_i]
         
         line = _pdb_atom_line(
@@ -194,6 +198,49 @@ def fragment_to_pdb_ca_only(fragment: AtomGroup) -> str:
     pdb = fd.getvalue()
     fd.close()
     return pdb
+
+
+
+
+# v3.143 (B-04): hand-written PDB formatters pad but never TRUNCATE — 4-char
+# residue names (LYSH/CYS2/HISE/NALA/terminal variants) and resSeq >= 10000
+# shifted every following column and produced unparseable Foldseek/AlphaFind/
+# RCSB inputs. Normalize to canonical 3-letter codes and renumber per chain.
+_STD_RESNAMES_3 = {
+    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
+    "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
+    "DA", "DC", "DG", "DT", "DU", "RA", "RC", "RG", "RT", "RU",
+}
+
+
+def _std_resname3(name: str) -> str:
+    """Map a residue name to a canonical <=3-char code (B-04).
+
+    HISE/HISD/HISH->HIS, LYSH->LYS, CYS2/CYX->CYS, terminal NALA/CGLN etc.
+    -> ALA/GLN; unknown 4-char names collapse to their first 3 chars so the
+    fixed-width column layout survives.
+    """
+    n = (name or "").strip().upper()
+    if len(n) <= 3:
+        return n
+    if n[1:] in _STD_RESNAMES_3:
+        return n[1:]
+    if n[:3] in _STD_RESNAMES_3:
+        return n[:3]
+    return n[:3]
+
+
+def _renumber_writer_residues(resnums) -> dict:
+    """Map original residue numbers to a clean 1..n sequence (order-of-first-
+    appearance), so resSeq never overflows the 4-column PDB field."""
+    seen: dict = {}
+    nxt = 1
+    for r in resnums:
+        key = int(r)
+        if key not in seen:
+            seen[key] = nxt
+            nxt += 1
+    return seen
 
 
 def _pdb_atom_line(
@@ -216,7 +263,7 @@ def _pdb_atom_line(
         serial,
         atom_name,
         "",
-        residue_name.upper(),
+        _std_resname3(residue_name),
         "A",
         residue_idx,
         "",
