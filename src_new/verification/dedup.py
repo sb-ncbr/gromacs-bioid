@@ -17,6 +17,39 @@ if TYPE_CHECKING:
 from ..signatures.canonical import CANONICAL_SIGNATURE_TYPES as _CANONICAL_SIGNATURE_TYPES
 
 
+# Belief-term calibration (v3.142 "R-a", user-approved 2026-10-23). Grounded on
+# the 5,993-annotation organic-GT campaign corpus (strict family-scope replay,
+# 6,076 entry-segment windows / 64,346 verified groups): kappa=1/3 shared the
+# top concordance (0.8412) with argmax accuracy 0.9934; rho is order-irrelevant
+# (monotone transform over eff), fixed at 1/2 for legible value semantics:
+# every additional independent identity resolution halves residual doubt; three
+# similarity chains ~ one identity claim. Evidence: .tmp/CALIBRATION_v3142.md.
+# Rationale: resolver outputs are PROPOSALS, not evidence (user doctrine) — the
+# raw resolver_score magnitudes (pubchem-family threshold stubs, identity hits
+# hardcoded 100) must never enter confidence. What counts as external-database
+# belief is the agreement STRUCTURE: how many distinct resolver chains assert
+# this record, weighted by claim strength (identity > similarity).
+BELIEF_RHO = 0.5
+BELIEF_KAPPA = 1.0 / 3.0
+
+
+def resolver_belief(n_identity_chains: int, n_similarity_chains: int) -> float:
+    """External-database belief score 0-100 from resolver agreement structure.
+
+    belief = 100 * (1 - BELIEF_RHO**(n_id + BELIEF_KAPPA*n_sim)); 0 for no chains.
+    Values: 1 identity -> 50.0; 2 identities / 1 identity + 3 similarities ->
+    75.0; 3 identities -> 87.5; lone similarity chain ~ 20.6. Never reaches 100:
+    agreement asymptotically approaches certainty but never declares it —
+    certainty is owned by verification (skeleton/alignment/ground truth).
+    The explicit cap also guards float underflow (rho**eff -> 0.0 for eff>~106
+    would otherwise print exact 100.0).
+    """
+    eff = n_identity_chains + BELIEF_KAPPA * n_similarity_chains
+    if eff <= 0.0:
+        return 0.0
+    return min(100.0 * (1.0 - BELIEF_RHO ** eff), 99.9999)
+
+
 @dataclass
 class RawHit:
     """A raw identification hit from a resolver."""
@@ -213,6 +246,16 @@ def deduplicate_and_score(
         # Collect source_resolvers list
         source_resolvers = sorted(distinct_resolvers)
         
+        # v3.142 belief term: agreement-structure belief from chain counts
+        # (identity chains = distinct resolvers whose hit_type is "identity").
+        # Magnitude-free by design; consensus_score above stays for the
+        # legacy verify-window ordering only (see manager).
+        n_identity_chains = len({h.resolver_name for h in group_hits
+                                 if h.hit_type == "identity"})
+        n_similarity_chains = len({h.resolver_name for h in group_hits
+                                   if h.hit_type == "similarity"})
+        belief = resolver_belief(n_identity_chains, n_similarity_chains)
+        
         # Pick representative signature from hit with highest resolver_score
         best_hit = max(group_hits, key=lambda h: h.resolver_score)
         
@@ -226,6 +269,9 @@ def deduplicate_and_score(
             "signature": best_hit.signature,
             "signature_type": best_hit.signature_type,
             "hit_type": effective_hit_type,
+            "belief": belief,
+            "n_identity_chains": n_identity_chains,
+            "n_similarity_chains": n_similarity_chains,
         }
     
     return result

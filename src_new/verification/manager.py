@@ -406,7 +406,13 @@ class VerificationManager:
                 w_similarity = self._verification_config.similarity_weight
                 w_annotation = self._verification_config.annotation_weight
                 
-                resolver_component = min(consensus_score, 100.0)
+                # v3.142 (R-a): resolver component = calibrated agreement-
+                # structure belief (dedup.resolver_belief; chain counts only,
+                # never resolver score magnitudes). Fallback to the legacy
+                # capped-consensus value only for hand-built legacy metadata
+                # dicts that predate the belief field.
+                resolver_component = float(metadata.get(
+                    "belief", min(consensus_score, 100.0)))
                 similarity_component = (
                     similarity_score.normalized_score if similarity_score else 0.0
                 )
@@ -426,11 +432,13 @@ class VerificationManager:
                 if annotation_component is not None and (math.isnan(annotation_component) or math.isinf(annotation_component)):
                     annotation_component = 0.0
                 
-                # F-07 NOTE: for pubchem-family resolvers, resolver_component
-                # derives from a CONSTANT threshold-stub score (ordinal-only
-                # within that resolver; see resolvers/pubchem.py docstrings).
-                # Do not interpret pubchem-family final_confidence values as
-                # comparable to blast/uniprot-derived values.
+                # F-07 NOTE: resolver_score magnitudes from pubchem-family
+                # resolvers are CONSTANT threshold stubs (ordinal-only within
+                # that resolver; see resolvers/pubchem.py docstrings). They
+                # never enter the composition: the resolver component is the
+                # chain-count belief term (dedup.resolver_belief, v3.142 R-a).
+                # The legacy capped-consensus value is still stored on hits as
+                # `resolver_score` for traceability of the old field.
                 final_confidence = (
                     w_resolver * resolver_component +
                     w_similarity * similarity_component +
@@ -523,6 +531,7 @@ class VerificationManager:
                         skeleton_sim=skeleton_sim,
                         skeleton_method=skeleton_method,
                         verified_without_corroboration=verified_without_corroboration,
+                        belief=metadata.get("belief"),
                         ground_truth_override=gt_override,
                     )
                 else:
@@ -538,6 +547,7 @@ class VerificationManager:
                         supporting_evidence_count=len(source_resolvers),
                         rejection_reason=rejection_reason,
                     )
+                    verified_hit.belief = metadata.get("belief")
                     if ident_type in CHEMICAL_IDENT_TYPES:
                         verified_hit.skeleton_sim = skeleton_sim
                         verified_hit.skeleton_method = skeleton_method

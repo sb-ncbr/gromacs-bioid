@@ -4,7 +4,9 @@ Regression guard for the 2026-10-12 production finding (run 9d90d777): the
 verify stage builds a MINIMAL per-segment temp ResultsManager and previously
 transferred only identifiers + signatures. universe/segments/<seg>/properties
 never reached the worker, so the element ground-truth rule (user ruling
-2026-10-11) always saw atom_count=None and conservatively stayed at conf 80.
+2026-10-11) always saw atom_count=None and conservatively stayed on the weighted
+# path. v3.142 (R-a): the resolver term is calibrated chain-belief
+# (single identity chain = 50), so the weighted path is 0.4*50+0.4*100+0 = 60.
 
 These tests run the REAL worker function and the REAL step orchestrator with
 the default registry (element path is fully local: ElementVerificationWorker,
@@ -75,11 +77,11 @@ def test_worker_e2e_element_ground_truth_with_props():
 
 
 def test_worker_e2e_without_props_stays_conservative():
-    """Facts missing (pre-fix worker) -> weighted path, conf 80, no override."""
+    """Facts missing (pre-fix worker) -> weighted path, conf 60 (belief=50), no override."""
     result = _run_worker(props=None)
     h = _hit(result)
     assert h["is_verified"] is True
-    assert h["final_confidence"] == 80.0
+    assert h["final_confidence"] == 60.0
     assert h["ground_truth_override"] is None
 
 
@@ -87,7 +89,7 @@ def test_worker_e2e_polyatomic_guard():
     """Facts present but molecule multi-atom -> override must NOT fire."""
     result = _run_worker(props={"atom_count_fragment": 8})
     h = _hit(result)
-    assert h["final_confidence"] == 80.0
+    assert h["final_confidence"] == 60.0
     assert h["ground_truth_override"] is None
 
 
@@ -147,5 +149,5 @@ def test_verify_results_step_without_props_stays_conservative(tmp_path):
     ctx = _FakeContext(_results_manager(tmp_path, None), RunConfig())
     out = _verify_results(ctx)
     h = _stored_hit(ctx)
-    assert h["final_confidence"] == 80.0
+    assert h["final_confidence"] == 60.0
     assert h["ground_truth_override"] is None
