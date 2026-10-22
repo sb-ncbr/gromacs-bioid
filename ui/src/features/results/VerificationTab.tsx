@@ -20,6 +20,7 @@ import {
 import { Check, Info, X } from "lucide-react";
 import {
   buildDownloadBlob,
+  confidenceBreakdown,
   downloadBlob,
   exportFilename,
   hitsToJson,
@@ -142,7 +143,16 @@ const VerificationTab: React.FC<VerificationTabProps> = ({
                         <TableCell className="tabular-nums">{pct(h.similarity_score)}</TableCell>
                         <TableCell className="tabular-nums">
                           <span className="inline-flex items-center gap-2">
-                            <span className="text-xs tabular-nums">{pct(h.final_confidence)}</span>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="text-xs tabular-nums">{pct(h.final_confidence)}</span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <span className="font-mono text-xs">
+                                  {confidenceBreakdown(h) || "legacy row (pre-v3.142)"}
+                                </span>
+                              </TooltipContent>
+                            </Tooltip>
                           </span>
                         </TableCell>
                       </TableRow>

@@ -17,6 +17,7 @@ export {
   verifiedOnlyHits,
   bestConfidence,
   truncateName,
+  confidenceBreakdown,
   TRUNCATE_AT,
   type VerifiedHit,
 } from "./verification";

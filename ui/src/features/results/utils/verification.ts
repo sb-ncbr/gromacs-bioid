@@ -12,7 +12,9 @@ export interface VerifiedHit {
   resolver_score?: number | null;
   similarity_score?: number | null;
   annotation_quality_score?: number | null;
-  final_confidence: number | null;  // null = deterministic plateau (v3.140), render "—"
+  final_confidence: number | null;  // v3.142+: always numeric; null only on legacy v3.140 plateau rows, render "—"
+  belief?: number | null;           // v3.142 (R-a): resolver component (calibrated agreement structure)
+  skeleton_sim?: number | null;     // v3.142: skeleton-fp Tanimoto corroboration (chemical rows)
   is_verified: boolean;
   rejection_reason?: string | null;
   supporting_evidence_count?: number;
@@ -61,6 +63,27 @@ export function bestConfidence(
 }
 
 export const TRUNCATE_AT = 60;
+
+/**
+ * Confidence-term breakdown for tooltips (v3.142 Phase 2).
+ *
+ * Shows the composed terms: belief (resolver agreement structure) /
+ * match (worker-primary similarity) / annotation — plus the skeleton-fp
+ * corroboration when present. Terms that are not provable (null) are
+ * omitted rather than fabricated as zero. Returns "" when nothing is
+ * knowable (fully legacy row).
+ */
+export function confidenceBreakdown(h: VerifiedHit): string {
+  const parts: string[] = [];
+  const push = (label: string, v: number | null | undefined) => {
+    if (typeof v === "number") parts.push(`${label} ${v.toFixed(1)}`);
+  };
+  push("belief", h.belief);
+  push("match", h.similarity_score);
+  push("annotation", h.annotation_quality_score);
+  push("skeleton", h.skeleton_sim);
+  return parts.join(" \u00b7 ");
+}
 
 /**
  * Truncate a display name to `max` characters with an ellipsis.

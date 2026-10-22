@@ -40,6 +40,7 @@ import {
   presentHits,
   verifiedOnlyHits,
   bestConfidence,
+  confidenceBreakdown,
   truncateName,
   resolveHitUrl,
   type VerifiedHit,
@@ -248,9 +249,18 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Progress value={h.final_confidence ?? 0} className="h-1.5 flex-1" />
-                          <span className="w-11 text-right text-xs tabular-nums">
-                            {pct(h.final_confidence)}
-                          </span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="w-11 text-right text-xs tabular-nums">
+                                {pct(h.final_confidence)}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <span className="font-mono text-xs">
+                                {confidenceBreakdown(h) || "legacy row (pre-v3.142)"}
+                              </span>
+                            </TooltipContent>
+                          </Tooltip>
                         </div>
                       </TableCell>
                     </TableRow>

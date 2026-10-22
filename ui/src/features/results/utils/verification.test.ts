@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { bestConfidence, presentHits, verifiedOnlyHits, truncateName, type VerifiedHit } from "./verification";
+import { bestConfidence, presentHits, verifiedOnlyHits, truncateName, type VerifiedHit,
+  confidenceBreakdown,
+} from "./verification";
 
 function makeHit(overrides: Partial<VerifiedHit>): VerifiedHit {
   return {
@@ -122,5 +124,25 @@ describe("truncateName", () => {
   it("handles null/undefined", () => {
     expect(truncateName(null)).toBe("");
     expect(truncateName(undefined)).toBe("");
+  });
+});
+
+describe("confidenceBreakdown", () => {
+  it("renders all non-null terms with one decimal, omitting unknowns", () => {
+    const h: VerifiedHit = {
+      identifier: "311", ident_type: "PUBCHEM_CID", database: "pubchem",
+      final_confidence: 63.6, belief: 60.4, similarity_score: 62.9,
+      annotation_quality_score: 70, skeleton_sim: 1.0, is_verified: true,
+    };
+    expect(confidenceBreakdown(h)).toBe(
+      "belief 60.4 \u00b7 match 62.9 \u00b7 annotation 70.0 \u00b7 skeleton 1.0",
+    );
+  });
+  it("returns empty string for fully legacy rows", () => {
+    const h: VerifiedHit = {
+      identifier: "1ABC", ident_type: "PDB_ID", database: "pdb",
+      final_confidence: 88.0, is_verified: true,
+    };
+    expect(confidenceBreakdown(h)).toBe("");
   });
 });

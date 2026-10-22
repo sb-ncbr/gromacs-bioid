@@ -54,6 +54,9 @@ export interface paths {
         /**
          * List Runs
          * @description List all runs with basic metadata.
+         *
+         *     When ``mine=1``, only runs whose ``creator_ip`` matches the current
+         *     requester's IP are returned (default behavior is unchanged).
          */
         get: operations["list_runs_runs_get"];
         put?: never;
@@ -64,6 +67,30 @@ export interface paths {
          *     The pipeline runs in the background via Celery. Returns immediately with run status.
          */
         post: operations["create_run_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Examples
+         * @description Landing-page example cards (v3.137).
+         *
+         *     Auto: newest *successful* runs that have render/system.png. Override for
+         *     curated cards: env BAT3_EXAMPLE_RUNS as JSON list of run ids (deploy-time
+         *     changeable, no code edit). Titles parse from run_name 'Title>Description'.
+         */
+        get: operations["get_run_examples_runs_examples_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -412,6 +439,574 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/rerun": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rerun Single Run
+         * @description Re-run a single existing run by copying its input files and config into a
+         *     new run directory and enqueuing a new Celery pipeline task.
+         *
+         *     The original run is not modified or deleted.
+         *
+         *     Args:
+         *         run_id: The identifier of the run to re-run.
+         *
+         *     Returns:
+         *         RunCreateResponse for the newly queued run.
+         *
+         *     Raises:
+         *         404: If the run or its input directory is missing.
+         */
+        post: operations["rerun_single_run_runs__run_id__rerun_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Queue
+         * @description Queue state for a single run.
+         *
+         *     Returns:
+         *         state: queued | running | done
+         *         position: 1-based position among queued runs ordered by created_at
+         *                   (queued runs only; null otherwise)
+         *         ahead: number of queued runs ahead of this run (null otherwise)
+         *
+         *     Raises:
+         *         404: If run not found.
+         */
+        get: operations["get_run_queue_runs__run_id__queue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/config/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Default Config
+         * @description Get the default configuration as a JSON dict.
+         */
+        get: operations["get_default_config_api_v1_runs_config_default_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/config/parallel-default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Parallel Default Config
+         * @description Get the default configuration with parallelism enabled.
+         */
+        get: operations["get_parallel_default_config_api_v1_runs_config_parallel_default_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Runs
+         * @description List all runs with basic metadata.
+         *
+         *     When ``mine=1``, only runs whose ``creator_ip`` matches the current
+         *     requester's IP are returned (default behavior is unchanged).
+         */
+        get: operations["list_runs_api_v1_runs_get"];
+        put?: never;
+        /**
+         * Create Run
+         * @description Create a new run by uploading input files and optionally a config file.
+         *
+         *     The pipeline runs in the background via Celery. Returns immediately with run status.
+         */
+        post: operations["create_run_api_v1_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Examples
+         * @description Landing-page example cards (v3.137).
+         *
+         *     Auto: newest *successful* runs that have render/system.png. Override for
+         *     curated cards: env BAT3_EXAMPLE_RUNS as JSON list of run ids (deploy-time
+         *     changeable, no code edit). Titles parse from run_name 'Title>Description'.
+         */
+        get: operations["get_run_examples_api_v1_runs_examples_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Summary
+         * @description Get a summary of a specific run.
+         */
+        get: operations["get_run_summary_api_v1_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Run
+         * @description Delete a run and its associated directory.
+         */
+        delete: operations["delete_run_api_v1_runs__run_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Status
+         * @description Get full run status including pipeline, tasks, warnings, errors, and events.
+         *
+         *     Args:
+         *         run_id: The run identifier
+         *         since: Optional ISO 8601 timestamp to filter events/warnings/errors. Only items
+         *                with timestamp >= since will be returned. Invalid timestamps are ignored.
+         */
+        get: operations["get_run_status_api_v1_runs__run_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Run
+         * @description Cancel a running or queued run.
+         *
+         *     Revokes the Celery task and sets pipeline status to "cancelled".
+         *
+         *     Args:
+         *         run_id: The run identifier
+         *
+         *     Returns:
+         *         CancelRunResponse with run_id and status
+         *
+         *     Raises:
+         *         HTTPException: 404 if run not found, 400 if run is already finished
+         */
+        post: operations["cancel_run_api_v1_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/loading": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Loading Info
+         * @description Get loading information including strategy, attempts, and topology files.
+         */
+        get: operations["get_loading_info_api_v1_runs__run_id__loading_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/molecules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Molecules
+         * @description Get molecule summary including unique molecules and type counts.
+         */
+        get: operations["get_molecules_api_v1_runs__run_id__molecules_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/molecules/{segment}/info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Molecule Info
+         * @description Get detailed info for a specific molecule segment.
+         */
+        get: operations["get_molecule_info_api_v1_runs__run_id__molecules__segment__info_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/render": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Render Paths
+         * @description Get render paths for system and segment mmCIF files.
+         */
+        get: operations["get_render_paths_api_v1_runs__run_id__render_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/signatures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Signatures
+         * @description Get signatures for all segments or a specific segment.
+         */
+        get: operations["get_signatures_api_v1_runs__run_id__signatures_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/identifiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Identifiers
+         * @description Get identifier hits for all segments or a specific segment.
+         */
+        get: operations["get_identifiers_api_v1_runs__run_id__identifiers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Verification
+         * @description Get verification results for all segments or a specific segment.
+         */
+        get: operations["get_verification_api_v1_runs__run_id__verification_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Logs
+         * @description Get raw log text for a run. type is 'normal' or 'debug'.
+         */
+        get: operations["get_run_logs_api_v1_runs__run_id__logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Files
+         * @description Get all files in a run directory (recursive), excluding hidden files.
+         */
+        get: operations["get_run_files_api_v1_runs__run_id__files_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/download/topology-less-pdb": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Topology Less Pdb
+         * @description Download topology-less PDB signature(s) for a run.
+         *
+         *     Args:
+         *         run_id: The run identifier
+         *         segment: Optional segment name. Required if multiple segments exist.
+         *
+         *     Returns:
+         *         Plain text PDB content with media_type='chemical/x-pdb'
+         *
+         *     Raises:
+         *         404: If run not found or no topology-less PDB signatures exist
+         *         400: If multiple segments exist and segment parameter not specified
+         */
+        get: operations["download_topology_less_pdb_api_v1_runs__run_id__download_topology_less_pdb_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/download/ca-only-pdb": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Ca Only Pdb
+         * @description Download CA-only PDB signature(s) for a run.
+         *
+         *     Args:
+         *         run_id: The run identifier
+         *         segment: Optional segment name. Required if multiple segments exist.
+         *
+         *     Returns:
+         *         Plain text PDB content with media_type='chemical/x-pdb'
+         *
+         *     Raises:
+         *         404: If run not found or no CA-only PDB signatures exist
+         *         400: If multiple segments exist and segment parameter not specified
+         */
+        get: operations["download_ca_only_pdb_api_v1_runs__run_id__download_ca_only_pdb_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/rerun-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rerun All
+         * @description Re-run all existing runs by copying their input files and config into new run directories.
+         *
+         *     For each existing run:
+         *     - Copies input files from old run to new run directory
+         *     - Copies config.ini if it exists, otherwise uses default config
+         *     - Creates a new results.json with queued status
+         *     - Enqueues a new Celery pipeline task
+         *
+         *     Old runs are not modified or deleted.
+         *
+         *     Returns:
+         *         RerunAllResponse with list of new runs, skipped runs, and count
+         */
+        post: operations["rerun_all_api_v1_runs_rerun_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/rerun": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rerun Single Run
+         * @description Re-run a single existing run by copying its input files and config into a
+         *     new run directory and enqueuing a new Celery pipeline task.
+         *
+         *     The original run is not modified or deleted.
+         *
+         *     Args:
+         *         run_id: The identifier of the run to re-run.
+         *
+         *     Returns:
+         *         RunCreateResponse for the newly queued run.
+         *
+         *     Raises:
+         *         404: If the run or its input directory is missing.
+         */
+        post: operations["rerun_single_run_api_v1_runs__run_id__rerun_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Queue
+         * @description Queue state for a single run.
+         *
+         *     Returns:
+         *         state: queued | running | done
+         *         position: 1-based position among queued runs ordered by created_at
+         *                   (queued runs only; null otherwise)
+         *         ahead: number of queued runs ahead of this run (null otherwise)
+         *
+         *     Raises:
+         *         404: If run not found.
+         */
+        get: operations["get_run_queue_api_v1_runs__run_id__queue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -421,6 +1016,26 @@ export interface paths {
         };
         /** Health Check */
         get: operations["health_check_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api V1 Health
+         * @description Health check for the /api/v1 namespace.
+         */
+        get: operations["api_v1_health_api_v1_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -691,7 +1306,15 @@ export interface paths {
         put?: never;
         /**
          * Start Processing
-         * @description Start queue processing (trigger worker to pick up tasks).
+         * @description Start queue processing via the CANONICAL dispatcher (F-26 reroute, 2026-10-06).
+         *
+         *     Previously dispatched legacy schedule_validation directly (20 rows, NO
+         *     Bat3Run bookkeeping, NULL queue linkage, and an UNSERVED SPLIT-BRAIN
+         *     layout /data/validation/entries/<id> + /data/validation/results/<id>/ -
+         *     the path that produced the only 3 unlinked queue rows in the campaign).
+         *     Now delegates to queue_processor.process_validation_queue: real Bat3Run
+         *     (validation-<eid>-<14ts>, servable), exact FK linkage, retry budget.
+         *     External contract preserved: {"success", "message", "dispatched"}.
          */
         post: operations["start_processing_validation_queue_start_processing_post"];
         delete?: never;
@@ -771,7 +1394,7 @@ export interface paths {
         put?: never;
         /**
          * Stop Processing
-         * @description Stop queue processing.
+         * @description Stop queue processing (cancel all queued items).
          */
         post: operations["stop_processing_validation_queue_stop_processing_post"];
         delete?: never;
@@ -908,6 +1531,17 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Body_create_run_api_v1_runs_post */
+        Body_create_run_api_v1_runs_post: {
+            /** Files */
+            files: string[];
+            /** Config File */
+            config_file?: string | null;
+            /** Config Json */
+            config_json?: string | null;
+            /** Run Name */
+            run_name?: string | null;
+        };
         /** Body_create_run_runs_post */
         Body_create_run_runs_post: {
             /** Files */
@@ -1009,6 +1643,33 @@ export interface components {
              * @description Associated task ID
              */
             task_id?: string | null;
+        };
+        /**
+         * ExampleRun
+         * @description One landing-page example card (v3.137).
+         */
+        ExampleRun: {
+            /** Run Id */
+            run_id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /** Image Url */
+            image_url: string;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+        };
+        /** ExamplesResponse */
+        ExamplesResponse: {
+            /**
+             * Examples
+             * @default []
+             */
+            examples: components["schemas"]["ExampleRun"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1337,7 +1998,7 @@ export interface components {
         };
         /**
          * RenderPathsResponse
-         * @description Response model for render paths.
+         * @description Response model for render paths (v3.137: static PNG + atom-count gate).
          */
         RenderPathsResponse: {
             /**
@@ -1357,6 +2018,30 @@ export interface components {
             segments?: {
                 [key: string]: string;
             };
+            /**
+             * System Png
+             * @description Static system PNG (path relative to run dir, served under /files/)
+             */
+            system_png?: string | null;
+            /**
+             * Segment Pngs
+             * @description Mapping of segment name to static PNG path
+             */
+            segment_pngs?: {
+                [key: string]: string;
+            };
+            /**
+             * Total Atom Count
+             * @description System-wide atom count incl. solvent (UI interactivity gate)
+             */
+            total_atom_count?: number | null;
+            /**
+             * Geometry
+             * @description Geometry status of the exported system mmCIF (v3.139). Keys: status ('ok'|'degenerate'|'unknown'), density_a3_per_atom, atom_count, span. Absent for runs predating the scale-guard wave — the UI falls back to its client-side probe.
+             */
+            geometry?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * RerunAllResponse
@@ -1493,6 +2178,11 @@ export interface components {
              * @description Custom run name
              */
             run_name?: string | null;
+            /**
+             * Creator Ip
+             * @description IP address of the request that created this run
+             */
+            creator_ip?: string | null;
         };
         /**
          * RunListResponse
@@ -1504,6 +2194,27 @@ export interface components {
              * @description List of runs
              */
             runs?: components["schemas"]["RunListItem"][];
+        };
+        /**
+         * RunQueueResponse
+         * @description Response model for a run's queue position.
+         */
+        RunQueueResponse: {
+            /**
+             * State
+             * @description Queued, running, or done
+             */
+            state: string;
+            /**
+             * Position
+             * @description Position in the pending queue when queued
+             */
+            position?: number | null;
+            /**
+             * Ahead
+             * @description Number of queued runs ahead of this run
+             */
+            ahead?: number | null;
         };
         /**
          * RunStatusResponse
@@ -1748,9 +2459,9 @@ export interface components {
             annotation_quality_score?: number | null;
             /**
              * Final Confidence
-             * @description Final confidence score
+             * @description Final confidence score (always numeric as of v3.142; null only on legacy v3.140 plateau rows)
              */
-            final_confidence: number;
+            final_confidence?: number | null;
             /**
              * Is Verified
              * @description Whether the hit passed verification
@@ -1772,6 +2483,21 @@ export interface components {
              * @description URL to the database entry
              */
             database_url?: string | null;
+            /**
+             * Ground Truth Override
+             * @description Set to 'element_monoatomic' when the element ground-truth rule (monoatomic ion, documented in verification/models.py) lifted confidence to 100
+             */
+            ground_truth_override?: string | null;
+            /**
+             * Skeleton Sim
+             * @description v3.142: skeleton-fingerprint Tanimoto vs the simulated molecule (chemical corroboration signal; null on pre-v3.142 rows or non-chemical kinds)
+             */
+            skeleton_sim?: number | null;
+            /**
+             * Belief
+             * @description v3.142 (R-a): calibrated agreement-structure belief 0-100 — the resolver component of final_confidence (null on pre-v3.142 rows)
+             */
+            belief?: number | null;
         };
         /**
          * WarningItem
@@ -1861,7 +2587,9 @@ export interface operations {
     };
     list_runs_runs_get: {
         parameters: {
-            query?: never;
+            query?: {
+                mine?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1875,6 +2603,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1901,6 +2638,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_examples_runs_examples_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExamplesResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2416,7 +3184,794 @@ export interface operations {
             };
         };
     };
+    rerun_single_run_runs__run_id__rerun_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_queue_runs__run_id__queue_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunQueueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_default_config_api_v1_runs_config_default_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_parallel_default_config_api_v1_runs_config_parallel_default_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    list_runs_api_v1_runs_get: {
+        parameters: {
+            query?: {
+                mine?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_run_api_v1_runs_post: {
+        parameters: {
+            query?: {
+                run_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_create_run_api_v1_runs_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_examples_api_v1_runs_examples_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExamplesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_summary_api_v1_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunSummaryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_run_api_v1_runs__run_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_status_api_v1_runs__run_id__status_get: {
+        parameters: {
+            query?: {
+                since?: string | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_run_api_v1_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_loading_info_api_v1_runs__run_id__loading_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoadingInfoResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_molecules_api_v1_runs__run_id__molecules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MoleculeSummaryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_molecule_info_api_v1_runs__run_id__molecules__segment__info_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                segment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MoleculeInfoResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_render_paths_api_v1_runs__run_id__render_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenderPathsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_signatures_api_v1_runs__run_id__signatures_get: {
+        parameters: {
+            query?: {
+                segment?: string | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignaturesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_identifiers_api_v1_runs__run_id__identifiers_get: {
+        parameters: {
+            query?: {
+                segment?: string | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentifiersResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_verification_api_v1_runs__run_id__verification_get: {
+        parameters: {
+            query?: {
+                segment?: string | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerificationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_logs_api_v1_runs__run_id__logs_get: {
+        parameters: {
+            query?: {
+                type?: string;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_files_api_v1_runs__run_id__files_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunFilesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_topology_less_pdb_api_v1_runs__run_id__download_topology_less_pdb_get: {
+        parameters: {
+            query?: {
+                segment?: string | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_ca_only_pdb_api_v1_runs__run_id__download_ca_only_pdb_get: {
+        parameters: {
+            query?: {
+                segment?: string | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rerun_all_api_v1_runs_rerun_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RerunAllResponse"];
+                };
+            };
+        };
+    };
+    rerun_single_run_api_v1_runs__run_id__rerun_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_queue_api_v1_runs__run_id__queue_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunQueueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_check_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_health_api_v1_health_get: {
         parameters: {
             query?: never;
             header?: never;

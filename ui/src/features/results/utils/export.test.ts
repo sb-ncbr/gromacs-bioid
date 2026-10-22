@@ -30,7 +30,7 @@ describe("hitsToTsv", () => {
     const tsv = hitsToTsv(sampleHits);
     const lines = tsv.trimEnd().split("\n");
     expect(lines[0]).toBe(
-      "identifier\tident_type\tdatabase\tresolver_score\tsimilarity_score\tannotation_quality_score\tfinal_confidence\tis_verified\trejection_reason\tsupporting_evidence_count\tdatabase_url",
+      "identifier\tident_type\tdatabase\tresolver_score\tsimilarity_score\tannotation_quality_score\tfinal_confidence\tbelief\tskeleton_sim\tis_verified\trejection_reason\tsupporting_evidence_count\tdatabase_url",
     );
     expect(lines).toHaveLength(3); // header + 2 rows
     expect(lines[1]).toContain("1ABC");
@@ -41,7 +41,7 @@ describe("hitsToTsv", () => {
   it("returns header + newline for empty hits", () => {
     const tsv = hitsToTsv([]);
     expect(tsv).toBe(
-      "identifier\tident_type\tdatabase\tresolver_score\tsimilarity_score\tannotation_quality_score\tfinal_confidence\tis_verified\trejection_reason\tsupporting_evidence_count\tdatabase_url\n",
+      "identifier\tident_type\tdatabase\tresolver_score\tsimilarity_score\tannotation_quality_score\tfinal_confidence\tbelief\tskeleton_sim\tis_verified\trejection_reason\tsupporting_evidence_count\tdatabase_url\n",
     );
   });
 
