@@ -137,3 +137,9 @@ Single paste unit: `\subsection{Beyond deposited annotations}\label{sec:beyond}`
 
 ### 2026-10-12 (13) — Methods §5.7 polished (cluster+code grounded) — execution/cost section RESOLVED
 - Delivered pending-edits §18 + manuscript mirror. **Live-cluster evidence**: fleet `bat3-ceitec-bat3-worker` in ceitec-biodata-ns = 15 replicas × (celery --concurrency=2 --prefetch=1; requests 2vCPU/12Gi · limits 4vCPU/20Gi), deployment age 73d = drain fleet. **v14-bundle evidence** (campaign_stats_v14.json 2026-10-07T16:57Z): failure tail 334 loading + (1 download, 9 stale-timeout, 9 timeout, 425 other) = 444 ✓ TODO resolved; S6_runtime_s p50 223.8s / p95 5,240.8s / max 167,406.9s. Timeouts from TaskTimeoutConfig (600/300/2400/1200s). "Spin watchdogs"→stale-task watchdogs (real mechanism). 262/h peak kept as author's number, consistent with 30 concurrent × 3.7min median. Sustained-rate TODO left for author (drain wall hours unknown to me).
+
+### 2026-10-22 — ENGINEERING wave v3.142/v3.142.1 CONFIDENCE REWORK closed (post-campaign; does NOT touch v14 plates)
+- Scope: confidence composition honesty + equivalence-class collapse ("1 verified structure — N equivalent DB records"). Deployed backend …f3a19d3a / web w19; E2E run `41db1f7c` battery 12/12.
+- Gate adjudicated (user): D-chain deltas confined to slot-4 tie noise (9/5652 cache-reliable annotations, ±0.01–0.16pp) — no ranking-quality regression (`.tmp/GATE_v3142.md`).
+- Paper impact: NONE on v14 (campaign numbers predate; worker measurements unchanged — TOCL2 64.08%/TIP3 40.0 byte-identical to v3.141 reference). If a methods addendum mentions confidence display, cite: belief κ=⅓/ρ=½, worker-primary match, annotation live-fill, normalized weights, formula version v3.142.1.
+- Full record: lookup/v3142-confidence-rework-handoff.md.
