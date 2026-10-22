@@ -253,33 +253,37 @@ class TestBlastIdentityFiltering:
         assert result == ["PERFECT_HIT"]
 
     def test_identity_fails_evalue(self, config: RunConfig) -> None:
-        """evalue=0.5 (> 1e-50) -> excluded."""
+        """v3.143 (C-03): evalue no longer gates PROTEIN identity — it scales
+        with query length x DB size, so short proteins could never reach the
+        strict gate even at 100% identity/full coverage. A perfect hit with a
+        weak evalue IS identity; evalue/bits still gate the similarity path."""
         resolver = BLASTResolverPDBAA(config)
         
-        # Perfect except evalue is too high
         hits = [make_hit(
             accessions=["BAD_EVALUE"],
             identity=100,
             align_len=100,
             bits=200.0,
-            evalue=0.5  # Much higher than 1e-50 threshold
+            evalue=0.5
         )]
         json_data = make_blast_json(hits, query_len=100)
         
         with patch.object(resolver, '_run_blast_local', return_value=json_data):
             result = resolver._run_blast_identity("SEQUENCE", "")
         
-        assert result == []
+        assert result == ["BAD_EVALUE"]
 
     def test_identity_fails_bits(self, config: RunConfig) -> None:
-        """bits=30 (< 51) -> excluded."""
+        """v3.143 (C-03): bit score no longer gates PROTEIN identity for the
+        same length-scaling reason; absolute measures (identity/coverage/
+        subject-coverage) decide."""
         resolver = BLASTResolverPDBAA(config)
         
         hits = [make_hit(
             accessions=["LOW_BITS"],
             identity=100,
             align_len=100,
-            bits=30.0,  # Below 51 threshold
+            bits=30.0,
             evalue=1e-100
         )]
         json_data = make_blast_json(hits, query_len=100)
@@ -287,7 +291,7 @@ class TestBlastIdentityFiltering:
         with patch.object(resolver, '_run_blast_local', return_value=json_data):
             result = resolver._run_blast_identity("SEQUENCE", "")
         
-        assert result == []
+        assert result == ["LOW_BITS"]
 
     def test_identity_fails_identity(self, config: RunConfig) -> None:
         """identity_p=0.95 (< 0.99) -> excluded."""
@@ -360,7 +364,10 @@ class TestBlastIdentityFiltering:
         with patch.object(resolver, '_run_blast_local', return_value=json_data):
             result = resolver._run_blast_identity("SEQUENCE", "")
         
-        assert result == ["PERFECT"]
+        # v3.143 (C-03): HIGH_EVAL is perfect at absolute measures -> also
+        # identity now (evalue no longer gates proteins); LOW_ID (95%<99%)
+        # and LOW_COV (90%<99%) stay out as before.
+        assert result == ["PERFECT", "HIGH_EVAL"]
 
 
 # =============================================================================

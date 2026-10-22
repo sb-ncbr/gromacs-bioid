@@ -119,7 +119,12 @@ class TestExactShortIdentityOverride:
         assert out == []
 
     def test_protein_path_unchanged(self, config):
-        """Protein resolver does not gain the override (strict gates only)."""
+        """F-N1c intent: the short-mer nucleotide override must not leak into
+        the protein path (still true — the override branch is nucleotide-
+        only). v3.143 (C-03): proteins gained their OWN length-aware rule:
+        this 10-aa, 100%-identity, both-direction-full-coverage match IS
+        identity now (evalue/bits no longer gate proteins; the scov >= 0.9
+        guard keeps domain-in-fusion false positives out)."""
         resolver = BLASTResolverPDBAA(config)
         seq = "MEEPQSDPSV"
         json_data = make_blast_json(
@@ -129,7 +134,7 @@ class TestExactShortIdentityOverride:
         )
         with patch.object(resolver, "_run_blast_local", return_value=json_data):
             out = resolver._run_blast_identity(seq, "")
-        assert out == []
+        assert out == ["6XU8_A"]
 
     def test_duplicate_accessions_deduped(self, config):
         resolver = BLASTResolverPDBNT(config)

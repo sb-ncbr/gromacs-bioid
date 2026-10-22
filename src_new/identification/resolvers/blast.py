@@ -34,6 +34,7 @@ class BlastHit:
     identity_p: float
     coverage_p: float
     subject_len: int | None = None  # F-N1c: needed for both-directions exact rule
+    subject_cov_p: float | None = None  # v3.143 (C-21): merged subject coverage
 
 
 # F-N1c: exact short identity rule applies only to nucleotide queries up to
@@ -335,15 +336,49 @@ class BLASTResolver(IdentifierResolver):
                 accessions: list[str] = [match["accession"] for match in hit["description"]]
 
                 query_len: int = blast["report"]["results"]["search"]["query_len"]
-                _scores_section: dict = hit["hsps"][0]
-                bits: float = _scores_section["bit_score"]
-                evalue: float = _scores_section["evalue"]
-                aligned_residues: int = _scores_section["align_len"]
-                identity_p: float = _scores_section["identity"] / aligned_residues if aligned_residues > 0 else 0.0
-                coverage_p: float = aligned_residues / query_len if query_len > 0 else 0.0
-                
-                results.append(BlastHit(accessions, evalue, bits, identity_p, coverage_p,
-                                        subject_len=hit.get("len")))
+                hsps: list[dict] = hit["hsps"]
+                # v3.143 (C-21): pool ALL HSPs (was: hsps[0] only — split or
+                # multidomain alignments lost coverage). Coverage is computed
+                # from MERGED alignment intervals, not align_len/query_len:
+                # align_len counts gap columns, so the old formula could
+                # exceed 1.0 and gaps inflated it. Identity stays
+                # identity/align_len pooled over HSPs.
+                total_identity = sum(h.get("identity", 0) for h in hsps)
+                total_align = sum(h.get("align_len", 0) for h in hsps)
+                identity_p = total_identity / total_align if total_align > 0 else 0.0
+
+                def _merged_coverage(k_from: str, k_to: str, total_len) -> float | None:
+                    ivs = sorted(
+                        (h[k_from], h[k_to]) for h in hsps
+                        if k_from in h and k_to in h
+                    )
+                    if not ivs:
+                        return None
+                    covered = 0
+                    cs, ce = ivs[0]
+                    for st, en in ivs[1:]:
+                        if st <= ce + 1:
+                            ce = max(ce, en)
+                        else:
+                            covered += ce - cs + 1
+                            cs, ce = st, en
+                    covered += ce - cs + 1
+                    return covered / total_len if total_len > 0 else 0.0
+
+                qcov = _merged_coverage("query_from", "query_to", query_len)
+                if qcov is None:  # malformed payload: keep legacy estimate
+                    qcov = total_align / query_len if query_len > 0 else 0.0
+                subject_len = hit.get("len")
+                scov = (_merged_coverage("hit_from", "hit_to", subject_len)
+                        if subject_len else None)
+                # Pooled long-run gates stay meaningful: strictest evalue and
+                # best bit score across the hit's HSPs.
+                bits: float = max((h.get("bit_score", 0.0) for h in hsps), default=0.0)
+                evalue: float = min((h.get("evalue", 1.0) for h in hsps), default=1.0)
+
+                results.append(BlastHit(accessions, evalue, bits, identity_p, qcov,
+                                        subject_len=subject_len,
+                                        subject_cov_p=scov))
         
         return results
 
@@ -358,22 +393,52 @@ class BLASTResolver(IdentifierResolver):
         hits = self._process_blast_results(raw_json)
 
         # Apply filters for exact matches
-        strict_hits = self._filter_blast_results(
-            hits,
-            lambda hit: hit.evalue <= self.blast_config.exact_match_max_evalue,
-        )
-        strict_hits = self._filter_blast_results(
-            strict_hits,
-            lambda hit: hit.bits >= self.blast_config.exact_match_min_bits,
-        )
-        strict_hits = self._filter_blast_results(
-            strict_hits,
-            lambda hit: hit.identity_p >= self.blast_config.exact_match_min_identity_p,
-        )
-        strict_hits = self._filter_blast_results(
-            strict_hits,
-            lambda hit: hit.coverage_p >= self.blast_config.exact_match_min_query_cov_p,
-        )
+        if self.is_protein:
+            # v3.143 (C-03): length-aware protein identity. evalue/bit-score
+            # scale with query length x database size, so the strict gates
+            # (e <= 1e-50, bits >= 51) are physically unreachable below
+            # ~75-80 aa and arbitrary near the boundary (composition-based
+            # statistics give IDENTICAL subjects different evalues; probe:
+            # ubiquitin76 on pdbaa kept 9 of 70+1314 perfect matches, BPTI/
+            # villin/insulin kept 0; the lost perfects were not even kept as
+            # similarity because identity-hits-present skips the phase).
+            # Protein identity is therefore defined on absolute measures
+            # only: identity >= 0.99, true query coverage >= 0.99 (C-21 math)
+            # and subject coverage >= 0.9 (a 58-aa exact alignment inside a
+            # 580-aa fusion protein is not the same molecule). The F-N1c
+            # nucleotide rule below already worked this way; evalue/bits keep
+            # gating the SIMILARITY path unchanged.
+            strict_hits = self._filter_blast_results(
+                hits,
+                lambda hit: hit.identity_p >= max(
+                    0.99, self.blast_config.exact_match_min_identity_p),
+            )
+            strict_hits = self._filter_blast_results(
+                strict_hits,
+                lambda hit: hit.coverage_p >= max(
+                    0.99, self.blast_config.exact_match_min_query_cov_p),
+            )
+            strict_hits = self._filter_blast_results(
+                strict_hits,
+                lambda hit: hit.subject_cov_p is None or hit.subject_cov_p >= 0.9,
+            )
+        else:
+            strict_hits = self._filter_blast_results(
+                hits,
+                lambda hit: hit.evalue <= self.blast_config.exact_match_max_evalue,
+            )
+            strict_hits = self._filter_blast_results(
+                strict_hits,
+                lambda hit: hit.bits >= self.blast_config.exact_match_min_bits,
+            )
+            strict_hits = self._filter_blast_results(
+                strict_hits,
+                lambda hit: hit.identity_p >= self.blast_config.exact_match_min_identity_p,
+            )
+            strict_hits = self._filter_blast_results(
+                strict_hits,
+                lambda hit: hit.coverage_p >= self.blast_config.exact_match_min_query_cov_p,
+            )
 
         # Capture metadata for each hit
         metadata: dict[str, dict] = {}
@@ -383,6 +448,7 @@ class BLASTResolver(IdentifierResolver):
                 "bit_score": hit.bits,
                 "identity_p": hit.identity_p,
                 "coverage_p": hit.coverage_p,
+                "subject_cov_p": hit.subject_cov_p,  # additive (C-21)
             }
             for accession in hit.accessions:
                 metadata[accession] = meta

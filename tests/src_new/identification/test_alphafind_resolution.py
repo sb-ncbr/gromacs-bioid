@@ -60,7 +60,12 @@ class TestSimilarityNormalizationWiring:
 
 class TestIdentityFilter:
     def test_full_alignment_is_identity(self, resolver):
-        resolver._alphafind_similarity = lambda _p: [("P01542", 100.0)]
+        # v3.143 (C-02): full coverage alone is NOT identity anymore — the
+        # entry must also carry TM >= 0.98 and sequence-aligned >= 0.99.
+        resolver._alphafind_fetch_response = lambda _p: {
+            "results": [{"object_id": "P01542", "aligned_percentage": 100.0,
+                         "tm_score": 1.0, "sequence_aligned_percentage": 1.0}]
+        }
         assert resolver._alphafind_identity("/tmp/x.pdb") == ["P01542"]
 
     def test_boundary_tolerance(self, resolver):
