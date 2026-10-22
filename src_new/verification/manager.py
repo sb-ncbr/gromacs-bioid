@@ -15,8 +15,32 @@ if TYPE_CHECKING:
     from ..results.results_manager import ResultsManager
 
 from .base import VerificationWorker, SignatureFetcher, AnnotationQualityScorer
-from .dedup import RawHit, collect_hits, deduplicate_and_score
+from .dedup import RawHit, collect_hits, deduplicate_and_score, BELIEF_RHO, BELIEF_KAPPA
 from .models import VerifiedHit, VerificationScore, AnnotationQuality
+
+# v3.142 (Phase 3): confidence formula version for results provenance.
+# Bump whenever the composition changes so old-run comparisons have an
+# explicit version marker (stored in verification/_meta).
+CONFIDENCE_FORMULA_VERSION = "v3.142.1"
+
+
+def normalize_weights(w_resolver: float, w_similarity: float,
+                      w_annotation: float) -> tuple[float, float, float]:
+    """Normalize confidence term weights by their sum (v3.142 Phase 3).
+
+    Users may supply un-normalized weights in the run config (e.g. 0.5/0.5/0.5);
+    the composition must stay a weighted average bounded by the term range, so
+    the RAW user values are divided by their sum at use-time. Sanitizing:
+    non-finite or negative weights are treated as 0; if the effective sum is
+    zero the documented fallback is equal thirds (1/3, 1/3, 1/3). Raw values
+    are preserved separately (see verification/_meta provenance).
+    """
+    cleaned = [w if (isinstance(w, (int, float)) and math.isfinite(w) and w > 0) else 0.0
+               for w in (w_resolver, w_similarity, w_annotation)]
+    total = sum(cleaned)
+    if total <= 0.0:
+        return (1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0)
+    return (cleaned[0] / total, cleaned[1] / total, cleaned[2] / total)
 from ..signatures.skeletize import from_smiles, hex_to_fp, parse_signature, skeleton_fp as _skel_fp, tanimoto as _skel_tanimoto
 from .models import CHEMICAL_IDENT_TYPES, SKELF_VERIFY_THRESHOLD
 from .registry import VerificationRegistry, get_default_registry
@@ -269,6 +293,26 @@ class VerificationManager:
         
         segment_names = list(identifiers_data.keys())
         
+        # v3.142 (Phase 3): effective composition weights — user raw values
+        # normalized by their sum once per run (never per candidate), with
+        # provenance written to verification/_meta so any stored row can be
+        # traced back to the exact formula + weights that produced it.
+        cfg = self._verification_config
+        weights_raw = (cfg.resolver_weight, cfg.similarity_weight, cfg.annotation_weight)
+        w_resolver, w_similarity, w_annotation = normalize_weights(*weights_raw)
+        results.set_data("verification/_meta", {
+            "confidence_formula_version": CONFIDENCE_FORMULA_VERSION,
+            "confidence_formula": "w_r*belief + w_s*match + w_a*annotation",
+            "weights_raw": [float(w) if isinstance(w, (int, float)) and math.isfinite(w) else None
+                            for w in weights_raw],
+            "weights_effective": [w_resolver, w_similarity, w_annotation],
+            "belief_constants": {"rho": BELIEF_RHO, "kappa": BELIEF_KAPPA},
+            "annotation_live_fetch": cfg.annotation_live_fetch,
+            "annotation_live_budget_per_segment": cfg.annotation_live_budget_per_segment,
+            "annotation_fetch_timeout_s": cfg.annotation_fetch_timeout_s,
+            "min_final_confidence": cfg.min_final_confidence,
+        })
+        
         for segment in segment_names:
             if _over_budget():
                 logger.warning(f"verify_all: deadline exceeded before segment {segment}; returning partial results")
@@ -411,11 +455,8 @@ class VerificationManager:
                         # Scorer failed, continue
                         pass
                 
-                # Aggregate final confidence with configured weights
-                w_resolver = self._verification_config.resolver_weight
-                w_similarity = self._verification_config.similarity_weight
-                w_annotation = self._verification_config.annotation_weight
-                
+                # Aggregate final confidence with the run's effective
+                # (sum-normalized) weights — computed once in verify_all.
                 # v3.142 (R-a): resolver component = calibrated agreement-
                 # structure belief (dedup.resolver_belief; chain counts only,
                 # never resolver score magnitudes). Fallback to the legacy
