@@ -151,3 +151,11 @@ def test_verify_results_step_without_props_stays_conservative(tmp_path):
     h = _stored_hit(ctx)
     assert h["final_confidence"] == 60.0
     assert h["ground_truth_override"] is None
+
+
+def test_worker_e2e_element_hit_carries_equivalence_class_id():
+    """v3.142 Phase 4: class id threaded through the worker payload (V-36:
+    computed only from keys the manager already receives)."""
+    result = _run_worker(props={"atom_count_fragment": 1})
+    h = _hit(result)
+    assert h["equivalence_class_id"] == "element:NA"

@@ -245,6 +245,9 @@ class VerifiedHitItem(BaseModel):
     belief: Optional[float] = Field(
         None, description="v3.142 (R-a): calibrated agreement-structure belief 0-100 — the resolver component of final_confidence (null on pre-v3.142 rows)"
     )
+    equivalence_class_id: Optional[str] = Field(
+        None, description="v3.142 (Phase 4): visual-collapse equivalence class id — same verified structure => same id across database records (null on pre-v3.142 rows)"
+    )
 
 
 class VerificationResponse(BaseModel):

@@ -18,6 +18,48 @@ from .base import VerificationWorker, SignatureFetcher, AnnotationQualityScorer
 from .dedup import RawHit, collect_hits, deduplicate_and_score, BELIEF_RHO, BELIEF_KAPPA
 from .models import VerifiedHit, VerificationScore, AnnotationQuality
 
+_SEQUENCE_SIG_TAGS = ("residue_sequence",)
+_STRUCTURE_SIG_TAGS = ("pdb_protein", "pdb_nucleic", "ca_only_pdb")
+
+
+def _equivalence_class_id(ident_type: str, identifier: str,
+                          signature_type: str | None,
+                          canonical_signature: str | None,
+                          donor: VerificationScore | None) -> str:
+    """v3.142 Phase 4: visual-collapse class id for ONE hit.
+
+    Same verified structure => same class id, regardless of which database
+    record (or resolver) proposed it — presentation owns the collapse;
+    rows/order/counts are never changed by this (per plan):
+      - chemical: candidate skeleton-fp hex (the fp already computed for
+        the F7 Tanimoto; same value), prefixed "skeleton:"
+      - sequence-verified: round(identity×coverage, 2), prefixed "align:"
+      - structure-verified: round(TM, 2), prefixed "tm:"
+      - element: the element symbol, prefixed "element:"
+      - fallback (no proof): the record itself ("record:{type}:{id}")
+    Computed from keys already threaded to the manager (V-36 doctrine:
+    no new results keys needed). The chemical class id uses fp_to_hex of
+    the candidate's skeleton fp — the same hex the F7 Tanimoto compares
+    against the molecule's stored skeleton signature ("skelfp:v1:<hex>").
+    """
+    if ident_type in CHEMICAL_IDENT_TYPES and canonical_signature:
+        try:
+            fp = _skel_fp(from_smiles(canonical_signature))
+            if fp is not None:
+                return "skeleton:" + _fp_to_hex(fp)
+        except Exception:
+            pass  # fall through to record-level id
+    if ident_type == "ELEMENT":
+        return f"element:{identifier}"
+    if donor is not None and signature_type:
+        s = signature_type.lower()
+        if any(tag in s for tag in _SEQUENCE_SIG_TAGS):
+            return f"align:{round(donor.normalized_score / 100.0, 2)}"
+        if any(tag in s for tag in _STRUCTURE_SIG_TAGS):
+            return f"tm:{round(donor.normalized_score / 100.0, 2)}"
+    return f"record:{ident_type}:{identifier}"
+
+
 # v3.142 (Phase 3): confidence formula version for results provenance.
 # Bump whenever the composition changes so old-run comparisons have an
 # explicit version marker (stored in verification/_meta).
@@ -41,7 +83,7 @@ def normalize_weights(w_resolver: float, w_similarity: float,
     if total <= 0.0:
         return (1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0)
     return (cleaned[0] / total, cleaned[1] / total, cleaned[2] / total)
-from ..signatures.skeletize import from_smiles, hex_to_fp, parse_signature, skeleton_fp as _skel_fp, tanimoto as _skel_tanimoto
+from ..signatures.skeletize import from_smiles, hex_to_fp, parse_signature, skeleton_fp as _skel_fp, tanimoto as _skel_tanimoto, fp_to_hex as _fp_to_hex
 from .models import CHEMICAL_IDENT_TYPES, SKELF_VERIFY_THRESHOLD
 from .registry import VerificationRegistry, get_default_registry
 
@@ -536,6 +578,11 @@ class VerificationManager:
                         rejection_reason = "water_duplicate_identity"
                 
                 if final_confidence >= min_confidence and has_positive_evidence:
+                    # v3.142 Phase 4: visual-collapse class id (see helper
+                    # docstring; computed from already-threaded keys only).
+                    eq_class_id = _equivalence_class_id(
+                        ident_type, normalized_id, signature_type,
+                        canonical_signature, similarity_score)
                     # F-17: telemetry flag (ruling 2026-10-04: identity stays
                     # identity either way — flag ONLY records that this
                     # non-chemical identity hit verified with no corroboration
@@ -586,9 +633,16 @@ class VerificationManager:
                         skeleton_method=skeleton_method,
                         verified_without_corroboration=verified_without_corroboration,
                         belief=metadata.get("belief"),
+                        equivalence_class_id=eq_class_id,
                         ground_truth_override=gt_override,
                     )
                 else:
+                    # Create unverified hit (workers may still have run for it)
+                    # — same class id when provable, so the collapse semantics
+                    # stay complete if a row flips to verified by a rule.
+                    eq_class_id = _equivalence_class_id(
+                        ident_type, normalized_id, signature_type,
+                        canonical_signature, similarity_score)
                     # Create unverified hit
                     if rejection_reason is None:
                         rejection_reason = "below_threshold"
@@ -602,6 +656,7 @@ class VerificationManager:
                         rejection_reason=rejection_reason,
                     )
                     verified_hit.belief = metadata.get("belief")
+                    verified_hit.equivalence_class_id = eq_class_id
                     if ident_type in CHEMICAL_IDENT_TYPES:
                         verified_hit.skeleton_sim = skeleton_sim
                         verified_hit.skeleton_method = skeleton_method
@@ -615,6 +670,18 @@ class VerificationManager:
             output_path = f"verification/{segment}/verified_hits"
             hits_as_dicts = [dataclasses.asdict(hit) for hit in verified_hits]
             results.set_data(output_path, hits_as_dicts)
+            # v3.142 Phase 4 (additive): per-segment class sizes over the
+            # verified rows — the UI collapse is visual-only; stored rows and
+            # their order/counts are never altered.
+            try:
+                class_sizes: dict[str, int] = {}
+                for h in verified_hits:
+                    if h.is_verified and h.equivalence_class_id:
+                        class_sizes[h.equivalence_class_id] = (
+                            class_sizes.get(h.equivalence_class_id, 0) + 1)
+                results.set_data(f"verification/{segment}/class_sizes", class_sizes)
+            except Exception:
+                pass  # class sizes are presentation-only; never block verify
             
             per_segment_results[segment] = verified_hits
         

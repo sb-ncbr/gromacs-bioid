@@ -1198,6 +1198,7 @@ async def get_verification(run_id: str, segment: Optional[str] = None) -> Verifi
                 # simply omit both -> None).
                 skeleton_sim=hit.get("skeleton_sim"),
                 belief=hit.get("belief"),
+                equivalence_class_id=hit.get("equivalence_class_id"),
                 is_verified=hit.get("is_verified", False),
                 rejection_reason=hit.get("rejection_reason"),
                 supporting_evidence_count=hit.get("supporting_evidence_count", 0),

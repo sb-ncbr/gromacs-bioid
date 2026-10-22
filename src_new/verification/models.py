@@ -74,6 +74,11 @@ class VerifiedHit:
     # (dedup.resolver_belief). Stored additively; the legacy `resolver_score`
     # field keeps its capped-consensus meaning for traceability.
     belief: float | None = None
+    # v3.142 (Phase 4): visual-collapse equivalence class id ("skeleton:",
+    # "align:", "tm:", "element:", "record:" prefixes). Same verified
+    # structure => same class id across database records. Additive; None on
+    # hits emitted before v3.142.
+    equivalence_class_id: str | None = None
     # Element ground truth (user ruling 2026-10-11): for a monoatomic segment,
     # an ELEMENT identity hit IS the ground truth — there is no fetchable
     # annotation evidence for a bare element by construction, so the weighted
