@@ -1,4 +1,4 @@
-import React, { createElement } from "react";
+import React, { createElement, useState } from "react";
 import {
   Card,
   CardHeader,
@@ -41,6 +41,7 @@ import {
   verifiedOnlyHits,
   bestConfidence,
   confidenceBreakdown,
+  groupByClass,
   truncateName,
   resolveHitUrl,
   type VerifiedHit,
@@ -113,6 +114,17 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
   const tableHits = verifiedOnlyHits(hits);
   const failedResolvers: ResolverErrorItem[] = identifiers?.failed_resolvers || [];
   const best = bestConfidence(tableHits);
+  // v3.142 Phase 4: visual-only equivalence collapse — groups preserve the
+  // server's stored fidelity order; row arrays/count badges stay untouched.
+  const hitGroups = groupByClass(tableHits);
+  const [openGroups, setOpenGroups] = useState<Set<number>>(new Set());
+  const toggleGroup = (gi: number) => {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(gi)) next.delete(gi); else next.add(gi);
+      return next;
+    });
+  };
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -194,11 +206,12 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {tableHits.map((h, i) => {
+                {hitGroups.map((g, gi) => {
+                  const renderRow = (h: VerifiedHit, rowKey: string) => {
                   const url = resolveHitUrl(h);
                   const name = h.name ?? h.identifier;
                   return (
-                    <TableRow key={`${h.identifier}-${i}`}>
+                    <TableRow key={rowKey}>
                       <TableCell>
                         <span className="inline-flex items-center gap-1">
                           {h.is_verified ? (
@@ -264,6 +277,29 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
                         </div>
                       </TableCell>
                     </TableRow>
+                  );
+                  };
+                  return (
+                    <React.Fragment key={`grp-${g.primary.identifier}-${gi}`}>
+                      {renderRow(g.primary, `p-${gi}`)}
+                      {g.members.length > 1 && (
+                        <TableRow className="bg-gray-50/60">
+                          <TableCell colSpan={5} className="py-1.5">
+                            <button
+                              type="button"
+                              onClick={() => toggleGroup(gi)}
+                              className="text-xs font-medium text-[#2E7D32] hover:underline"
+                            >
+                              {openGroups.has(gi)
+                                ? "Hide equivalent database records"
+                                : `+${g.members.length - 1} equivalent database record${g.members.length === 2 ? "" : "s"}`}
+                            </button>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {openGroups.has(gi) &&
+                        g.members.slice(1).map((h, mi) => renderRow(h, `m-${gi}-${mi}`))}
+                    </React.Fragment>
                   );
                 })}
               </TableBody>

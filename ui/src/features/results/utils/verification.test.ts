@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bestConfidence, presentHits, verifiedOnlyHits, truncateName, type VerifiedHit,
   confidenceBreakdown,
+  groupByClass,
 } from "./verification";
 
 function makeHit(overrides: Partial<VerifiedHit>): VerifiedHit {
@@ -144,5 +145,29 @@ describe("confidenceBreakdown", () => {
       final_confidence: 88.0, is_verified: true,
     };
     expect(confidenceBreakdown(h)).toBe("");
+  });
+});
+
+describe("groupByClass", () => {
+  const mk = (identifier: string, cls: string | null): VerifiedHit => ({
+    identifier, ident_type: "PUBCHEM_CID", database: "pubchem",
+    final_confidence: 60, is_verified: true, equivalence_class_id: cls,
+  });
+  it("groups by class id preserving stored order, primary first", () => {
+    const rows = [mk("A", "skeleton:x"), mk("B", "skeleton:x"), mk("C", "align:0.9"), mk("D", "skeleton:x")];
+    const groups = groupByClass(rows);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].primary.identifier).toBe("A");
+    expect(groups[0].members.map((h) => h.identifier)).toEqual(["A", "B", "D"]);
+    expect(groups[1].members.map((h) => h.identifier)).toEqual(["C"]);
+  });
+  it("legacy rows without class id never merge", () => {
+    const groups = groupByClass([mk("A", null), mk("B", null)]);
+    expect(groups).toHaveLength(2);
+    expect(groups.every((g) => g.members.length === 1)).toBe(true);
+  });
+  it("handles null/undefined input", () => {
+    expect(groupByClass(null)).toEqual([]);
+    expect(groupByClass(undefined)).toEqual([]);
   });
 });

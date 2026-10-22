@@ -18,8 +18,10 @@ export {
   bestConfidence,
   truncateName,
   confidenceBreakdown,
+  groupByClass,
   TRUNCATE_AT,
   type VerifiedHit,
+  type HitGroup,
 } from "./verification";
 export {
   hitsToTsv,

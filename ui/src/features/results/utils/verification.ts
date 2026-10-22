@@ -15,6 +15,7 @@ export interface VerifiedHit {
   final_confidence: number | null;  // v3.142+: always numeric; null only on legacy v3.140 plateau rows, render "—"
   belief?: number | null;           // v3.142 (R-a): resolver component (calibrated agreement structure)
   skeleton_sim?: number | null;     // v3.142: skeleton-fp Tanimoto corroboration (chemical rows)
+  equivalence_class_id?: string | null;  // v3.142 (Phase 4): visual-collapse class id
   is_verified: boolean;
   rejection_reason?: string | null;
   supporting_evidence_count?: number;
@@ -63,6 +64,39 @@ export function bestConfidence(
 }
 
 export const TRUNCATE_AT = 60;
+
+/**
+ * v3.142 Phase 4: visual-only equivalence collapse. Group hits by their
+ * equivalence_class_id while preserving the stored (fidelity) order;
+ * the first stored row of each class is the primary (representative),
+ * remaining rows are collapsible equivalents. Rows without a class id
+ * (legacy runs) never group together (unique sentinel per row), and
+ * raw row lists/counts are never altered — consumers still use the
+ * original arrays for badges/exports.
+ */
+export interface HitGroup {
+  primary: VerifiedHit;
+  /** all members of the class including the primary, in stored order */
+  members: VerifiedHit[];
+}
+
+export function groupByClass(hits: VerifiedHit[] | null | undefined): HitGroup[] {
+  const arr = Array.isArray(hits) ? hits : [];
+  const seen = new Map<string, HitGroup>();
+  const out: HitGroup[] = [];
+  arr.forEach((h, i) => {
+    const key = h.equivalence_class_id ?? `__legacy__:${i}`;
+    const g = seen.get(key);
+    if (g) {
+      g.members.push(h);
+    } else {
+      const ng: HitGroup = { primary: h, members: [h] };
+      seen.set(key, ng);
+      out.push(ng);
+    }
+  });
+  return out;
+}
 
 /**
  * Confidence-term breakdown for tooltips (v3.142 Phase 2).

@@ -13,9 +13,10 @@ const TSV_COLUMNS: { key: keyof VerifiedHit; header: string }[] = [
   { key: "similarity_score", header: "similarity_score" },
   { key: "annotation_quality_score", header: "annotation_quality_score" },
   { key: "final_confidence", header: "final_confidence" },
-  // v3.142 additive export columns (Phase 2)
+  // v3.142 additive export columns (Phase 2 + Phase 4)
   { key: "belief", header: "belief" },
   { key: "skeleton_sim", header: "skeleton_sim" },
+  { key: "equivalence_class_id", header: "equivalence_class_id" },
   { key: "is_verified", header: "is_verified" },
   { key: "rejection_reason", header: "rejection_reason" },
   { key: "supporting_evidence_count", header: "supporting_evidence_count" },
