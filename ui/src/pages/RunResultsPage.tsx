@@ -359,6 +359,8 @@ export default function RunResultsPage() {
         <TabsContent value="verification">
           <VerificationTab
             segment={segment}
+            segments={segments}
+            onSegmentChange={(s) => patchQuery({ segment: s })}
             verification={verificationQ.data ?? null}
             onJumpToIdentifiers={() => patchQuery({ tab: "identifiers" })}
           />

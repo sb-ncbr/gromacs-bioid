@@ -444,7 +444,8 @@ def _generate_signatures(context):
         for error in result.get("errors", []):
             gen_name = error.get("generator", "unknown")
             error_msg = error.get("error", "unknown error")
-            context.add_warning("signature_generator_failed", f"{gen_name}: {error_msg}")
+            context.add_warning("signature_generator_failed", f"{gen_name}: {error_msg}",
+                                details={"segment": segment_name, "generator": gen_name})
         
         for gen_name, sig in result["generated"].items():
             context.results.set_data(f"signatures/{segment_name}/generated/{gen_name}", sig)

@@ -51,11 +51,23 @@ class StepContext:
     def has_value(self, key: str) -> bool:
         return key in self.state
 
-    def add_warning(self, code: str, message: str, details: dict = None) -> None:
+    # Codes that are informational by design (synced with the UI error-catalog
+    # `kind: "info"` entries): molecule-scoped non-applicability notes must NOT
+    # flip the owning task's status to orange ("warning") in the taskbar.
+    INFO_WARNING_CODES = frozenset({
+        "signature_generator_failed",
+        "pbc_unwrap_applied",
+        "coords_rescaled_nm_to_angstrom",
+    })
+
+    def add_warning(self, code: str, message: str, details: dict = None,
+                    severity: str = None) -> None:
         details = details or {}
-        self._step_warnings.append((code, message, details))
+        sev = severity or ("info" if code in self.INFO_WARNING_CODES else "warning")
+        self._step_warnings.append((code, message, details, sev))
         if self._current_step_id:
-            self.results.record_warning(code, message, step_id=self._current_step_id, details=details)
+            self.results.record_warning(code, message, step_id=self._current_step_id,
+                                        details=details, severity=sev)
 
     def add_artifact(self, path: Path, description: str = "", kind: str = "file") -> None:
         if self._current_step_id:

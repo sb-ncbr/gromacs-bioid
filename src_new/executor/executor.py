@@ -346,7 +346,9 @@ class PipelineExecutor:
                 
                 # Determine final status
                 final_status = StepStatus.SUCCESS
-                if step_has_warnings or len(context._step_warnings) > 0:
+                has_real = step_has_warnings or any(
+                    len(w) < 4 or w[3] != "info" for w in context._step_warnings)
+                if has_real:
                     final_status = StepStatus.WARNING
                 
                 # Auto-register artifacts for any existing files in step.output_paths

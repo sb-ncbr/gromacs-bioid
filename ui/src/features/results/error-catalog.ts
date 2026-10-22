@@ -179,7 +179,7 @@ export const CATALOG_CODES: CatalogCode[] = [
     user_title: "A signature was skipped",
     user_what: "The {generator_human} signature does not apply to this molecule, so it was skipped. This is expected by design - other signatures were still generated and used.",
     user_action: null,
-    details_show: ["generator_human"],
+    details_show: ["generator_human", "segment"],
   },
   {
     code: "identifier_resolver_failed",

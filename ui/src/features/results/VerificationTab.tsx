@@ -18,6 +18,7 @@ import {
   TooltipTrigger,
 } from "@e-infra/design-system";
 import { Check, Info, X } from "lucide-react";
+import { cn } from "@e-infra/design-system";
 import {
   buildDownloadBlob,
   confidenceBreakdown,
@@ -36,6 +37,8 @@ interface VerificationTabProps {
   segment: string;
   verification: VerificationResponse | null;
   onJumpToIdentifiers: () => void;
+  segments?: string[];
+  onSegmentChange?: (segment: string) => void;
 }
 
 function pct(v: number | null | undefined): string {
@@ -47,9 +50,13 @@ const VerificationTab: React.FC<VerificationTabProps> = ({
   segment,
   verification,
   onJumpToIdentifiers,
+  segments,
+  onSegmentChange,
 }) => {
   // Fidelity-first: presentHits preserves the server's stored order (no re-sort).
   const hits: VerifiedHit[] = presentHits(verification?.hits);
+  // Same molecule picker as Signatures/Identifiers tabs (segment query param).
+  const options = (segments && segments.length > 0) ? segments : [segment];
 
   const doExport = (fmt: "tsv" | "json") => {
     const content = fmt === "tsv" ? hitsToTsv(hits) : hitsToJson(hits);
@@ -67,6 +74,25 @@ const VerificationTab: React.FC<VerificationTabProps> = ({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {onSegmentChange && (
+            <div className="flex flex-wrap gap-1.5" role="listbox" aria-label="Verification segment">
+              {options.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => onSegmentChange(s)}
+                  className={cn(
+                    "rounded-md border px-2.5 py-1 text-xs transition-colors",
+                    s === segment
+                      ? "border-[#2E7D32] bg-[#2E7D32]/10 font-medium text-[#1b5e20]"
+                      : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50",
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
           {verification === null ? (
             <Skeleton className="h-40 w-full" />
           ) : hits.length === 0 ? (

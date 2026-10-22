@@ -249,8 +249,8 @@ class ResultsManager:
         """Alias for finish_step but with TaskStatus."""
         self.finish_step(task_id, status, summary, context_keys)
     
-    def record_warning(self, code: str, message: str, step_id: str = None, 
-                       details: dict = None) -> None:
+    def record_warning(self, code: str, message: str, step_id: str = None,
+                       details: dict = None, severity: str = None) -> None:
         """Record a warning."""
         warning = {
             "code": code,
@@ -260,6 +260,8 @@ class ResultsManager:
         }
         if step_id:
             warning["step_id"] = step_id
+        if severity:
+            warning["severity"] = severity
         self._payload["warnings"].append(warning)
         self._save()
     
