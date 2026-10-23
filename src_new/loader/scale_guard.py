@@ -111,7 +111,19 @@ def _detect(universe) -> ScaleGuardReport:
     # Primary: bonded geometry
     if bond_median is not None:
         if bond_median >= BOND_MEDIAN_COLLAPSED_MAX_ANG:
-            return report  # healthy geometry, no correction
+            # A-17.2 (red-team 3.7): a Martini system collapsed from nm shows a
+            # median of ~0.47 "A" — above the 0.4 health floor — and used to
+            # skip every further check. Only trust the median if the bounding
+            # density agrees the geometry is un-collapsed.
+            if density is None or density >= DENSITY_COLLAPSED_MAX_A3_PER_ATOM:
+                return report  # healthy geometry (and density agrees), no correction
+            lo, hi = DENSITY_POST_SCALE_RANGE
+            scaled = density * NM_TO_ANGSTROM ** 3
+            if lo <= scaled <= hi:
+                return _candidate(report, "density")
+            return _anomaly(report, f"bond median looks healthy ({bond_median:.3f} A) "
+                                    f"but bbox density {density:.4f} A^3/atom indicates "
+                                    f"collapse (x1000 -> {scaled:.2f})")
         scaled = bond_median * NM_TO_ANGSTROM
         lo, hi = BOND_MEDIAN_POST_SCALE_RANGE
         if lo <= scaled <= hi:

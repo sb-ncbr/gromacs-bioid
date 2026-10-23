@@ -77,10 +77,14 @@ def _empty_payload(reason: str, cutoff: float, cap: int) -> dict:
 
 
 def _residue_kind(resname: str) -> str:
+    # A-18 (red-team 3.7): consult the SHARED residue tables too — the local
+    # _PROTEIN_RES missed HSD/HSE/HSP (CHARMM) and other common variants, so
+    # metal-context resnames were mislabelled "other" downstream.
+    from ..constants import KNOWN_RESIDUE_CODES, KNOWN_NUCLEIC_ACIDS_CODES
     rn = (resname or "").upper()
-    if rn in _PROTEIN_RES:
+    if rn in _PROTEIN_RES or rn in KNOWN_RESIDUE_CODES:
         return "protein"
-    if rn in _NUCLEIC_RES:
+    if rn in _NUCLEIC_RES or rn in KNOWN_NUCLEIC_ACIDS_CODES:
         return "nucleic"
     if rn in _WATER_RES:
         return "water"
@@ -162,13 +166,31 @@ def scan_metals(
             else:
                 import numpy as np
 
+                # A-18 (red-team 3.7): periodic coordination — wrap positions
+                # into the orthorhombic cell and pass boxsize to the tree;
+                # a metal at x=0.2 coordinated by a ligand at x=9.9 (L=10)
+                # was reported "free" before.
+                box = None
+                try:
+                    dims = atoms.dimensions
+                    dims = np.asarray(dims, dtype=float) if dims is not None else None
+                    if (dims is not None and len(dims) >= 6
+                            and np.all(dims[:3] > 0)
+                            and np.allclose(dims[3:6], 90.0, atol=1e-4)):
+                        box = dims[:3]
+                except Exception:
+                    box = None
+                all_pos = np.asarray(positions, dtype=float)
+                if box is not None:
+                    all_pos = all_pos % box
+
                 heavy = [i for i in range(n_atoms)
                          if str(elements[i]).upper() != "H"]
-                tree = cKDTree(np.asarray(positions[heavy]))
-                heavy_pos = np.asarray(positions)
+                tree = (cKDTree(all_pos[heavy], boxsize=box)
+                        if box is not None else cKDTree(all_pos[heavy]))
                 for i in transition_idx:
                     rec = _context_record(
-                        i, atoms, elements, resnames, heavy, heavy_pos,
+                        i, atoms, elements, resnames, heavy, all_pos,
                         tree, labels[i], coordination_cutoff)
                     atom_records.append(rec)
 

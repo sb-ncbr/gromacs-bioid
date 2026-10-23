@@ -137,6 +137,26 @@ class PbcRepair:
             report.error = str(exc)
             report.warnings.append(f"PBC unwrapping failed: {exc}")
 
+        # A-17.1 (red-team 3.7): lock frame 0 into a mutable single-frame
+        # snapshot. Non-in-memory readers (prmtop+xtc/nc, psf+dcd, tpr+trr)
+        # only corrected the current Timestep; any later rewind would silently
+        # restore raw (nm-collapsed / wrapped) coordinates.
+        try:
+            traj = getattr(self.u, "trajectory", None)
+            if traj is not None and getattr(traj, "n_frames", 1) > 1:
+                self.u.transfer_to_memory(start=0, stop=1)
+            if getattr(self.u.trajectory, "n_frames", 1) > 1:
+                # MemoryReader: transfer_to_memory ignores start/stop — force a
+                # 1-frame snapshot of the (corrected) current frame instead.
+                import numpy as _np
+                dims = getattr(self.u, "dimensions", None)
+                coords = _np.array(self.u.atoms.positions, copy=True)
+                self.u.load_new(coords, format="memory")
+                if dims is not None:
+                    self.u.dimensions = dims
+        except Exception as exc:
+            report.warnings.append(f"frame0 snapshot failed: {exc}")
+
         return report
 
     def _guess_bonds(self) -> int:
@@ -211,9 +231,13 @@ class PbcRepair:
                 is_nucleic = self._is_nucleic_segment(resnames)
 
                 if is_protein:
-                    # Select CA atoms from segment
-                    ca_selection = f"segid {seg.segid} and name CA"
-                    ca_atoms = self.u.select_atoms(ca_selection)
+                    # A-18: boolean selection — `segid {seg.segid} ...` breaks
+                    # on space-containing/blank segids and the bare except
+                    # then silently killed the whole scan
+                    try:
+                        ca_atoms = seg.atoms[seg.atoms.names == "CA"]
+                    except Exception:
+                        ca_atoms = []
                     if len(ca_atoms) > 1:
                         gaps = self._compute_consecutive_gaps(ca_atoms)
                         for gap in gaps:
@@ -223,9 +247,10 @@ class PbcRepair:
                                 backbone_jumps += 1
 
                 elif is_nucleic:
-                    # Select P atoms from segment
-                    p_selection = f"segid {seg.segid} and name P"
-                    p_atoms = self.u.select_atoms(p_selection)
+                    try:
+                        p_atoms = seg.atoms[seg.atoms.names == "P"]
+                    except Exception:
+                        p_atoms = []
                     if len(p_atoms) > 1:
                         gaps = self._compute_consecutive_gaps(p_atoms)
                         for gap in gaps:
@@ -233,9 +258,8 @@ class PbcRepair:
                                 max_gap = gap
                             if gap > self.loader_config.unwrap_max_backbone_gap:
                                 backbone_jumps += 1
-        except Exception:
-            # Skip backbone scan if segment topology is incomplete
-            pass
+        except Exception as exc:
+            logger.debug("Backbone gap scan skipped: %s", exc)
 
         result["max_backbone_gap"] = max_gap
         result["backbone_jumps"] = backbone_jumps
@@ -273,13 +297,28 @@ class PbcRepair:
         return matches / len(resnames) >= 0.8
 
     def _compute_consecutive_gaps(self, atom_group) -> list[float]:
-        """Compute distances between consecutive atoms in sorted order."""
-        # Sort by residue id
-        sorted_atoms = sorted(atom_group, key=lambda a: a.resid)
+        """Distances between consecutive backbone atoms, chain-aware.
+
+        A-18 (red-team 3.7): the old resid-only sort merged separate chains
+        that share a segment (and restarted numbering), producing false
+        `backbone_jumps`. Sort by (chainID, resindex); never compare atoms
+        across a chain boundary (or a numbering restart when no chainIDs).
+        """
+        def _chain(a):
+            try:
+                return str(a.chainID)
+            except Exception:
+                return ""
+        sorted_atoms = sorted(atom_group, key=lambda a: (_chain(a), int(a.resindex)))
         gaps = []
         for i in range(1, len(sorted_atoms)):
-            dist = np.linalg.norm(sorted_atoms[i].position - sorted_atoms[i-1].position)
-            gaps.append(dist)
+            prev, cur = sorted_atoms[i - 1], sorted_atoms[i]
+            c_prev, c_cur = _chain(prev), _chain(cur)
+            if c_prev and c_cur and c_prev != c_cur:
+                continue
+            if not c_prev and not c_cur and int(cur.resid) < int(prev.resid):
+                continue  # numbering restart without chainID metadata
+            gaps.append(float(np.linalg.norm(cur.position - prev.position)))
         return gaps
 
 

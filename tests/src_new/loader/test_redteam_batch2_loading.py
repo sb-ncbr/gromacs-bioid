@@ -488,3 +488,143 @@ class TestA09MixedSegments:
         facade, _ = _facade(u, tmp_path)
         rep = facade.get_fragment("SYSTEM")
         assert len(rep.atoms) == 10, "covalently attached ligand remains in rep"
+
+
+class TestA17A18Guards:
+    """3.7 — A-17 scale-guard blind spots + A-18 chain/PBC-aware scans."""
+
+    def _two_chain_universe(self):
+        import numpy as np
+        from MDAnalysis import Universe
+        from MDAnalysis.core.topology import Topology
+        from MDAnalysis.core.topologyattrs import (
+            Atomnames, Atomtypes, Resids, Resnames, Segids, Elements, Masses, ChainIDs)
+        # one SEGMENT with two chainIDs, restarted numbering 1..3 / 1..3,
+        # chains 20 A apart on x; CA spacing 3.8 A within a chain
+        top = Topology(6, 6, 1, atom_resindex=[0, 1, 2, 3, 4, 5],
+                       residue_segindex=[0] * 6)
+        top.add_TopologyAttr(Atomnames(["CA"] * 6))
+        top.add_TopologyAttr(Atomtypes(["C"] * 6))
+        top.add_TopologyAttr(Elements(["C"] * 6))
+        top.add_TopologyAttr(Masses([12.011] * 6))
+        top.add_TopologyAttr(Resids([1, 2, 3, 1, 2, 3]))
+        top.add_TopologyAttr(Resnames(["ALA"] * 6))
+        top.add_TopologyAttr(Segids(["SYS"]))
+        top.add_TopologyAttr(ChainIDs(["A", "A", "A", "B", "B", "B"]))
+        u = Universe(top)
+        pos = np.array([[i * 3.8, 0.0, 0.0] for i in range(3)] +
+                       [[20.0 + i * 3.8, 0.0, 0.0] for i in range(3)], dtype=np.float32)
+        u.load_new(pos, format="memory")
+        u.dimensions = [60.0, 60.0, 60.0, 90.0, 90.0, 90.0]
+        return u
+
+    def test_two_chain_backbone_no_false_jump(self):
+        from src_new.loader.unwrap import PbcRepair
+        from src_new.config.loader import RunConfig
+        u = self._two_chain_universe()
+        info = PbcRepair(u, RunConfig()).detect_jumps()
+        assert info["backbone_jumps"] == 0, (
+            f"resid-only sort interleaved the chains (A-18): {info}")
+
+    def test_segid_with_space_backbone_scan_not_aborted(self):
+        import numpy as np
+        u = self._two_chain_universe()
+        u.segments.segids = ["SYS A"]
+        from src_new.loader.unwrap import PbcRepair
+        from src_new.config.loader import RunConfig
+        info = PbcRepair(u, RunConfig()).detect_jumps()
+        # A-18: bare-except + unquoted selection string silently aborted the
+        # scan for every segment; gaps must actually be computed
+        assert info["max_backbone_gap"] is not None and info["max_backbone_gap"] > 3.0, info
+
+    def test_cg_nm_collapse_corrected_via_density(self):
+        import numpy as np
+        from MDAnalysis import Universe
+        from MDAnalysis.core.topology import Topology
+        from MDAnalysis.core.topologyattrs import (
+            Atomnames, Atomtypes, Resids, Resnames, Segids, Elements, Masses, Bonds)
+        n = 8 ** 3
+        names = ["B%d" % i for i in range(n)]
+        elems = ["C"] * n
+        top = Topology(n, n, 1, atom_resindex=list(range(n)), residue_segindex=[0] * n)
+        top.add_TopologyAttr(Atomnames(names)); top.add_TopologyAttr(Atomtypes(elems))
+        top.add_TopologyAttr(Elements(elems)); top.add_TopologyAttr(Masses([72.0] * n))
+        top.add_TopologyAttr(Resids(list(range(1, n + 1))))
+        top.add_TopologyAttr(Resnames(["MRT"] * n))
+        top.add_TopologyAttr(Segids(["SYS"]))
+        # snake chain, 0.47 nm spacing (read as Angstrom after nm collapse)
+        bonds = [(i, i + 1) for i in range(n - 1)]
+        top.add_TopologyAttr(Bonds(bonds))
+        u = Universe(top)
+        idx = np.arange(n)
+        gx, gy, gz = idx % 8, (idx // 8) % 8, idx // 64
+        pos = (np.stack([gx, gy, gz], axis=1) * 0.47 + 0.05).astype(np.float32)
+        pos[1::2, 0] = pos[1::2, 0]  # snake unnecessary for median/bbox; keep simple grid
+        u.load_new(pos, format="memory")
+        from src_new.loader.scale_guard import _detect
+        report = _detect(u)
+        assert report.signal == "density" and abs(report.factor - 10.0) < 1e-6, (
+            f"nm-collapsed Martini waved through as 'healthy median' (A-17.2): "
+            f"median={report.bond_median} dens={report.density_a3_per_atom}")
+
+    def test_frame0_snapshot_after_unwrap(self):
+        import numpy as np
+        from MDAnalysis import Universe
+        from MDAnalysis.core.topology import Topology
+        from MDAnalysis.core.topologyattrs import (
+            Atomnames, Atomtypes, Resids, Resnames, Segids, Elements, Masses, Bonds)
+        elements = ["O", "H", "H", "O", "H", "H"]
+        top = Topology(6, 2, 1, atom_resindex=[0, 0, 0, 1, 1, 1], residue_segindex=[0, 0])
+        top.add_TopologyAttr(Atomnames(["O", "H1", "H2"] * 2))
+        top.add_TopologyAttr(Atomtypes(["O", "H", "H"] * 2))
+        top.add_TopologyAttr(Elements(elements))
+        top.add_TopologyAttr(Masses([15.999, 1.008, 1.008] * 2))
+        top.add_TopologyAttr(Resids([1, 2])); top.add_TopologyAttr(Resnames(["HOH"] * 2))
+        top.add_TopologyAttr(Segids(["SOL"]))
+        top.add_TopologyAttr(Bonds([(0, 1), (0, 2), (3, 4), (3, 5)]))
+        u = Universe(top)
+        w = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
+        two_frames = np.stack([np.vstack([w, w + 5.0]), np.vstack([w + 1.0, w + 6.0])]).astype(np.float32)
+        u.load_new(two_frames, format="memory")
+        u.dimensions = [20.0, 20.0, 20.0, 90.0, 90.0, 90.0]
+        from src_new.loader.unwrap import PbcRepair
+        from src_new.config.loader import RunConfig
+        before = u.atoms.positions.copy()
+        PbcRepair(u, RunConfig()).run()
+        assert u.trajectory.n_frames == 1, (
+            "A-17.1: >1-frame reader survives unwrap; a later rewind silently "
+            "restores raw coordinates")
+        assert np.allclose(before, u.atoms.positions, atol=0.5)
+
+    def test_metal_coordination_across_pbc_face(self):
+        import numpy as np
+        from MDAnalysis import Universe
+        from MDAnalysis.core.topology import Topology
+        from MDAnalysis.core.topologyattrs import (
+            Atomnames, Atomtypes, Resids, Resnames, Segids, Elements, Masses, Bonds)
+        names = ["ZN", "ND1", "CE1"]
+        elems = ["ZN", "N", "C"]
+        top = Topology(3, 2, 1, atom_resindex=[0, 1, 1], residue_segindex=[0, 0])
+        top.add_TopologyAttr(Atomnames(names)); top.add_TopologyAttr(Atomtypes(elems))
+        top.add_TopologyAttr(Elements(elems))
+        top.add_TopologyAttr(Masses([65.38, 14.007, 12.011]))
+        top.add_TopologyAttr(Resids([1, 2])); top.add_TopologyAttr(Resnames(["ZN", "HIS"]))
+        top.add_TopologyAttr(Segids(["SYS"]))
+        top.add_TopologyAttr(Bonds([(1, 2)]))
+        u = Universe(top)
+        # Zn at 0.2, HIS ND1 at 9.9 in a 10 A box: periodic distance 0.3 A
+        pos = np.array([[0.2, 5.0, 5.0], [9.9, 5.0, 5.0], [9.9, 5.0, 6.2]], dtype=np.float32)
+        u.load_new(pos, format="memory")
+        u.dimensions = [10.0, 10.0, 10.0, 90.0, 90.0, 90.0]
+        from src_new.loader.metal_scan import scan_metals
+        payload = scan_metals(u)
+        rec = next((r for r in payload.get("atoms", []) if r.get("resname") == "ZN"), None)
+        assert rec is not None, f"Zn context record missing: {payload.get('atoms')}"
+        partners = rec.get("partners") or []
+        assert partners, f"A-18: non-periodic tree missed coordination across box face: {rec}"
+        assert rec.get("coordination") == "bound"
+
+    def test_metal_protein_table_covers_charmm_amber_variants(self):
+        from src_new.loader.metal_scan import _residue_kind
+        for rn in ("HSD", "HSE", "HSP", "HIS", "CYX", "CYM"):
+            assert _residue_kind(rn) == "protein", f"{rn} must be protein-kind (A-18)"
