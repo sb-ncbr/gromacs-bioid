@@ -115,10 +115,10 @@ def _atoms_into(fragment, atom_idx_to_index, molecule_build):
 
 def _bonds_into(fragment, atom_idx_to_rdkit_idx, molecule_build):
     from rdkit import Chem as _Chem
-    for atom_idx1, atom_idx2 in fragment.bonds.indices:
+    for atom_idx1, atom_idx2 in _intra_bond_pairs(fragment):
         molecule_build.AddBond(
-            atom_idx_to_rdkit_idx[int(atom_idx1)],
-            atom_idx_to_rdkit_idx[int(atom_idx2)],
+            atom_idx_to_rdkit_idx[atom_idx1],
+            atom_idx_to_rdkit_idx[atom_idx2],
             _Chem.BondType.SINGLE,
         )
 
@@ -135,6 +135,11 @@ def build_once_family_mol(fragment):
     molecule_build = _Chem.EditableMol(_Chem.Mol())
     rdkit_idx = _atoms_into(fragment, atom_idx_to_index, molecule_build)
     _bonds_into(fragment, rdkit_idx, molecule_build)
+    # B-08: H-cap attachment points whose bond left the fragment
+    els = [str(e).title() for e in fragment.atoms.elements]
+    for gidx, n in _external_cut_counts(fragment).items():
+        if els[atom_idx_to_index[gidx]] != "H":
+            _inject_inferred_hydrogens(molecule_build, rdkit_idx[gidx], n)
     molecule = molecule_build.GetMol()
     try:
         # B-01 (red-team 4.2): topology net charge first, then ladder —
@@ -342,3 +347,33 @@ def assign_stereo_from_3d(mol, fragment) -> None:
         _Chem.AssignStereochemistryFrom3D(mol, replaceExistingTags=True)
     except Exception:
         return
+
+
+# --- B-08 (red-team 4.7): intra-fragment bonds + H-capping ----------------------
+
+def _intra_bond_pairs(fragment):
+    """AtomGroup.bonds returns every bond with >=1 endpoint in the group;
+    cross-segment bonds must not reach perception. Returns the list of
+    (a1, a2) universe indices with BOTH endpoints inside the fragment."""
+    idxset = set(int(a) for a in fragment.atoms.indices)
+    out = []
+    for a1, a2 in fragment.bonds.indices:
+        a1, a2 = int(a1), int(a2)
+        if a1 in idxset and a2 in idxset:
+            out.append((a1, a2))
+    return out
+
+
+def _external_cut_counts(fragment):
+    """B-08: {universe_atom_idx: number of cut external partners} for atoms
+    retained in the fragment — used to H-cap attachment points so
+    perception sees a chemically valid molecule."""
+    idxset = set(int(a) for a in fragment.atoms.indices)
+    counts = {}
+    for a1, a2 in fragment.bonds.indices:
+        a1, a2 = int(a1), int(a2)
+        if a1 in idxset and a2 not in idxset:
+            counts[a1] = counts.get(a1, 0) + 1
+        elif a2 in idxset and a1 not in idxset:
+            counts[a2] = counts.get(a2, 0) + 1
+    return counts

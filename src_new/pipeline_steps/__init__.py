@@ -9,7 +9,22 @@ import time
 from pathlib import Path
 
 from ..executor.task import Task, StepResult
-from ..signatures.generators._perceive_cache import _h_deficiency
+from ..signatures.generators._perceive_cache import (
+    _h_deficiency, _external_cut_counts)
+
+
+def _segment_flags(fragment) -> list:
+    """Per-segment signature provenance flags (B-10 h_inferred,
+    B-08 xbond_capped)."""
+    flags = []
+    if _h_deficiency(fragment) is not None:
+        flags.append("h_inferred")
+    try:
+        if _external_cut_counts(fragment):
+            flags.append("xbond_capped")
+    except Exception:
+        pass
+    return flags
 from ..input.discovery import inspect_directory, select_best_file_combination
 from ..loader.strategies import load_simulation
 from ..loader.repair import TopologyRepair
@@ -446,6 +461,10 @@ def _generate_signatures(context):
                 "generated": generated,
                 "attempted": attempted,
                 "errors": errors,
+                # B-10 (red-team 4.4) h_inferred; B-08 (red-team 4.7)
+                # xbond_capped: cross-fragment bonds are H-capped before
+                # perception (covalent ligands/heme/glycans)
+                "flags": _segment_flags(fragment),
             })
     
     # Merge results into context.results in main thread
@@ -469,6 +488,9 @@ def _generate_signatures(context):
         
         if result.get("attempted"):
             context.results.set_data(f"signatures/{segment_name}/attempted", result["attempted"])
+
+        if result.get("flags"):
+            context.results.set_data(f"signatures/{segment_name}/flags", result["flags"])
 
         # F-N1e: persist (bounded) generation errors for postmortem visibility
         _sig_errs = bounded_stage_errors(result.get("errors", []))

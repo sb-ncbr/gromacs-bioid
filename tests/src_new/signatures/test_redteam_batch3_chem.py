@@ -514,3 +514,96 @@ class TestB05PerChainFasta:
         assert canonical_signature_type("fasta_map_protein[A]") == "residue_sequence_protein"
         assert canonical_signature_type("fasta_resname_nucleic[B]") == "residue_sequence_nucleotide"
         assert canonical_signature_type("smiles") == "smiles"
+
+
+def _covalent_phenyl_fragment():
+    """B-08: all-atom benzyl ligand whose CH2 is bonded to a Cys sulfur in
+    ANOTHER segment (cross-fragment bond). Cutting + H-capping the CH2 must
+    yield toluene (canonical key), instead of losing the InChIKey entirely
+    or re-perceiving the whole molecule from coordinates."""
+    import math
+    # ring C0-5; H on C1-5 (6-10); CH2 = 11 (its H: 12,13); 14 = ext Cys SG
+    n = 15
+    u = mda.Universe.empty(n, n_residues=2, n_segments=2,
+                           atom_resindex=[0]*14 + [1],
+                           residue_segindex=[0, 1],
+                           trajectory=True)
+    els = ["C"]*6 + ["H"]*5 + ["C", "H", "H", "S"]
+    u.add_TopologyAttr("elements", els)
+    u.add_TopologyAttr("names", [f"X{i}" for i in range(n)])
+    u.add_TopologyAttr("resnames", ["LIG", "CYS"])
+    u.add_TopologyAttr("resids", [1, 2])
+    u.add_TopologyAttr("segids", ["LIGX", "PROT"])
+    bonds = [(i, (i+1) % 6) for i in range(6)]          # ring
+    bonds += [(i+1, 6+i) for i in range(5)]             # ring C1-5 - H
+    bonds += [(0, 11), (11, 12), (11, 13), (11, 14)]    # CH2 link + cross
+    u.add_bonds(bonds)
+    pos = [[1.4*math.cos(i*math.pi/3), 1.4*math.sin(i*math.pi/3), 0.0]
+           for i in range(6)]
+    pos += [[2.5*math.cos((i+1)*math.pi/3), 2.5*math.sin((i+1)*math.pi/3), 0.0]
+            for i in range(5)]
+    pos += [[2.0, 2.0, 0.0], [2.6, 2.4, 0.0], [1.6, 2.6, 0.0], [4.0, 4.0, 0.0]]
+    u.atoms.positions = np.array(pos, dtype=np.float32)
+    lig = u.atoms[:14]
+    return lig
+
+
+class TestB08CrossFragmentBonds:
+    """4.7 - B-08: bonds leaving the representative fragment must be cut
+    (and H-capped) before perception, not KeyError/lost identity."""
+
+    def test_external_bond_filtered_and_capped_key(self):
+        from src_new.signatures.generators import _perceive_cache as pc
+        from src_new.signatures.generators.inchi import InchiKeyGenerator
+        from src_new.config.loader import SignaturesConfig
+        frag = _covalent_phenyl_fragment()
+        intra = {(min(a), max(a)) for a in pc._intra_bond_pairs(frag)}
+        assert all(14 not in pair for pair in intra), intra
+        assert len(intra) == 14, intra  # ring6 + C-H5 + ring-CH2 + 2H, cross dropped
+        assert pc._external_cut_counts(frag) == {11: 1}
+        pc.clear_cache()
+        ik = InchiKeyGenerator(SignaturesConfig())._generate(
+            _instance(frag), frag, None)
+        # toluene ground truth from RDKit (achiral -> flat block)
+        assert ik == "YXFVVABEGXRONW-UHFFFAOYSA-N", (
+            f"B-08: capped benzyl must perceive as toluene, got {ik}")
+
+    def test_smiles_never_lost_on_crossed_bonds(self):
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.generators.smiles import SimpleSmilesGenerator
+        from src_new.signatures.generators import _perceive_cache as pc
+        frag = _covalent_phenyl_fragment()
+        pc.clear_cache()
+        sm = SimpleSmilesGenerator(SignaturesConfig())._generate(
+            _instance(frag), frag, None)
+        assert sm and "c1ccccc1" in sm and "#" not in sm, sm
+
+
+    def test_fasta_adjacency_survives_cross_bond(self):
+        """A protein fragment with one bond leaving the segment still gets
+        its full sequence (was KeyError in the map machinery)."""
+        from src_new.signatures.generators import fasta
+        from src_new.config.loader import SignaturesConfig
+        frag = _protein_chain(6)
+        u = frag.universe
+        # add an external carbon bonded to residue 2's C atom (index 7)
+        import MDAnalysis as _mda
+        n = u.atoms.n_atoms
+        u2 = _mda.Merge(u.atoms, u.atoms[[0]])  # duplicate first atom as ext
+        # rebuild bond topology with a cross bond to the extra atom
+        bonds = [tuple(b) for b in u.bonds.indices] + [(7, n)]
+        u3 = _mda.Universe.empty(n + 1, n_residues=7, n_segments=1,
+                                 atom_resindex=[i // 5 for i in range(n)] + [6],
+                                 trajectory=True)
+        u3.add_TopologyAttr("elements",
+                            list(u.atoms.elements) + ["C"])
+        u3.add_TopologyAttr("names", list(u.atoms.names) + ["X1"])
+        u3.add_TopologyAttr("resnames", ["ALA"] * 6 + ["UNK"])
+        u3.add_TopologyAttr("resids", list(range(1, 8)))
+        u3.add_TopologyAttr("segids", ["PRO"])
+        u3.add_bonds(bonds)
+        u3.atoms.positions = np.vstack(
+            [u.atoms.positions, [[99.0, 99.0, 99.0]]]).astype(np.float32)
+        prot = u3.atoms[:n]
+        seq = fasta.fragment_to_protseq_map_based(prot, SignaturesConfig())
+        assert seq == "AAAAAA", seq

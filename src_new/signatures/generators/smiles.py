@@ -16,7 +16,8 @@ from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 from ..base import SignatureGenerator
 from ._perceive_cache import (
     build_once_cached, _net_charge, determine_bond_orders_safely,
-    _h_deficiency, _inject_inferred_hydrogens, assign_stereo_from_3d)
+    _h_deficiency, _inject_inferred_hydrogens, assign_stereo_from_3d,
+    _intra_bond_pairs, _external_cut_counts)
 
 logger = logging.getLogger("base")
 
@@ -62,8 +63,13 @@ class SimpleSmilesGenerator(SignatureGenerator):
         bonded_all = True
         try:
             for atom_idx1, atom_idx2 in fragment.bonds.indices:
-                is_atom_bonded[atom_indices[int(atom_idx1)]] = True
-                is_atom_bonded[atom_indices[int(atom_idx2)]] = True
+                # B-08: skip endpoints outside the fragment
+                i1 = atom_indices.get(int(atom_idx1))
+                i2 = atom_indices.get(int(atom_idx2))
+                if i1 is not None:
+                    is_atom_bonded[i1] = True
+                if i2 is not None:
+                    is_atom_bonded[i2] = True
             bonded_all = all(is_atom_bonded)
         except Exception:
             # No bond records in topology: allow coordinate-based bond
@@ -234,7 +240,7 @@ def _fragment_to_rdkit_bonds(
     molecule: EditableMol,
 ) -> None:
     """Add bonds from fragment to RDKit molecule."""
-    for atom_idx1, atom_idx2 in fragment.bonds.indices:
+    for atom_idx1, atom_idx2 in _intra_bond_pairs(fragment):
         atom_idx1_rdkit = atom_idx_to_rdkit_idx[atom_idx1]
         atom_idx2_rdkit = atom_idx_to_rdkit_idx[atom_idx2]
         molecule.AddBond(atom_idx1_rdkit, atom_idx2_rdkit, Chem.BondType.SINGLE)
@@ -255,6 +261,13 @@ def _build_smiles_mol(fragment) -> Mol:
     perceived = False
     try:
         _fragment_to_rdkit_bonds(fragment, atom_idx_to_rdkit_idx, molecule_build)
+        # B-08 (red-team 4.7): H-cap attachment points whose bond crossed
+        # the fragment boundary (covalent ligands, heme, glycans)
+        _els = [str(e).title() for e in fragment.atoms.elements]
+        for _gidx, _n in _external_cut_counts(fragment).items():
+            if _els[atom_idx_to_index[_gidx]] != "H":
+                _inject_inferred_hydrogens(
+                    molecule_build, atom_idx_to_rdkit_idx[_gidx], _n)
     except Exception:
         # Topology carries no bond records: perceive bonds from 3D
         # coordinates (small molecules only, guarded by _is_applicable)
@@ -268,7 +281,15 @@ def _build_smiles_mol(fragment) -> Mol:
             )
         mol_tmp.AddConformer(conf, assignId=True)
         # B-01: coordinate perception also needs the true net charge
-        rdDetermineBonds.DetermineBonds(mol_tmp, charge=_net_charge(fragment))
+        # B-08: perception of charged species may raise (charge=0 probe);
+        # fall back to connectivity-only so the SMILES is not lost
+        try:
+            rdDetermineBonds.DetermineBonds(mol_tmp, charge=_net_charge(fragment))
+        except Exception:
+            try:
+                rdDetermineBonds.DetermineConnectivity(mol_tmp)
+            except Exception:
+                pass
         molecule_build = EditableMol(mol_tmp)
         perceived = True
 

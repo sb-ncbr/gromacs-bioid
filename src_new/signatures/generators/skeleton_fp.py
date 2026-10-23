@@ -88,11 +88,16 @@ class SkeletonFingerprintGenerator(SignatureGenerator):
                 )
             mol_tmp.AddConformer(conf, assignId=True)
             try:
-                # B-01 (red-team 4.2): true net charge for perception
-                rdDetermineBonds.DetermineBonds(mol_tmp, charge=_net_charge(fragment))
-            except Exception as exc:
-                logger.debug("skeleton_fp: perception failed: %s", exc)
-                return None
+                # B-08 (red-team 4.7): the skeleton collapses bond orders
+                # anyway, so connectivity perception suffices and never
+                # touches the charge-sensitive DetermineBonds path
+                rdDetermineBonds.DetermineConnectivity(mol_tmp)
+            except Exception:
+                try:
+                    rdDetermineBonds.DetermineBonds(mol_tmp, charge=_net_charge(fragment))
+                except Exception as exc:
+                    logger.debug("skeleton_fp: perception failed: %s", exc)
+                    return None
             molecule = mol_tmp
 
         if molecule.GetNumBonds() == 0:

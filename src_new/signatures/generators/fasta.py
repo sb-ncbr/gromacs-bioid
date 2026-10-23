@@ -241,17 +241,27 @@ def resname_to_one_letter(resname: str) -> str:
 
 
 def _backbone_link_maps(names, resindices, bond_indices,
-                        residue_indices_to_code):
+                        residue_indices_to_code, pos_of=None):
     """Peptide C(i)-N(i+1) / nucleic O3'(i)-P(i+1) name-exact link maps.
-    Extracted verbatim from _backbone_chain_sequences (B-05 shares it)."""
+    Extracted verbatim from _backbone_chain_sequences (B-05 shares it).
+    B-08: pos_of maps universe atom indices to fragment-local positions;
+    bonds whose endpoints leave the fragment are skipped (cross-segment
+    covalent handles such as heme/glycan no longer KeyError or alias)."""
     nxt: dict[int, int] = {}
     prev: dict[int, int] = {}
     for a1, a2 in bond_indices:
         a1, a2 = int(a1), int(a2)
-        n1 = str(names[a1]).strip()
-        n2 = str(names[a2]).strip()
-        r1 = int(resindices[a1])
-        r2 = int(resindices[a2])
+        if pos_of is not None:
+            p1 = pos_of.get(a1)
+            p2 = pos_of.get(a2)
+            if p1 is None or p2 is None:
+                continue
+        else:
+            p1, p2 = a1, a2
+        n1 = str(names[p1]).strip()
+        n2 = str(names[p2]).strip()
+        r1 = int(resindices[p1])
+        r2 = int(resindices[p2])
         if r1 == r2 or r1 not in residue_indices_to_code or r2 not in residue_indices_to_code:
             continue
         if {n1, n2} == {"C", "N"}:            # peptide bond C(i)-N(i+1)
@@ -350,7 +360,8 @@ def fragment_to_protseq_resname_based_chains(fragment: AtomGroup) -> list:
         }
         nxt, prev = _backbone_link_maps(
             fragment.atoms.names, fragment.atoms.resindices,
-            fragment.bonds.indices, codes)
+            fragment.bonds.indices, codes,
+            {int(a): i for i, a in enumerate(fragment.atoms.indices)})
         chains = _walk_backbone_chains(nxt, prev, set(codes))
         labelled = _chain_groups_and_labels(fragment, chains)
         if len(labelled) <= 1:
@@ -380,7 +391,8 @@ def fragment_to_protseq_map_based_chains(fragment: AtomGroup,
     try:
         nxt, prev = _backbone_link_maps(
             fragment.atoms.names, fragment.atoms.resindices,
-            fragment.bonds.indices, residue_indices_to_code)
+            fragment.bonds.indices, residue_indices_to_code,
+            {int(a): i for i, a in enumerate(fragment.atoms.indices)})
         chains = _walk_backbone_chains(nxt, prev, set(residue_indices_to_code))
         covered = sum(len(c) for c in chains)
         if not chains or covered != len(residue_indices_to_code):
@@ -440,8 +452,12 @@ def _backbone_chain_sequences(
     except Exception:
         return []
 
+    try:
+        pos_of = {int(a): i for i, a in enumerate(fragment.atoms.indices)}
+    except Exception:
+        pos_of = None
     nxt, prev = _backbone_link_maps(names, resindices, bond_indices,
-                                    residue_indices_to_code)
+                                    residue_indices_to_code, pos_of)
     if not nxt:
         return []
 
@@ -598,8 +614,11 @@ def _populate_adjacency_matrix_inplace(
     for atom_idx1, atom_idx2 in fragment.bonds.indices:
         atom_idx1 = int(atom_idx1)
         atom_idx2 = int(atom_idx2)
-        atom_i1 = atom_indices_to_index[atom_idx1]
-        atom_i2 = atom_indices_to_index[atom_idx2]
+        # B-08 (red-team 4.7): bonds leaving the representative fragment
+        atom_i1 = atom_indices_to_index.get(atom_idx1)
+        atom_i2 = atom_indices_to_index.get(atom_idx2)
+        if atom_i1 is None or atom_i2 is None:
+            continue
         atom_resid_i1 = residue_indices_to_index[int(fragment.atoms.resindices[atom_i1])]
         atom_resid_i2 = residue_indices_to_index[int(fragment.atoms.resindices[atom_i2])]
         

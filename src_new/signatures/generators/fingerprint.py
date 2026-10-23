@@ -53,8 +53,13 @@ class FingerprintGenerator(SignatureGenerator):
             elems = fragment.atoms.elements
             pos_of = {int(ai): p for p, ai in enumerate(fragment.atoms.indices)}
             for atom_idx1, atom_idx2 in fragment.bonds.indices:
-                elem1 = elems[pos_of[int(atom_idx1)]]
-                elem2 = elems[pos_of[int(atom_idx2)]]
+                # B-08: skip cross-fragment bonds
+                p1 = pos_of.get(int(atom_idx1))
+                p2 = pos_of.get(int(atom_idx2))
+                if p1 is None or p2 is None:
+                    continue
+                elem1 = elems[p1]
+                elem2 = elems[p2]
                 # Sort elements to make bond order-independent
                 bond_tuple = tuple(sorted([elem1, elem2]))
                 bonds.append(bond_tuple)

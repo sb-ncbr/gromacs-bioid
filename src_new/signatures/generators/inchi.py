@@ -54,8 +54,13 @@ class InchiKeyGenerator(SignatureGenerator):
         
         try:
             for atom_idx1, atom_idx2 in fragment.bonds.indices:
-                is_atom_bonded[atom_indices[int(atom_idx1)]] = True
-                is_atom_bonded[atom_indices[int(atom_idx2)]] = True
+                # B-08: skip endpoints outside the fragment
+                i1 = atom_indices.get(int(atom_idx1))
+                i2 = atom_indices.get(int(atom_idx2))
+                if i1 is not None:
+                    is_atom_bonded[i1] = True
+                if i2 is not None:
+                    is_atom_bonded[i2] = True
         except Exception:
             return False
         
