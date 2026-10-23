@@ -111,6 +111,10 @@ def get_default_generators(config: SignaturesConfig) -> list[SignatureGenerator]
     if SelfiesGenerator:
         generators.append(SelfiesGenerator(config))
     generators.append(MolecularFormulaGenerator(config))
+    # B-10 (red-team 4.4): heavy-atom variant for UA/H-less fragments
+    from .generators.formula import MolecularFormulaHeavyGenerator
+    if getattr(config, "molecular_formula_heavy", True):
+        generators.append(MolecularFormulaHeavyGenerator(config))
     generators.append(SkeletonFingerprintGenerator(config))
     generators.append(ResnameGenerator(config))
     

@@ -93,8 +93,10 @@ def build_once_cached(fragment, family: str, builder, timeout_s: float = 0.0):
 # --- shared family builders -------------------------------------------------
 
 def _atoms_into(fragment, atom_idx_to_index, molecule_build):
-    """Atom construction identical to the inchi/selfies family helpers."""
+    """Atom construction identical to the inchi/selfies family helpers
+    (+B-10 H-deficiency correction, h_map=None reproduces it exactly)."""
     from rdkit import Chem as _Chem
+    h_map = _h_deficiency(fragment)
     atom_idx_to_rdkit_idx = {}
     for atom_idx in fragment.atoms.indices:
         i = atom_idx_to_index[atom_idx]
@@ -102,6 +104,12 @@ def _atoms_into(fragment, atom_idx_to_index, molecule_build):
         rdkit_atom.SetNoImplicit(True)
         rdkit_idx = molecule_build.AddAtom(rdkit_atom)
         atom_idx_to_rdkit_idx[atom_idx] = rdkit_idx
+        # B-10 counts-mode: inject the mass-inferred implicit H as explicit
+        # atoms (open-mode {} and all-atom None: no correction).
+        if h_map:
+            n = h_map.get(i, 0)
+            if n > 0:
+                _inject_inferred_hydrogens(molecule_build, rdkit_idx, n)
     return atom_idx_to_rdkit_idx
 
 
@@ -205,3 +213,62 @@ def determine_bond_orders_safely(mol, net_charge: int = 0) -> bool:
             "bond-order solution at charge %d rejected (%s)",
             q, "bare [H+] fragment" if _has_bare else "charge mismatch")
     return False
+
+
+# --- B-10 (red-team 4.4): united-atom / H-less correction ---------------------
+
+_NOMINAL_MASSES = {
+    "C": 12.011, "N": 14.007, "O": 15.999, "H": 1.008, "S": 32.06,
+    "P": 30.974, "F": 18.998, "CL": 35.45, "BR": 79.904, "I": 126.904,
+    "SE": 78.971, "NA": 22.990, "MG": 24.305, "K": 39.098, "CA": 40.078,
+    "FE": 55.845, "ZN": 65.38, "MN": 54.938, "CU": 63.546, "B": 10.81,
+    "SI": 28.085,
+}
+
+
+def _h_deficiency(fragment):
+    """Detect H-deficient (united-atom / H-less) heavy-atom fragments.
+
+    Returns:
+      None  -- all-atom system (explicit H present): NO correction, the
+               historical SetNoImplicit(True) behavior is untouched;
+      {}    -- H-less system whose masses carry no united-atom counts
+               (PDB ligands): apply SetNoImplicit(False), RDKit fills
+               valences instead of producing radicals/carbanions;
+      {pos: n} -- masses-mode (GROMOS/ATB/CHARMM19 UA masses 13/14/15...):
+               set exactly n implicit H on fragment atom position pos.
+    """
+    try:
+        els = [str(e).title() for e in fragment.atoms.elements]
+    except Exception:
+        return None
+    if not els or any(e == "H" for e in els):
+        return None
+    try:
+        masses = fragment.atoms.masses
+    except Exception:
+        return {}
+    counts = {}
+    for pos, (e, m) in enumerate(zip(els, masses)):
+        nominal = _NOMINAL_MASSES.get(e)
+        m = float(m) if m else 0.0
+        if not nominal or not m:
+            continue
+        h = int(round((m - nominal) / 1.008))
+        if h > 0:
+            counts[pos] = h
+    if counts:
+        return counts
+    heavy = [e for e in els if e in _NOMINAL_MASSES and e != "H"]
+    return {} if heavy else None
+
+
+def _inject_inferred_hydrogens(molecule_build, parent_rdkit_idx, count):
+    """B-10 counts-mode: united-atom masses name their exact implicit H
+    count; materialise those H as explicit atoms so bond-order
+    determination sees the true valence budget (UA ethanol -> CCO)."""
+    from rdkit import Chem as _Chem
+    for _ in range(count):
+        h = _Chem.Atom("H")
+        h_idx = molecule_build.AddAtom(h)
+        molecule_build.AddBond(parent_rdkit_idx, h_idx, _Chem.BondType.SINGLE)

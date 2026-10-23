@@ -264,3 +264,111 @@ class TestB07Perf:
         out = FingerprintGenerator(SignaturesConfig())._generate(inst, frag, None)
         dt = time.perf_counter() - t0
         assert out and dt < 2.0, f"B-07 fingerprint still quadratic: {dt:.2f}s"
+
+
+def _ua_ethanol_fragment(with_masses=True):
+    """United-atom ethanol: CH3(15.035) - CH2(14.027) - OH(17.007), no H atoms
+    (GROMOS/ATB-style). With masses inferred implicit H must recover all-atom
+    ethanol; without masses the open-valence mode applies."""
+    n = 3
+    u = mda.Universe.empty(n, n_residues=1, n_segments=1,
+                           atom_resindex=[0] * n, trajectory=True)
+    u.add_TopologyAttr("elements", ["C", "C", "O"])
+    u.add_TopologyAttr("names", ["C1", "C2", "O1"])
+    u.add_TopologyAttr("resnames", ["ETOH"])
+    u.add_TopologyAttr("resids", [1])
+    u.add_TopologyAttr("segids", ["SEG"])
+    u.add_bonds([(0, 1), (1, 2)])
+    u.atoms.positions = np.array([[0.0, 0.0, 0.0], [1.5, 0.0, 0.0],
+                                  [2.7, 0.4, 0.0]], dtype=np.float32)
+    if with_masses:
+        u.add_TopologyAttr("masses", [15.035, 14.027, 17.007])
+    return u.atoms
+
+
+def _benzene_hless_fragment():
+    """H-less benzene ring (PDB ligand style: heavy atoms only, no masses)."""
+    n = 6
+    u = mda.Universe.empty(n, n_residues=1, n_segments=1,
+                           atom_resindex=[0] * n, trajectory=True)
+    u.add_TopologyAttr("elements", ["C"] * n)
+    u.add_TopologyAttr("names", [f"C{i}" for i in range(n)])
+    u.add_TopologyAttr("resnames", ["BEN"])
+    u.add_TopologyAttr("resids", [1])
+    u.add_TopologyAttr("segids", ["SEG"])
+    import math
+    u.add_bonds([(i, (i + 1) % 6) for i in range(6)])
+    u.atoms.positions = np.array(
+        [[1.4 * math.cos(i * math.pi / 3), 1.4 * math.sin(i * math.pi / 3), 0.0]
+         for i in range(6)], dtype=np.float32)
+    return u.atoms
+
+
+class TestB10UnitedAtom:
+    """4.4 - B-10: united-atom / H-less molecules must not be perceived as
+    radicals/carbanions; formula must account for inferred H."""
+
+    ETHANOL_KEY = "LFQSCWFLJHTTHZ-UHFFFAOYSA-N"
+    BENZENE_KEY = "UHOVQNZJYSORNB-UHFFFAOYSA-N"
+
+    def _one(self, gen_cls, frag):
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.generators import _perceive_cache as pc
+        pc.clear_cache()
+        return gen_cls(SignaturesConfig())._generate(_instance(frag), frag, None)
+
+    def test_ethanol_united_atom_recovers_standard_key(self):
+        from src_new.signatures.generators.inchi import InchiKeyGenerator
+        ik = self._one(InchiKeyGenerator, _ua_ethanol_fragment())
+        assert ik == self.ETHANOL_KEY, (
+            f"B-10: united-atom ethanol perceived as radicals: {ik}")
+
+    def test_ethanol_united_atom_formula_has_inferred_h(self):
+        from src_new.signatures.generators.formula import MolecularFormulaGenerator
+        f = self._one(MolecularFormulaGenerator, _ua_ethanol_fragment())
+        assert f == "C2H6O", f"B-10: H-less formula {f}"
+
+    def test_ethanol_heavy_variant_emitted(self):
+        from src_new.signatures.generators.formula import (
+            MolecularFormulaHeavyGenerator)
+        hv = self._one(MolecularFormulaHeavyGenerator, _ua_ethanol_fragment())
+        assert hv == "C2O", hv
+
+    def test_heavy_variant_not_applicable_for_all_atom(self):
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.generators.formula import (
+            MolecularFormulaHeavyGenerator)
+        gen = MolecularFormulaHeavyGenerator(SignaturesConfig())
+        frag = _acetate_fragment()
+        assert not gen.is_applicable(_instance(frag), frag, None)
+
+    BENZENE_TODAY_KEY = "PXCDDPIOUAJVRE-UHFFFAOYSA-N"  # c1c#cc#cc#1 (limited)
+
+    def test_benzene_hless_flagged_not_altered(self):
+        """Mass-less H-less (open mode): H counts are not recoverable in
+        general (benzene vs cyclohexane is ambiguous; even rdDetermineBonds
+        yields the carbyne). Perception stays byte-identical to today,
+        but the fragment is FLAGGED h_inferred and the heavy formula is
+        emitted so queries have a sane fallback (B-10 evidence class)."""
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.generators._perceive_cache import _h_deficiency
+        from src_new.signatures.generators.inchi import InchiKeyGenerator
+        from src_new.signatures.generators.formula import (
+            MolecularFormulaGenerator, MolecularFormulaHeavyGenerator)
+        frag = _benzene_hless_fragment()
+        assert _h_deficiency(frag) == {}, "open mode must be flagged"
+        assert self._one(InchiKeyGenerator, frag) == self.BENZENE_TODAY_KEY
+        assert self._one(MolecularFormulaGenerator, frag) == "C6"
+        assert self._one(MolecularFormulaHeavyGenerator, frag) == "C6"
+
+    def test_all_atom_formula_unchanged(self):
+        """Acetate fixture (explicit H, no masses): zero behavior change."""
+        from src_new.signatures.generators.formula import MolecularFormulaGenerator
+        f = self._one(MolecularFormulaGenerator, _acetate_fragment())
+        assert f == "C2H3O2", f
+
+    def test_segment_flag_h_inferred(self):
+        """The deficiency must be marked on the segment pipeline record."""
+        from src_new.signatures.generators._perceive_cache import _h_deficiency
+        assert _h_deficiency(_ua_ethanol_fragment()) is not None
+        assert _h_deficiency(_acetate_fragment()) is None

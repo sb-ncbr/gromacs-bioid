@@ -10,6 +10,7 @@ from ...config.loader import SignaturesConfig
 from ...molecules.instances import MoleculeInstance
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 from ..base import SignatureGenerator
+from ._perceive_cache import _h_deficiency
 
 logger = logging.getLogger("base")
 
@@ -50,6 +51,16 @@ class MolecularFormulaGenerator(SignatureGenerator):
                 if elem:
                     composition[elem] = composition.get(elem, 0) + 1
         
+        # B-10 (red-team 4.4): united-atom masses carry their implicit H;
+        # without this cholesterol queries as "C27O". Mass-less H-less
+        # systems (open-valence mode) keep raw counts: an implicit-H count
+        # cannot be inferred without perception.
+        _hmap = _h_deficiency(fragment)
+        if _hmap:
+            inferred_h = sum(_hmap.values())
+            if inferred_h:
+                composition["H"] = composition.get("H", 0) + inferred_h
+        
         # v3.143 (B-16): Hill system — C first, H second, then alphabetical
         # (no C: fully alphabetical). The local PubChem mirror normalises to
         # Hill, and ChEMBL's exact-string lookup was missing every compound
@@ -74,4 +85,31 @@ class MolecularFormulaGenerator(SignatureGenerator):
             else:
                 parts.append(f"{elem}{count}")
         
+        return "".join(parts)
+
+
+class MolecularFormulaHeavyGenerator(MolecularFormulaGenerator):
+    """B-10: heavy-atom formula variant, emitted ONLY for H-deficient
+    (united-atom / H-less) fragments so resolvers keep the raw counted
+    string next to the H-inferred canonical one."""
+
+    name = "molecular_formula_heavy"
+
+    def _is_applicable(self, instance, fragment, facade) -> bool:
+        return _h_deficiency(fragment) is not None
+
+    def _generate(self, instance, fragment, facade) -> str:
+        composition = {}
+        for elem in fragment.atoms.elements:
+            if elem:
+                composition[elem] = composition.get(elem, 0) + 1
+        def _hill_order(elems):
+            if "C" in elems:
+                out = ["C"] + (["H"] if "H" in elems else [])
+                return out + sorted(e for e in elems if e not in ("C", "H"))
+            return sorted(elems)
+        parts = []
+        for elem in _hill_order(list(composition.keys())):
+            count = composition[elem]
+            parts.append(elem if count == 1 else f"{elem}{count}")
         return "".join(parts)

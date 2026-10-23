@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from ..executor.task import Task, StepResult
+from ..signatures.generators._perceive_cache import _h_deficiency
 from ..input.discovery import inspect_directory, select_best_file_combination
 from ..loader.strategies import load_simulation
 from ..loader.repair import TopologyRepair

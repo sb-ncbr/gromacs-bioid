@@ -108,6 +108,7 @@ class SignaturesConfig:
     skeleton_fp: bool = True
     resname: bool = True
     molecular_formula: bool = True
+    molecular_formula_heavy: bool = True
     tdi: bool = True
     lipid_shorthand: bool = True
     glycan_composition: bool = True

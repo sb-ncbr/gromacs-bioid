@@ -15,7 +15,8 @@ from ...molecules.instances import MoleculeInstance
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 from ..base import SignatureGenerator
 from ._perceive_cache import (
-    build_once_cached, _net_charge, determine_bond_orders_safely)
+    build_once_cached, _net_charge, determine_bond_orders_safely,
+    _h_deficiency, _inject_inferred_hydrogens)
 
 logger = logging.getLogger("base")
 
@@ -208,13 +209,20 @@ def _fragment_to_rdkit_atoms(
     atom_idx_to_index: dict[int, int],
     molecule: EditableMol,
 ) -> dict[int, int]:
-    """Add atoms from fragment to RDKit molecule."""
+    """Add atoms from fragment to RDKit molecule (+B-10 UA-H injection)."""
     idx_atom_to_rdkit = {}
+    h_map = _h_deficiency(fragment)
     for atom_idx in fragment.atoms.indices:
-        atom_elem = str(fragment.atoms.elements[atom_idx_to_index[atom_idx]]).title()
+        i = atom_idx_to_index[atom_idx]
+        atom_elem = str(fragment.atoms.elements[i]).title()
         atom = Chem.Atom(atom_elem)
         atom.SetNoImplicit(True)
-        idx_atom_to_rdkit[atom_idx] = molecule.AddAtom(atom)
+        rdkit_idx = molecule.AddAtom(atom)
+        idx_atom_to_rdkit[atom_idx] = rdkit_idx
+        if h_map:
+            n = h_map.get(i, 0)
+            if n > 0:
+                _inject_inferred_hydrogens(molecule, rdkit_idx, n)
     return idx_atom_to_rdkit
 
 
