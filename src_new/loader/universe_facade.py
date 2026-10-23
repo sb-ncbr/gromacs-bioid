@@ -112,6 +112,11 @@ class LoadedUniverse:
         self.enhanced_nucleic_recognition = enhanced_nucleic_recognition
         self._segments: set[str] = set()
         self._segment_properties: dict[str, SegmentProperties] = {}
+        # A-13 (red-team 3.8): caches — get_fragment was re-selecting whole
+        # segment AtomGroups and recomputing fragments and representatives on
+        # every call (>=5 times per segment).
+        self._selected_cache: dict[str, AtomGroup] = {}
+        self._rep_cache: dict[str, AtomGroup] = {}
         self._analyze()
         self._discover_virtual_segments()
         self._record_summary()
@@ -430,7 +435,10 @@ class LoadedUniverse:
         self._virtual_fragments: dict = {}
         self._virtual_truncated: list[dict] = []
         for segment_name in list(getattr(self, "_segments", ())):
-            selected = self.universe.atoms[self.universe.atoms.segids == segment_name]
+            selected = self._selected_cache.get(segment_name)
+            if selected is None:  # A-13: compute once, reuse everywhere
+                selected = self.universe.atoms[self.universe.atoms.segids == segment_name]
+                self._selected_cache[segment_name] = selected
             try:
                 fragments = selected.fragments
             except Exception:
@@ -558,14 +566,19 @@ class LoadedUniverse:
         Returns:
             The representative AtomGroup (largest fragment or full segment for polymers).
         """
+        if segment_name in self._rep_cache:  # A-13: computed once per segment
+            return self._rep_cache[segment_name]
         virtual = getattr(self, "_virtual_fragments", {})
         if segment_name in virtual:
             return virtual[segment_name]
 
         if segment_name not in self._segments:
             raise KeyError(f"Segment '{segment_name}' not found")
-        
-        selected = self.universe.atoms[self.universe.atoms.segids == segment_name]
+
+        selected = self._selected_cache.get(segment_name)
+        if selected is None:
+            selected = self.universe.atoms[self.universe.atoms.segids == segment_name]
+            self._selected_cache[segment_name] = selected
         
         try:
             fragments = selected.fragments
@@ -580,6 +593,7 @@ class LoadedUniverse:
             ]
         
         if not fragments:
+            self._rep_cache[segment_name] = selected
             return selected  # fallback when no bonds
         
         # Get largest fragment
@@ -587,6 +601,7 @@ class LoadedUniverse:
 
         # If largest fragment is most of the segment, return it
         if len(largest.atoms) >= len(selected.atoms) * 0.8:
+            self._rep_cache[segment_name] = largest
             return largest
 
         # A-09 (red-team 3.6): polymer representative = union of polymer
@@ -598,13 +613,17 @@ class LoadedUniverse:
             import numpy as _np
             idx = _np.array(sorted({int(i) for f in poly for i in f.atoms.indices}),
                             dtype=_np.int64)
-            return self.universe.atoms[idx]
+            rep = self.universe.atoms[idx]
+            self._rep_cache[segment_name] = rep
+            return rep
 
         # If this is a polymer segment, return full segment (broken bonds case)
         if self._is_polymer_segment(selected):
+            self._rep_cache[segment_name] = selected
             return selected
 
         # Otherwise return largest fragment (small molecule case)
+        self._rep_cache[segment_name] = largest
         return largest
     
     def get_segment_properties(self, segment_name: str) -> SegmentProperties:

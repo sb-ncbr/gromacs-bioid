@@ -148,7 +148,10 @@ def export_segment_mmcif(facade: LoadedUniverse, segment_name: str, output_path:
     if segment_name is not None and segment_name not in set(facade.universe.segments.segids):
         structure = _build_biopython_structure_from_atoms(facade.get_fragment(segment_name))
     else:
-        structure = _build_biopython_structure(facade.universe, filter_segment=segment_name)
+        # A-13 (red-team 3.8): vectorized mask first — no all-universe Python
+        # iteration per segment (was O(S x N))
+        seg_atoms = facade.universe.atoms[facade.universe.atoms.segids == segment_name]
+        structure = _build_biopython_structure(seg_atoms)
     
     # Use MMCIFIOWithCell to preserve box dimensions
     cell = _get_universe_dimensions(facade.universe)

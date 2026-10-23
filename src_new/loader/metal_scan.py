@@ -188,10 +188,19 @@ def scan_metals(
                          if str(elements[i]).upper() != "H"]
                 tree = (cKDTree(all_pos[heavy], boxsize=box)
                         if box is not None else cKDTree(all_pos[heavy]))
+                try:  # A-13: materialize once, not up to 200x per scan
+                    resids_arr = list(atoms.resids)
+                except Exception:
+                    resids_arr = None
+                try:
+                    segids_arr = list(atoms.segids)
+                except Exception:
+                    segids_arr = None
                 for i in transition_idx:
                     rec = _context_record(
                         i, atoms, elements, resnames, heavy, all_pos,
-                        tree, labels[i], coordination_cutoff)
+                        tree, labels[i], coordination_cutoff,
+                        resids_arr=resids_arr, segids_arr=segids_arr)
                     atom_records.append(rec)
 
     payload["atoms"] = atom_records
@@ -205,7 +214,7 @@ def scan_metals(
 
 
 def _context_record(i, atoms, elements, resnames, heavy, positions, tree,
-                    label, cutoff):
+                    label, cutoff, resids_arr=None, segids_arr=None):
     rec = {
         "element": label,
         "resname": resnames[i],
@@ -214,11 +223,11 @@ def _context_record(i, atoms, elements, resnames, heavy, positions, tree,
         "partners": [],
     }
     try:
-        rec["resid"] = int(atoms.resids[i])
+        rec["resid"] = int(resids_arr[i] if resids_arr is not None else atoms.resids[i])
     except Exception:
         pass
     try:
-        rec["segid"] = str(atoms.segids[i])
+        rec["segid"] = str(segids_arr[i] if segids_arr is not None else atoms.segids[i])
     except Exception:
         pass
     try:

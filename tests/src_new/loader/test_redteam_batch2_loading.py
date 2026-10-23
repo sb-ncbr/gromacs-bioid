@@ -628,3 +628,75 @@ class TestA17A18Guards:
         from src_new.loader.metal_scan import _residue_kind
         for rn in ("HSD", "HSE", "HSP", "HIS", "CYX", "CYM"):
             assert _residue_kind(rn) == "protein", f"{rn} must be protein-kind (A-18)"
+
+
+class TestA13Perf:
+    """3.8 — A-13: vectorized jump scan, cached facade representatives.
+    Timing bounds are generous on purpose (CI-slow machines) but still 5-10x
+    under the audited Python-loop cost."""
+
+    def test_jump_scan_vectorized_parity_and_speed(self):
+        import time
+        import numpy as np
+        from MDAnalysis import Universe
+        from MDAnalysis.core.topology import Topology
+        from MDAnalysis.core.topologyattrs import (
+            Atomnames, Atomtypes, Resids, Resnames, Segids, Elements, Masses, Bonds)
+        n = 100_001
+        top = Topology(n, n, 1, atom_resindex=list(range(n)), residue_segindex=[0] * n)
+        top.add_TopologyAttr(Atomnames(["C"] * n)); top.add_TopologyAttr(Atomtypes(["C"] * n))
+        top.add_TopologyAttr(Elements(["C"] * n)); top.add_TopologyAttr(Masses([12.011] * n))
+        top.add_TopologyAttr(Resids(list(range(1, n + 1))))
+        top.add_TopologyAttr(Resnames(["UNL"] * n)); top.add_TopologyAttr(Segids(["SYS"]))
+        top.add_TopologyAttr(Bonds([(i, i + 1) for i in range(n - 1)]))
+        u = Universe(top)
+        x = np.arange(n, dtype=np.float32) * 1.4
+        x[50_001:] += 60.0  # exactly one outlier bond (60000-series)
+        u.load_new(x.reshape(-1, 1) * [1.0, 0.0, 0.0], format="memory")
+        u.dimensions = [200_000.0, 20.0, 20.0, 90.0, 90.0, 90.0]
+        from src_new.loader.unwrap import PbcRepair
+        from src_new.config.loader import RunConfig
+        rep = PbcRepair(u, RunConfig())
+        t0 = time.perf_counter()
+        info = rep.detect_jumps()
+        dt = time.perf_counter() - t0
+        # threshold = min_box_edge * 0.5 = 10 -> only the +60 bond jumps
+        assert info["bond_jumps"] == 1, info
+        assert abs(info["max_bond_length"] - (1.4 + 60.0)) < 0.05  # float32-grid rounding
+        assert dt < 0.5, f"per-bond Python loop still in place? {dt:.2f}s for 100k bonds"
+
+    def test_facade_representative_is_cached(self, tmp_path):
+        mols = [{"resname": "POLY", "elements": ["C"] * 12, "bonds": [(i, i + 1) for i in range(11)]},
+                {"resname": "NA", "elements": ["NA"], "bonds": []}]
+        facade, _ = _facade(_bonded_universe(mols), tmp_path)
+        r1 = facade.get_fragment("SEG")
+        r2 = facade.get_fragment("SEG")
+        assert r1 is r2, "get_fragment recomputes on every call (A-13)"
+
+    def test_segment_export_only_own_atoms(self, tmp_path):
+        pytest.importorskip("Bio")
+        import numpy as np
+        from MDAnalysis import Universe
+        from MDAnalysis.core.topology import Topology
+        from MDAnalysis.core.topologyattrs import (
+            Atomnames, Atomtypes, Resids, Resnames, Segids, Elements, Masses, Bonds)
+        atoms = [("NA", "NA", 1, 0), ("CL", "CL", 1, 0), ("C", "ALA", 2, 1), ("CA", "ALA", 2, 1)]
+        top = Topology(4, 2, 2, atom_resindex=[0, 0, 1, 1], residue_segindex=[0, 1])
+        top.add_TopologyAttr(Atomnames([a[0] for a in atoms]))
+        top.add_TopologyAttr(Atomtypes([a[0] for a in atoms]))
+        top.add_TopologyAttr(Elements([a[0] if a[0] != "CA" else "C" for a in atoms]))
+        top.add_TopologyAttr(Masses([22.99, 35.45, 12.011, 12.011]))
+        top.add_TopologyAttr(Resids([1, 2]))
+        top.add_TopologyAttr(Resnames(["NACL", "ALA"]))
+        top.add_TopologyAttr(Segids(["IONS", "PROT"]))
+        top.add_TopologyAttr(Bonds([(2, 3)]))
+        u = Universe(top)
+        u.load_new(np.array([[i * 2.0, 0.0, 0.0] for i in range(4)], dtype=np.float32),
+                   format="memory")
+        facade, _ = _facade(u, tmp_path)
+        from src_new.loader.export_mmcif import export_segment_mmcif
+        p1 = export_segment_mmcif(facade, "IONS", tmp_path / "ions.cif")
+        p2 = export_segment_mmcif(facade, "PROT", tmp_path / "prot.cif")
+        ions_txt = p1.read_text(); prot_txt = p2.read_text()
+        assert "ALA" not in ions_txt, "segment export leaked other segment's atoms"
+        assert "ALA" in prot_txt and "NACL" not in prot_txt

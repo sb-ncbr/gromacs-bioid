@@ -201,21 +201,27 @@ class PbcRepair:
 
         min_box_edge = min(box[:3])
 
-        # Bond-length scan
-        if hasattr(self.u.atoms, 'bonds') and len(self.u.atoms.bonds) > 0:
+        # Bond-length scan (A-13, red-team 3.8: vectorized — was a per-bond
+        # Python loop, 25 s on a 2M-atom box). Guards go through the topology
+        # storage attr: `hasattr(atoms, "bonds")` itself materializes the
+        # TopologyGroup (~0.35 s @100k) when bonds exist.
+        _top = getattr(self.u, "_topology", None)
+        _tb = getattr(_top, "bonds", None) if _top is not None else None
+        _vals = getattr(_tb, "values", None) if _tb is not None else None
+        if _vals is None:
+            # registry-free fallback (exotic MDA builds)
+            try:
+                _bg = self.u.atoms.bonds
+                _vals = _bg.to_indices() if len(_bg) > 0 else []
+            except Exception:
+                _vals = []
+        b = np.asarray(_vals, dtype=np.int64).reshape(-1, 2) if len(_vals) else None
+        if b is not None and len(b) > 0:
             threshold = min_box_edge * self.loader_config.unwrap_max_bond_length_factor
-            max_len = 0.0
-            bond_jumps = 0
-
-            for atom1, atom2 in self.u.atoms.bonds:
-                dist = np.linalg.norm(atom1.position - atom2.position)
-                if dist > max_len:
-                    max_len = dist
-                if dist > threshold:
-                    bond_jumps += 1
-
-            result["max_bond_length"] = max_len
-            result["bond_jumps"] = bond_jumps
+            pos = self.u.atoms.positions
+            dists = np.linalg.norm(pos[b[:, 0]] - pos[b[:, 1]], axis=1)
+            result["max_bond_length"] = float(dists.max())
+            result["bond_jumps"] = int((dists > threshold).sum())
 
         # Backbone scan (simplified - skip for segments without proper topology)
         backbone_jumps = 0
