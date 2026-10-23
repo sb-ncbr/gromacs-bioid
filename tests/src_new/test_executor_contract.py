@@ -303,25 +303,34 @@ def test_integration_mini_pipeline_records_outputs_and_events(tmp_path: Path) ->
 
 
 def test_info_severity_warnings_keep_task_status_success(tmp_path: Path) -> None:
-    """v3.142.1: informational warnings (molecule-scoped non-applicability like
-    pbc_unwrap_applied / signature_generator_failed) must NOT flip the owning
-    task to the orange 'warning' status; real warnings still do."""
+    """v3.142.1: informational warnings (molecule-scoped no-ops like
+    pbc_unwrap_applied) must NOT flip the owning task to the orange
+    'warning' status; real warnings still do. v3.143 (E-22):
+    `signature_generator_failed` is a REAL failure code (generator
+    exception / returned None) — demoting it hid dead channels — true
+    no-ops use the separate `signature_generator_not_applicable` info code."""
     results_path = tmp_path / "results.json"
     manager = ResultsManager(results_path)
 
     def info_only(context):
         context.add_warning("pbc_unwrap_applied", "applied for cosmetics")
-        context.add_warning("signature_generator_failed", "morgan_fingerprint: n/a",
-                            details={"segment": "seg_2_TIP3", "generator": "morgan_fingerprint"})
+        context.add_warning("signature_generator_not_applicable", "residue_sequence_nucleic: n/a",
+                            details={"segment": "seg_2_TIP3", "generator": "residue_sequence_nucleic"})
         return StepResult(summary={"ok": True})
 
     def real_warning(context):
         context.add_warning("identifier_resolver_failed", "resolver timeout")
         return StepResult(summary={"ok": True})
 
+    def real_generator_failure(context):
+        context.add_warning("signature_generator_failed", "morgan: eval exploded",
+                            details={"segment": "seg_1_WAT", "generator": "morgan_fingerprint"})
+        return StepResult(summary={"ok": True})
+
     steps = [
         PipelineStep(step_id="cosmetic", name="Cosmetic", handler=info_only),
         PipelineStep(step_id="real", name="Real", handler=real_warning),
+        PipelineStep(step_id="genfail", name="GenFail", handler=real_generator_failure),
     ]
     executor = PipelineExecutor(steps=steps, results_manager=manager)
     executor.run(output_directory=tmp_path / "outputs")
@@ -329,8 +338,13 @@ def test_info_severity_warnings_keep_task_status_success(tmp_path: Path) -> None
     payload = json.loads(results_path.read_text(encoding="utf-8"))
     assert payload["tasks"]["cosmetic"]["status"] == "success"
     assert payload["tasks"]["real"]["status"] == "warning"
+    assert payload["tasks"]["genfail"]["status"] == "warning", (
+        "E-22: a real generator failure must NOT hide behind a green task"
+    )
     severities = {w["code"]: w.get("severity") for w in payload["warnings"]}
     assert severities["pbc_unwrap_applied"] == "info"
+    assert severities["signature_generator_not_applicable"] == "info"
     assert severities["identifier_resolver_failed"] == "warning"
-    seg_warn = next(w for w in payload["warnings"] if w["code"] == "signature_generator_failed")
+    assert severities["signature_generator_failed"] == "warning"
+    seg_warn = next(w for w in payload["warnings"] if w["code"] == "signature_generator_not_applicable")
     assert seg_warn["details"]["segment"] == "seg_2_TIP3"

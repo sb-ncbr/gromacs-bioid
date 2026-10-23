@@ -64,7 +64,11 @@ class StepContext:
     # `kind: "info"` entries): molecule-scoped non-applicability notes must NOT
     # flip the owning task's status to orange ("warning") in the taskbar.
     INFO_WARNING_CODES = frozenset({
-        "signature_generator_failed",
+        # v3.143 (E-22): `signature_generator_failed` is NOT informational —
+        # it fires on real failures (generator exception / returned None),
+        # and demoting it hid dead channels behind green tasks. True
+        # applicability no-ops use `signature_generator_not_applicable`.
+        "signature_generator_not_applicable",
         "pbc_unwrap_applied",
         "coords_rescaled_nm_to_angstrom",
     })

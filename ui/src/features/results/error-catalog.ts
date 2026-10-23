@@ -174,6 +174,15 @@ export const CATALOG_CODES: CatalogCode[] = [
   },
   {
     code: "signature_generator_failed",
+    kind: "warning",
+    stage: "signatures",
+    user_title: "A signature failed to generate",
+    user_what: "The {generator_human} signature for {segment} raised an error or produced nothing. This is a real failure - the run continues with the remaining signatures, but identification for this molecule may be incomplete.",
+    user_action: "If this repeats on every molecule, report it - the channel may be dead.",
+    details_show: ["generator_human", "segment"],
+  },
+  {
+    code: "signature_generator_not_applicable",
     kind: "info",
     stage: "signatures",
     user_title: "A signature was skipped",
