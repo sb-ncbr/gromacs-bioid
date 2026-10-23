@@ -11,6 +11,7 @@ from MDAnalysis import Universe
 from MDAnalysis.guesser.default_guesser import DefaultGuesser
 
 from ..config.loader import RunConfig
+from .repair import element_based_vdwradii  # A-04 (3.2): radii from elements
 
 logger = logging.getLogger("base")
 
@@ -141,15 +142,17 @@ class PbcRepair:
     def _guess_bonds(self) -> int:
         """Guess bonds using DefaultGuesser. Returns count of bonds guessed."""
         try:
-            guesser = DefaultGuesser(
-                self.u,
-                vdwradii=None,
+            # A-04 (red-team 3.2): see repair.guess_bonds — instance-as-context
+            # discarded the radii; element-based table fixes DUMMY/OW/HW kills.
+            self.u.guess_TopologyAttrs(
+                context="default",
+                to_guess=['bonds'],
+                vdwradii=element_based_vdwradii(self.u),
                 fudge_factor=self.config.loader.bond_guess_vdw_factor,
                 lower_bound=0.1,
             )
-            self.u.guess_TopologyAttrs(to_guess=['bonds'], context=guesser)
         except Exception as exc:
-            logger.warning(f"Bond guessing for unwrap failed: {exc}")
+            logger.warning(f"Bond guessing for unwrap failed: bond_guess_failed: {exc}")
             return 0
 
         return len(self.u.atoms.bonds) if hasattr(self.u.atoms, 'bonds') else 0

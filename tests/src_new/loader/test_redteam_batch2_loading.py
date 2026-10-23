@@ -1,0 +1,393 @@
+"""Red-team Batch-2 (loading) regression tests.
+
+One class per sub-step (3.1-3.9), each grounded in an empirical probe that
+reproduced the audit finding (.tmp/redteam/report.md). RED before the fix,
+GREEN after. Batch-1 pattern: fix sites promoted byte-identical, suites as
+gates.
+"""
+
+import hashlib
+import logging
+import os
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+
+mda = pytest.importorskip("MDAnalysis")
+import numpy as np
+
+from src_new.input.models import FileRecord, InputKind
+from src_new.input.discovery import inspect_directory, discover_input_kind, select_best_file_combination
+from src_new.loader.strategies import (
+    LoadStrategy, load_simulation, load_with_strategy, validate_for_strategy)
+from src_new.results.results_manager import ResultsManager
+from src_new.config.loader import RunConfig
+
+
+def _mini_pdb(p: Path) -> None:
+    lines = [
+        "ATOM      1  C1  LIG A   1      10.000  10.000  10.000  1.00  0.00           C\n",
+        "ATOM      2  C2  LIG A   1      11.500  10.000  10.000  1.00  0.00           C\n",
+        "ATOM      3  O1  LIG A   1      12.500  10.500  10.000  1.00  0.00           O\n",
+        "TER\nEND\n",
+    ]
+    p.write_text("".join(lines))
+
+
+def _mini_xtc(p: Path, pdb: Path) -> None:
+    # 2 frames: frame 0 at dx=0, frame 1 shifted by 5 A
+    u = mda.Universe(str(pdb))
+    with mda.Writer(str(p), u.atoms.n_atoms) as w:
+        for dx in (0.0, 5.0):
+            u.atoms.positions = np.array(
+                [[10.0 + dx, 10.0, 10.0],
+                 [11.5 + dx, 10.0, 10.0],
+                 [12.5 + dx, 10.5, 10.0]], dtype="float32")
+            w.write(u.atoms)
+
+
+def _four_atom_xtc(p: Path) -> None:
+    pdb4 = p.parent / "_four.pdb"
+    pdb4.write_text("".join([
+        "ATOM      1  C1  LIG A   1      10.000  10.000  10.000  1.00  0.00           C\n",
+        "ATOM      2  C2  LIG A   1      11.500  10.000  10.000  1.00  0.00           C\n",
+        "ATOM      3  O1  LIG A   1      12.500  10.500  10.000  1.00  0.00           O\n",
+        "ATOM      4  N1  LIG A   1      13.500  10.500  10.000  1.00  0.00           N\n",
+        "TER\nEND\n",
+    ]))
+    u = mda.Universe(str(pdb4))
+    with mda.Writer(str(p), u.atoms.n_atoms) as w:
+        w.write(u.atoms)
+    pdb4.unlink()
+
+
+class TestA05MemoryPath:
+    """3.1 — A-05: no whole-file RAM copies for checksums or trajectories."""
+
+    def test_filerecord_checksum_streams_chunks(self, tmp_path, monkeypatch):
+        payload = bytes(range(256)) * 5000  # ~1.28 MiB, spans multiple 1 MiB chunks
+        f = tmp_path / "traj.xtc"
+        f.write_bytes(payload)
+
+        def boom(self):  # any whole-file slurp breaks the audit's memory bound
+            raise AssertionError("read_bytes() must not be used (A-05: stream in chunks)")
+
+        monkeypatch.setattr(Path, "read_bytes", boom)
+        rec = FileRecord.from_path(f, "f1", "xtc", "trajectory")
+        assert rec.checksum == hashlib.sha256(payload).hexdigest()
+        assert rec.size_bytes == len(payload)
+
+    def test_pdb_xtc_pairing_copies_frame0_only(self, tmp_path):
+        pdb = tmp_path / "structure.pdb"; _mini_pdb(pdb)
+        xtc = tmp_path / "trajectory.xtc"; _mini_xtc(xtc, pdb)
+        v = validate_for_strategy(inspect_directory(tmp_path), LoadStrategy.PDB)
+        u = load_with_strategy(LoadStrategy.PDB, v.selected_files, RunConfig())
+        # A-05: only frame 0 may be materialized (was in_memory=True -> all frames)
+        assert len(u.trajectory) == 1
+        # instantaneous frame-0 coords unchanged (dx=0, not averaged 12.5)
+        assert abs(float(u.atoms.positions[0][0]) - 10.0) < 0.5
+
+    def test_xtc_pairing_failure_logs_warning(self, tmp_path, caplog):
+        pdb = tmp_path / "structure.pdb"; _mini_pdb(pdb)
+        bad = tmp_path / "trajectory.xtc"; _four_atom_xtc(bad)  # 4 atoms vs 3 in pdb
+        v = validate_for_strategy(inspect_directory(tmp_path), LoadStrategy.PDB)
+        with caplog.at_level(logging.WARNING, logger="src_new.loader.strategies"):
+            u = load_with_strategy(LoadStrategy.PDB, v.selected_files, RunConfig())
+        assert u.atoms.n_atoms == 3  # static-PDB fallback still works
+        assert any("fallback" in r.getMessage().lower() or "pairing" in r.getMessage().lower()
+                   for r in caplog.records), "A-05: silent `except: pass` fallback must log"
+
+
+def _make_tip4p_two_waters():
+    """2 TIP4P waters far apart; atom 4 of each is a massless M site (DUMMY type,
+    blank element after 2.7 repair) — the exact A-04 probe shape."""
+    import numpy as np
+    from MDAnalysis import Universe
+    from MDAnalysis.core.topology import Topology
+    from MDAnalysis.core.topologyattrs import (
+        Atomnames, Atomtypes, Resids, Resnames, Segids, Elements, Masses)
+
+    n_res = 2
+    top = Topology(n_res * 4, n_res, 1,
+                   atom_resindex=[0, 0, 0, 0, 1, 1, 1, 1],
+                   residue_segindex=[0, 0])
+    top.add_TopologyAttr(Atomnames(["OH2", "H1", "H2", "MW"] * 2))
+    top.add_TopologyAttr(Atomtypes(["O", "H", "H", "DUMMY"] * 2))  # MDA: MW -> DUMMY
+    top.add_TopologyAttr(Elements(["O", "H", "H", ""] * 2))        # post-repair blank
+    top.add_TopologyAttr(Masses([15.999, 1.008, 1.008, 0.0] * 2))
+    top.add_TopologyAttr(Resids([1, 2]))
+    top.add_TopologyAttr(Resnames(["TIP4"] * 2))
+    top.add_TopologyAttr(Segids(["SOL"]))
+    u = Universe(top)
+    w1 = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0], [0.15, 0.15, 0.0]])
+    w2 = w1 + np.array([20.0, 20.0, 20.0])
+    u.load_new(np.vstack([w1, w2]).astype(np.float32), format="memory")
+    return u
+
+
+class TestA04BondGuessing:
+    """3.2 — A-04: one unknown atom type must not kill bond guessing system-wide."""
+
+    def test_element_based_vdwradii_table(self):
+        from src_new.loader.repair import element_based_vdwradii
+        u = _make_tip4p_two_waters()
+        radii = element_based_vdwradii(u)
+        assert radii["DUMMY"] == 0.0          # massless virtual site
+        assert radii["O"] > 1.0 and radii["H"] > 0.9
+        # unknown type, unknown element, real mass -> audit's 1.5 A fallback
+        u2 = _make_tip4p_two_waters()
+        u2.atoms.types = ["O", "H", "H", "XX"] * 2
+        u2.atoms.elements = ["O", "H", "H", ""] * 2
+        u2.atoms.masses = [15.999, 1.008, 1.008, 12.0] * 2
+        radii = element_based_vdwradii(u2)
+        assert radii["XX"] == 1.5
+
+    def test_massless_sites_dont_kill_guessing(self):
+        from src_new.loader.repair import TopologyRepair
+        from src_new.config.loader import RunConfig
+        u = _make_tip4p_two_waters()
+        repair = TopologyRepair(u, RunConfig())
+        n = repair.guess_bonds()
+        assert n >= 4, "each water needs 2 O-H bonds; DUMMY type killed guessing before"
+        assert len(u.atoms.fragments) == 2, "waters must stay 2 fragments, not 1 blob"
+
+    def test_ow_hw_water_types_guess_bonds(self):
+        # 3 waters with force-field types OW/HW (audit A/p_bg.py first run: bonds=0)
+        import numpy as np
+        from MDAnalysis import Universe
+        from MDAnalysis.core.topology import Topology
+        from MDAnalysis.core.topologyattrs import (
+            Atomnames, Atomtypes, Resids, Resnames, Segids, Elements, Masses)
+        top = Topology(9, 3, 1,
+                       atom_resindex=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+                       residue_segindex=[0, 0, 0])
+        top.add_TopologyAttr(Atomnames(["OW", "HW1", "HW2"] * 3))
+        top.add_TopologyAttr(Atomtypes(["OW", "HW", "HW"] * 3))
+        top.add_TopologyAttr(Elements(["O", "H", "H"] * 3))
+        top.add_TopologyAttr(Masses([15.999, 1.008, 1.008] * 3))
+        top.add_TopologyAttr(Resids([1, 2, 3]))
+        top.add_TopologyAttr(Resnames(["TIP3"] * 3))
+        top.add_TopologyAttr(Segids(["SOL"]))
+        u = Universe(top)
+        w = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
+        pos = np.vstack([w + np.array([i * 15.0, 0.0, 0.0]) for i in range(3)])
+        u.load_new(pos.astype(np.float32), format="memory")
+        from src_new.loader.repair import TopologyRepair
+        from src_new.config.loader import RunConfig
+        n = TopologyRepair(u, RunConfig()).guess_bonds()
+        assert n >= 6, "OW/HW types must not zero out bond guessing"
+        assert len(u.atoms.fragments) == 3
+
+
+class TestA16A07Discovery:
+    """3.3 — A-16 discovery order-fragility + A-07 GROMACS broken-include fallback."""
+
+    def test_non_lammps_dot_data_does_not_hijack(self, tmp_path):
+        # energy table saved as .data + a real structure.pdb -> must pick PDB,
+        # not the alphabetic .data LAMMPS path (A-16a)
+        (tmp_path / "energies.data").write_text("# step  energy\n0  -123.4\n1  -123.5\n")
+        _mini_pdb(tmp_path / "structure.pdb")
+        dec = select_best_file_combination(inspect_directory(tmp_path))
+        assert dec.input_kind == InputKind.PDB and dec.selected_strategy == "PDB_SINGLE"
+
+    def test_real_lammps_data_still_detected(self, tmp_path):
+        # regression guard: a genuine LAMMPS data file keeps the LAMMPS path
+        (tmp_path / "system.data").write_text(
+            "LAMMPS data file\n\n2 atoms\n1 atom types\n\n"
+            "0.0 1.0 xlo xhi\n0.0 1.0 ylo yhi\n0.0 1.0 zlo zhi\n\n"
+            "Masses\n\n1 12.011\n\nAtoms # atomic\n\n1 1 0.0 0.0 0.0\n2 1 0.5 0.0 0.0\n")
+        dec = select_best_file_combination(inspect_directory(tmp_path))
+        assert dec.input_kind == InputKind.LAMMPS
+
+    def test_pdb_ranking_prefers_structure_over_average(self, tmp_path):
+        _mini_pdb(tmp_path / "average.pdb")
+        _mini_pdb(tmp_path / "structure.pdb")
+        v = validate_for_strategy(inspect_directory(tmp_path), LoadStrategy.PDB)
+        assert v.selected_files["pdb"].name == "structure.pdb", (
+            "sorted()[0] picked average.pdb — the time-averaged structure the "
+            "code itself warns about (A-16b)")
+
+    def test_discover_input_kind_delegates_consistently(self, tmp_path):
+        # A-16c: dead-code discover said NOTHING for {parm7, xtc} while
+        # select says AMBER — one behavior, one source of truth
+        (tmp_path / "system.parm7").write_text("%VERSION  VERSION_STAMP\n")
+        (tmp_path / "traj.xtc").write_bytes(b"\x00" * 16)
+        assert discover_input_kind(tmp_path) == InputKind.AMBER
+
+    def test_gromacs_broken_include_falls_back_to_gro(self, tmp_path):
+        # A-07: top references a host-local forcefield include; must degrade
+        # to GRO-only instead of failing the whole load
+        (tmp_path / "topol.top").write_text(
+            '#include "amber99sb-ildn.ff/forcefield.itp"\n'
+            "[ moleculetype ]\nSOL 3\n\n[ system ]\nt\n\n[ molecules ]\nSOL 2\n")
+        rows = "".join(
+            "%5d%-5s%5s%5d%8.3f%8.3f%8.3f\n" % (
+                i // 3 + 1, "SOL", ["OW", "HW1", "HW2"][i % 3], i + 1,
+                (i // 3) * 2.0 + (0.096 if i % 3 == 1 else -0.024 if i % 3 == 2 else 0.0),
+                0.093 if i % 3 == 2 else 0.0, 0.0)
+            for i in range(6))
+        (tmp_path / "conf.gro").write_text("t\n    6\n" + rows + "   5.00000   5.00000   5.00000\n")
+        bundle = inspect_directory(tmp_path)
+        dec = select_best_file_combination(bundle)
+        result = load_simulation(dec, bundle, RunConfig(), ResultsManager(tmp_path / "r.json"))
+        assert result.success, [ (a.strategy, a.error_code) for a in result.attempts ]
+        assert result.final_strategy == LoadStrategy.GROMACS_GRO.value, result.final_strategy
+        assert result.universe.atoms.n_atoms == 6
+
+    def test_gromacs_broken_include_cross_kind_pdb_fallback(self, tmp_path):
+        # when a .pdb sits alongside the broken top(+no gro), PDB strategy loads it
+        (tmp_path / "topol.top").write_text('#include "amber99sb-ildn.ff/forcefield.itp"\n[ system ]\nt\n')
+        _mini_pdb(tmp_path / "structure.pdb")
+        bundle = inspect_directory(tmp_path)
+        dec = select_best_file_combination(bundle)
+        result = load_simulation(dec, bundle, RunConfig(), ResultsManager(tmp_path / "r.json"))
+        assert result.success and result.universe.atoms.n_atoms == 3
+        assert result.final_strategy == LoadStrategy.PDB.value, result.final_strategy
+
+
+def _mini_mmcif_two_chains(p: Path) -> None:
+    """Two chains with 2-char auth chain IDs (AA, BA) — the A-06 probe shape."""
+    rows = []
+    atom_rows = [
+        (1, "C", "CA", "GLY", 1, 0.000, 0.000, 0.000, 1, "GLY", "AA"),
+        (2, "C", "C", "GLY", 1, 1.450, 0.000, 0.000, 1, "GLY", "AA"),
+        (3, "N", "N", "ALA", 2, 1.500, 1.450, 0.200, 2, "ALA", "AA"),
+        (4, "C", "CA", "GLY", 1, 20.000, 0.000, 0.000, 1, "GLY", "BA"),
+        (5, "C", "C", "GLY", 1, 21.450, 0.000, 0.000, 1, "GLY", "BA"),
+        (6, "N", "N", "ALA", 2, 21.500, 1.450, 0.200, 2, "ALA", "BA"),
+    ]
+    for (i, el, nm, rc, rs, x, y, z, ars, arc, asym) in atom_rows:
+        rows.append("ATOM %d %s %s . %s A 1 %d ? %.3f %.3f %.3f 1.00 0.00 %d %s %s 1"
+                    % (i, el, nm, rc, rs, x, y, z, ars, arc, asym))
+    p.write_text(
+        "data_test\n_entry.id TEST\n#\nloop_\n"
+        "_atom_site.group_PDB\n_atom_site.id\n_atom_site.type_symbol\n"
+        "_atom_site.label_atom_id\n_atom_site.label_alt_id\n_atom_site.label_comp_id\n"
+        "_atom_site.label_asym_id\n_atom_site.label_entity_id\n_atom_site.label_seq_id\n"
+        "_atom_site.pdbx_PDB_ins_code\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n"
+        "_atom_site.Cartn_z\n_atom_site.occupancy\n_atom_site.B_iso_or_equiv\n"
+        "_atom_site.auth_seq_id\n_atom_site.auth_comp_id\n_atom_site.auth_asym_id\n"
+        "_atom_site.pdbx_PDB_model_num\n"
+        + "\n".join(rows) + "\n#\n")
+
+
+class TestA06MmcifChains:
+    """3.4 — A-06: no PDB-text round-trip; multi-char chain IDs must survive."""
+
+    def test_two_char_chain_ids_not_merged(self, tmp_path):
+        pytest.importorskip("gemmi")
+        from src_new.loader.strategies import _load_mmcif_via_gemmi
+        cif = tmp_path / "x.cif"
+        _mini_mmcif_two_chains(cif)
+        u = _load_mmcif_via_gemmi(cif)
+        segids = sorted(str(s) for s in u.segments.segids)
+        assert segids == ["AA", "BA"], f"gemmi->PDB round-trip merged chains: {segids}"
+        assert u.atoms.n_atoms == 6
+        # coordinates preserved (chain BA is +20 A shifted)
+        xs = sorted(float(u.atoms.positions[i][0]) for i in range(6))
+        assert xs[0] < 0.01 and xs[3] > 19.9
+
+    def test_mmcif_elements_present(self, tmp_path):
+        pytest.importorskip("gemmi")
+        from src_new.loader.strategies import _load_mmcif_via_gemmi
+        cif = tmp_path / "x.cif"
+        _mini_mmcif_two_chains(cif)
+        u = _load_mmcif_via_gemmi(cif)
+        assert set(str(e) for e in u.atoms.elements) == {"C", "N"}
+
+
+def _bonded_universe(molecules):
+    """Build 1-segment universe from [(n_atoms, [(resname, elements, n_bonds...)])].
+    molecules: list of dicts {resname: str, elements: list[str], bonds: [(i,j)]} (local idx)."""
+    import numpy as np
+    from MDAnalysis import Universe
+    from MDAnalysis.core.topology import Topology
+    from MDAnalysis.core.topologyattrs import (
+        Atomnames, Atomtypes, Resids, Resnames, Segids, Elements, Masses, Bonds)
+
+    names, types, elems, masses = [], [], [], []
+    ari, rnames, rids = [], [], []
+    bonds = []
+    off = 0
+    for mol in molecules:
+        els = mol["elements"]
+        names += [f"{e}{i}" for i, e in enumerate(els, 1)]
+        types += els
+        elems += els
+        masses += [{"C": 12.011, "H": 1.008, "N": 14.007, "O": 15.999,
+                    "NA": 22.990, "CL": 35.45, "S": 32.06, "P": 30.974}.get(e.upper(), 12.0)
+                   for e in els]
+        ari += [len(rnames)] * len(els)
+        rnames.append(mol["resname"])
+        rids.append(len(rids) + 1)
+        bonds += [(off + i, off + j) for i, j in mol["bonds"]]
+        off += len(els)
+
+    top = Topology(len(names), len(rnames), 1,
+                   atom_resindex=ari, residue_segindex=[0] * len(rnames))
+    top.add_TopologyAttr(Atomnames(names))
+    top.add_TopologyAttr(Atomtypes(types))
+    top.add_TopologyAttr(Elements(elems))
+    top.add_TopologyAttr(Masses(masses))
+    top.add_TopologyAttr(Resids(rids))
+    top.add_TopologyAttr(Resnames(rnames))
+    top.add_TopologyAttr(Segids(["SEG"]))
+    top.add_TopologyAttr(Bonds(bonds))
+    u = Universe(top)
+    pos = np.array([[i * 1.2 % 40, (i // 8) * 3.0, (i % 5) * 0.4]
+                    for i in range(len(names))], dtype=np.float32)
+    u.load_new(pos, format="memory")
+    return u
+
+
+def _facade(u, tmp_path):
+    from src_new.loader.universe_facade import LoadedUniverse
+    from src_new.loader.repair import RepairReport
+    from src_new.input.models import LoadDecision, InputKind
+    results = ResultsManager(tmp_path / "results.json")
+    dec = LoadDecision(input_kind=InputKind.PDB, selected_strategy="PDB_SINGLE")
+    facade = LoadedUniverse(universe=u, decision=dec, repair_report=RepairReport(),
+                            results=results)
+    return facade, results
+
+
+class TestA10VirtualSpecies:
+    """3.5 — A-10: species key must split isomers; cap must not drop silently."""
+
+    def _poly_atp_dgt(self):
+        return [
+            {"resname": "POLY", "elements": ["C"] * 12, "bonds": [(i, i + 1) for i in range(11)]},
+            {"resname": "ATP", "elements": ["C", "C", "N", "O", "O"],
+             "bonds": [(0, 1), (1, 2), (2, 3), (3, 4)]},
+            {"resname": "DGT", "elements": ["C", "C", "N", "O", "O"],   # isomer of ATP
+             "bonds": [(0, 1), (0, 2), (2, 3), (0, 4)]},
+            {"resname": "NA", "elements": ["NA"], "bonds": []},
+        ]
+
+    def _virtual_frag_resnames(self, facade):
+        out = []
+        for vname, frag in facade._virtual_fragments.items():
+            out.append((vname, str(frag.residues[0].resname)))
+        return sorted(out)
+
+    def test_isomer_molecules_split_into_two_clusters(self, tmp_path):
+        u = _bonded_universe(self._poly_atp_dgt())
+        facade, _ = _facade(u, tmp_path)
+        got = self._virtual_frag_resnames(facade)
+        assert got == [("SEG__v1", "ATP"), ("SEG__v2", "DGT")], (
+            f"formula-only key collided isomers (A-10): {got}")
+
+    def test_species_cap_records_truncation(self, tmp_path):
+        mols = [{"resname": "POLY", "elements": ["C"] * 12, "bonds": [(i, i + 1) for i in range(11)]}]
+        for k in range(65):
+            mols.append({"resname": f"L{k:02d}", "elements": ["C", "C", "O", "H"],
+                         "bonds": [(0, 1), (1, 2), (2, 3)]})
+        u = _bonded_universe(mols)
+        facade, results = _facade(u, tmp_path)
+        assert len(facade._virtual_fragments) == 64, "cap must hold"
+        dropped = results.get_data("universe/virtual_segments_truncated") or []
+        assert dropped and dropped[0]["dropped_species"] == 1, (
+            "A-10: species past the cap were dropped silently")

@@ -27,9 +27,14 @@ class FileRecord:
     @classmethod
     def from_path(cls, path: Path, file_id: str, file_type: str, role: str) -> FileRecord:
         # compute size and sha256 checksum from file contents
+        # A-05 (red-team 3.1): stream in 1 MiB chunks — read_bytes() slurps the
+        # whole file, which OOM-killed pods on multi-GB trajectories.
         size_bytes = path.stat().st_size
-        content = path.read_bytes()
-        checksum = hashlib.sha256(content).hexdigest()
+        hasher = hashlib.sha256()
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                hasher.update(chunk)
+        checksum = hasher.hexdigest()
         return cls(
             path=path,
             file_id=file_id,

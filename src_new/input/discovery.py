@@ -41,48 +41,39 @@ _STRUCTURE_TYPES = {t for t, role in _CANONICAL_SUFFIX_TABLE.values() if role ==
 
 
 def discover_input_kind(dir_path: Path) -> InputKind | None:
-    """Detect input format from files present in directory."""
-    # Return None if path doesn't exist or isn't a directory.
+    """Detect input format from files present in directory.
+
+    A-16 (red-team 3.3): the hand-rolled extension ladder duplicated the
+    decision logic and disagreed with it (e.g. {parm7, xtc} -> None here,
+    AMBER in select_best_file_combination). Single source of truth: delegate.
+    """
     if not dir_path.exists() or not dir_path.is_dir():
         return None
+    decision = select_best_file_combination(inspect_directory(dir_path))
+    return decision.input_kind
 
-    # Collect all file extensions (lowercase)
-    extensions = set()
-    for f in dir_path.iterdir():
-        if f.is_file():
-            extensions.add(f.suffix.lower())
 
-    # Check for GROMACS (.tpr, or .top + .gro, or .itp + .gro)
-    if ".tpr" in extensions:
-        return InputKind.GROMACS
-    if ".top" in extensions and ".gro" in extensions:
-        return InputKind.GROMACS
-    if ".itp" in extensions and ".gro" in extensions:
-        return InputKind.GROMACS
+def _looks_like_lammps_data(path: Path, max_lines: int = 64) -> bool:
+    """A-16: True when a .data file actually smells like a LAMMPS data file.
 
-    # Check for AMBER (.prmtop, or .parm7 + .nc)
-    if ".prmtop" in extensions:
-        return InputKind.AMBER
-    if ".parm7" in extensions and ".nc" in extensions:
-        return InputKind.AMBER
-
-    # Check for CHARMM/NAMD (.psf — coordinates come from pdb/crd/dcd)
-    if ".psf" in extensions:
-        return InputKind.CHARMM
-
-    # Check for LAMMPS (.data carries topology + coordinates in one file)
-    if ".data" in extensions:
-        return InputKind.LAMMPS
-
-    # Check for PDB (.pdb)
-    if ".pdb" in extensions:
-        return InputKind.PDB
-
-    # Check for MMCIF (.cif)
-    if ".cif" in extensions:
-        return InputKind.MMCIF
-
-    return None
+    Signature: the header comment usually contains 'LAMMPS', and/or an
+    '<n> atoms' section declaration appears in the first lines. Plain text
+    energy tables etc. fail both checks.
+    """
+    import re
+    try:
+        head = []
+        with path.open("r", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                if i >= max_lines:
+                    break
+                head.append(line)
+    except OSError:
+        return False
+    text = "".join(head)
+    if "LAMMPS" in text.split("\n", 1)[0]:
+        return True
+    return bool(re.search(r"^\s*\d+\s+atoms\b", text, re.MULTILINE))
 
 
 def inspect_directory(dir_path: Path) -> InputBundle:
@@ -187,7 +178,11 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
         )
     
     # 5b. .data -> LAMMPS (topology + coordinates in one file)
-    if ".data" in exts:
+    # A-16 (red-team 3.3): SNIFF the content first — a stray "energies.data"
+    # (or any non-LAMMPS table) must not hijack the decision away from a real
+    # structure file that is also present.
+    if ".data" in exts and any(_looks_like_lammps_data(f.path) for f in bundle.files
+                               if f.path.suffix.lower() == ".data"):
         data_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".data"]
         return LoadDecision(
             input_kind=InputKind.LAMMPS,

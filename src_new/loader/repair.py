@@ -14,6 +14,42 @@ from .repair_constants import ATOMTABLE_ELEMENTS_MASSES, ATOMTABLE_ELEMENT_MASS_
 logger = logging.getLogger("base")
 
 
+def element_based_vdwradii(u: Universe) -> dict[str, float]:
+    """A-04 (red-team 3.2): per-TYPE vdw radius table from repaired ELEMENTS.
+
+    `DefaultGuesser(vdwradii=None)` looks radii up by atom *type*: a single
+    unknown type in the whole universe (DUMMY for MW/EP/LP sites, Martini
+    beads, force-field names like OW/HW) raised ValueError and ZERO bonds were
+    guessed for the entire system — every segment then collapsed into one
+    "molecule". MDAnalysis merges a user-supplied table over its own, so we
+    supply radii for every type present:
+
+    - mass < 0.5 atom (massless virtual site)  -> 0.0 (never bonds)
+    - known repaired element (per 2.7 logic)   -> Bondi radius from MDA tables
+    - anything else                            -> 1.5 A audit fallback
+    """
+    from MDAnalysis.topology.tables import vdwradii as _Bondi
+
+    types = getattr(u.atoms, "types", None)
+    if types is None or len(types) == 0:
+        return {}
+    elements = getattr(u.atoms, "elements", None)
+    masses = getattr(u.atoms, "masses", None)
+    radii: dict[str, float] = {}
+    for i, t in enumerate(types):
+        if t in radii:
+            continue
+        if masses is not None and i < len(masses) and float(masses[i]) < 0.5:
+            radii[t] = 0.0  # massless virtual site
+            continue
+        el = ""
+        if elements is not None and i < len(elements):
+            raw = str(elements[i]).strip()
+            el = raw.capitalize() if raw else ""
+        radii[t] = float(_Bondi[el]) if el in _Bondi else 1.5
+    return radii
+
+
 @dataclass
 class RepairReport:
     elements_guessed: int = 0
@@ -349,16 +385,20 @@ class TopologyRepair:
             return 0
 
         try:
-            guesser = DefaultGuesser(
-                self.u,
-                vdwradii=None,
+            # A-04 (red-team 3.2): context= must be a STRING/CLASS — passing a
+            # guesser INSTANCE silently discarded all params (the root bug).
+            # Radii come from repaired elements so one odd type (DUMMY/MW,
+            # OW/HW, Martini beads) can no longer zero out all bonds.
+            self.u.guess_TopologyAttrs(
+                context="default",
+                to_guess=['bonds'],
+                vdwradii=element_based_vdwradii(self.u),
                 fudge_factor=self.config.loader.bond_guess_vdw_factor,
                 lower_bound=0.1,
             )
-            self.u.guess_TopologyAttrs(to_guess=['bonds'], context=guesser)
         except Exception as exc:
             logger.warning(f"MDAnalysis bond guesser failed: {exc}")
-            self.report.warnings.append(f"Bond guessing failed: {exc}")
+            self.report.warnings.append(f"bond_guess_failed: {exc}")
             return 0
 
         count = len(self.u.atoms.bonds) if hasattr(self.u.atoms, 'bonds') else 0

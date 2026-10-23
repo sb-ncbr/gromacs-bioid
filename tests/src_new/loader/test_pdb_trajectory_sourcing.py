@@ -54,7 +54,9 @@ def test_pdb_strategy_loads_trajectory_frame0(tmp_path, monkeypatch):
     # instantaneous frame (dx=0): coordinate x of first atom == 10.0, not averaged (12.5)
     import numpy as np
     assert abs(float(u.atoms.positions[0][0]) - 10.0) < 0.5
-    assert len(u.trajectory) == 2
+    # A-05 (batch-2): frame-0-only copy now (was == 2 under in_memory=True);
+    # the "instantaneous not averaged" coordinate pin above is the real intent.
+    assert len(u.trajectory) == 1
 
 
 def test_average_only_still_works(tmp_path):

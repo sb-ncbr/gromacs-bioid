@@ -6,7 +6,7 @@ mdanalysis = pytest.importorskip("MDAnalysis")
 
 from pathlib import Path
 from src_new.input.discovery import inspect_directory, select_best_file_combination
-from src_new.loader.strategies import load_simulation
+from src_new.loader.strategies import load_simulation, LoadStrategy
 from src_new.loader.repair import TopologyRepair
 from src_new.loader.universe_facade import (
     LoadedUniverse,
@@ -34,6 +34,12 @@ def _load_and_facade(data_dir: str, tmp_path: Path, filter_segments=None):
     load_result = load_simulation(decision, bundle, config, results)
     if not load_result.success:
         pytest.skip(f"Could not load data from {data_dir}: {load_result.attempts[0].error_message if load_result.attempts else 'unknown'}")
+    if load_result.final_strategy == LoadStrategy.GROMACS_GRO.value:
+        # A-07 (batch-2 3.3) un-skipped these fixtures: the degraded GRO-only
+        # path loads *something* but cannot reproduce topology-complete pins
+        # (segment identities). Original intent: skip when forcefield
+        # includes are unresolvable.
+        pytest.skip("topology-free GRO fallback: segment-topology pins not applicable")
     
     repair = TopologyRepair(load_result.universe, config)
     repair_report = repair.run()

@@ -39,6 +39,7 @@ class LoadStrategy(str, Enum):
     AMBER_PRMTOP_MDCRD = "amber_prmtop_mdcrd"
     AMBER_PARM7_MDCRD = "amber_parm7_mdcrd"
     GROMACS_TPR_TRR = "gromacs_tpr_trr"
+    GROMACS_GRO = "gromacs_gro"  # A-07 (3.3): topology-free GRO fallback
     LAMMPS_DATA = "lammps_data"
     PDB = "pdb"
     MMCIF_GEMMI = "mmcif_gemmi"
@@ -53,6 +54,22 @@ _LAMMPS_ATOM_STYLES: tuple[str | None, ...] = (
     "id type q x y z",        # charge
     "id type x y z",          # atomic
 )
+
+
+def _rank_pdb_candidates(files: list[Path]) -> Path:
+    """A-16 (red-team 3.3): prefer structure-like PDBs over time-AVERAGED ones.
+
+    Plain sorted()[0] picked 'average.pdb' over 'structure.pdb' — the very
+    file the loader warns breaks coordinate work. Deterministic total order:
+    structure/model-like stems first, 'average'-named last, name tie-break.
+    """
+    def _key(p: Path):
+        n = p.name.lower()
+        s = p.stem.lower()
+        good = any(k in s for k in ("structure", "model", "frame", "start", "min", "conf"))
+        bad_avg = "average" in n
+        return (bad_avg, not good, n)
+    return sorted(files, key=_key)[0]
 
 
 # topology/trajectory pairings that get atom-count probed before the Universe
@@ -316,6 +333,15 @@ def validate_for_strategy(bundle: InputBundle, strategy: LoadStrategy) -> FileVa
                 if len(mdcrd_files) > 1:
                     warnings.append("multiple_mdcrd_files")
 
+        case LoadStrategy.GROMACS_GRO:
+            # A-07 (red-team 3.3): topology-free fallback — needs only the .gro
+            gro_files = _get_files_by_ext(bundle, ".gro")
+            if len(gro_files) == 0:
+                errors.append("No .gro files found")
+            else:
+                selected_files["gro"] = sorted(gro_files, key=lambda p: p.name)[0]
+                if len(gro_files) > 1:
+                    warnings.append("multiple_gro_files")
         case LoadStrategy.LAMMPS_DATA:
             data_files = _get_files_by_ext(bundle, ".data")
             if len(data_files) == 0:
@@ -349,8 +375,7 @@ def validate_for_strategy(bundle: InputBundle, strategy: LoadStrategy) -> FileVa
                 selected_files["pdb"] = pdb_files[0]
             else:
                 warnings.append("multiple_pdb_files")
-                sorted_pdb = sorted(pdb_files, key=lambda p: p.name)
-                selected_files["pdb"] = sorted_pdb[0]
+                selected_files["pdb"] = _rank_pdb_candidates(pdb_files)
             # Optional trajectory companion: time-averaged PDBs (e.g. MDDBR
             # average.pdb) break coordinate-based structure work; pairing with
             # the trajectory lets us source instantaneous frame positions.
@@ -434,6 +459,8 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_ITP_GRO,
                 LoadStrategy.GROMACS_TPR_GRO,
                 LoadStrategy.GROMACS_TPR,
+                LoadStrategy.GROMACS_GRO,  # A-07 topology-free tail
+                LoadStrategy.PDB,          # A-07 cross-kind tail
             ]
         elif strategy == "ITP_GRO":
             base_strategies = [
@@ -442,6 +469,8 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_TPR_GRO,
                 LoadStrategy.GROMACS_TPR,
                 LoadStrategy.GROMACS_TPR_TRR,
+                LoadStrategy.GROMACS_GRO,  # A-07 topology-free tail
+                LoadStrategy.PDB,          # A-07 cross-kind tail
             ]
         else:
             # Default fallback for GROMACS
@@ -451,6 +480,8 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_TOP_GRO,
                 LoadStrategy.GROMACS_ITP_GRO,
                 LoadStrategy.GROMACS_TPR_TRR,
+                LoadStrategy.GROMACS_GRO,  # A-07 topology-free tail
+                LoadStrategy.PDB,          # A-07 cross-kind tail
             ]
     elif input_kind == InputKind.AMBER:
         # static/restart coordinates first, netCDF second, xtc/mdcrd last
@@ -528,6 +559,7 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
             LoadStrategy.CHARMM_PSF_PDB,
             LoadStrategy.CHARMM_PSF_CRD,
             LoadStrategy.CHARMM_PSF_DCD,
+            LoadStrategy.GROMACS_GRO,  # A-07
             LoadStrategy.LAMMPS_DATA,
             LoadStrategy.PDB,
             LoadStrategy.MMCIF_GEMMI,
@@ -548,60 +580,66 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
 
 
 def _load_mmcif_via_gemmi(cif_path: Path) -> Universe:
-    """Load mmCIF file via gemmi and convert to Universe."""
+    """Load mmCIF via gemmi and build the Universe DIRECTLY from gemmi arrays.
+
+    A-06 (red-team 3.4): the old route (`make_minimal_pdb` -> PDB text ->
+    MDAnalysis) truncated multi-char chain IDs to their last column — chains
+    AA and BA merged into one segment. No PDB round-trip: chain.name survives
+    verbatim, positions/resids/elements are native, and bonds are recovered
+    downstream by element-based guessing (post-3.2 repair), same as before.
+    """
     try:
         import gemmi
     except ImportError:
         raise ImportError("gemmi is required for MMCIF_GEMMI strategy. Install with: pip install gemmi")
+    import numpy as np
+    from MDAnalysis.core.topology import Topology
+    from MDAnalysis.core.topologyattrs import (
+        Atomnames, Atomtypes, Elements, Resids, Resnames, Segids)
 
     st = gemmi.read_structure(str(cif_path))
-    # Use the first model (gemmi >= 0.7 dropped num_models(); len(st) is the count)
-    n_models = st.num_models() if hasattr(st, "num_models") else len(st)
-    if n_models == 0:
+    if len(st) == 0:
         raise RuntimeError("No models in mmCIF file")
+    model = st[0]
 
-    # Try different approaches to get PDB string from gemmi
-    pdb_str = None
-    
-    # Try make_minimal_pdb first (newer gemmi API)
-    if hasattr(st, "make_minimal_pdb"):
-        pdb_str = st.make_minimal_pdb()
-    # Try make_pdb_string on first model
-    elif hasattr(st, "__getitem__") and len(st) > 0:
-        model = st[0]
-        if hasattr(model, "make_pdb_string"):
-            pdb_str = model.make_pdb_string()
-    
-    # If neither works, build a minimal PDB string manually
-    if pdb_str is None:
-        # Build minimal PDB from first model
-        model = st[0] if len(st) > 0 else st
-        lines = ["HEADER    GENERATED BY GEMMI\n"]
-        atom_counter = 0
-        for chain in model.chains if hasattr(model, 'chains') else []:
-            for residue in chain.residues if hasattr(chain, 'residues') else []:
-                res_name = residue.name if hasattr(residue, 'name') else "UNK"
-                res_id = residue.seqid if hasattr(residue, 'seqid') else 1
-                chain_id = chain.chain_id if hasattr(chain, 'chain_id') else "A"
-                for atom in residue.atoms if hasattr(residue, 'atoms') else []:
-                    atom_counter += 1
-                    atom_name = atom.name if hasattr(atom, 'name') else "X"
-                    pos = atom.pos if hasattr(atom, 'pos') else None
-                    if pos is not None:
-                        line = f"ATOM  {atom_counter:5d}  {atom_name:<3} {res_name:>3} {chain_id}{res_id:>4}    {pos.x:8.3f}{pos.y:8.3f}{pos.z:8.3f}  1.00  0.00           X\n"
-                        lines.append(line)
-        lines.append("TER\nEND\n")
-        pdb_str = "".join(lines)
+    names: list[str] = []
+    elements: list[str] = []
+    positions: list[tuple[float, float, float]] = []
+    atom_resindex: list[int] = []
+    resnames: list[str] = []
+    resids: list[int] = []
+    residue_segindex: list[int] = []
+    chain_names: list[str] = []
 
-    # Write to temp file and load with MDAnalysis
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".pdb", delete=False) as tmp:
-        tmp.write(pdb_str)
-        tmp_path = tmp.name
-    
-    try:
-        return Universe(tmp_path, in_memory=True)
-    finally:
-        os.unlink(tmp_path)
+    for ci, chain in enumerate(model):
+        chain_names.append(chain.name)
+        for residue in chain:
+            rindex = len(resnames)
+            resnames.append(residue.name if residue.name else "UNK")
+            resids.append(int(residue.seqid.num))
+            residue_segindex.append(ci)
+            for atom in residue:
+                names.append(atom.name if atom.name else "X")
+                elements.append(atom.element.name if atom.element else "X")
+                positions.append((float(atom.pos.x), float(atom.pos.y), float(atom.pos.z)))
+                atom_resindex.append(rindex)
+
+    if not names:
+        raise RuntimeError("No atoms in first model of mmCIF file")
+
+    top = Topology(len(names), len(resnames), len(chain_names),
+                   atom_resindex=atom_resindex,
+                   residue_segindex=residue_segindex)
+    top.add_TopologyAttr(Atomnames(names))
+    top.add_TopologyAttr(Atomtypes(elements))   # element = type default
+    top.add_TopologyAttr(Elements(elements))
+    top.add_TopologyAttr(Resids(resids))
+    top.add_TopologyAttr(Resnames(resnames))
+    top.add_TopologyAttr(Segids(chain_names))
+    u = Universe(top)
+    u.load_new(np.array(positions, dtype=np.float32), format="memory")
+    return u
+
 
 
 def _load_lammps_data(data_path: Path) -> Universe:
@@ -649,6 +687,10 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
                 in_memory=True,
                 infer_system=True
             )
+        case LoadStrategy.GROMACS_GRO:
+            # A-07 (red-team 3.3): names/resids from the .gro; bonds guessed
+            # downstream by topology repair (element-based after 3.2).
+            return Universe(str(files["gro"]))
         case LoadStrategy.AMBER_PRMTOP_NC:
             return Universe(str(files["prmtop"]), str(files["nc"]))
         case LoadStrategy.AMBER_PARM7_NC:
@@ -703,13 +745,20 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
             xtc = files.get("xtc")
             if src_pref == "trajectory" and xtc:
                 try:
-                    u = Universe(str(files["pdb"]), str(xtc), in_memory=True)
+                    # A-05 (red-team 3.1): no in_memory=True — MDAnalysis used to
+                    # copy EVERY frame into a MemoryReader (n_atoms*n_frames*12 B,
+                    # OOM on 200k-atom x 5000-frame deposits) although only frame
+                    # 0 is consumed. Stream the reader and keep frame 0 only.
+                    u = Universe(str(files["pdb"]), str(xtc))
+                    u.transfer_to_memory(start=0, stop=1)
                     # Realize frame-0 coordinates (instantaneous, not averaged)
-                    ts0 = u.trajectory[0]
+                    _ = u.trajectory[0]
                     return u
-                except Exception:
-                    # Any trajectory incompatibility: fall back to static PDB
-                    pass
+                except Exception as exc:
+                    # Any trajectory incompatibility: fall back to static PDB.
+                    # A-05: this used to be a silent `except: pass`.
+                    logging.getLogger(__name__).warning(
+                        "pdb_xtc_pairing failed, falling back to static PDB: %s", exc)
             return Universe(str(files["pdb"]), in_memory=True)
         case LoadStrategy.MMCIF_GEMMI:
             return _load_mmcif_via_gemmi(files["cif"])

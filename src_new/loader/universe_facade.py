@@ -372,20 +372,42 @@ class LoadedUniverse:
         self.results.set_data("universe/repair_report", self.repair_report.to_dict())
         self.results.set_data("universe/decision", self.decision.to_dict())
         self.results.set_data("universe/segment_list", sorted(self._segments))
+        truncated = getattr(self, "_virtual_truncated", None)
+        if truncated:
+            # A-10: visible record of species dropped by the 64-per-segment cap
+            self.results.set_data("universe/virtual_segments_truncated", truncated)
     
     _MAX_VIRTUAL_PER_SEGMENT = 64
 
     @staticmethod
     def _species_key(frag) -> tuple:
-        """Cheap structural identity for copy clustering
-        (atom count, residue count, sorted element counts)."""
+        """Cheap structural identity for copy clustering.
+
+        A-10 (red-team 3.5): the formula-only key (atom count, residue count,
+        sorted element counts) collides for ISOMERS — ATP vs dGTP
+        (C10H16N5O13P3), glucose vs galactose, enantiomers — and only
+        members[0] was ever identified. Extend with a sorted resname multiset
+        and sorted bonded element-pair counts; enantiomers/tautomers still
+        share a key (graphically indistinguishable at this price).
+        """
         import collections
         try:
             elems = [(e or "?").upper() for e in frag.atoms.elements]
         except Exception:
             elems = ["?"] * len(frag.atoms)
         comp = tuple(sorted(collections.Counter(elems).items()))
-        return (len(frag.atoms), len(frag.residues), comp)
+        resnames = tuple(sorted(
+            (r.resname or "?").strip().upper() for r in frag.residues))
+        try:
+            pair_ctr: collections.Counter = collections.Counter()
+            idx2el = {a.index: elems[i] for i, a in enumerate(frag.atoms)}
+            for b in frag.bonds:
+                pair_ctr[tuple(sorted((idx2el[b.atoms[0].index],
+                                       idx2el[b.atoms[1].index])))] += 1
+            bond_pairs = tuple(sorted(pair_ctr.items()))
+        except Exception:
+            bond_pairs = ()
+        return (len(frag.atoms), len(frag.residues), comp, resnames, bond_pairs)
 
     def _discover_virtual_segments(self) -> None:
         """Expose minority molecular species inside segid-coarse topologies.
@@ -398,6 +420,7 @@ class LoadedUniverse:
         signatures, identification and verification process them.
         """
         self._virtual_fragments: dict = {}
+        self._virtual_truncated: list[dict] = []
         for segment_name in list(getattr(self, "_segments", ())):
             selected = self.universe.atoms[self.universe.atoms.segids == segment_name]
             try:
@@ -416,13 +439,29 @@ class LoadedUniverse:
                 continue
             rep_key = self._species_key(LoadedUniverse.get_fragment(self, segment_name))
             n = 0
-            for key, members in sorted(clusters.items(), key=lambda kv: -len(kv[1][0].atoms)):
+            # A-10: deterministic order so truncation is reproducible; dropped
+            # species are RECORDED (universe/virtual_segments_truncated) instead
+            # of vanishing silently past the cap.
+            ordered = sorted(clusters.items(),
+                             key=lambda kv: (-len(kv[1][0].atoms), repr(kv[0])))
+            for key, members in ordered:
                 if key == rep_key:
                     continue
                 if len(members[0].atoms) <= 3:
                     continue  # waters / tiny species keep classic flow
                 n += 1
                 if n > self._MAX_VIRTUAL_PER_SEGMENT:
+                    dropped = ordered[ordered.index((key, members)):]
+                    dropped = [kv for kv in dropped
+                               if kv[0] != rep_key and len(kv[1][0].atoms) > 3]
+                    self._virtual_truncated.append({
+                        "segment": segment_name,
+                        "dropped_species": len(dropped),
+                        "dropped_keys": [repr(kv[0]) for kv in dropped[:8]],
+                    })
+                    logger.warning(
+                        "virtual_segments_truncated: segment %s dropped %d species past cap %d",
+                        segment_name, len(dropped), self._MAX_VIRTUAL_PER_SEGMENT)
                     break
                 vname = f"{segment_name}__v{n}"
                 frag0 = members[0]
