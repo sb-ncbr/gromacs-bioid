@@ -11,22 +11,45 @@ import pytest
 from rdkit.Chem import rdDetermineBonds
 
 
-def _acetate_fragment():
-    """CH3COO- -like bonded fragment: 8 atoms, 6 bonds, one segid."""
-    n = 8
+def _acetate_fragment(with_charges=True):
+    """CH3COO- bonded correctly: CH3 (C0 H1-3) - COO (C4 O5 O6). Optional
+    topology partial charges summing to -1 (prmtop/tpr/psf/itp case)."""
+    n = 7
     u = mda.Universe.empty(n, n_residues=1, n_segments=1,
                            atom_resindex=[0] * n, trajectory=True)
-    # C C O O H H H H
-    u.add_TopologyAttr("elements", ["C", "C", "O", "O", "H", "H", "H", "H"])
+    u.add_TopologyAttr("elements", ["C", "H", "H", "H", "C", "O", "O"])
     u.add_TopologyAttr("names", [f"A{i}" for i in range(n)])
     u.add_TopologyAttr("resnames", ["ACT"])
     u.add_TopologyAttr("resids", [1])
     u.add_TopologyAttr("segids", ["SEG"])
-    u.add_bonds([(0, 1), (1, 2), (1, 3), (0, 4), (0, 5), (0, 6)])
+    u.add_bonds([(0, 4), (0, 1), (0, 2), (0, 3), (4, 5), (4, 6)])
     u.atoms.positions = np.array([
-        [0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [2.1, 0.9, 0.0], [2.1, -0.9, 0.0],
-        [-0.5, 0.9, 0.0], [-0.5, -0.9, 0.0], [-0.5, 0.0, 0.9],
-    ] + [[0.0, 0.0, 0.0]], dtype=np.float32)[:n]
+        [0.0, 0.0, 0.0], [0.6, 0.8, 0.0], [0.6, -0.8, 0.0], [-0.9, 0.0, 0.0],
+        [1.5, 0.0, 0.0], [2.1, 0.9, 0.0], [2.1, -0.9, 0.0]], dtype=np.float32)
+    if with_charges:
+        cc = np.array([0.09, 0.0, 0.0, 0.0, 0.67, -0.88, -0.88])
+        cc *= -1.0 / cc.sum()
+        u.add_TopologyAttr("charges", cc)
+    return u.atoms
+
+
+def _ethanol_fragment():
+    """Neutral CH3CH2OH: no topology charges (the charged-ligand fix must
+    leave neutral systems byte-identical)."""
+    n = 9
+    u = mda.Universe.empty(n, n_residues=1, n_segments=1,
+                           atom_resindex=[0] * n, trajectory=True)
+    u.add_TopologyAttr("elements",
+                       ["C", "H", "H", "H", "C", "H", "H", "O", "H"])
+    u.add_TopologyAttr("names", [f"A{i}" for i in range(n)])
+    u.add_TopologyAttr("resnames", ["ETOH"])
+    u.add_TopologyAttr("resids", [1])
+    u.add_TopologyAttr("segids", ["SEG"])
+    u.add_bonds([(0, 4), (0, 1), (0, 2), (0, 3), (4, 5), (4, 6), (4, 7), (7, 8)])
+    u.atoms.positions = np.array([
+        [0.0, 0.0, 0.0], [0.6, 0.8, 0.0], [0.6, -0.8, 0.0], [-0.9, 0.0, 0.0],
+        [1.5, 0.0, 0.0], [2.0, 0.8, 0.0], [2.0, -0.8, 0.0], [2.7, 0.0, 0.0],
+        [3.6, 0.2, 0.0]], dtype=np.float32)
     return u.atoms
 
 
@@ -52,6 +75,57 @@ def _clear_cache():
     pc.clear_cache()
     yield
     pc.clear_cache()
+
+
+class TestB01NetCharge:
+    """4.2 - B-01 [CRITICAL]: net charge reaches bond-order perception;
+    charged ligands must no longer produce neutral/acid signatures."""
+
+    ACETATE_KEY = "QTBSBXVTEAMEQO-UHFFFAOYSA-M"   # InChI=1S/C2H4O2/.../p-1
+
+    def _one(self, gen, frag):
+        from src_new.signatures.generators import _perceive_cache as pc
+        pc.clear_cache()
+        return gen._generate(_instance(frag), frag, None)
+
+    def test_acetate_inchikey_with_topology_charges(self):
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.generators.inchi import InchiKeyGenerator
+        ik = self._one(InchiKeyGenerator(SignaturesConfig()), _acetate_fragment())
+        assert ik == self.ACETATE_KEY, (
+            f"B-01: charged acetate must not come out as the neutral acid: {ik}")
+
+    def test_acetate_smiles_has_no_bare_proton(self):
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.generators.smiles import SimpleSmilesGenerator
+        sm = self._one(SimpleSmilesGenerator(SignaturesConfig()), _acetate_fragment())
+        assert "[H+]" not in sm and "([OH])" not in sm, sm
+        assert "C(=O)[O-]" in sm, sm
+
+    def test_ladder_recovers_when_topology_has_no_charges(self):
+        """No charges attr (PDB/GRO inputs): charge=0 fails (SetNoImplicit
+        cannot protonate the carboxyl) and the +-ladder must find -1."""
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.generators.inchi import InchiKeyGenerator
+        ik = self._one(InchiKeyGenerator(SignaturesConfig()),
+                       _acetate_fragment(with_charges=False))
+        assert ik == self.ACETATE_KEY, ik
+
+    def test_neutral_system_byte_identical(self):
+        """No regression for uncharged molecules (ethanol, no charges attr):
+        charge=0 succeeds cleanly -> unchanged signature."""
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.generators.inchi import InchiKeyGenerator
+        ik = self._one(InchiKeyGenerator(SignaturesConfig()), _ethanol_fragment())
+        assert ik == "LFQSCWFLJHTTHZ-UHFFFAOYSA-N", ik  # ethanol canonical key
+
+    def test_regex_retry_deleted(self):
+        """The bogus 'input (-3)' regex-retry path must be gone from smiles."""
+        import inspect
+        from src_new.signatures.generators import smiles as sm_mod
+        src = inspect.getsource(sm_mod)
+        assert "input\\s" not in src and "input \\(" not in src, (
+            "charge-from-error-message regex still present")
 
 
 class TestB14PerceiveOnce:

@@ -14,7 +14,8 @@ from ...config.loader import SignaturesConfig
 from ...molecules.instances import MoleculeInstance
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 from ..base import SignatureGenerator
-from ._perceive_cache import build_once_cached
+from ._perceive_cache import (
+    build_once_cached, _net_charge, determine_bond_orders_safely)
 
 logger = logging.getLogger("base")
 
@@ -256,39 +257,27 @@ def _build_smiles_mol(fragment) -> Mol:
                 (float(pos[0]), float(pos[1]), float(pos[2])),
             )
         mol_tmp.AddConformer(conf, assignId=True)
-        rdDetermineBonds.DetermineBonds(mol_tmp, charge=0)
+        # B-01: coordinate perception also needs the true net charge
+        rdDetermineBonds.DetermineBonds(mol_tmp, charge=_net_charge(fragment))
         molecule_build = EditableMol(mol_tmp)
         perceived = True
 
     molecule = molecule_build.GetMol()
     if perceived:
         logger.debug("smiles: bonds perceived from coordinates (%d atoms)", fragment.n_atoms)
-    _fix_bond_orders_rdkit(molecule)
+    _fix_bond_orders_rdkit(molecule, net_charge=_net_charge(fragment))
     return molecule
 
 
-def _fix_bond_orders_rdkit(molecule: Mol, max_attempts: int = 20) -> None:
-    """Determine bond orders using RDKit's DetermineBondOrders.
-    
-    Bug fix: Uses regex to extract charge from error message instead of fragile string parsing.
+def _fix_bond_orders_rdkit(molecule: Mol, net_charge: int = 0) -> None:
+    """Determine bond orders via the shared charge-aware helper (B-01,
+    red-team 4.2).
+
+    The historical regex-retry (`input (-3)` from RDKit's error message)
+    locked in the MAXIMALLY charged all-single-bond radical species — that
+    number is the charge RDKit back-computes for the failure, not the
+    molecule's. Deleted; the ladder starts from the topology net charge and
+    accepts the first solution.
     """
-    charge = sum(atom.GetFormalCharge() for atom in molecule.GetAtoms())
-    
-    while max_attempts > 0:
-        max_attempts -= 1
-        try:
-            rdDetermineBonds.DetermineBondOrders(
-                molecule, allowChargedFragments=True, embedChiral=False, charge=charge
-            )
-            return
-        except ValueError as e:
-            # Bug fix: Use regex to extract charge from error message
-            match = re.search(r'input\s*\(\s*(-?\d+)\s*\)', str(e))
-            if match:
-                charge = int(match.group(1))
-            else:
-                # If we can't parse the charge, break and return unsanitized
-                break
-    
-    # If we get here, DetermineBondOrders failed - that's ok, return unsanitized
-    logger.debug("DetermineBondOrders failed, returning unsanitized molecule")
+    if not determine_bond_orders_safely(molecule, net_charge=net_charge):
+        logger.debug("DetermineBondOrders failed, returning unsanitized molecule")

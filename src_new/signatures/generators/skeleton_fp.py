@@ -18,6 +18,7 @@ from ...config.loader import SignaturesConfig
 from ...molecules.instances import MoleculeInstance
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 from ..base import SignatureGenerator
+from ._perceive_cache import _net_charge
 from ..skeletize import format_signature
 from .smiles import _fragment_to_rdkit_atoms, _fragment_to_rdkit_bonds
 
@@ -87,7 +88,8 @@ class SkeletonFingerprintGenerator(SignatureGenerator):
                 )
             mol_tmp.AddConformer(conf, assignId=True)
             try:
-                rdDetermineBonds.DetermineBonds(mol_tmp, charge=0)
+                # B-01 (red-team 4.2): true net charge for perception
+                rdDetermineBonds.DetermineBonds(mol_tmp, charge=_net_charge(fragment))
             except Exception as exc:
                 logger.debug("skeleton_fp: perception failed: %s", exc)
                 return None

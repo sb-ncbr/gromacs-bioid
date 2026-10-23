@@ -129,10 +129,79 @@ def build_once_family_mol(fragment):
     _bonds_into(fragment, rdkit_idx, molecule_build)
     molecule = molecule_build.GetMol()
     try:
-        charge = sum(a.GetFormalCharge() for a in molecule.GetAtoms())
-        _rdb.DetermineBondOrders(
-            molecule, allowChargedFragments=True, embedChiral=False,
-            charge=charge)
+        # B-01 (red-team 4.2): topology net charge first, then ladder —
+        # replaces the charge=0 single attempt (wrong keys for charged
+        # ligands: first-block identical, protonation/charge layer wrong)
+        determine_bond_orders_safely(molecule, net_charge=_net_charge(fragment))
     except Exception:
         pass  # historical behavior: unsanitized/all-single is fine here
     return molecule
+
+
+# --- B-01 (red-team 4.2): charge-aware bond-order determination -------------
+
+_TRIAL_CHARGES = (0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6)
+
+
+def _net_charge(fragment) -> int:
+    """Net molecular charge from topology partial charges (prmtop/tpr/psf/
+    itp carry them; PDB/GRO typically do not -> 0, unchanged behavior)."""
+    try:
+        q = float(fragment.atoms.charges.sum())
+    except Exception:
+        return 0
+    return int(round(q))
+
+
+def _reset_to_single_bonds(mol) -> None:
+    """Undo a DetermineBondOrders attempt: historical build state was
+    all-SINGLE bonds with zero formal charges (atoms built SetNoImplicit)."""
+    from rdkit import Chem as _Chem
+    for b in mol.GetBonds():
+        b.SetBondType(_Chem.BondType.SINGLE)
+    for a in mol.GetAtoms():
+        a.SetFormalCharge(0)
+        a.SetNoImplicit(True)
+
+
+def _has_bare_proton_fragment(mol) -> bool:
+    """Charge-0 misfit artifact: an isolated [H+] with no bonds (arises when
+    RDKit balances a wrong input charge by dumping a bare proton). A correct
+    zwitterion (e.g. glycine NH3+/COO-) has its charges bonded in-framework
+    and is NOT rejected."""
+    for a in mol.GetAtoms():
+        if (a.GetAtomicNum() == 1 and a.GetFormalCharge() == 1
+                and a.GetDegree() == 0):
+            return True
+    return False
+
+
+def determine_bond_orders_safely(mol, net_charge: int = 0) -> bool:
+    """B-01: try the topology net charge first, then a 0,+-1..+-6 ladder.
+
+    A successful DetermineBondOrders call is ACCEPTED only when the
+    solution carries no bare-[H+] fragment artifact (evidence the input
+    charge was wrong) and its formal-charge sum matches q. Mol is reset to
+    the all-single state between attempts for determinism. Non-ValueError
+    failures propagate (smiles semantics); callers that historically
+    swallow exceptions keep doing so. Returns True when accepted."""
+    from rdkit.Chem import rdDetermineBonds as _rdb
+    order = [net_charge] + [q for q in _TRIAL_CHARGES if q != net_charge]
+    for q in order:
+        try:
+            _rdb.DetermineBondOrders(
+                mol, allowChargedFragments=True, embedChiral=False, charge=q)
+        except ValueError:
+            _reset_to_single_bonds(mol)
+            continue
+        no_bare_h = not _has_bare_proton_fragment(mol)
+        charge_match = (sum(a.GetFormalCharge() for a in mol.GetAtoms()) == q)
+        if no_bare_h and charge_match:
+            return True
+        # unacceptable solution: reset and continue the ladder
+        _has_bare = not no_bare_h
+        _reset_to_single_bonds(mol)
+        logger.debug(
+            "bond-order solution at charge %d rejected (%s)",
+            q, "bare [H+] fragment" if _has_bare else "charge mismatch")
+    return False
