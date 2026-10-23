@@ -700,3 +700,24 @@ class TestA13Perf:
         ions_txt = p1.read_text(); prot_txt = p2.read_text()
         assert "ALA" not in ions_txt, "segment export leaked other segment's atoms"
         assert "ALA" in prot_txt and "NACL" not in prot_txt
+
+
+class TestA09AttrlessUniverses:
+    """Guard pins for attr-less universes (raw LAMMPS data loads carry no
+    resnames) — recovered by the full loader gate after 3.6."""
+
+    def test_facade_survives_universe_without_resnames(self, tmp_path):
+        import numpy as _np
+        import MDAnalysis as mda
+        u = mda.Universe.empty(4, n_residues=2, n_segments=1,
+                               atom_resindex=[0, 0, 1, 1], trajectory=True)
+        u.add_TopologyAttr("elements", ["C"] * 4)
+        u.add_TopologyAttr("segids", ["SYS"])
+        u.add_bonds([(0, 1), (2, 3)])
+        u.atoms.positions = _np.array([[i, 0.0, 0.0] for i in range(4)],
+                                      dtype=_np.float32)
+        facade, _ = _facade(u, tmp_path)
+        rep = facade.get_fragment("SYS")  # must not raise NoDataError
+        assert len(rep.atoms) >= 2
+        props = facade.get_segment_properties("SYS")
+        assert props.molecule_count >= 2  # species-key clustering must not crash

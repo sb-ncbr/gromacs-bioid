@@ -75,7 +75,23 @@ class TestA01ProteinFlagScope:
         assert props.flags[SegmentProperty.IS_PROTEIN.value] is True, (
             "protein representative must not be diluted by ions in the segment"
         )
-        assert props.molecule_count == n_ions + 1
+        # A-09 (red-team 3.6): copies = the REPRESENTATIVE species cluster —
+        # the protein is 1 copy; the 450 ions are no longer swept into the
+        # protein copy number (old pin n_ions + 1 encoded the A-09 bug). They
+        # instantiate as their own typed virtual segment instead:
+        assert props.molecule_count == 1
+        virtual = getattr(facade, "_virtual_fragments", {})
+        assert virtual, "A-09: ions must instantiate as typed virtual segments"
+        ion_vnames = [
+            vn for vn, frag in virtual.items()
+            if sorted({str(r).strip().upper() for r in frag.residues.resnames}) == ["NA"]
+        ]
+        assert ion_vnames, f"no NA virtual segment among {sorted(virtual)}"
+        ion_props = facade.get_segment_properties(ion_vnames[0])
+        assert ion_props.molecule_count == n_ions, (
+            "virtual NA segment must carry all ion copies, none may be lost",
+            ion_props.molecule_count,
+        )
 
 
 class TestA03ElementFlagScope:

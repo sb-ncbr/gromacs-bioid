@@ -409,8 +409,12 @@ class LoadedUniverse:
         except Exception:
             elems = ["?"] * len(frag.atoms)
         comp = tuple(sorted(collections.Counter(elems).items()))
-        resnames = tuple(sorted(
-            (r.resname or "?").strip().upper() for r in frag.residues))
+        try:
+            resnames = tuple(sorted(
+                (r.resname or "?").strip().upper() for r in frag.residues))
+        except MDAnalysis.exceptions.NoDataError:
+            # universes without resname attrs (raw LAMMPS data loads)
+            resnames = ("?",) * len(frag.residues)
         try:
             pair_ctr: collections.Counter = collections.Counter()
             idx2el = {a.index: elems[i] for i, a in enumerate(frag.atoms)}
@@ -539,13 +543,19 @@ class LoadedUniverse:
             except Exception:
                 continue
             for res in residues:
-                rn = str(res.resname or "").strip().upper()
+                try:
+                    rn = str(res.resname or "").strip().upper()
+                    names = list(res.atoms.names)
+                except MDAnalysis.exceptions.NoDataError:
+                    # universes carrying neither resname nor name attrs (raw
+                    # LAMMPS data loads) — residue cannot be table-polymer
+                    continue
                 n = len(res.atoms)
                 total += n
                 if (rn in KNOWN_RESIDUE_CODES or rn in KNOWN_NUCLEIC_ACIDS_CODES
                         or normalize_nucleic_resname(rn) is not None):
                     poly += n
-                elif residue_has_sugar_phosphate(list(res.atoms.names)):
+                elif residue_has_sugar_phosphate(names):
                     # modified/terminal nucleics the closed tables miss (ENAR
                     # tier-2 signal) — the chain stays polymer even when only
                     # its base atoms happen to carry table resnames
