@@ -126,16 +126,24 @@ def fragment_to_pdb_topology_less(fragment: AtomGroup) -> str:
     serial = 1
     # B-04: clean 1..n residue numbering (resSeq is a 4-column field)
     resnum_map = _renumber_writer_residues(fragment.atoms.resnums)
-    
+
+    # B-07 (red-team 4.3): hoist per-attr materializations out of the loop
+    # (each fragment.atoms.<attr> access rebuilds an N-length array).
+    _resnames = fragment.atoms.resnames
+    _resnums = fragment.atoms.resnums
+    _names = fragment.atoms.names
+    _positions = fragment.atoms.positions
+    _elements = fragment.atoms.elements
+
     for atom_i in range(fragment.n_atoms):
-        resname = str(fragment.atoms.resnames[atom_i])
-        resnum = resnum_map[int(fragment.atoms.resnums[atom_i])]
-        atom_name = str(fragment.atoms.names[atom_i])
-        pos = fragment.atoms.positions[atom_i]
-        
+        resname = str(_resnames[atom_i])
+        resnum = resnum_map[int(_resnums[atom_i])]
+        atom_name = str(_names[atom_i])
+        pos = _positions[atom_i]
+
         # Handle missing elements gracefully
         try:
-            elem = str(fragment.atoms.elements[atom_i]).upper()
+            elem = str(_elements[atom_i]).upper()
         except (IndexError, AttributeError, TypeError):
             elem = ""
         
@@ -169,17 +177,23 @@ def fragment_to_pdb_ca_only(fragment: AtomGroup) -> str:
     serial = 1
     # B-04: clean 1..n residue numbering (resSeq is a 4-column field)
     resnum_map = _renumber_writer_residues(fragment.atoms.resnums)
-    
+
+    # B-07 (red-team 4.3): same hoisting as the full writer above.
+    _resnames = fragment.atoms.resnames
+    _resnums = fragment.atoms.resnums
+    _names = fragment.atoms.names
+    _positions = fragment.atoms.positions
+
     for atom_i in range(fragment.n_atoms):
-        atom_name = str(fragment.atoms.names[atom_i])
-        
+        atom_name = str(_names[atom_i])
+
         # Only include CA atoms
         if atom_name != "CA":
             continue
-        
-        resname = str(fragment.atoms.resnames[atom_i])
-        resnum = resnum_map[int(fragment.atoms.resnums[atom_i])]
-        pos = fragment.atoms.positions[atom_i]
+
+        resname = str(_resnames[atom_i])
+        resnum = resnum_map[int(_resnums[atom_i])]
+        pos = _positions[atom_i]
         
         line = _pdb_atom_line(
             serial=serial,

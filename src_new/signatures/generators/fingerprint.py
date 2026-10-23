@@ -48,9 +48,13 @@ class FingerprintGenerator(SignatureGenerator):
         # Include sorted bond information with elements
         bonds = []
         try:
+            # B-07 (red-team 4.3): one index map + one materialization;
+            # indices.tolist().index() per bond was O(N) each => O(N*B)
+            elems = fragment.atoms.elements
+            pos_of = {int(ai): p for p, ai in enumerate(fragment.atoms.indices)}
             for atom_idx1, atom_idx2 in fragment.bonds.indices:
-                elem1 = fragment.atoms.elements[fragment.atoms.indices.tolist().index(int(atom_idx1))]
-                elem2 = fragment.atoms.elements[fragment.atoms.indices.tolist().index(int(atom_idx2))]
+                elem1 = elems[pos_of[int(atom_idx1)]]
+                elem2 = elems[pos_of[int(atom_idx2)]]
                 # Sort elements to make bond order-independent
                 bond_tuple = tuple(sorted([elem1, elem2]))
                 bonds.append(bond_tuple)

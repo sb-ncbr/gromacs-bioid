@@ -184,3 +184,83 @@ class TestB14PerceiveOnce:
         with pytest.raises(pc.PerceiveTimeoutError):
             pc.build_once_cached(frag, "fam", sleepy_builder, timeout_s=1)
         assert called["n"] == 1, "family error was not cached/fail-fast"
+
+
+def _protein_chain(n_res=20, break_bond_at=None):
+    """Bonded poly-ALA chain with a name-exact backbone (per residue:
+    N, CA, C, O, CB; peptide bonds C(i)-N(i+1) as required by the
+    B-02/B-03 backbone walk). break_bond_at omits peptide C(k)-N(k+1)
+    to force the legacy matrix path."""
+    atoms_per_res = 5
+    names = ["N", "CA", "C", "O", "CB"]
+    n = n_res * atoms_per_res
+    u = mda.Universe.empty(n, n_residues=n_res, n_segments=1,
+                           atom_resindex=[i // atoms_per_res for i in range(n)],
+                           trajectory=True)
+    u.add_TopologyAttr("elements",
+                       [e for _ in range(n_res) for e in ("N", "C", "C", "O", "C")])
+    u.add_TopologyAttr("names",
+                       [nm for _ in range(n_res) for nm in names])
+    u.add_TopologyAttr("resnames", ["ALA"] * n_res)
+    u.add_TopologyAttr("resids", list(range(1, n_res + 1)))
+    u.add_TopologyAttr("segids", ["PRO"])
+    bonds = []
+    for k in range(n_res):
+        b = k * atoms_per_res
+        bonds += [(b, b + 1), (b + 1, b + 2), (b + 2, b + 3), (b + 1, b + 4)]
+        if k + 1 < n_res and break_bond_at != k + 1:
+            bonds.append((b + 2, (k + 1) * atoms_per_res))  # peptide C->N
+    u.add_bonds(bonds)
+    u.atoms.positions = np.arange(n * 3, dtype=np.float32).reshape(n, 3) / 10.0
+    return u.atoms
+
+
+class TestB07Perf:
+    def test_full_coverage_chain_never_builds_matrices(self, monkeypatch):
+        """B-07: the backbone short-circuit must run BEFORE the O(N^2)
+        adjacency-matrix allocation; today matrices are built first."""
+        from src_new.signatures.generators import fasta
+        from src_new.config.loader import SignaturesConfig
+        built = {"n": 0}
+        real = fasta._mk_residue_atom_adjacency_matrix
+
+        def spy(*a, **k):
+            built["n"] += 1
+            return real(*a, **k)
+
+        monkeypatch.setattr(fasta, "_mk_residue_atom_adjacency_matrix", spy)
+        seq = fasta.fragment_to_protseq_map_based(
+            _protein_chain(20), SignaturesConfig())
+        assert set(seq) == {"A"} and len(seq) == 20, seq
+        assert built["n"] == 0, (
+            "B-07: matrices built before the short-circuit (8 B/cell @ N^2 "
+            "-> ~4 GB runaway on 22k-atom proteins)")
+
+    def test_broken_chain_still_uses_legacy_matrix_path(self, monkeypatch):
+        """Parity pin: partial graphs MUST keep the legacy machinery."""
+        from src_new.signatures.generators import fasta
+        from src_new.config.loader import SignaturesConfig
+        built = {"n": 0}
+        real = fasta._mk_residue_atom_adjacency_matrix
+
+        def spy(*a, **k):
+            built["n"] += 1
+            return real(*a, **k)
+
+        monkeypatch.setattr(fasta, "_mk_residue_atom_adjacency_matrix", spy)
+        seq = fasta.fragment_to_protseq_map_based(
+            _protein_chain(20, break_bond_at=10), SignaturesConfig())
+        assert built["n"] == 1 and seq, (built, seq)
+
+    def test_fingerprint_single_index_map(self, monkeypatch):
+        """fingerprint must not rebuild indices.tolist() + .index() per bond
+        (O(N*B)); 12k-atom fragment must finish well under the audited 3.6 s."""
+        import time
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.generators.fingerprint import FingerprintGenerator
+        frag = _protein_chain(2400)  # 12000 atoms, ~12k bonds
+        inst = _instance(frag)
+        t0 = time.perf_counter()
+        out = FingerprintGenerator(SignaturesConfig())._generate(inst, frag, None)
+        dt = time.perf_counter() - t0
+        assert out and dt < 2.0, f"B-07 fingerprint still quadratic: {dt:.2f}s"

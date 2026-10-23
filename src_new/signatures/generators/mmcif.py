@@ -72,13 +72,22 @@ class MmCifGenerator(SignatureGenerator):
         lines.append("_atom_site.Cartn_z")
         lines.append("_atom_site.type_symbol")
         
+        # B-07 (red-team 4.3): fragment.atoms.<attr> materializes an N-length
+        # array per access; hoisting once turns the writer loop from O(N^2)
+        # into O(N).
+        _names = fragment.atoms.names if hasattr(fragment.atoms, 'names') else None
+        _resnames = fragment.atoms.resnames if hasattr(fragment.atoms, 'resnames') else None
+        _segids = fragment.atoms.segids if hasattr(fragment.atoms, 'segids') else None
+        _resids = fragment.atoms.resids if hasattr(fragment.atoms, 'resids') else None
+        _positions = fragment.atoms.positions if hasattr(fragment.atoms, 'positions') else None
+        _elements = fragment.atoms.elements if hasattr(fragment.atoms, 'elements') else None
         for i in range(fragment.n_atoms):
-            atom_name = fragment.atoms.names[i] if hasattr(fragment.atoms, 'names') and i < len(fragment.atoms.names) else f"AT{i}"
-            resname = fragment.atoms.resnames[i] if hasattr(fragment.atoms, 'resnames') and i < len(fragment.atoms.resnames) else "UNK"
-            segid = fragment.atoms.segids[i] if hasattr(fragment.atoms, 'segids') and i < len(fragment.atoms.segids) else "A"
-            resid = fragment.atoms.resids[i] if hasattr(fragment.atoms, 'resids') and i < len(fragment.atoms.resids) else 1
-            pos = fragment.atoms.positions[i] if hasattr(fragment.atoms, 'positions') and i < len(fragment.atoms.positions) else [0.0, 0.0, 0.0]
-            element = fragment.atoms.elements[i] if hasattr(fragment.atoms, 'elements') and i < len(fragment.atoms.elements) else ""
+            atom_name = _names[i] if _names is not None and i < len(_names) else f"AT{i}"
+            resname = _resnames[i] if _resnames is not None and i < len(_resnames) else "UNK"
+            segid = _segids[i] if _segids is not None and i < len(_segids) else "A"
+            resid = _resids[i] if _resids is not None and i < len(_resids) else 1
+            pos = _positions[i] if _positions is not None and i < len(_positions) else [0.0, 0.0, 0.0]
+            element = _elements[i] if _elements is not None and i < len(_elements) else ""
             
             lines.append(f"ATOM {i+1} {atom_name} {resname} {segid} {resid} {pos[0]:.3f} {pos[1]:.3f} {pos[2]:.3f} {element}")
         lines.append("#")

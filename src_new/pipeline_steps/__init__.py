@@ -409,6 +409,16 @@ def _generate_signatures(context):
             attempted = []
             errors = []
             for generator in generators:
+                # B-07 (red-team 4.3): budget gate INSIDE the segment as well —
+                # previously checked only between segments, so one heavy
+                # segment ran unbounded. Generators that already STARTED still
+                # finish (bounded by their own guards), later ones are skipped.
+                if _budget_exceeded(context):
+                    budget_hit = True
+                    logger.warning(
+                        f"generate_signatures: stage time budget exceeded mid-segment "
+                        f"{segment_name} before {generator.name}; skipping remaining generators")
+                    break
                 _g_t0 = time.time()
                 try:
                     if generator.is_applicable(instance, fragment, segment_facade):

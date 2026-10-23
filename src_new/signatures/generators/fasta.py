@@ -323,13 +323,13 @@ def fragment_to_protseq_map_based(
     prot_sign_allow_partial_seq = config.fasta_map_determine_sequence_partial_mode
     prot_sign_strict_mode = config.fasta_map_determine_sequence_strict_mode
 
-    (
-        atom_indices_to_index,
-        atom_adjacency_matrix,
-        residue_indices_to_code,
-        residue_indices_to_index,
-        residue_adjacency_matrix,
-    ) = _fragment_to_protein_mk_adjacency_matrices(fragment)
+    # B-07 (red-team 4.3): light index maps first; the O(N^2) adjacency
+    # matrices are built ONLY for the legacy fallback (the full-coverage
+    # backbone walk — the common case — never pays ~8 B/cell @ N^2).
+    atom_indices_to_index = {
+        int(indice): index for index, indice in enumerate(fragment.atoms.indices)
+    }
+    residue_indices_to_code, residue_indices_to_index = _fragment_extract_residues(fragment)
 
     # v3.143 (B-02/B-03): a full-coverage backbone walk short-circuits the
     # fragile all-bonds graph (disulfide degree-3 failures, set-order
@@ -338,6 +338,11 @@ def fragment_to_protseq_map_based(
     backbone = _backbone_chain_sequences(fragment, residue_indices_to_code)
     if backbone and len(backbone[0]) == len(residue_indices_to_code):
         return backbone[0]
+
+    residue_adjacency_matrix, atom_adjacency_matrix = _mk_residue_atom_adjacency_matrix(
+        fragment, residue_indices_to_code, atom_indices_to_index,
+        residue_indices_to_index
+    )
 
     try:
         _fragment_to_protein_sequence_verify_sequentiality(
