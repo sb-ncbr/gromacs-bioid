@@ -52,12 +52,17 @@ def _equivalence_class_id(ident_type: str, identifier: str,
             pass  # fall through to record-level id
     if ident_type == "ELEMENT":
         return f"element:{identifier}"
-    if donor is not None and signature_type:
-        s = signature_type.lower()
-        if any(tag in s for tag in _SEQUENCE_SIG_TAGS):
-            return f"align:{round(donor.normalized_score / 100.0, 2)}"
-        if any(tag in s for tag in _STRUCTURE_SIG_TAGS):
-            return f"tm:{round(donor.normalized_score / 100.0, 2)}"
+    # Red-team batch-4 (D-06): classes are keyed on the REFERENCE CONTENT
+    # that produced the score (workers emit details['ref_seq_sha1']) — never
+    # on a rounded alignment/TM bucket. The old align:/tm: classes collapsed
+    # unrelated records sharing only a score (all structure hits were tm:0.0
+    # under the fetcher-routing bug, forming one giant class). Two records
+    # pointing at the SAME reference sequence/structure now share a class
+    # regardless of their alignment score.
+    if donor is not None:
+        ref_sha = (donor.details or {}).get("ref_seq_sha1")
+        if ref_sha:
+            return f"seqref:{ref_sha}"
     return f"record:{ident_type}:{identifier}"
 
 

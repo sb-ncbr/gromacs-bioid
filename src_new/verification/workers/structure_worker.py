@@ -11,7 +11,7 @@ import numpy as np
 import gemmi
 
 from ..base import VerificationWorker
-from ..models import VerificationScore
+from ..models import VerificationScore, ref_seq_sha1
 from ..alignment import local_identity_coverage
 
 logger = logging.getLogger(__name__)
@@ -232,6 +232,8 @@ class StructureVerificationWorker(VerificationWorker):
                 "tm_query_length": len_q,
                 "tm_ref_length": len_c,
                 "tm_normalization": "query",
+                # D-06: reference-content key for equivalence classes
+                "ref_seq_sha1": ref_seq_sha1(c_seq),
             },
         )
 
@@ -281,6 +283,7 @@ class StructureVerificationWorker(VerificationWorker):
                 details={
                     "alignment_identity": round(identity * 100.0, 2),
                     "query_coverage": round(coverage * 100.0, 2),
+                    "ref_seq_sha1": ref_seq_sha1(seq2),
                 },
             )
 

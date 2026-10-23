@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from ..base import VerificationWorker
-from ..models import VerificationScore
+from ..models import VerificationScore, ref_seq_sha1
 from ..fetchers.sequence_fetcher import SequenceSignatureFetcher
 from ..alignment import local_identity_coverage
 from ...molecules.nucleic_acid import sequence_orientation_variants
@@ -73,6 +73,10 @@ class SequenceVerificationWorker(VerificationWorker):
                 details={
                     "alignment_identity": round(identity * 100.0, 2),
                     "query_coverage": round(coverage * 100.0, 2),
+                    # D-06: equivalence classes are keyed on the reference
+                    # content that produced this score (best-matching
+                    # candidate at the caller's multi-entity loop).
+                    "ref_seq_sha1": ref_seq_sha1(canonical_signature),
                 },
             )
 

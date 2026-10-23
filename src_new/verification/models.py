@@ -40,6 +40,15 @@ def similarity_meets_floor(metric_name: str, normalized_score: float) -> bool:
     return floor is None or normalized_score >= floor
 
 
+def ref_seq_sha1(reference_sequence: str) -> str:
+    """Stable short hash of a reference sequence for equivalence classes
+    (red-team batch-4, D-06): classes are keyed on reference CONTENT, never
+    on a rounded alignment/TM score. 16 hex chars are ample collision
+    resistance at record counts (birthday bound ~4e9)."""
+    import hashlib
+    return hashlib.sha1(reference_sequence.encode("utf-8")).hexdigest()[:16]
+
+
 @dataclass
 class VerificationScore:
     """A single verification score comparing simulation vs canonical signature."""

@@ -124,9 +124,16 @@ def test_element_and_fallback_class_ids_are_stable():
     assert _equivalence_class_id("ELEMENT", "Na", "element", None, None) == "element:Na"
     score = VerificationScore(kind="similarity", metric_name="align", raw_score=0.87,
                               normalized_score=87.0)
-    assert _equivalence_class_id("UNIPROT_ID", "P12345", "residue_sequence", None, score) == "align:0.87"
+    # D-06 (red-team batch-4): a score WITHOUT reference content no longer
+    # yields a score-bucket class ('align:0.87'); it falls back to the
+    # record. Content-keyed donors yield 'seqref:<sha>'.
+    assert _equivalence_class_id("UNIPROT_ID", "P12345", "residue_sequence", None, score) == "record:UNIPROT_ID:P12345"
+    content_score = VerificationScore(kind="similarity", metric_name="seq_identity_coverage",
+                                      raw_score=0.87, normalized_score=87.0,
+                                      details={"ref_seq_sha1": "abc123"})
+    assert _equivalence_class_id("UNIPROT_ID", "P12345", "residue_sequence", None, content_score) == "seqref:abc123"
     tm = VerificationScore(kind="similarity", metric_name="tm", raw_score=0.77,
                            normalized_score=77.0)
-    assert _equivalence_class_id("PDB_ID", "1ABC", "pdb_protein", None, tm) == "tm:0.77"
+    assert _equivalence_class_id("PDB_ID", "1ABC", "pdb_protein", None, tm) == "record:PDB_ID:1ABC"
     # no proof available -> record-level fallback
     assert _equivalence_class_id("NR_ID", "NP_123", "residue_sequence", None, None) == "record:NR_ID:NP_123"
