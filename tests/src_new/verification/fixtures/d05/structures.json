@@ -1,0 +1,117 @@
+{
+ "DPPC": {
+  "name": "1,2-dipalmitoyl-sn-glycero-3-phosphocholine",
+  "cid": "452110",
+  "smiles": "CCCCCCCCCCCCCCCC(=O)OC[C@H](COP(=O)([O-])OCC[N+](C)(C)C)OC(=O)CCCCCCCCCCCCCCC"
+ },
+ "DMPC": {
+  "name": "1,2-dimyristoyl-sn-glycero-3-phosphocholine",
+  "cid": "5459377",
+  "smiles": "CCCCCCCCCCCCCC(=O)OC[C@H](COP(=O)([O-])OCC[N+](C)(C)C)OC(=O)CCCCCCCCCCCCC"
+ },
+ "POPC": {
+  "name": "1-palmitoyl-2-oleoyl-sn-glycero-3-phosphocholine",
+  "cid": "5497103",
+  "smiles": "CCCCCCCCCCCCCCCC(=O)OC[C@H](COP(=O)([O-])OCC[N+](C)(C)C)OC(=O)CCCCCCC/C=C\\CCCCCCCC"
+ },
+ "DOPC": {
+  "name": "1,2-dioleoyl-sn-glycero-3-phosphocholine",
+  "cid": "10350317",
+  "smiles": "CCCCCCCC/C=C\\CCCCCCCC(=O)OC[C@H](COP(=O)([O-])OCC[N+](C)(C)C)OC(=O)CCCCCCC/C=C\\CCCCCCCC"
+ },
+ "palmitic": {
+  "name": "palmitic acid",
+  "cid": "985",
+  "smiles": "CCCCCCCCCCCCCCCC(=O)O"
+ },
+ "stearic": {
+  "name": "stearic acid",
+  "cid": "5281",
+  "smiles": "CCCCCCCCCCCCCCCCCC(=O)O"
+ },
+ "oleic": {
+  "name": "oleic acid",
+  "cid": "445639",
+  "smiles": "CCCCCCCC/C=C\\CCCCCCCC(=O)O"
+ },
+ "cholesterol": {
+  "name": "cholesterol",
+  "cid": "5997",
+  "smiles": "C[C@H](CCCC(C)C)[C@H]1CC[C@@H]2[C@@]1(CC[C@H]3[C@H]2CC=C4[C@@]3(CC[C@@H](C4)O)C)C"
+ },
+ "cholestanol": {
+  "name": "cholestanol",
+  "cid": "6665",
+  "smiles": "C[C@H](CCCC(C)C)[C@H]1CC[C@@H]2[C@@]1(CC[C@H]3[C@H]2CC[C@@H]4[C@@]3(CC[C@@H](C4)O)C)C"
+ },
+ "benzene": {
+  "name": "benzene",
+  "cid": "241",
+  "smiles": "C1=CC=CC=C1"
+ },
+ "cyclohexane": {
+  "name": "cyclohexane",
+  "cid": "8078",
+  "smiles": "C1CCCCC1"
+ },
+ "glucose": {
+  "name": "D-glucose",
+  "cid": "5793",
+  "smiles": "C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O"
+ },
+ "galactose": {
+  "name": "D-galactose",
+  "cid": "6036",
+  "smiles": "C([C@@H]1[C@@H]([C@@H]([C@H](C(O1)O)O)O)O)O"
+ },
+ "L-ala": {
+  "name": "L-alanine",
+  "cid": "5950",
+  "smiles": "C[C@@H](C(=O)O)N"
+ },
+ "D-ala": {
+  "name": "D-alanine",
+  "cid": "71080",
+  "smiles": "C[C@H](C(=O)O)N"
+ },
+ "water": {
+  "name": "water",
+  "cid": "962",
+  "smiles": "O"
+ },
+ "hydroxide": {
+  "name": "hydroxide",
+  "cid": "961",
+  "smiles": "[OH-]"
+ },
+ "hydronium": {
+  "name": "hydronium",
+  "cid": "123332",
+  "smiles": "[OH3+]"
+ },
+ "ammonia": {
+  "name": "ammonia",
+  "cid": "222",
+  "smiles": "N"
+ },
+ "ammonium": {
+  "name": "ammonium",
+  "cid": "223",
+  "smiles": "[NH4+]"
+ },
+ "ATP": {
+  "name": "adenosine triphosphate",
+  "cid": "5957",
+  "smiles": "C1=NC(=C2C(=N1)N(C=N2)[C@H]3[C@@H]([C@@H]([C@H](O3)COP(=O)(O)OP(=O)(O)OP(=O)(O)O)O)O)N"
+ },
+ "ADP": {
+  "name": "adenosine diphosphate",
+  "cid": "6022",
+  "smiles": "C1=NC(=C2C(=N1)N(C=N2)[C@H]3[C@@H]([C@@H]([C@H](O3)COP(=O)(O)OP(=O)(O)O)O)O)N"
+ },
+ "ITP": {
+  "name": "inosine triphosphate",
+  "cid": "135398643",
+  "smiles": "C1=NC2=C(C(=O)N1)N=CN2[C@H]3[C@@H]([C@@H]([C@H](O3)COP(=O)(O)OP(=O)(O)OP(=O)(O)O)O)O"
+ }
+}

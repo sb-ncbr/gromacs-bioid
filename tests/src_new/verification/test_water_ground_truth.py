@@ -86,8 +86,8 @@ _SKEL = {"WATER_A": 1.0, "WATER_B": 1.0, "CID_A": 1.0, "NOT_WATER": 0.3}
 def _chemical_stub(results, segment, canonical_signature):
     sim = _SKEL.get(canonical_signature)
     if sim is None:
-        return None, "fingerprint_unavailable"
-    return sim, "skelfp:v1"
+        return None, "fingerprint_unavailable", None
+    return sim, "skelfp:v1", None
 
 
 def _verify(mgr, results, groups: dict):
@@ -236,7 +236,7 @@ def test_non_plateau_confidence_preserved():
          patch("src_new.verification.manager.deduplicate_and_score",
                return_value={("CID_X", "PUBCHEM_CID"): _grp()}), \
          patch("src_new.verification.manager._chemical_corroboration",
-               return_value=(0.9, "skelfp:v1")):
+               return_value=(0.9, "skelfp:v1", None)):
         hit = _hits(mgr.verify_all(results), seg)[0]
     assert hit.is_verified is True
     # 0.4*belief(50) + 0.4*worker(100) + 0.2*0: worker-primary (M-a) keeps

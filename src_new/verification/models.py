@@ -94,6 +94,11 @@ class VerifiedHit:
     # F7: skeleton-fingerprint corroboration for chemical hits (None = not computed)
     skeleton_sim: float | None = None
     skeleton_method: str | None = None
+    # Red-team batch-4 (D-05): tier-2 (count-Morgan r3/4096/chiral) Tanimoto
+    # — the fine-grained structural similarity that separates homologues and
+    # stereoisomers within a tier-1-equal skeleton family. None when either
+    # fingerprint is unavailable.
+    skeleton_t2_sim: float | None = None
     # F-17 (2026-10-04): telemetry flag — True when a NON-CHEMICAL identity
     # hit reached is_verified by assertion alone, i.e. corroboration fetch /
     # verification workers produced no similarity score (outage, missing
@@ -143,6 +148,7 @@ class VerifiedHit:
         annotation_quality_score: float | None = None,
         similarity_details: dict | None = None,
         hit_type: str | None = None,
+        skeleton_t2_sim: float | None = None,
     ) -> VerifiedHit:
         """Create an unverified hit representing the non-failure non-verification path.
 
@@ -164,4 +170,5 @@ class VerifiedHit:
             rejection_reason=rejection_reason,
             similarity_details=similarity_details,
             hit_type=hit_type,
+            skeleton_t2_sim=skeleton_t2_sim,
         )

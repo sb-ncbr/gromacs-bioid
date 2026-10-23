@@ -94,7 +94,12 @@ def test_same_molecule_across_databases_shares_class_id():
     assert a.is_verified and b.is_verified
     assert a.equivalence_class_id is not None
     assert a.equivalence_class_id == b.equivalence_class_id
-    assert a.equivalence_class_id == "skeleton:" + fp_to_hex(skeleton_fp(from_smiles("O")))
+    # D-05 (batch-4): the class id carries the tier-2 content discriminator
+    # (skeleton hex + #t2:<key8>); the D-06 intent — same molecule across
+    # databases shares ONE class — is the a==b assertion above.
+    from src_new.signatures.tier2fp import tier2_key
+    assert a.equivalence_class_id == ("skeleton:" + fp_to_hex(skeleton_fp(from_smiles("O")))
+                                      + "#t2:" + tier2_key(from_smiles("O")))
 
 
 def test_different_molecule_gets_different_class_and_sizes_map():

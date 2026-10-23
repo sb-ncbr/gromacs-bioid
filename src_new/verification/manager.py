@@ -45,9 +45,17 @@ def _equivalence_class_id(ident_type: str, identifier: str,
     """
     if ident_type in CHEMICAL_IDENT_TYPES and canonical_signature:
         try:
-            fp = _skel_fp(from_smiles(canonical_signature))
+            cand_mol = from_smiles(canonical_signature)
+            fp = _skel_fp(cand_mol)
             if fp is not None:
-                return "skeleton:" + _fp_to_hex(fp)
+                key = "skeleton:" + _fp_to_hex(fp)
+                # D-05: tier-2 content discriminator — DPPC and DMPC share
+                # a skeleton (tier-1 1.0) but are different compounds; the
+                # class id must not collapse them.
+                t2 = _t2key(cand_mol)
+                if t2:
+                    key += "#t2:" + t2
+                return key
         except Exception:
             pass  # fall through to record-level id
     if ident_type == "ELEMENT":
@@ -114,6 +122,7 @@ def build_confidence_meta(cfg) -> dict:
         "min_final_confidence": cfg.min_final_confidence,
     }
 from ..signatures.skeletize import from_smiles, hex_to_fp, parse_signature, skeleton_fp as _skel_fp, tanimoto as _skel_tanimoto, fp_to_hex as _fp_to_hex
+from ..signatures.tier2fp import tier2_fp as _t2fp, tier2_key as _t2key, tier2_tanimoto as _t2tanimoto
 from .models import CHEMICAL_IDENT_TYPES, SKELF_VERIFY_THRESHOLD
 from .registry import VerificationRegistry, get_default_registry
 
@@ -255,7 +264,7 @@ def _element_ground_truth(results, segment: str, ident_type: str, hit_type: str)
     return _monoatomic_atom_count(results, segment) == 1
 
 
-def _structure_rerank_groups(sorted_groups, skel_map, threshold):
+def _structure_rerank_groups(sorted_groups, skel_map, threshold, t2_map=None):
     """Re-order chemical groups within the consensus-sorted candidate list.
 
     Fixes the structure-blind verify_top_n window cut (audit 2026-09-26:
@@ -266,8 +275,14 @@ def _structure_rerank_groups(sorted_groups, skel_map, threshold):
     skeleton similarity, the input ordering is returned UNCHANGED (an
     uninformative/corrupt molecule skeleton cannot alter anything). When the
     threshold is reached by at least one candidate, chemical groups sort by
-    (skeleton sim desc, consensus desc); non-chemical groups keep their exact
-    relative positions (permutation is confined to chemical slots).
+    (tier-2 sim desc [D-05 pre-rank], tier-1 skeleton sim desc, consensus
+    desc); non-chemical groups keep their exact relative positions
+    (permutation is confined to chemical slots).
+
+    Red-team batch-4 (D-05): tier-2 leads the chemical order — tier-1
+    skeletons are all-equal across a homologue family (DPPC/DMPC both 1.0),
+    so only the fine-grained t2 measure ranks the true molecule's record
+    first; tier-1 remains the raise-only GATE (threshold untouched).
 
     Args:
         sorted_groups: list of ((normalized_id, ident_type), metadata) sorted
@@ -276,19 +291,24 @@ def _structure_rerank_groups(sorted_groups, skel_map, threshold):
             candidates (None = structure fetch/compute failed; treated as 0).
         threshold: minimum skeleton similarity that activates reranking
             (SKELF_VERIFY_THRESHOLD).
+        t2_map: optional {(normalized_id, ident_type): float|None} tier-2
+            tanimotos (None values sink below any measured value).
 
     Returns:
         New list of ((normalized_id, ident_type), metadata) tuples.
     """
+    t2_map = t2_map or {}
     best = max(((s or 0.0) for s in skel_map.values()), default=0.0)
     if best < threshold:
         return list(sorted_groups)
     chem = [
-        ((key, meta), (skel_map.get(key) or 0.0))
+        ((key, meta), (skel_map.get(key) or 0.0), (t2_map.get(key)))
         for (key, meta) in sorted_groups
         if key[1] in CHEMICAL_IDENT_TYPES
     ]
-    chem.sort(key=lambda item: (-item[1], -item[0][1].get("consensus_score", 0.0)))
+    chem.sort(key=lambda item: (-(item[2] if item[2] is not None else -1.0),
+                                -item[1],
+                                -item[0][1].get("consensus_score", 0.0)))
     chem_iter = iter(chem)
     out = []
     for key, meta in sorted_groups:
@@ -300,23 +320,37 @@ def _structure_rerank_groups(sorted_groups, skel_map, threshold):
 
 
 def _chemical_corroboration(results, segment: str, canonical_signature):
-    """Skeleton Tanimoto between molecule and candidate canonical SMILES.
+    """Skeleton (tier-1) Tanimoto + tier-2 Tanimoto vs the molecule.
 
-    Returns (sim, method) or (None, reason).
+    Tier-1 compares heavy-atom skeletons (protonation-safe GATE). Tier-2
+    (D-05) compares the ORIGINAL molecules — molecule's own generated
+    smiles vs the candidate canonical smiles — and separates homologues /
+    stereoisomers that share one skeleton (DPPC/DMPC t2=0.91, not 1.0).
+
+    Returns (skel_sim, method, t2_sim); Nones where uncomputable.
     """
     if not canonical_signature or not isinstance(canonical_signature, str):
-        return None, "fingerprint_unavailable"
+        return None, "fingerprint_unavailable", None
+    # tier-2 first: independent of the skeleton-signature path
+    t2_sim = None
+    try:
+        cand_mol = from_smiles(canonical_signature)
+        mol_smiles = _molecule_smiles(results, segment)
+        mol_mol = from_smiles(mol_smiles) if mol_smiles else None
+        t2_sim = _t2tanimoto(_t2fp(mol_mol), _t2fp(cand_mol))
+    except Exception:
+        t2_sim = None
     mol_hex = _molecule_skeleton_fp_hex(results, segment)
     if not mol_hex:
-        return None, "fingerprint_unavailable"
+        return None, "fingerprint_unavailable", t2_sim
     try:
         mol_fp = hex_to_fp(mol_hex)
         cand_fp = _skel_fp(from_smiles(canonical_signature))
         if mol_fp is None or cand_fp is None:
-            return None, "fingerprint_unavailable"
-        return _skel_tanimoto(mol_fp, cand_fp), "skelfp:v1"
+            return None, "fingerprint_unavailable", t2_sim
+        return _skel_tanimoto(mol_fp, cand_fp), "skelfp:v1", t2_sim
     except Exception:
-        return None, "fingerprint_unavailable"
+        return None, "fingerprint_unavailable", t2_sim
 
 
 def _database_name(ident_type: str) -> str:
@@ -339,13 +373,18 @@ def _fidelity_order_key(hit):
     display purposes (it only defines which hits participate in block 1).
 
     Red-team batch-4 (D-02): tuple = skeleton bucket (0.05) desc ->
-    is-identity desc -> similarity desc (None = -1.0, "unknown") ->
-    belief desc -> evidence count desc -> confidence desc -> identifier ->
-    ident_type. The identity slot ranks asserted-identity rows (whose S is
-    legitimately absent) above similarity-only rows with a measured score,
-    and a missing S no longer sinks below a measured degenerate 0.0 in the
-    identity case that produced that absence (d_p3 DPPC-vs-DMPC, d_p4
-    mmCIF-identity-vs-tm:0.0).
+    is-identity desc -> tier-2 tanimoto desc (None = -1.0) -> similarity
+    desc (None = -1.0, "unknown") -> belief desc -> evidence count desc ->
+    confidence desc -> identifier -> ident_type. The identity slot ranks
+    asserted-identity rows (whose S is legitimately absent) above
+    similarity-only rows with a measured score, and a missing S no longer
+    sinks below a measured degenerate 0.0 in the identity case that produced
+    that absence (d_p3 DPPC-vs-DMPC, d_p4 mmCIF-identity-vs-tm:0.0).
+
+    Red-team batch-4 (D-05): tier-2 tanimoto follows identity — within one
+    tier-1 skeleton bucket the fine-grained structural match ranks the true
+    molecule's exact record above homologues (DPPC 1.0 vs DMPC 0.91) while
+    keeping the asserted-identity precedence intact.
 
     v3.140-1 (observed run b4813beb): similarity_score joins the chain. With
     skel all-equal and confidence plateau-nulled, the prior chain degenerated
@@ -360,6 +399,9 @@ def _fidelity_order_key(hit):
     else:
         bucket = round(s / 0.05)
     identity = 1 if getattr(hit, "hit_type", None) == "identity" else 0
+    t2 = getattr(hit, "skeleton_t2_sim", None)
+    if t2 is None or (isinstance(t2, float) and (math.isnan(t2) or math.isinf(t2))):
+        t2 = -1.0
     sim = getattr(hit, "similarity_score", None)
     if sim is None or (isinstance(sim, float) and (math.isnan(sim) or math.isinf(sim))):
         sim = -1.0
@@ -372,7 +414,7 @@ def _fidelity_order_key(hit):
     # tie-break — '10' < '2' under a plain string sort inverted presentation
     # order on every plateau. Numeric ids first, then lexical, both asc.
     ident_key = (0, int(ident), "") if ident.isdigit() else (1, 0, ident)
-    return (-bucket, -identity, -sim, -belief, -ev,
+    return (-bucket, -identity, -t2, -sim, -belief, -ev,
             -(hit.final_confidence or 0.0), ident_key, str(hit.ident_type))
 
 
@@ -654,8 +696,9 @@ class VerificationManager:
                 
                 skeleton_sim = None
                 skeleton_method = None
+                skeleton_t2 = None
                 if ident_type in CHEMICAL_IDENT_TYPES:
-                    skeleton_sim, _c_m = _chemical_corroboration(
+                    skeleton_sim, _c_m, skeleton_t2 = _chemical_corroboration(
                         results, segment, canonical_signature
                     )
                     skeleton_method = _c_m if skeleton_sim is not None else None
@@ -907,6 +950,7 @@ class VerificationManager:
                         supporting_evidence_count=len(source_resolvers),
                         is_verified=True,
                         skeleton_sim=skeleton_sim,
+                        skeleton_t2_sim=skeleton_t2,
                         skeleton_method=skeleton_method,
                         verified_without_corroboration=verified_without_corroboration,
                         belief=metadata.get("belief"),
@@ -942,6 +986,7 @@ class VerificationManager:
                         similarity_details=(similarity_score.details or None
                                             if similarity_score else None),
                         hit_type=hit_type,
+                        skeleton_t2_sim=skeleton_t2,
                     )
                     verified_hit.belief = metadata.get("belief")
                     verified_hit.equivalence_class_id = eq_class_id
@@ -1015,7 +1060,15 @@ class VerificationManager:
 
         import time as _time
         t0 = _time.time()
+        # D-05: molecule tier-2 fp from its ORIGINAL smiles (fine-grained
+        # pre-rank within the tier-1-equal homologue family).
+        try:
+            _mol_sm = _molecule_smiles(results, segment)
+            mol_t2 = _t2fp(from_smiles(_mol_sm)) if _mol_sm else None
+        except Exception:
+            mol_t2 = None
         skel_map: dict = {}
+        t2_map: dict = {}
         n_fetched = 0
         for key, meta in chem_groups:
             if _over_budget():
@@ -1027,6 +1080,7 @@ class VerificationManager:
                 return sorted_groups
             nid, ident_type = key
             sim = None
+            t2 = None
             fetcher = self._registry.get_fetcher(ident_type)
             if fetcher:
                 try:
@@ -1036,12 +1090,16 @@ class VerificationManager:
                 if canonical:
                     n_fetched += 1
                     try:
-                        cand_fp = _skel_fp(from_smiles(canonical))
+                        cand_mol = from_smiles(canonical)
+                        cand_fp = _skel_fp(cand_mol)
                         if cand_fp is not None:
                             sim = _skel_tanimoto(mol_fp, cand_fp)
+                        t2 = _t2tanimoto(mol_t2, _t2fp(cand_mol))
                     except Exception:
                         sim = None
+                        t2 = None
             skel_map[key] = sim
+            t2_map[key] = t2
 
         if not any((s or 0.0) >= SKELF_VERIFY_THRESHOLD for s in skel_map.values()):
             logger.debug(
@@ -1050,7 +1108,7 @@ class VerificationManager:
                 f"{SKELF_VERIFY_THRESHOLD}; consensus order kept"
             )
             return sorted_groups
-        out = _structure_rerank_groups(sorted_groups, skel_map, SKELF_VERIFY_THRESHOLD)
+        out = _structure_rerank_groups(sorted_groups, skel_map, SKELF_VERIFY_THRESHOLD, t2_map)
         best = max((s or 0.0) for s in skel_map.values())
         n_gate = sum(1 for s in skel_map.values() if (s or 0.0) >= SKELF_VERIFY_THRESHOLD)
         logger.info(
