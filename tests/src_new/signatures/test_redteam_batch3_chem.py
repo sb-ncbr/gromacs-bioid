@@ -435,3 +435,82 @@ class TestB11StereoFrom3D:
         """Achiral molecules keep the flat UHFFFAOYSA block (ethanol gate)."""
         ik = self._key(_ethanol_fragment())
         assert ik == "LFQSCWFLJHTTHZ-UHFFFAOYSA-N", ik
+
+
+def _two_chain_fragment(chainids=True):
+    """Chains A and B in ONE unbonded fragment, ALA-GLY alternating, both
+    resnumbered from 1 (the interleaving case from probe (c)); each chain has
+    intact peptide C-N bonds."""
+    names = ["N", "CA", "C", "O", "CB"]
+    els = ["N", "C", "C", "O", "C"]
+    apr = 5
+    res_seq_a = ["ALA", "GLY", "SER", "ALA", "GLY"]
+    res_seq_b = ["GLY", "SER", "ALA", "GLY", "SER"]
+    n_res = 10
+    n = n_res * apr
+    u = mda.Universe.empty(n, n_residues=n_res, n_segments=1,
+                           atom_resindex=[i // apr for i in range(n)],
+                           trajectory=True)
+    u.add_TopologyAttr("elements", els * n_res)
+    u.add_TopologyAttr("names", names * n_res)
+    u.add_TopologyAttr("resnames", res_seq_a + res_seq_b)
+    u.add_TopologyAttr("resids", [1, 2, 3, 4, 5] * 2)
+    if chainids:
+        u.add_TopologyAttr("chainIDs", ["A"] * (apr * 5) + ["B"] * (apr * 5))
+    u.add_TopologyAttr("segids", ["PRO"])
+    bonds = []
+    for k in range(n_res):
+        b = k * apr
+        bonds += [(b, b + 1), (b + 1, b + 2), (b + 2, b + 3), (b + 1, b + 4)]
+        if k + 1 < n_res and (k + 1) % 5 != 0:  # no bond between chains
+            bonds.append((b + 2, (k + 1) * apr))
+    u.add_bonds(bonds)
+    u.atoms.positions = np.arange(n * 3, dtype=np.float32).reshape(n, 3) / 7.0
+    return u.atoms
+
+
+class TestB05PerChainFasta:
+    """4.6 - B-05: multi-chain fragments must emit one sequence per chain;
+    interleaved/chimeric single strings are identification poison."""
+
+    SEQ_A = "AGSAG"
+    SEQ_B = "GSAGS"
+
+    def _run(self, gen_cls, frag, **kw):
+        from src_new.config.loader import SignaturesConfig
+        gen = gen_cls(SignaturesConfig())
+        return gen._generate(_instance(frag), frag, None)
+
+    def test_map_protein_emits_per_chain(self):
+        from src_new.signatures.generators.fasta import MapFastaGeneratorProtein
+        out = self._run(MapFastaGeneratorProtein, _two_chain_fragment())
+        assert isinstance(out, dict), f"no chain split: {out!r}"
+        assert out.get("A") == self.SEQ_A and out.get("B") == self.SEQ_B, out
+
+    def test_resname_protein_emits_per_chain(self):
+        from src_new.signatures.generators.fasta import ResnameFastaGeneratorProtein
+        out = self._run(ResnameFastaGeneratorProtein, _two_chain_fragment())
+        assert isinstance(out, dict), f"no chain split: {out!r}"
+        assert out.get("A") == self.SEQ_A and out.get("B") == self.SEQ_B, out
+
+    def test_connectivity_split_without_chainids(self):
+        from src_new.signatures.generators.fasta import MapFastaGeneratorProtein
+        out = self._run(MapFastaGeneratorProtein, _two_chain_fragment(chainids=False))
+        assert isinstance(out, dict) and set(out) == {"A", "B"}, out
+        assert self.SEQ_A in out.values() and self.SEQ_B in out.values(), out
+
+    def test_single_chain_returns_plain_string_unchanged(self):
+        """Payload compatibility: one chain -> exactly today's string."""
+        from src_new.signatures.generators.fasta import (
+            MapFastaGeneratorProtein, fragment_to_protseq_map_based)
+        from src_new.config.loader import SignaturesConfig
+        frag = _protein_chain(6)
+        out = self._run(MapFastaGeneratorProtein, frag)
+        legacy = fragment_to_protseq_map_based(frag, SignaturesConfig())
+        assert isinstance(out, str) and out == legacy == "AAAAAA", (out, legacy)
+
+    def test_chain_suffix_canonical_normalization(self):
+        from src_new.signatures.canonical import canonical_signature_type
+        assert canonical_signature_type("fasta_map_protein[A]") == "residue_sequence_protein"
+        assert canonical_signature_type("fasta_resname_nucleic[B]") == "residue_sequence_nucleotide"
+        assert canonical_signature_type("smiles") == "smiles"

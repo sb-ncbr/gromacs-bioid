@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 # F-18: single source of truth for the generator-name -> signature-type map.
 from ..signatures.canonical import CANONICAL_SIGNATURE_TYPES as _CANONICAL_SIGNATURE_TYPES
+from ..signatures.canonical import canonical_signature_type as _canonical_signature_type
 
 
 # Belief-term calibration (v3.142 "R-a", user-approved 2026-10-23). Grounded on
@@ -151,7 +152,7 @@ def collect_hits(results: ResultsManager, segment: str) -> list[RawHit]:
             # Determine signature type: prefer from resolver result, fallback to canonical mapping
             signature_type = resolver_result.get("signature_type")
             if signature_type is None:
-                signature_type = _CANONICAL_SIGNATURE_TYPES.get(generator_name)
+                signature_type = _canonical_signature_type(generator_name)
             if signature_type is None:
                 logger.warning(f"Unknown signature generator '{generator_name}', using fallback")
                 signature_type = generator_name.lower().replace("_", "")

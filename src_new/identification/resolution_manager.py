@@ -17,6 +17,7 @@ from .registry import IdentifierRegistry
 
 # F-18: single source of truth for the generator-name -> signature-type map.
 from ..signatures.canonical import CANONICAL_SIGNATURE_TYPES as _CANONICAL_SIGNATURE_TYPES
+from ..signatures.canonical import canonical_signature_type as _canonical_signature_type
 
 logger = logging.getLogger("identifier")
 
@@ -162,7 +163,7 @@ class IdentifierResolutionManager:
         
         if signature_type is None:
             # Fallback: use canonical mapping
-            signature_type = _CANONICAL_SIGNATURE_TYPES.get(signature_generator_name)
+            signature_type = _canonical_signature_type(signature_generator_name)
         if signature_type is None:
             logger.warning(f"Unknown signature generator '{signature_generator_name}', cannot determine signature type. Skipping.")
             return False

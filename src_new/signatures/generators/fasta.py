@@ -17,6 +17,18 @@ from ..base import SignatureGenerator
 logger = logging.getLogger("base")
 
 
+
+def _emit_chains(chains):
+    """B-05 payload contract: plain string for a single chain (exactly
+    today's behaviour); dict {label: seq} for multi-chain fragments."""
+    chains = [(lab, seq) for lab, seq in chains if seq]
+    if len(chains) == 1:
+        return chains[0][1]
+    if not chains:
+        return None
+    return {lab: seq for lab, seq in chains}
+
+
 class MapFastaGeneratorProtein(SignatureGenerator):
     """FASTA generator for proteins using map-based approach."""
     
@@ -54,7 +66,8 @@ class MapFastaGeneratorProtein(SignatureGenerator):
         fragment: AtomGroup,
         facade: LoadedUniverse,
     ) -> str:
-        return fragment_to_protseq_map_based(fragment, self.config)
+        chains = fragment_to_protseq_map_based_chains(fragment, self.config)
+        return _emit_chains(chains)
 
 
 class MapFastaGeneratorNucleotide(SignatureGenerator):
@@ -96,7 +109,8 @@ class MapFastaGeneratorNucleotide(SignatureGenerator):
     ) -> str:
         # anchor=None: 'M' cannot occur in the nucleic alphabet, so the
         # methionine-anchor branch is dead weight here (wave-7 B3).
-        return fragment_to_protseq_map_based(fragment, self.config, anchor=None)
+        chains = fragment_to_protseq_map_based_chains(fragment, self.config, anchor=None)
+        return _emit_chains(chains)
 
 
 class ResnameFastaGeneratorProtein(SignatureGenerator):
@@ -128,7 +142,8 @@ class ResnameFastaGeneratorProtein(SignatureGenerator):
         fragment: AtomGroup,
         facade: LoadedUniverse,
     ) -> str:
-        return fragment_to_protseq_resname_based(fragment)
+        chains = fragment_to_protseq_resname_based_chains(fragment)
+        return _emit_chains(chains)
 
 
 class ResnameFastaGeneratorNucleotide(SignatureGenerator):
@@ -175,7 +190,8 @@ class ResnameFastaGeneratorNucleotide(SignatureGenerator):
         fragment: AtomGroup,
         facade: LoadedUniverse,
     ) -> str:
-        return fragment_to_protseq_resname_based(fragment)
+        chains = fragment_to_protseq_resname_based_chains(fragment)
+        return _emit_chains(chains)
 
 
 # v3.143 (B-09): terminal caps that must never enter a sequence string.
@@ -223,6 +239,163 @@ def resname_to_one_letter(resname: str) -> str:
     return KNOWN_RESIDUE_CODES.get(resname.upper(), 'X')
 
 
+
+def _backbone_link_maps(names, resindices, bond_indices,
+                        residue_indices_to_code):
+    """Peptide C(i)-N(i+1) / nucleic O3'(i)-P(i+1) name-exact link maps.
+    Extracted verbatim from _backbone_chain_sequences (B-05 shares it)."""
+    nxt: dict[int, int] = {}
+    prev: dict[int, int] = {}
+    for a1, a2 in bond_indices:
+        a1, a2 = int(a1), int(a2)
+        n1 = str(names[a1]).strip()
+        n2 = str(names[a2]).strip()
+        r1 = int(resindices[a1])
+        r2 = int(resindices[a2])
+        if r1 == r2 or r1 not in residue_indices_to_code or r2 not in residue_indices_to_code:
+            continue
+        if {n1, n2} == {"C", "N"}:            # peptide bond C(i)-N(i+1)
+            early, late = (r1, r2) if n1 == "C" else (r2, r1)
+        elif {n1, n2} in ({"O3'", "P"}, {"O3*", "P"}):  # nucleic O3'(i)-P(i+1)
+            early, late = (r1, r2) if n1.startswith("O3") else (r2, r1)
+        else:
+            continue
+        if early in nxt:  # branch via backbone should not happen; keep first
+            continue
+        nxt[early] = late
+        prev[late] = early
+    return nxt, prev
+
+
+def _chain_groups_and_labels(fragment, ordered_chains):
+    """B-05: merge the backbone-connectivity chains with residues the walk
+    never linked (caps/metal/gaps -> singleton chains) and attach stable
+    labels: chainIDs when present, else A, B, ... by first residue index.
+    Each chain is ordered by residue index."""
+    chain_of: dict[int, int] = {}
+    all_res = []
+    for r in fragment.residues.resindices:
+        all_res.append(int(r))
+    for ci, chain in enumerate(ordered_chains):
+        for r in chain:
+            chain_of[int(r)] = ci
+    leftover = sorted(set(all_res) - set(chain_of))
+    chains = [sorted(c) for c in ordered_chains] + [[r] for r in leftover]
+    chains.sort(key=lambda c: min(c))
+    labels = []
+    try:
+        chids = fragment.atoms.chainIDs
+        residx = fragment.atoms.resindices
+        id_of = {}
+        for ci, chain in enumerate(chains):
+            cid = ""
+            first = chain[0]
+            for a in range(fragment.n_atoms):
+                if int(residx[a]) == first:
+                    cid = str(chids[a]).strip()
+                    break
+            id_of[ci] = cid
+        labels = [id_of.get(ci) or chr(ord("A") + ci) for ci in range(len(chains))]
+        # collision guard: fall back to positional labels for duplicates
+        pos = 0
+        seen = set()
+        fixed = []
+        for lab in labels:
+            if lab in seen:
+                fixed.append(chr(ord("A") + pos))
+                pos += 1
+            else:
+                fixed.append(lab)
+                seen.add(lab)
+        labels = fixed
+    except Exception:
+        labels = [chr(ord("A") + ci) for ci in range(len(chains))]
+    return list(zip(labels, chains))
+
+
+def _walk_backbone_chains(nxt, prev, all_residues):
+    """Ordered residue walks from the link maps (N-termini first), plus any
+    residues never linked as singleton trails — deterministic ordering."""
+    starts = sorted((r for r in all_residues if r not in prev))
+    chains = []
+    seen = set()
+    for start in starts:
+        chain = []
+        r = start
+        local_seen = set()
+        while r is not None and r not in seen and r not in local_seen:
+            local_seen.add(r)
+            seen.add(r)
+            chain.append(r)
+            r = nxt.get(r)
+        if chain:
+            chains.append(chain)
+    for r in sorted(all_residues - seen):
+        chains.append([r])
+    return chains
+
+
+def fragment_to_protseq_resname_based_chains(fragment: AtomGroup) -> list:
+    """B-05: per-chain resname sequences as [(label, seq)].
+
+    Single-chain fragments return a one-element list whose sequence is the
+    EXACT legacy string (sorted by resnum); multi-chain fragments are split
+    by chainIDs/backbone connectivity and each chain is sorted by residue
+    index (resnum restart between chains no longer interleaves).
+    """
+    try:
+        codes = {
+            int(res.resindex): resname_to_one_letter(str(res.resname).upper())
+            for res in fragment.residues
+        }
+        nxt, prev = _backbone_link_maps(
+            fragment.atoms.names, fragment.atoms.resindices,
+            fragment.bonds.indices, codes)
+        chains = _walk_backbone_chains(nxt, prev, set(codes))
+        labelled = _chain_groups_and_labels(fragment, chains)
+        if len(labelled) <= 1:
+            return [("A", fragment_to_protseq_resname_based(fragment))]
+        out = []
+        all_chain_res = {r for _, chain in labelled for r in chain}
+        if all_chain_res != set(codes):
+            # any residue outside the walk grouping: keep legacy string
+            return [("A", fragment_to_protseq_resname_based(fragment))]
+        for label, chain in labelled:
+            out.append((label, "".join(codes[r] for r in chain)))
+        return out
+    except Exception:
+        return [("A", fragment_to_protseq_resname_based(fragment))]
+
+
+def fragment_to_protseq_map_based_chains(fragment: AtomGroup,
+                                         config: SignaturesConfig,
+                                         anchor: str | None = "M") -> list:
+    """B-05: per-chain map sequences as [(label, seq)].
+
+    Fully backbone-covered fragments return one nxt-walk sequence per
+    chain (byte-identical to today's single-chain full-coverage result).
+    Partial coverage falls back to the legacy single-string machinery
+    unchanged (label "A")."""
+    residue_indices_to_code, _ = _fragment_extract_residues(fragment)
+    try:
+        nxt, prev = _backbone_link_maps(
+            fragment.atoms.names, fragment.atoms.resindices,
+            fragment.bonds.indices, residue_indices_to_code)
+        chains = _walk_backbone_chains(nxt, prev, set(residue_indices_to_code))
+        covered = sum(len(c) for c in chains)
+        if not chains or covered != len(residue_indices_to_code):
+            seq = fragment_to_protseq_map_based(fragment, config, anchor)
+            return [("A", seq)] if seq is not None else [("A", None)]
+        labelled = _chain_groups_and_labels(fragment, chains)
+        out = []
+        for label, chain in labelled:
+            out.append((label, "".join(residue_indices_to_code[r] for r in chain)))
+        return out
+    except Exception:
+        seq = fragment_to_protseq_map_based(fragment, config, anchor)
+        return [("A", seq)] if seq is not None else [("A", None)]
+
+
 def fragment_to_protseq_resname_based(fragment: AtomGroup) -> str:
     """Extract sequence based on residue names.
     
@@ -267,27 +440,8 @@ def _backbone_chain_sequences(
     except Exception:
         return []
 
-    nxt: dict[int, int] = {}
-    prev: dict[int, int] = {}
-    for a1, a2 in bond_indices:
-        a1, a2 = int(a1), int(a2)
-        n1 = str(names[a1]).strip()
-        n2 = str(names[a2]).strip()
-        r1 = int(resindices[a1])
-        r2 = int(resindices[a2])
-        if r1 == r2 or r1 not in residue_indices_to_code or r2 not in residue_indices_to_code:
-            continue
-        if {n1, n2} == {"C", "N"}:            # peptide bond C(i)-N(i+1)
-            early, late = (r1, r2) if n1 == "C" else (r2, r1)
-        elif {n1, n2} in ({"O3'", "P"}, {"O3*", "P"}):  # nucleic O3'(i)-P(i+1)
-            early, late = (r1, r2) if n1.startswith("O3") else (r2, r1)
-        else:
-            continue
-        if early in nxt:  # branch via backbone should not happen; keep first
-            continue
-        nxt[early] = late
-        prev[late] = early
-
+    nxt, prev = _backbone_link_maps(names, resindices, bond_indices,
+                                    residue_indices_to_code)
     if not nxt:
         return []
 

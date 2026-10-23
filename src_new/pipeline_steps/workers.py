@@ -343,7 +343,12 @@ def _generate_signatures_worker(item: tuple) -> dict[str, Any]:
                 if generator.is_applicable(mock_instance, mock_fragment, mock_facade):
                     attempted.append(generator.name)
                     sig = generator.generate(mock_instance, mock_fragment, mock_facade)
-                    if sig is not None:
+                    if isinstance(sig, dict):
+                        # B-05 (red-team 4.6): per-chain fasta emission
+                        for _label, _val in sig.items():
+                            if _val:
+                                generated[f"{generator.name}[{_label}]"] = _val
+                    elif sig is not None:
                         generated[generator.name] = sig
             except Exception as e:
                 errors.append({"generator": generator.name, "error": str(e)})

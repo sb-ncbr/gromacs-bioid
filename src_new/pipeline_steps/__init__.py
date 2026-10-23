@@ -429,7 +429,12 @@ def _generate_signatures(context):
                         sig = generator.generate(instance, fragment, segment_facade)
                         if _spin_dbg:
                             print(f"[SPIN] {segment_name}/{generator.name} DONE {time.time()-_g_t0:.1f}s", flush=True)
-                        if sig is not None:
+                        if isinstance(sig, dict):
+                            # B-05 (red-team 4.6): per-chain fasta emission
+                            for _label, _val in sig.items():
+                                if _val:
+                                    generated[f"{generator.name}[{_label}]"] = _val
+                        elif sig is not None:
                             generated[generator.name] = sig
                         else:
                             errors.append({"generator": generator.name, "error": "Generation returned None"})

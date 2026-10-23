@@ -39,3 +39,13 @@ CANONICAL_SIGNATURE_TYPES: dict[str, str] = {
     "atom": "element",
     "fingerprint": "hash",
 }
+
+
+_CHAIN_SUFFIX_RE = __import__("re").compile(r"\[[^\]]+\]$")
+
+
+def canonical_signature_type(generator_name: str):
+    """B-05: per-chain emissions arrive as '<generator>[A]' — strip the
+    chain suffix before the canonical-type lookup (returns None for
+    unknown generators, same as the historical dict.get)."""
+    return CANONICAL_SIGNATURE_TYPES.get(_CHAIN_SUFFIX_RE.sub("", generator_name))
