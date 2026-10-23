@@ -105,22 +105,28 @@ class TestSequenceWorker:
     def test_sequence_worker_matrix_cap_skips_alignment(self) -> None:
         """title: titin-class pairs must not run the DP matrix at all.
 
-        Patch PairwiseAligner to explode if constructed; a pair whose length
-        product exceeds MAX_ALIGN_MATRIX_CELLS must return None without it.
+        Patch the shared alignment helper to explode if called; a pair whose
+        length product exceeds MAX_ALIGN_MATRIX_CELLS must return None
+        without it. (Batch-4 5.2: the aligner lives in
+        verification/alignment.py — target updated, intent unchanged.)
         """
         worker = SequenceVerificationWorker()
         huge_a = "A" * 6000
         huge_b = "G" * 5000  # 30M cells > 25M cap
-        with patch.object(
-            __import__("src_new.verification.workers.sequence_worker", fromlist=["PairwiseAligner"]),
-            "PairwiseAligner",
-            side_effect=AssertionError("aligner must not be constructed"),
+        with patch(
+            "src_new.verification.workers.sequence_worker.local_identity_coverage",
+            side_effect=AssertionError("aligner must not be called"),
         ):
             score = worker._compute_alignment_score(huge_a, huge_b)
         assert score is None
 
     def test_sequence_worker_no_count_materialization(self) -> None:
-        """len(alignments) must never be requested (count-overflow pathology)."""
+        """len(alignments) must never be requested (count-overflow pathology).
+
+        Batch-4 5.2: the aligner lives in verification/alignment.py as the
+        configured module-level _ALIGNER_AA — target updated, intent
+        unchanged (next(iter(...)) only, no len()/bool()).
+        """
         worker = SequenceVerificationWorker()
         seq = "MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF"
 
@@ -136,16 +142,9 @@ class TestSequenceWorker:
                 fake.__getitem__ = lambda self_, i: seq if i == 0 else seq
                 yield fake
 
-        with patch(
-            "src_new.verification.workers.sequence_worker.PairwiseAligner"
-        ) as mock_cls:
-            inst = mock_cls.return_value
-            inst.mode = None
-            inst.match_score = None
-            inst.mismatch_score = None
-            inst.open_gap_score = None
-            inst.extend_gap_score = None
-            inst.align.return_value = _ExplodingAlignments()
+        mock_aligner = MagicMock()
+        mock_aligner.align.return_value = _ExplodingAlignments()
+        with patch("src_new.verification.alignment._ALIGNER_AA", mock_aligner):
             score = worker._compute_alignment_score(seq, seq)
         assert score is not None
         assert score.normalized_score >= 99.0
@@ -176,30 +175,23 @@ class TestSequenceWorker:
         assert worker.is_applicable("residue_sequence_protein", "PUBCHEM_CID") is False
     
     def test_sequence_worker_pairwise_aligner_used(self) -> None:
-        """Test that PairwiseAligner is used instead of deprecated pairwise2."""
+        """Test that Biopython's PairwiseAligner (not deprecated pairwise2)
+        backs the alignment. Batch-4 5.2: the aligner lives in
+        verification/alignment.py as module-level _ALIGNER_AA.
+        """
         worker = SequenceVerificationWorker()
         seq = "MVLSPADK"
-        
-        # Mock PairwiseAligner to verify it's called
-        with patch('src_new.verification.workers.sequence_worker.PairwiseAligner') as mock_aligner_class:
-            mock_aligner = MagicMock()
-            mock_aligner_class.return_value = mock_aligner
-            
-            # Create a mock alignment result
-            mock_alignment = MagicMock()
-            mock_alignment.__getitem__.side_effect = lambda idx: seq if idx == 0 else seq
-            mock_aligner.align.return_value = [mock_alignment]
-            
-            worker.verify(seq, "TEST", "UNIPROT_ID", canonical_signature=seq)
-            
-            # Verify PairwiseAligner was instantiated and configured
-            mock_aligner_class.assert_called_once()
-            assert mock_aligner.mode == "global"
-            assert mock_aligner.match_score == 2
-            assert mock_aligner.mismatch_score == -1
-            assert mock_aligner.open_gap_score == -0.5
-            assert mock_aligner.extend_gap_score == -0.1
-            mock_aligner.align.assert_called_once()
+
+        mock_aligner = MagicMock()
+        mock_alignment = MagicMock()
+        mock_alignment.__getitem__.side_effect = lambda idx: seq
+        mock_aligner.align.return_value = [mock_alignment]
+
+        with patch("src_new.verification.alignment._ALIGNER_AA", mock_aligner):
+            score = worker.verify(seq, "TEST", "UNIPROT_ID", canonical_signature=seq)
+
+        mock_aligner.align.assert_called_once()
+        assert score is not None
     
     @patch("src_new.verification.fetchers.sequence_fetcher.SequenceSignatureFetcher._fetch_pdb_entities")
     def test_sequence_worker_pdb_multi_entity_best_match(self, mock_fetch_entities) -> None:
@@ -281,19 +273,27 @@ class TestStructureWorker:
         assert score.normalized_score >= 95.0
     
     def test_structure_worker_different_pdb(self, minimal_pdb) -> None:
-        """Verify minimal PDB against a 2-residue variant (remove SER) -> assert normalized_score < 80.0."""
+        """Same-length variant with a mutated residue scores below 80.
+
+        Batch-4 5.2 note: this fixture used to delete SER and relied on the
+        old global-alignment length dilution (66.7). Under D-01 semantics a
+        perfect 2-residue fragment of the reference IS a perfect match
+        (coverage 1.0), so the intent — "a genuinely different sequence
+        scores lower" — is preserved by mutating GLY->LEU instead:
+        local identity 2/3 * coverage 1.0 = 66.7.
+        """
         worker = StructureVerificationWorker()
         
-        # Create a 2-residue variant by removing SER residues (lines 9-12)
+        # Same-length variant of minimal_pdb with GLY->LEU at residue 2
         variant_pdb = """HEADER    TEST
 ATOM      1  N   ALA A   1      10.000  10.000  10.000  1.00  0.00           N
 ATOM      2  CA  ALA A   1      10.500  10.500  10.500  1.00  0.00           C
 ATOM      3  C   ALA A   1      11.000  11.000  11.000  1.00  0.00           C
 ATOM      4  O   ALA A   1      11.500  11.500  11.500  1.00  0.00           O
-ATOM      5  N   GLY A   2      12.000  12.000  12.000  1.00  0.00           N
-ATOM      6  CA  GLY A   2      12.500  12.500  12.500  1.00  0.00           C
-ATOM      7  C   GLY A   2      13.000  13.000  13.000  1.00  0.00           C
-ATOM      8  O   GLY A   2      13.500  13.500  13.500  1.00  0.00           O
+ATOM      5  N   LEU A   2      12.000  12.000  12.000  1.00  0.00           N
+ATOM      6  CA  LEU A   2      12.500  12.500  12.500  1.00  0.00           C
+ATOM      7  C   LEU A   2      13.000  13.000  13.000  1.00  0.00           C
+ATOM      8  O   LEU A   2      13.500  13.500  13.500  1.00  0.00           O
 END
 """
         
@@ -322,23 +322,23 @@ END
         assert score is None
     
     def test_structure_worker_pairwise_aligner_used(self, minimal_pdb) -> None:
-        """Test that PairwiseAligner is used instead of deprecated pairwise2 in sequence proxy."""
+        """Test that PairwiseAligner (not deprecated pairwise2) backs the
+        sequence proxy. Batch-4 5.2: the proxy uses the shared helper in
+        verification/alignment.py — target updated, intent unchanged.
+        """
         worker = StructureVerificationWorker()
-        
-        # Mock PairwiseAligner to verify it's called in the sequence proxy fallback.
+
         # v3.138 note: the tm_align path is functional now, so force the fallback
         # condition explicitly instead of relying on it failing silently.
+        mock_aligner = MagicMock()
+        mock_alignment = MagicMock()
+        mock_alignment.__getitem__.side_effect = lambda idx: "AGS"
+        mock_aligner.align.return_value = [mock_alignment]
+
         with patch("src_new.verification.workers.structure_worker._TMTOOLS_AVAILABLE", False), \
-             patch('src_new.verification.workers.structure_worker.PairwiseAligner') as mock_aligner_class:
-            mock_aligner = MagicMock()
-            mock_aligner_class.return_value = mock_aligner
-            
-            # Create a mock alignment result
-            mock_alignment = MagicMock()
-            mock_alignment.__getitem__.side_effect = lambda idx: "AA" if idx == 0 else "AA"
-            mock_aligner.align.return_value = [mock_alignment]
-            
-            worker.verify(minimal_pdb, "1ABC", "PDB_ID", canonical_signature=minimal_pdb)
-            
-            # Verify PairwiseAligner was called (in sequence proxy fallback)
-            mock_aligner.align.assert_called()
+             patch("src_new.verification.alignment._ALIGNER_AA", mock_aligner):
+            score = worker.verify(minimal_pdb, "1ABC", "PDB_ID",
+                                  canonical_signature=minimal_pdb)
+
+        mock_aligner.align.assert_called()
+        assert score is not None

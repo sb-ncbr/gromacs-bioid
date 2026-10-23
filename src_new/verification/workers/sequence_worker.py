@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import logging
 
-from Bio.Align import PairwiseAligner
-
 from ..base import VerificationWorker
 from ..models import VerificationScore
 from ..fetchers.sequence_fetcher import SequenceSignatureFetcher
+from ..alignment import local_identity_coverage
 from ...molecules.nucleic_acid import sequence_orientation_variants
 
 logger = logging.getLogger(__name__)
@@ -35,6 +34,12 @@ class SequenceVerificationWorker(VerificationWorker):
     def _compute_alignment_score(self, signature: str, canonical_signature: str) -> VerificationScore | None:
         """Compute alignment score between query and canonical sequence.
 
+        Red-team batch-4 (D-01): local BLOSUM62 alignment via the shared
+        helper (verification/alignment.py). Score = identity * coverage;
+        both raw numbers are persisted in details. The old global alignment
+        diluted length differences (correct full-length entries scored below
+        random sequences) and reported coverage == 1.0 by construction.
+
         Args:
             signature: The query sequence.
             canonical_signature: The canonical/reference sequence.
@@ -51,56 +56,26 @@ class SequenceVerificationWorker(VerificationWorker):
                 )
                 return None
 
-            # Use PairwiseAligner with equivalent parameters to old globalms
-            # match=2, mismatch=-1, gap_open=-0.5, gap_extend=-0.1
-            aligner = PairwiseAligner()
-            aligner.mode = "global"
-            aligner.match_score = 2
-            aligner.mismatch_score = -1
-            aligner.open_gap_score = -0.5
-            aligner.extend_gap_score = -0.1
-
-            alignments = aligner.align(signature, canonical_signature)
-
-            # IMPORTANT: take the first optimal alignment via the iterator
-            # WITHOUT materializing len(alignments). For low-complexity /
-            # repetitive sequence pairs the count of optimal alignments
-            # explodes combinatorially ("number of optimal alignments is
-            # larger than 9223372036854775807") and enumeration burns hours.
-            # next(iter(...)) returns the first alignment at DP cost only.
-            try:
-                aln = next(iter(alignments))
-            except StopIteration:
-                logger.warning(
-                    f"No alignment found for sequences of length {len(signature)} "
-                    f"and {len(canonical_signature)}"
-                )
+            out = local_identity_coverage(signature, canonical_signature)
+            if out is None:
                 return None
-            
-            # For PairwiseAligner, alignment sequences are accessed via aln[0] and aln[1]
-            # These are aligned strings with gaps represented as '-'
-            aln_seq1 = str(aln[0])
-            aln_seq2 = str(aln[1])
-            
-            # Compute identity = matches / len(alignment.seqA)
-            matches = sum(a == b for a, b in zip(aln_seq1, aln_seq2))
-            identity = matches / len(aln_seq1) if len(aln_seq1) > 0 else 0.0
-            
-            # Compute coverage = aligned_positions / len(signature)
-            aligned_positions = sum(1 for a in aln_seq1 if a != '-')
-            coverage = aligned_positions / len(signature) if len(signature) > 0 else 0.0
-            
+            identity, coverage = out
+
             # Final score = identity * coverage * 100.0, capped at 100
             raw_score = identity * coverage
             normalized_score = min(raw_score * 100.0, 100.0)
-            
+
             return VerificationScore(
                 kind="similarity",
                 metric_name="seq_identity_coverage",
                 raw_score=raw_score,
                 normalized_score=normalized_score,
+                details={
+                    "alignment_identity": round(identity * 100.0, 2),
+                    "query_coverage": round(coverage * 100.0, 2),
+                },
             )
-            
+
         except Exception as e:
             logger.warning(f"Sequence alignment failed: {e}")
             return None

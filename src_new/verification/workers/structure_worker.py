@@ -8,11 +8,11 @@ import tempfile
 import os
 
 import numpy as np
-from Bio.Align import PairwiseAligner
 import gemmi
 
 from ..base import VerificationWorker
 from ..models import VerificationScore
+from ..alignment import local_identity_coverage
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,11 @@ except ImportError:
 # computations per verification. Within the cap, pairs are tried in
 # sequence-similarity order; beyond it the best-matching pairs win.
 _MAX_TM_PAIRS = 16
+
+# TM-score is meaningless on near-atomic chains (tmtools returns ~1.0 for
+# any 2-of-3-residue overlap); such pairs fall through to the sequence
+# proxy, which handles them with real alignment semantics.
+_MIN_TM_CHAIN_LEN = 5
 
 
 class StructureVerificationWorker(VerificationWorker):
@@ -195,6 +200,8 @@ class StructureVerificationWorker(VerificationWorker):
 
         best_tm = None  # (tm_norm_query, tm_norm_ref, q_id, c_id, len_q, len_c)
         for _ratio, q_id, q_seq, q_coords, c_id, c_seq, c_coords in pairs:
+            if min(len(q_seq), len(c_seq)) < _MIN_TM_CHAIN_LEN:
+                continue
             if np.any(np.isnan(q_coords)) or np.any(np.isnan(c_coords)):
                 logger.warning(f"NaN detected in CA coordinates ({q_id}/{c_id})")
                 continue
@@ -256,28 +263,14 @@ class StructureVerificationWorker(VerificationWorker):
             if not seq1 or not seq2:
                 return None
 
-            # Alignment parameters unchanged (global, match=2, mismatch=-1,
-            # gap open/extend -0.5/-0.1); the local-alignment rework is
-            # subtask 5.2 (D-01), shared with the sequence worker.
-            aligner = PairwiseAligner()
-            aligner.mode = "global"
-            aligner.match_score = 2
-            aligner.mismatch_score = -1
-            aligner.open_gap_score = -0.5
-            aligner.extend_gap_score = -0.1
-
-            aln = next(iter(aligner.align(seq1, seq2)), None)
-            if aln is None:
-                logger.warning("No alignment found for structure sequences")
+            # Red-team batch-4 (D-01/5.2): local BLOSUM62 alignment via the
+            # shared helper — identical semantics to the sequence worker
+            # (the old global mode diluted any length difference).
+            out = local_identity_coverage(seq1, seq2)
+            if out is None:
+                logger.warning("No usable local alignment for structure sequences")
                 return None
-
-            aln_seq1 = str(aln[0])
-            aln_seq2 = str(aln[1])
-
-            matches = sum(a == b for a, b in zip(aln_seq1, aln_seq2))
-            identity = matches / len(aln_seq1) if len(aln_seq1) > 0 else 0.0
-            aligned_positions = sum(1 for a in aln_seq1 if a != '-')
-            coverage = aligned_positions / len(seq1) if len(seq1) > 0 else 0.0
+            identity, coverage = out
 
             raw_score = identity * coverage
             return VerificationScore(
