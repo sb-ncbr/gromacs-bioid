@@ -12,7 +12,8 @@ from ...config.loader import SignaturesConfig
 from ...molecules.instances import MoleculeInstance
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 from ..base import SignatureGenerator
-from ._perceive_cache import build_once_cached, build_once_family_mol
+from ._perceive_cache import (
+    build_once_cached, build_once_family_mol, assign_stereo_from_3d)
 
 logger = logging.getLogger("base")
 
@@ -76,6 +77,8 @@ class InchiKeyGenerator(SignatureGenerator):
             fragment, "rdkit_once", lambda: build_once_family_mol(fragment),
             timeout_s=getattr(self.config, "perceive_timeout_s", 300),
         )
+        # B-11 (red-team 4.5): stereo from 3D on the private copy
+        assign_stereo_from_3d(molecule, fragment)
 
         molecule = Chem.RemoveHs(molecule, sanitize=False)
         

@@ -272,3 +272,73 @@ def _inject_inferred_hydrogens(molecule_build, parent_rdkit_idx, count):
         h = _Chem.Atom("H")
         h_idx = molecule_build.AddAtom(h)
         molecule_build.AddBond(parent_rdkit_idx, h_idx, _Chem.BondType.SINGLE)
+
+
+# --- B-11 (red-team 4.5): stereochemistry from 3D ------------------------------
+
+def assign_stereo_from_3d(mol, fragment) -> None:
+    """Attach the fragment's 3D coordinates to the built mol and assign
+    CIP / E-Z stereochemistry (historical output was always the flat
+    UHFFFAOYSA block).
+
+    The atom order follows the family builders exactly: heavy atoms in
+    fragment-index order, with B-10 UA-injected hydrogens directly behind
+    their parent. Injected H get a deterministic tetrahedral position
+    opposite their heavy neighbours. Any failure degrades to the previous
+    flat output (stereo is best-effort on top of the 4.1 cache copies).
+    """
+    import numpy as np
+    from rdkit import Chem as _Chem
+    try:
+        n_heavy = fragment.n_atoms
+        if mol.GetNumAtoms() < n_heavy:
+            return
+        positions = fragment.atoms.positions
+    except Exception:
+        return
+    try:
+        h_map = _h_deficiency(fragment) or {}
+        atom_idx_to_index = {
+            int(a): i for i, a in enumerate(fragment.atoms.indices)}
+        order = []
+        for atom_idx in fragment.atoms.indices:
+            i = atom_idx_to_index[int(atom_idx)]
+            parent = len(order)
+            order.append(("heavy", np.asarray(positions[i], dtype=float)))
+            if h_map:
+                for _ in range(h_map.get(i, 0)):
+                    order.append(("H", parent))
+        if len(order) != mol.GetNumAtoms():
+            return
+        conf = _Chem.Conformer(len(order))
+        for rid, entry in enumerate(order):
+            if entry[0] == "heavy":
+                conf.SetAtomPosition(rid, tuple(float(x) for x in entry[1]))
+        # deterministic tetrahedral H placement (chiral UA centres)
+        for rid, entry in enumerate(order):
+            if entry[0] != "H":
+                continue
+            parent = entry[1]
+            p = np.asarray(conf.GetAtomPosition(parent), dtype=float)
+            v = np.zeros(3)
+            cnt = 0
+            for bond in mol.GetAtomWithIdx(parent).GetBonds():
+                o = bond.GetOtherAtomIdx(parent)
+                if o >= len(order) or order[o][0] != "heavy":
+                    continue
+                q = np.asarray(conf.GetAtomPosition(o), dtype=float)
+                d = q - p
+                nrm = np.linalg.norm(d)
+                if nrm > 1e-9:
+                    v += d / nrm
+                    cnt += 1
+            if cnt and np.linalg.norm(v) > 1e-9:
+                conf.SetAtomPosition(rid, tuple(p - v / np.linalg.norm(v) * 1.09))
+            else:
+                conf.SetAtomPosition(rid, (p[0], p[1], p[2] + 1.09))
+        mol.RemoveAllConformers()
+        mol.AddConformer(conf, assignId=True)
+        # embedChiral=False in DBO strips nothing; assign tags from geometry
+        _Chem.AssignStereochemistryFrom3D(mol, replaceExistingTags=True)
+    except Exception:
+        return

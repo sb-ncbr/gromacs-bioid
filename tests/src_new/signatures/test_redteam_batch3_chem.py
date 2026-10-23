@@ -372,3 +372,66 @@ class TestB10UnitedAtom:
         from src_new.signatures.generators._perceive_cache import _h_deficiency
         assert _h_deficiency(_ua_ethanol_fragment()) is not None
         assert _h_deficiency(_acetate_fragment()) is None
+
+
+def _frag_from_rdkit_mol(mol):
+    """All-atom fragment from an RDKit mol (conformer 0), single residue."""
+    import MDAnalysis as _mda
+    n = mol.GetNumAtoms()
+    els = [a.GetSymbol() for a in mol.GetAtoms()]
+    u = _mda.Universe.empty(n, n_residues=1, n_segments=1,
+                            atom_resindex=[0] * n, trajectory=True)
+    u.add_TopologyAttr("elements", els)
+    u.add_TopologyAttr("names", [f"{s}{i}" for i, s in enumerate(els)])
+    u.add_TopologyAttr("resnames", ["LIG"])
+    u.add_TopologyAttr("resids", [1])
+    u.add_TopologyAttr("segids", ["SEG"])
+    u.add_bonds([(int(b.GetBeginAtomIdx()), int(b.GetEndAtomIdx()))
+                 for b in mol.GetBonds()])
+    conf = mol.GetConformer()
+    import numpy as _np
+    u.atoms.positions = _np.array(
+        [list(conf.GetAtomPosition(i)) for i in range(n)], dtype=_np.float32)
+    return u.atoms
+
+
+def _embed_rdkit(smiles, seed=0xF00D):
+    """Deterministic ETKDG embedding (+3D stereo tags) of a smiles string."""
+    from rdkit import Chem as _C
+    from rdkit.Chem import AllChem
+    m = _C.AddHs(_C.MolFromSmiles(smiles))
+    AllChem.EmbedMolecule(m, randomSeed=seed)
+    _C.AssignStereochemistryFrom3D(m)
+    return m
+
+
+class TestB11StereoFrom3D:
+    """4.5 - B-11: with 3D coordinates available, InChIKey/SMILES must carry
+    stereochemistry (today every key is the flat UHFFFAOYSA block)."""
+
+    L_NICOTINE_KEY = "SNICXCGAKADSCV-JTQLQIEISA-N"     # (S)-nicotine, PubChem
+    # verified vs RDKit MolToInchiKey("C/C=C/C") -> carries the /b4-3+ E layer
+    TRANS_2BUTENE_KEY = "IAQRGUVFOMOMEM-ONEGZZNKSA-N"
+
+    def _key(self, frag):
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.generators.inchi import InchiKeyGenerator
+        from src_new.signatures.generators import _perceive_cache as pc
+        pc.clear_cache()
+        return InchiKeyGenerator(SignaturesConfig())._generate(
+            _instance(frag), frag, None)
+
+    def test_nicotine_chirality(self):
+        frag = _frag_from_rdkit_mol(_embed_rdkit("CN1CCC[C@H]1c1cccnc1"))
+        assert self._key(frag) == self.L_NICOTINE_KEY, (
+            "B-11: chiral centre lost -> flat key (reference: PubChem nicotine)")
+
+    def test_trans_2butene_ez(self):
+        frag = _frag_from_rdkit_mol(_embed_rdkit("C/C=C/C"))
+        assert self._key(frag) == self.TRANS_2BUTENE_KEY, (
+            "B-11: E/Z geometry lost -> flat key")
+
+    def test_achiral_system_flat_key_unchanged(self):
+        """Achiral molecules keep the flat UHFFFAOYSA block (ethanol gate)."""
+        ik = self._key(_ethanol_fragment())
+        assert ik == "LFQSCWFLJHTTHZ-UHFFFAOYSA-N", ik

@@ -16,7 +16,7 @@ from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 from ..base import SignatureGenerator
 from ._perceive_cache import (
     build_once_cached, _net_charge, determine_bond_orders_safely,
-    _h_deficiency, _inject_inferred_hydrogens)
+    _h_deficiency, _inject_inferred_hydrogens, assign_stereo_from_3d)
 
 logger = logging.getLogger("base")
 
@@ -84,6 +84,8 @@ class SimpleSmilesGenerator(SignatureGenerator):
             fragment, "smiles_class", lambda: _build_smiles_mol(fragment),
             timeout_s=getattr(self.config, "perceive_timeout_s", 300),
         )
+        # B-11 (red-team 4.5): stereo from 3D on the private copy
+        assign_stereo_from_3d(molecule, fragment)
 
         # Kekulization is the DOCUMENTED unbounded RDKit operation on
         # pathological molecules (coordinate perception of junk clusters
