@@ -332,6 +332,11 @@ class VerificationConfig:
     resolver_weight: float = 0.4
     similarity_weight: float = 0.4
     annotation_weight: float = 0.2
+    # Red-team batch-4 (D-08, F-track): belief already counts evidence
+    # FAMILIES; this flag additionally normalizes by the number of sources
+    # that could have reported the ident type's class (B = 100*n_seen/n_possible).
+    # OFF by default pending the G-A evaluation of its calibration impact.
+    belief_source_normalize: bool = False
     tm_score_threshold: float = 0.5
     min_final_confidence: float = 0.0
     # F14: skeleton-aware rerank of chemical candidates before the verify_top_n

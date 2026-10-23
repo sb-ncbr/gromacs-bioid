@@ -51,6 +51,58 @@ def resolver_belief(n_identity_chains: int, n_similarity_chains: int) -> float:
     return min(100.0 * (1.0 - BELIEF_RHO ** eff), 99.9999)
 
 
+# Red-team batch-4 (D-08): belief must count EVIDENCE FAMILIES (distinct
+# databases/source classes), not resolver names. Multiple chains hit the
+# SAME index and are not independent evidence:
+#   formula_pubchem + formula_pubchem_local + formula_hfamily -> the one
+#       PubChem formula index (a candidate LIST, not an exact accession)
+#   inchikey_pubchem + inchikey_self -> the one InChIKey family
+#   blast_uniprot + blast_swissprot_protein -> the one Swiss-Prot search
+# Unknown resolvers fall back to their own name (never collapse what we
+# cannot prove identical).
+RESOLVER_SOURCES: dict[str, str] = {
+    "formula_pubchem": "pubchem-formula",
+    "formula_pubchem_local": "pubchem-formula",
+    "formula_hfamily": "pubchem-formula",
+    "pubchem_struct": "pubchem-structure",
+    "idsm_pubchem": "pubchem-structure",
+    "inchikey_pubchem": "inchikey",
+    "inchikey_self": "inchikey",
+    "chembl_struct": "chembl-structure",
+    "idsm_chembl": "chembl-structure",
+    "formula_chembl": "chembl-formula",
+    "idsm_chebi": "chebi-structure",
+    "lipid_maps": "lipidmaps",
+    "glycan_composition": "glycan-composition",
+    "blast_uniprot": "uniprot-seq",
+    "blast_swissprot_protein": "uniprot-seq",
+    "blast_pdb_protein": "rcsb-seq",
+    "blast_pdb_nucleic": "rcsb-seq",
+    "blast_nr_protein": "nr-seq",
+    "blast_nt": "nt-seq",
+    "blast_core_nt": "nt-seq",
+    "foldseek_3di": "foldseek-struct",
+    "alphafind_struct": "alphafind-struct",
+    "atom": "atom",
+    "name": "name-lookup",
+}
+# Sources that emit CANDIDATE LISTS (formula/composition index hits): an
+# "identity" assertion coming exclusively from these is a candidate
+# assertion (C-09b), not an exact-record confirmation.
+FORMULA_SOURCES = frozenset(
+    {"pubchem-formula", "chembl-formula", "glycan-composition"})
+
+# D-08 pooling: SWISSPROT_ID and UNIPROT_ID name the SAME accession
+# namespace searched by the same source (Swiss-Prot); their rows must pool
+# into ONE evidence family instead of forming never-merged twin groups.
+_POOL_IDENT_TYPES = {"SWISSPROT_ID": "UNIPROT_ID"}
+
+
+def _resolver_source(resolver_name: str) -> str:
+    """Evidence-family id for a resolver name (fallback: the name itself)."""
+    return RESOLVER_SOURCES.get(resolver_name, resolver_name)
+
+
 @dataclass
 class RawHit:
     """A raw identification hit from a resolver."""
@@ -220,11 +272,13 @@ def deduplicate_and_score(
         - signature_type: str
         - hit_type: str
     """
-    # Group by (normalized_identifier, ident_type)
+    # Group by (normalized_identifier, ident_type); D-08: UniProt-family
+    # ident types pool by accession (same database, same namespace).
     groups: dict[tuple[str, str], list[RawHit]] = {}
     
     for hit in hits:
-        key = (normalize_identifier(hit.identifier, hit.ident_type), hit.ident_type)
+        pooled_type = _POOL_IDENT_TYPES.get(hit.ident_type, hit.ident_type)
+        key = (normalize_identifier(hit.identifier, hit.ident_type), pooled_type)
         if key not in groups:
             groups[key] = []
         groups[key].append(hit)
@@ -257,15 +311,30 @@ def deduplicate_and_score(
         # Collect source_resolvers list
         source_resolvers = sorted(distinct_resolvers)
         
-        # v3.142 belief term: agreement-structure belief from chain counts
-        # (identity chains = distinct resolvers whose hit_type is "identity").
-        # Magnitude-free by design; consensus_score above stays for the
-        # legacy verify-window ordering only (see manager).
+        # v3.142 belief term: agreement-structure belief from chain counts.
+        # Red-team batch-4 (D-08): chains are distinct EVIDENCE SOURCES
+        # (databases), not resolver names — formula_pubchem/local/hfamily
+        # are one source, the two Swiss-Prot BLASTs are one source, etc.
+        # resolver-chain counts are retained below for transparency.
         n_identity_chains = len({h.resolver_name for h in group_hits
                                  if h.hit_type == "identity"})
         n_similarity_chains = len({h.resolver_name for h in group_hits
                                    if h.hit_type == "similarity"})
-        belief = resolver_belief(n_identity_chains, n_similarity_chains)
+        identity_sources = {_resolver_source(h.resolver_name)
+                            for h in group_hits if h.hit_type == "identity"}
+        similarity_sources = {_resolver_source(h.resolver_name)
+                              for h in group_hits if h.hit_type == "similarity"}
+        # C-09b: split identity chains into exact-record sources and
+        # formula/candidate-list sources — a formula-index hit is not an
+        # accession confirmation. Candidates count with the κ-weighted
+        # similarity slot in the belief, not as full identity chains.
+        nonformula_identity = identity_sources - FORMULA_SOURCES
+        formula_identity = identity_sources & FORMULA_SOURCES
+        n_identity_sources = len(nonformula_identity)
+        n_candidate_sources = len(formula_identity)
+        n_similarity_sources = len(similarity_sources)
+        belief = resolver_belief(
+            n_identity_sources, n_similarity_sources + n_candidate_sources)
         
         # Pick representative signature from hit with highest resolver_score
         best_hit = max(group_hits, key=lambda h: h.resolver_score)
@@ -286,9 +355,19 @@ def deduplicate_and_score(
                 seen_types.add(h.signature_type)
                 member_signatures.append((h.signature, h.signature_type))
         
-        # Determine hit_type (identity takes precedence if mixed)
-        has_identity = any(h.hit_type == "identity" for h in group_hits)
-        effective_hit_type = "identity" if has_identity else "similarity"
+        # Determine hit_type (identity takes precedence if mixed).
+        # C-09b: identity asserted ONLY by formula/candidate-list sources
+        # is a CANDIDATE assertion — the formula index contains a structure
+        # consistent with the sum formula, which is not an exact-record
+        # confirmation. Candidates still verify (via skeleton/worker — the
+        # F7 gate owns the verdict), but never BY assertion, and they rank
+        # below true-identity rows in the fidelity view.
+        if nonformula_identity:
+            effective_hit_type = "identity"
+        elif formula_identity:
+            effective_hit_type = "candidate"
+        else:
+            effective_hit_type = "similarity"
         
         result[(normalized_id, ident_type)] = {
             "consensus_score": consensus_score,
@@ -300,6 +379,9 @@ def deduplicate_and_score(
             "belief": belief,
             "n_identity_chains": n_identity_chains,
             "n_similarity_chains": n_similarity_chains,
+            "n_identity_sources": n_identity_sources,
+            "n_candidate_sources": n_candidate_sources,
+            "n_similarity_sources": n_similarity_sources,
         }
     
     return result

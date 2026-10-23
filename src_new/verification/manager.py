@@ -23,6 +23,25 @@ _SEQUENCE_SIG_TAGS = ("residue_sequence",)
 _STRUCTURE_SIG_TAGS = ("pdb_protein", "pdb_nucleic", "ca_only_pdb")
 
 
+# D-08 (F-track): evidence families that could report each ident-type
+# class, used only when `verification.belief_source_normalize` is enabled.
+# chemical: pubchem-structure, inchikey, pubchem-formula, chembl-structure,
+#   lipidmaps (5); uniprot-family: uniprot-seq + foldseek-struct (2);
+# pdb: rcsb-seq + rcsb-struct (2); alphafold/alphafind: own sources (1);
+# ncbi: nr-seq + nt-seq (2); everything else conservatively 1.
+_N_POSSIBLE_SOURCES = {
+    "chemical": 5, "uniprot": 2, "pdb": 2, "alphafold": 1,
+    "alphafind": 1, "ncbi": 2, "other": 1,
+}
+
+
+def _normalize_family_belief(n_families: int, family: str) -> float:
+    """D-08 F-track: belief as the fraction of reportable evidence
+    families actually seen (B = 100 * n_seen / n_possible)."""
+    n_possible = _N_POSSIBLE_SOURCES.get(family, 1)
+    return min(100.0, 100.0 * max(0, n_families) / max(1, n_possible))
+
+
 def _equivalence_class_id(ident_type: str, identifier: str,
                           signature_type: str | None,
                           canonical_signature: str | None,
@@ -681,6 +700,19 @@ class VerificationManager:
                 consensus_score = metadata["consensus_score"]
                 source_resolvers = metadata["source_resolvers"]
                 hit_type = metadata["hit_type"]
+                # D-08: belief counts evidence FAMILIES (dedup). With the
+                # F-track flag on, additionally normalize by the number of
+                # sources that could report this ident-type class.
+                _belief_raw = float(metadata.get(
+                    "belief", min(consensus_score, 100.0)))
+                if getattr(self._verification_config, "belief_source_normalize", False):
+                    group_belief = _normalize_family_belief(
+                        metadata.get("n_identity_sources", 0)
+                        + metadata.get("n_candidate_sources", 0)
+                        + metadata.get("n_similarity_sources", 0),
+                        _ident_family(ident_type))
+                else:
+                    group_belief = _belief_raw
                 
                 # Look up SignatureFetcher (red-team batch-4: signature-type
                 # aware so PDB_ID hits on structure signatures get the
@@ -809,8 +841,7 @@ class VerificationManager:
                 # never resolver score magnitudes). Fallback to the legacy
                 # capped-consensus value only for hand-built legacy metadata
                 # dicts that predate the belief field.
-                resolver_component = float(metadata.get(
-                    "belief", min(consensus_score, 100.0)))
+                resolver_component = group_belief
                 # v3.142 (M-a): similarity component = the verification
                 # WORKER's measurement, with skeleton_sim*100 as fallback for
                 # chemical rows that never got a worker score. The skeleton
@@ -953,7 +984,7 @@ class VerificationManager:
                         skeleton_t2_sim=skeleton_t2,
                         skeleton_method=skeleton_method,
                         verified_without_corroboration=verified_without_corroboration,
-                        belief=metadata.get("belief"),
+                        belief=group_belief,
                         equivalence_class_id=eq_class_id,
                         ground_truth_override=gt_override,
                         similarity_details=(similarity_score.details or None
@@ -988,7 +1019,7 @@ class VerificationManager:
                         hit_type=hit_type,
                         skeleton_t2_sim=skeleton_t2,
                     )
-                    verified_hit.belief = metadata.get("belief")
+                    verified_hit.belief = group_belief
                     verified_hit.equivalence_class_id = eq_class_id
                     if ident_type in CHEMICAL_IDENT_TYPES:
                         verified_hit.skeleton_sim = skeleton_sim

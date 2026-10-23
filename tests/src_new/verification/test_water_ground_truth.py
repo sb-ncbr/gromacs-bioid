@@ -33,6 +33,7 @@ def _mk_manager():
     vc.similarity_weight = 0.4
     vc.annotation_weight = 0.2
     vc.min_final_confidence = 30.0
+    vc.belief_source_normalize = False
     cfg.verification = vc
     reg = MagicMock()
 
