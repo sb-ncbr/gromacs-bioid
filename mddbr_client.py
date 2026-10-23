@@ -411,6 +411,44 @@ def _fetch_one_file(accession: str, filename: str, internal_id: Optional[str],
     return "failed", None, 0
 
 
+def _choose_files(filenotes: list[dict]):
+    """A-15 (red-team 3.9): pick (topology, structure_pdb, trajectory).
+
+    - topology is RANKED (.tpr > .prmtop/.parm7 > .psf > .top > .itp); the old
+      "last in filenotes order wins" loop let a stray .itp replace a usable
+      .prmtop/.tpr;
+    - the structure PDB is always chosen when present (cross-kind coordinate
+      fallback for broken topologies), not only when no topology exists;
+    - trajectory.bin is never selected — no strategy reads it;
+    - trajectory.xtc/.dcd/.nc preferred over other trajectory files.
+    """
+    _TOP_RANK = {".tpr": 5, ".prmtop": 4, ".parm7": 4, ".psf": 3,
+                 ".top": 2, ".topo": 2, ".itp": 1}
+    _NAMED_PDB = ("structure.pdb", "average.pdb", "firstFrame.pdb")
+    _NAMED_TRAJ = ("trajectory.xtc", "trajectory.dcd", "trajectory.nc")
+
+    best_rank, topology_file = 0, None
+    structure_pdb_file = None
+    trajectory_file = None
+
+    for file in filenotes:
+        filename = file.get("filename", "")
+        lower = filename.lower()
+
+        suffix = next((ext for ext in _TOP_RANK if lower.endswith(ext)), None)
+        if suffix:
+            if _TOP_RANK[suffix] > best_rank:  # first-wins on ties (deterministic)
+                best_rank, topology_file = _TOP_RANK[suffix], file
+        elif lower.endswith(".pdb"):
+            if filename in _NAMED_PDB or structure_pdb_file is None:
+                structure_pdb_file = file
+        elif lower.endswith((".dcd", ".xtc", ".nc")):  # never .bin
+            if filename in _NAMED_TRAJ or trajectory_file is None:
+                trajectory_file = file
+
+    return topology_file, structure_pdb_file, trajectory_file
+
+
 def download_simulation_files(
     db_session,
     entry_id: int,
@@ -482,41 +520,9 @@ def download_simulation_files(
         
         logger.info(f"Found {len(filenotes)} files for project {local_accession}")
         
-        # Identify files to download
-        # Priority: topology files > structure PDB files > trajectory files
-        topology_file = None
-        structure_pdb_file = None  # Fallback if no topology
-        trajectory_file = None
-        
-        for file in filenotes:
-            filename = file.get("filename", "")
-            
-            # Topology files (highest priority)
-            if filename.endswith(".prmtop") or filename.endswith(".parm7"):
-                topology_file = file
-            elif filename.endswith(".top"):
-                topology_file = file
-            elif filename.endswith(".tpr"):
-                topology_file = file
-            elif filename.endswith(".itp"):
-                topology_file = file
-            
-            # Structure PDB files (fallback if no topology)
-            elif filename.endswith(".pdb"):
-                # Prefer structure.pdb, average.pdb, or firstFrame.pdb
-                if filename in ["structure.pdb", "average.pdb", "firstFrame.pdb"]:
-                    if structure_pdb_file is None:
-                        structure_pdb_file = file
-                elif structure_pdb_file is None:
-                    structure_pdb_file = file
-            
-            # Trajectory files
-            elif filename.endswith(".bin") or filename.endswith(".dcd") or filename.endswith(".xtc") or filename.endswith(".nc"):
-                # Prefer main trajectory over PCA trajectories
-                if filename == "trajectory.bin" or filename == "trajectory.xtc" or filename == "trajectory.dcd":
-                    trajectory_file = file
-                elif trajectory_file is None:
-                    trajectory_file = file
+        # Identify files to download (A-15: ranked topology, PDB always,
+        # never .bin — replaces last-in-filenotes-order selection)
+        topology_file, structure_pdb_file, trajectory_file = _choose_files(filenotes)
         
         # Determine what to download
         files_to_download = []
@@ -524,6 +530,10 @@ def download_simulation_files(
         if topology_file:
             logger.info(f"Found topology file: {topology_file.get('filename')}")
             files_to_download.append(topology_file)
+            if structure_pdb_file:
+                # A-15: PDB is a cross-kind coordinate fallback (A-07),
+                # fetched alongside the topology, not instead of it
+                files_to_download.append(structure_pdb_file)
         elif structure_pdb_file:
             logger.info(f"Found structure PDB file (no topology): {structure_pdb_file.get('filename')}")
             files_to_download.append(structure_pdb_file)
