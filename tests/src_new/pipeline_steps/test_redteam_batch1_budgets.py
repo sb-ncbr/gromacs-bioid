@@ -111,7 +111,7 @@ class TestD04PartialKeep:
         # consulted exactly once per candidate inside the loop.
         fetch_calls = {"n": 0}
 
-        def _get_fetcher(ident_type):
+        def _get_fetcher(ident_type, signature_type=None):
             fetch_calls["n"] += 1
             if fetch_calls["n"] >= 1:
                 # Flip DURING candidate 1's processing; the loop-top budget

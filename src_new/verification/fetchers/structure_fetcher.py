@@ -92,23 +92,44 @@ class StructureSignatureFetcher(SignatureFetcher):
     
     def _fetch_pdb(self, pdb_id: str) -> str | None:
         """Fetch PDB file from RCSB.
-        
+
         Downloads the .pdb file (not .cif) since simulation signatures are PDB strings.
         Strips _entity suffix, uppercases, downloads from RCSB.
+
+        Red-team batch-4 (D-13 defect 3): the legacy PDB-format file does
+        not exist for large entries (PDB-format-incompatible assemblies).
+        A missing or invalid .pdb now falls back to the mmCIF file, which
+        the worker parses via gemmi with identical semantics.
         """
         # Strip _entity suffix if present
         if '_' in pdb_id:
             pdb_id = pdb_id.split('_', maxsplit=1)[0]
-        
+
         # Uppercase the PDB ID
         pdb_id = pdb_id.upper()
-        
+
         url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
         try:
             r = rcsb_cache.get_cached(url, timeout=30)
-            if r is None:
-                return None
-            return r.text
         except Exception as e:
             logger.warning(f"PDB {pdb_id} fetch structure failed: {e}")
-            return None
+            r = None
+        if r is not None:
+            status = r.status_code if isinstance(getattr(r, "status_code", None), int) else 200
+            text = r.text or ""
+            if status == 200 and "ATOM" in text:
+                return text
+
+        # mmCIF fallback: large entries have no legacy-format file at all
+        cif_url = f"https://files.rcsb.org/download/{pdb_id}.cif"
+        try:
+            r = rcsb_cache.get_cached(cif_url, timeout=30)
+        except Exception as e:
+            logger.warning(f"mmCIF {pdb_id} fetch structure failed: {e}")
+            r = None
+        if r is not None:
+            status = r.status_code if isinstance(getattr(r, "status_code", None), int) else 200
+            text = r.text or ""
+            if status == 200 and "_atom_site." in text:
+                return text
+        return None

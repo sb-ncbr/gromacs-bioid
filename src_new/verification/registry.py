@@ -5,6 +5,14 @@ from __future__ import annotations
 from .base import VerificationWorker, SignatureFetcher, AnnotationQualityScorer
 
 
+# Red-team batch-4: signature kinds whose canonical form is a 3D structure
+# (route structural identifiers to StructureSignatureFetcher for these).
+_STRUCTURE_SIG_TYPES = {
+    "pdb_protein", "pdb_nucleic", "ca_only_pdb", "mmcif",
+    "pdb_protein_backbone", "pdb_nucleic_backbone",
+}
+
+
 class VerificationRegistry:
     """Registry for verification components.
     
@@ -48,15 +56,40 @@ class VerificationRegistry:
             if worker.is_applicable(signature_type, ident_type)
         ]
     
-    def get_fetcher(self, ident_type: str) -> SignatureFetcher | None:
+    def get_fetcher(
+        self,
+        ident_type: str,
+        signature_type: str | None = None,
+    ) -> SignatureFetcher | None:
         """Get a fetcher that supports the given identifier type.
-        
+
         Args:
             ident_type: The type of identifier.
-            
+            signature_type: Optional signature kind. Red-team batch-4 (known
+                fetcher-routing bug): PDB_ID/ALPHAFOLD-family identifiers are
+                supported by BOTH the sequence fetcher and the structure
+                fetcher, and first-registration order silently routed every
+                PDB_ID to the sequence fetcher — which is why all structure
+                hits were tm:0.0. When the signature kind is known, structure
+                kinds route to StructureSignatureFetcher and fasta kinds to
+                SequenceSignatureFetcher; without it the historical order is
+                preserved.
+
         Returns:
-            A SignatureFetcher instance, or None if no fetcher supports this type.
+            A SignatureFetcher instance, or None if no fetcher supports this
+            type.
         """
+        if signature_type:
+            st = signature_type.lower()
+            prefer_structure = st in _STRUCTURE_SIG_TYPES or st.endswith("_pdb")
+            for fetcher in self._fetchers:
+                if not fetcher.supports(ident_type):
+                    continue
+                name = type(fetcher).__name__
+                if prefer_structure and name == "StructureSignatureFetcher":
+                    return fetcher
+                if not prefer_structure and name == "SequenceSignatureFetcher":
+                    return fetcher
         for fetcher in self._fetchers:
             if fetcher.supports(ident_type):
                 return fetcher

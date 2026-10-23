@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import difflib
 import logging
 import tempfile
 import os
 
 import numpy as np
 from Bio.Align import PairwiseAligner
-from Bio.PDB import PDBParser, Polypeptide
+import gemmi
 
 from ..base import VerificationWorker
 from ..models import VerificationScore
@@ -30,22 +31,29 @@ except ImportError:
     tm_align = None
 
 
+# Red-team batch-4 (D-13): cap on (query chain, canonical chain) TM
+# computations per verification. Within the cap, pairs are tried in
+# sequence-similarity order; beyond it the best-matching pairs win.
+_MAX_TM_PAIRS = 16
+
+
 class StructureVerificationWorker(VerificationWorker):
     """Verifies structural identifications using TM-score or sequence alignment proxy."""
-    
+
     SUPPORTED_IDENT_TYPES = {"PDB_ID", "ALPHAFIND_ID", "ALPHAFOLD_ID"}
-    SUPPORTED_SIGNATURE_TYPES = {"pdb_protein", "pdb_nucleic", "ca_only_pdb"}
-    
-    # TM-score threshold for "same fold"
+    SUPPORTED_SIGNATURE_TYPES = {"pdb_protein", "pdb_nucleic", "ca_only_pdb", "mmcif"}
+
+    # Legacy constant retained for reference; the enforced floors live in
+    # models.SIMILARITY_FLOORS (red-team batch-4, known issue #2).
     TM_SCORE_THRESHOLD = 0.5
-    
+
     def is_applicable(self, signature_type: str, ident_type: str) -> bool:
         """Check if this worker can verify the given signature and identifier types."""
         return (
             signature_type.lower() in self.SUPPORTED_SIGNATURE_TYPES and
             ident_type in self.SUPPORTED_IDENT_TYPES
         )
-    
+
     def verify(
         self,
         signature: str,
@@ -54,257 +62,235 @@ class StructureVerificationWorker(VerificationWorker):
         canonical_signature: str | None = None,
         signature_type: str | None = None,
     ) -> VerificationScore | None:
-        """Verify a structural hit by comparing PDB structures.
-        
+        """Verify a structural hit by comparing PDB/mmCIF structures.
+
         Args:
-            signature: The PDB structure string extracted from simulation.
+            signature: The structure string extracted from simulation.
             identifier: The identifier (not used directly, canonical_signature is used).
             ident_type: The type of identifier.
-            canonical_signature: The canonical PDB structure string from database. Required.
-            
+            canonical_signature: The canonical structure from database. Required.
+
         Returns:
-            VerificationScore if verification was performed, None if not applicable.
+            VerificationScore if verification was performed, None on any
+            failure (never a fabricated 0.0 score — red-team D-13).
         """
         # Cannot verify without canonical structure
         if canonical_signature is None:
             return None
-        
+
         try:
             # Try primary method: TM-score via tmtools
             if _TMTOOLS_AVAILABLE:
                 score = self._verify_with_tmscore(signature, canonical_signature)
                 if score is not None:
                     return score
-            
+
             # Fallback: sequence-based comparison
             return self._verify_with_sequence_proxy(signature, canonical_signature)
-            
+
         except Exception as e:
             logger.warning(f"Structure verification failed: {e}")
             return None
-    
-    def _extract_ca_chain(self, pdb_string: str) -> tuple[str, np.ndarray] | None:
-        """Extract the CA chain (one-letter sequence + coordinates) from a PDB string.
 
-        Sequence and coordinates are collected in the SAME residue iteration,
-        so they are aligned index-for-index — tm_align requires exactly that.
+    def _extract_ca_chains(
+        self, struct_string: str
+    ) -> list[tuple[str, str, np.ndarray]] | None:
+        """Extract PER-CHAIN MODEL-1 CA traces via gemmi (PDB and mmCIF).
+
+        Red-team batch-4 (D-13 defect 1): the previous Bio.PDB iteration
+        walked ALL models and ALL chains into one concatenated trace, so
+        NMR ensembles and multimers became chimera alignments. gemmi also
+        auto-detects mmCIF, covering large entries that have no legacy .pdb
+        (defect 3).
+
+        Sequence and coordinates are collected in the same residue pass, so
+        they stay aligned index-for-index — tm_align requires exactly that.
 
         Returns:
-            (sequence, (N, 3) float64 coords), or None on failure.
+            [(chain_id, one-letter-seq, (N, 3) float64 coords)], or None.
         """
-        try:
-            from Bio.SeqUtils import seq1
-
-            # Write to temp file for parsing
-            fd, temp_path = tempfile.mkstemp(suffix=".pdb")
-            try:
-                os.write(fd, pdb_string.encode('utf-8'))
-                os.close(fd)
-
-                parser = PDBParser(QUIET=True)
-                structure = parser.get_structure("temp", temp_path)
-
-                seq_chars: list[str] = []
-                ca_coords = []
-                for model in structure:
-                    for chain in model:
-                        for residue in chain:
-                            if "CA" in residue:
-                                ca_coords.append(residue["CA"].coord)
-                                try:
-                                    seq_chars.append(seq1(residue.get_resname()))
-                                except (KeyError, ValueError):
-                                    seq_chars.append("X")
-
-                if not ca_coords:
-                    return None
-
-                return "".join(seq_chars), np.array(ca_coords, dtype=np.float64)
-
-            finally:
-                os.unlink(temp_path)
-
-        except Exception as e:
-            logger.warning(f"Failed to extract CA chain: {e}")
+        if not struct_string or not struct_string.strip():
             return None
-    
+        suffix = ".cif" if struct_string.lstrip().startswith("data_") else ".pdb"
+        fd, temp_path = tempfile.mkstemp(suffix=suffix)
+        try:
+            os.write(fd, struct_string.encode("utf-8", errors="replace"))
+            os.close(fd)
+            try:
+                structure = gemmi.read_structure(temp_path)
+            except Exception as e:
+                logger.debug(f"gemmi structure parse failed: {e}")
+                return None
+            if structure is None or len(structure) == 0:
+                return None
+            model = structure[0]  # MODEL 1 ONLY — no ensemble chimeras
+            traces: list[tuple[str, str, np.ndarray]] = []
+            for chain in model:
+                seq_chars: list[str] = []
+                ca_coords: list[list[float]] = []
+                for residue in chain:
+                    ca = None
+                    for atom in residue:
+                        if atom.name == "CA":
+                            ca = atom
+                            break
+                    if ca is None:
+                        continue
+                    try:
+                        code = gemmi.find_tabulated_residue(
+                            residue.name).fasta_code()
+                        code = code.upper() if code and code.strip() else "X"
+                    except Exception:
+                        code = "X"
+                    seq_chars.append(code)
+                    ca_coords.append([ca.pos.x, ca.pos.y, ca.pos.z])
+                if ca_coords:
+                    traces.append(
+                        (chain.name, "".join(seq_chars),
+                         np.array(ca_coords, dtype=np.float64)))
+            return traces or None
+        finally:
+            os.unlink(temp_path)
+
+    @staticmethod
+    def _seq_match_ratio(a: str, b: str) -> float:
+        """Cheap sequence-similarity heuristic for CHAIN CHOICE ONLY (never
+        reported as a verification measurement)."""
+        return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
+
     def _verify_with_tmscore(
-        self, 
-        signature: str, 
+        self,
+        signature: str,
         canonical_signature: str
     ) -> VerificationScore | None:
         """Verify using TM-score via tmtools.
-        
+
+        Red-team batch-4 (D-13): chain pair chosen by sequence match (no
+        chimera); score normalized by the QUERY length (defect 2 — a domain
+        in a complex is a perfect partial match, not a diluted one); the
+        reference-normalized value is retained in details.
+
         Returns:
             VerificationScore with tm_score metric, or None on failure.
         """
-        try:
-            chain1 = self._extract_ca_chain(signature)
-            chain2 = self._extract_ca_chain(canonical_signature)
-
-            if chain1 is None or chain2 is None:
-                logger.warning("Could not extract CA chains for TM-score")
-                return None
-            seq1, coords1 = chain1
-            seq2, coords2 = chain2
-
-            # Check for NaN in coordinates
-            if np.any(np.isnan(coords1)) or np.any(np.isnan(coords2)):
-                logger.warning("NaN detected in CA coordinates")
-                return None
-
-            # Compute TM-score. tm_norm_chain2 is normalized by the canonical
-            # (target) length — matches the AlphaFind/MVS "tm_score_target"
-            # convention (live probe: 0.9589 for 1CRN vs AF-P01542-F1).
-            result = tm_align(coords1, coords2, seq1, seq2)
-            tm_score = float(result.tm_norm_chain2)
-            
-            # Check for NaN result
-            if np.isnan(tm_score):
-                logger.warning("TM-score returned NaN")
-                return None
-            
-            # TM-score is 0-1, scale to 0-100
-            normalized_score = min(tm_score * 100.0, 100.0)
-            
-            return VerificationScore(
-                kind="similarity",
-                metric_name="tm_score",
-                raw_score=tm_score,
-                normalized_score=normalized_score,
-            )
-            
-        except Exception as e:
-            logger.warning(f"TM-score computation failed: {e}")
+        query_traces = self._extract_ca_chains(signature)
+        canonical_traces = self._extract_ca_chains(canonical_signature)
+        if not query_traces or not canonical_traces:
+            logger.warning("Could not extract CA chains for TM-score")
             return None
-    
-    def _extract_sequence_from_pdb(self, pdb_string: str) -> str | None:
-        """Extract residue sequence from a PDB string.
-        
-        Uses CA atom presence to determine residues.
-        Maps 3-letter codes to 1-letter codes where possible.
-        
-        Returns:
-            Sequence string (one letter per residue), or None on failure.
-        """
-        try:
-            fd, temp_path = tempfile.mkstemp(suffix=".pdb")
+
+        # Match each query chain to its best canonical chain by sequence.
+        pairs = []
+        for q_id, q_seq, q_coords in query_traces:
+            best, best_ratio = None, -1.0
+            for c_id, c_seq, c_coords in canonical_traces:
+                ratio = self._seq_match_ratio(q_seq, c_seq)
+                if ratio > best_ratio:
+                    best, best_ratio = (c_id, c_seq, c_coords), ratio
+            if best is not None:
+                pairs.append((best_ratio, q_id, q_seq, q_coords,
+                              best[0], best[1], best[2]))
+        pairs.sort(key=lambda p: -p[0])
+        pairs = pairs[:_MAX_TM_PAIRS]
+
+        best_tm = None  # (tm_norm_query, tm_norm_ref, q_id, c_id, len_q, len_c)
+        for _ratio, q_id, q_seq, q_coords, c_id, c_seq, c_coords in pairs:
+            if np.any(np.isnan(q_coords)) or np.any(np.isnan(c_coords)):
+                logger.warning(f"NaN detected in CA coordinates ({q_id}/{c_id})")
+                continue
             try:
-                os.write(fd, pdb_string.encode('utf-8'))
-                os.close(fd)
-                
-                parser = PDBParser(QUIET=True)
-                structure = parser.get_structure("temp", temp_path)
-                
-                sequence = []
-                for model in structure:
-                    for chain in model:
-                        for residue in chain:
-                            # Check if residue has CA atom
-                            if "CA" not in residue:
-                                continue
-                            
-                            resname = residue.resname
-                            # Try to map 3-letter to 1-letter code
-                            try:
-                                one_letter = Polypeptide.protein_letters_3to1.get(resname, 'X')
-                            except (KeyError, TypeError):
-                                one_letter = 'X'
-                            
-                            sequence.append(one_letter)
-                
-                return ''.join(sequence) if sequence else None
-                
-            finally:
-                os.unlink(temp_path)
-                
-        except Exception as e:
-            logger.warning(f"Failed to extract sequence from PDB: {e}")
+                result = tm_align(q_coords, c_coords, q_seq, c_seq)
+            except Exception as e:
+                logger.debug(f"tm_align failed for chain pair {q_id}/{c_id}: {e}")
+                continue
+            tm_q = float(result.tm_norm_chain1)   # normalized by QUERY length
+            tm_c = float(result.tm_norm_chain2)   # normalized by reference length
+            if np.isnan(tm_q):
+                continue
+            if best_tm is None or tm_q > best_tm[0]:
+                best_tm = (tm_q, tm_c, q_id, c_id, len(q_seq), len(c_seq))
+
+        if best_tm is None:
             return None
-    
+        tm_q, tm_c, q_id, c_id, len_q, len_c = best_tm
+        return VerificationScore(
+            kind="similarity",
+            metric_name="tm_score",
+            raw_score=tm_q,
+            normalized_score=min(tm_q * 100.0, 100.0),
+            details={
+                "tm_score_ref_normalized": min(tm_c * 100.0, 100.0),
+                "tm_chain_query": q_id,
+                "tm_chain_ref": c_id,
+                "tm_query_length": len_q,
+                "tm_ref_length": len_c,
+                "tm_normalization": "query",
+            },
+        )
+
     def _verify_with_sequence_proxy(
-        self, 
-        signature: str, 
+        self,
+        signature: str,
         canonical_signature: str
-    ) -> VerificationScore:
+    ) -> VerificationScore | None:
         """Verify using sequence alignment as a proxy for structural similarity.
-        
-        This is the fallback when tmtools is not available.
-        
+
+        Fallback when tmtools is unavailable/unsuccessful. Red-team batch-4
+        (D-13 defects 4+5): any failure returns None — a fabricated 0.0 used
+        to count as "a score" and verify the hit; and the alignment container
+        is consumed with next(iter(...)) instead of len()/[0], which
+        materialized the full combinatorial enumeration.
+
         Returns:
-            VerificationScore with structure_sequence_proxy metric.
+            VerificationScore with structure_sequence_proxy metric, or None.
         """
         try:
-            seq1 = self._extract_sequence_from_pdb(signature)
-            seq2 = self._extract_sequence_from_pdb(canonical_signature)
-            
-            if seq1 is None or seq2 is None:
+            query_traces = self._extract_ca_chains(signature)
+            canonical_traces = self._extract_ca_chains(canonical_signature)
+            if not query_traces or not canonical_traces:
                 logger.warning("Could not extract sequences for proxy comparison")
-                return VerificationScore(
-                    kind="similarity",
-                    metric_name="structure_sequence_proxy",
-                    raw_score=0.0,
-                    normalized_score=0.0,
-                )
-            
-            if len(seq1) == 0 or len(seq2) == 0:
-                return VerificationScore(
-                    kind="similarity",
-                    metric_name="structure_sequence_proxy",
-                    raw_score=0.0,
-                    normalized_score=0.0,
-                )
-            
-            # Use PairwiseAligner with same parameters as SequenceVerificationWorker
-            # match=2, mismatch=-1, gap_open=-0.5, gap_extend=-0.1
+                return None
+
+            seq1 = "".join(s for _, s, _ in query_traces)
+            seq2 = "".join(s for _, s, _ in canonical_traces)
+            if not seq1 or not seq2:
+                return None
+
+            # Alignment parameters unchanged (global, match=2, mismatch=-1,
+            # gap open/extend -0.5/-0.1); the local-alignment rework is
+            # subtask 5.2 (D-01), shared with the sequence worker.
             aligner = PairwiseAligner()
             aligner.mode = "global"
             aligner.match_score = 2
             aligner.mismatch_score = -1
             aligner.open_gap_score = -0.5
             aligner.extend_gap_score = -0.1
-            
-            alignments = aligner.align(seq1, seq2)
-            
-            if not alignments:
-                logger.warning(f"No alignment found for structure sequences")
-                return VerificationScore(
-                    kind="similarity",
-                    metric_name="structure_sequence_proxy",
-                    raw_score=0.0,
-                    normalized_score=0.0,
-                )
-            
-            aln = alignments[0]
-            
-            # For PairwiseAligner, alignment sequences are accessed via aln[0] and aln[1]
+
+            aln = next(iter(aligner.align(seq1, seq2)), None)
+            if aln is None:
+                logger.warning("No alignment found for structure sequences")
+                return None
+
             aln_seq1 = str(aln[0])
             aln_seq2 = str(aln[1])
-            
-            # Compute identity = matches / len(alignment.seqA)
+
             matches = sum(a == b for a, b in zip(aln_seq1, aln_seq2))
             identity = matches / len(aln_seq1) if len(aln_seq1) > 0 else 0.0
-            
-            # Compute coverage = aligned_positions / len(seq1)
             aligned_positions = sum(1 for a in aln_seq1 if a != '-')
             coverage = aligned_positions / len(seq1) if len(seq1) > 0 else 0.0
-            
-            # Final score = identity * coverage * 100.0, capped at 100
+
             raw_score = identity * coverage
-            normalized_score = min(raw_score * 100.0, 100.0)
-            
             return VerificationScore(
                 kind="similarity",
                 metric_name="structure_sequence_proxy",
                 raw_score=raw_score,
-                normalized_score=normalized_score,
+                normalized_score=min(raw_score * 100.0, 100.0),
+                details={
+                    "alignment_identity": round(identity * 100.0, 2),
+                    "query_coverage": round(coverage * 100.0, 2),
+                },
             )
-            
+
         except Exception as e:
             logger.warning(f"Sequence proxy verification failed: {e}")
-            return VerificationScore(
-                kind="similarity",
-                metric_name="structure_sequence_proxy",
-                raw_score=0.0,
-                normalized_score=0.0,
-            )
+            return None

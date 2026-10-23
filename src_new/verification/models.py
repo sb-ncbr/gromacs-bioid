@@ -18,6 +18,27 @@ CHEMICAL_IDENT_TYPES = frozenset({
 # Probe anchors: neutral-vs-dianion 1.0; true vs formula-mate 0.19; prodrug 0.58.
 SKELF_VERIFY_THRESHOLD = 0.7
 
+# Red-team batch-4 (known issue #2): degenerate similarity measurements must
+# never count as positive evidence. Floors are per worker metric; metrics not
+# listed (chemical multi-fingerprint, element identity) keep their own gates —
+# chemicals are already gated by SKELF_VERIFY_THRESHOLD. Conservative by
+# design: only scores no true hit could plausibly produce are rejected.
+SIMILARITY_FLOORS: dict[str, float] = {
+    "tm_score": 30.0,                   # TM < 0.30 is random for ~150 aa
+    "structure_sequence_proxy": 25.0,
+    "seq_identity_coverage": 25.0,
+}
+
+
+def similarity_meets_floor(metric_name: str, normalized_score: float) -> bool:
+    """True when a worker similarity score is non-degenerate for its metric.
+
+    Unknown metrics pass — they carry their own verification gates. This is
+    the single choke point the manager uses so a 0.0-TM row or a 12 % gap-
+    scattered alignment can never masquerade as corroboration."""
+    floor = SIMILARITY_FLOORS.get(metric_name)
+    return floor is None or normalized_score >= floor
+
 
 @dataclass
 class VerificationScore:
@@ -26,6 +47,9 @@ class VerificationScore:
     metric_name: str
     raw_score: float
     normalized_score: float  # 0-100
+    # Red-team batch-4: additive measurement detail (e.g. reference-normalized
+    # TM, matched chain pair). Threaded to VerifiedHit.similarity_details.
+    details: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -75,6 +99,10 @@ class VerifiedHit:
     # structure => same class id across database records. Additive; None on
     # hits emitted before v3.142.
     equivalence_class_id: str | None = None
+    # Red-team batch-4 (D-13): additive measurement detail from the worker
+    # (query-vs-reference normalization, matched chain pair, later per 5.2
+    # alignment identity/coverage). None on hits emitted before batch 4.
+    similarity_details: dict | None = None
     # Element ground truth (user ruling 2026-10-11): for a monoatomic segment,
     # an ELEMENT identity hit IS the ground truth — there is no fetchable
     # annotation evidence for a bare element by construction, so the weighted
@@ -94,6 +122,7 @@ class VerifiedHit:
         rejection_reason: str = "not_verified",
         similarity_score: float | None = None,
         annotation_quality_score: float | None = None,
+        similarity_details: dict | None = None,
     ) -> VerifiedHit:
         """Create an unverified hit representing the non-failure non-verification path.
 
@@ -113,4 +142,5 @@ class VerifiedHit:
             supporting_evidence_count=supporting_evidence_count,
             is_verified=False,
             rejection_reason=rejection_reason,
+            similarity_details=similarity_details,
         )

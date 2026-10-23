@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 from .base import VerificationWorker, SignatureFetcher, AnnotationQualityScorer
 from .dedup import RawHit, collect_hits, deduplicate_and_score, BELIEF_RHO, BELIEF_KAPPA
-from .models import VerifiedHit, VerificationScore, AnnotationQuality
+from .models import VerifiedHit, VerificationScore, AnnotationQuality, similarity_meets_floor
 
 _SEQUENCE_SIG_TAGS = ("residue_sequence",)
 _STRUCTURE_SIG_TAGS = ("pdb_protein", "pdb_nucleic", "ca_only_pdb")
@@ -538,8 +538,10 @@ class VerificationManager:
                 source_resolvers = metadata["source_resolvers"]
                 hit_type = metadata["hit_type"]
                 
-                # Look up SignatureFetcher
-                fetcher = self._registry.get_fetcher(ident_type)
+                # Look up SignatureFetcher (red-team batch-4: signature-type
+                # aware so PDB_ID hits on structure signatures get the
+                # structure fetcher, not the sequence one).
+                fetcher = self._registry.get_fetcher(ident_type, signature_type=signature_type)
                 canonical_signature: str | None = None
                 if fetcher:
                     try:
@@ -651,8 +653,20 @@ class VerificationManager:
                 # Identity hits can be verified without similarity/annotation scores
                 # For non-identity hits, require positive evidence (score > 0)
                 min_confidence = self._verification_config.min_final_confidence
+                # Red-team batch-4 (known issue #2): a degenerate similarity
+                # measurement (0.0-TM, gap-scattered near-zero identity) is
+                # not corroboration and can never be positive evidence.
+                sim_nondegenerate = (
+                    similarity_score is not None
+                    and similarity_meets_floor(
+                        similarity_score.metric_name,
+                        similarity_score.normalized_score)
+                )
+                if (similarity_score is not None and not sim_nondegenerate
+                        and rejection_reason is None):
+                    rejection_reason = "below_similarity_floor"
                 has_positive_evidence = (
-                    similarity_score is not None or 
+                    sim_nondegenerate or 
                     (annotation_score is not None and annotation_score > 0) or 
                     hit_type == "identity"
                 )
@@ -736,6 +750,8 @@ class VerificationManager:
                         belief=metadata.get("belief"),
                         equivalence_class_id=eq_class_id,
                         ground_truth_override=gt_override,
+                        similarity_details=(similarity_score.details or None
+                                            if similarity_score else None),
                     )
                 else:
                     # Create unverified hit (workers may still have run for it)
@@ -760,6 +776,8 @@ class VerificationManager:
                         similarity_score=(similarity_score.normalized_score
                                           if similarity_score else None),
                         annotation_quality_score=annotation_score,
+                        similarity_details=(similarity_score.details or None
+                                            if similarity_score else None),
                     )
                     verified_hit.belief = metadata.get("belief")
                     verified_hit.equivalence_class_id = eq_class_id
