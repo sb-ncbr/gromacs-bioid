@@ -812,7 +812,10 @@ class VerificationManager:
                 
                 # Determine if verified
                 # Identity hits can be verified without similarity/annotation scores
-                # For non-identity hits, require positive evidence (score > 0)
+                # For non-identity hits, require positive evidence (score > 0).
+                # Red-team batch-4 (D-09): annotation_score > 0 alone is no
+                # longer positive evidence — existence of an annotated record
+                # is not a molecule-vs-record comparison.
                 min_confidence = self._verification_config.min_final_confidence
                 # Red-team batch-4 (known issue #2): a degenerate similarity
                 # measurement (0.0-TM, gap-scattered near-zero identity) is
@@ -827,9 +830,7 @@ class VerificationManager:
                         and rejection_reason is None):
                     rejection_reason = "below_similarity_floor"
                 has_positive_evidence = (
-                    sim_nondegenerate or 
-                    (annotation_score is not None and annotation_score > 0) or 
-                    hit_type == "identity"
+                    sim_nondegenerate or hit_type == "identity"
                 )
                 
                 # F7 chemical gate: identity/candidate hits are NEVER sufficient

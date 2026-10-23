@@ -168,7 +168,8 @@ def prefetch_pubchem(cids) -> int:
 class CompoundSignatureFetcher(SignatureFetcher):
     """Fetches canonical SMILES for compound identifiers."""
     
-    SUPPORTED_TYPES = {"PUBCHEM_CID", "CHEMBL_ID", "CHEBI_ID", "INCHIKEY", "INCHI_KEY"}
+    SUPPORTED_TYPES = {"PUBCHEM_CID", "CHEMBL_ID", "CHEBI_ID", "INCHIKEY", "INCHI_KEY",
+                       "LM_ID", "LIPIDMAPS_ID"}
     
     def supports(self, ident_type: str) -> bool:
         """Check if this fetcher supports the given identifier type."""
@@ -188,6 +189,8 @@ class CompoundSignatureFetcher(SignatureFetcher):
             norm = ident_type.upper()
             if norm in ("INCHIKEY", "INCHI_KEY"):
                 return self._fetch_inchikey(identifier)
+            if norm in ("LM_ID", "LIPIDMAPS_ID"):
+                return self._fetch_lipidmaps(identifier)
             if ident_type == "PUBCHEM_CID":
                 return self._fetch_pubchem(identifier)
             elif ident_type == "CHEMBL_ID":
@@ -359,3 +362,23 @@ class CompoundSignatureFetcher(SignatureFetcher):
         else:
             logger.warning(f"ChEBI {chebi_id} fetch SMILES failed")
         return smiles
+
+    def _fetch_lipidmaps(self, lm_id: str) -> str | None:
+        """Fetch the SMILES for a LipidMaps LM_ID via the LMSD REST API.
+
+        Live shape (recorded 2026-10-23, LMGP01010569):
+            GET https://www.lipidmaps.org/rest/compound/lm_id/{id}/smiles
+            -> {"input": "...", "smiles": "[C@](...)"}
+        Red-team batch-4 (D-09): LM_ID joins the chemical gate and this
+        fetch supplies the canonical structure the gate corroborates with.
+        """
+        lid = lm_id.strip().upper()
+        try:
+            url = f"https://www.lipidmaps.org/rest/compound/lm_id/{lid}/smiles"
+            r = requests.get(url, timeout=15)
+            r.raise_for_status()
+            smiles = r.json().get("smiles")
+            return smiles.strip() if isinstance(smiles, str) and smiles else None
+        except Exception as e:
+            logger.warning(f"LipidMaps {lid} fetch failed: {e}")
+            return None

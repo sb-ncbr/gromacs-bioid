@@ -9,9 +9,14 @@ from dataclasses import dataclass, field
 # must NEVER be sufficient evidence on its own (a formula/candidate list is not
 # a compound confirmation): verification requires skeleton-fingerprint
 # corroboration (F7, docs/CHEMISTRY_FIX_TODO.md).
+# Red-team batch-4 (D-09): LM_ID/GLYTOUCAN_ID added — lipid/glycan records
+# were verified on record EXISTENCE alone. LM_ID is corroborable via the
+# LMSD REST structure fetch; GLYTOUCAN_ID has no fetcher yet and is
+# deliberately unverifiable rather than verified-by-existence (documented).
 CHEMICAL_IDENT_TYPES = frozenset({
     "PUBCHEM_CID", "CHEMBL_ID", "CHEBI_ID", "CHEBI", "INCHIKEY",
     "SMILES", "SELFIES", "PUBCHEM_SID",
+    "LM_ID", "LIPIDMAPS_ID", "GLYTOUCAN_ID",
 })
 
 # Minimum molecule-vs-candidate skeleton Tanimoto for chemical verification.

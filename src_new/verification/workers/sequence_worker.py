@@ -8,6 +8,7 @@ from ..base import VerificationWorker
 from ..models import VerificationScore, ref_seq_sha1
 from ..fetchers.sequence_fetcher import SequenceSignatureFetcher
 from ..alignment import local_identity_coverage
+from .structure_worker import extract_ca_chains  # D-09 structure-sig reuse
 from ...molecules.nucleic_acid import sequence_orientation_variants
 
 logger = logging.getLogger(__name__)
@@ -18,12 +19,23 @@ class SequenceVerificationWorker(VerificationWorker):
     
     SUPPORTED_IDENT_TYPES = {"PDB_ID", "UNIPROT_ID", "ALPHAFOLD_ID", "NR_ID", "SWISSPROT_ID", "NT_ID", "CORE_NT_ID"}
     
+    # Red-team batch-4 (D-09): UniProt-family identifiers arriving on
+    # STRUCTURE signatures (Foldseek emits ca_only_pdb/mmcif-style rows
+    # whose object_id is a UniProt accession) have no structure worker — it
+    # serves PDB/AlphaFold-family types whose fetchers supply 3D models.
+    # For these pairings the CA-trace sequence is extracted and locally
+    # aligned against the fetched UniProt FASTA.
+    _SEQ_FROM_STRUCTURE_IDENTS = frozenset({"UNIPROT_ID", "SWISSPROT_ID"})
+    _STRUCTURE_SIGNATURE_TYPES = frozenset(
+        {"pdb_protein", "pdb_nucleic", "ca_only_pdb", "mmcif"})
+    
     def is_applicable(self, signature_type: str, ident_type: str) -> bool:
         """Check if this worker can verify the given signature and identifier types."""
-        return (
-            "residue_sequence" in signature_type.lower() and
-            ident_type in self.SUPPORTED_IDENT_TYPES
-        )
+        st = signature_type.lower()
+        if "residue_sequence" in st and ident_type in self.SUPPORTED_IDENT_TYPES:
+            return True
+        return (st in self._STRUCTURE_SIGNATURE_TYPES
+                and ident_type in self._SEQ_FROM_STRUCTURE_IDENTS)
     
     # DP-matrix cell cap for alignment (lenA * lenB). Above this the pairwise
     # enumeration/matrix gets pathological (titin-vs-titin class pairs were
@@ -132,6 +144,17 @@ class SequenceVerificationWorker(VerificationWorker):
         # Cannot verify without canonical sequence
         if canonical_signature is None:
             return None
+
+        # Red-team batch-4 (D-09): a STRUCTURE signature carrying a
+        # UniProt-family record (Foldseek ca_only_pdb/mmcif) — extract the
+        # CA-trace sequence and compare it against the fetched FASTA.
+        if signature_type and signature_type.lower() in self._STRUCTURE_SIGNATURE_TYPES:
+            traces = extract_ca_chains(signature)
+            if not traces:
+                return None
+            signature = "".join(seq for _cid, seq, _coords in traces)
+            if not signature:
+                return None
 
         # Wave-7 C1: duplex NA orientation is unconstrained at generation
         # time, so nucleotide queries score all orientation variants.

@@ -42,6 +42,71 @@ _MAX_TM_PAIRS = 16
 _MIN_TM_CHAIN_LEN = 5
 
 
+def extract_ca_chains(
+    struct_string: str,
+) -> list[tuple[str, str, np.ndarray]] | None:
+    """Extract PER-CHAIN MODEL-1 CA traces via gemmi (PDB and mmCIF).
+
+    Red-team batch-4 (D-13 defect 1): the previous Bio.PDB iteration
+    walked ALL models and ALL chains into one concatenated trace, so
+    NMR ensembles and multimers became chimera alignments. gemmi also
+    auto-detects mmCIF, covering large entries that have no legacy .pdb
+    (defect 3).
+
+    Module-level so the sequence worker can reuse it (D-09: UniProt-family
+    hits arriving on structure signatures are verified by aligning the
+    CA-trace sequence against the fetched FASTA).
+
+    Sequence and coordinates are collected in the same residue pass, so
+    they stay aligned index-for-index — tm_align requires exactly that.
+
+    Returns:
+        [(chain_id, one-letter-seq, (N, 3) float64 coords)], or None.
+    """
+    if not struct_string or not struct_string.strip():
+        return None
+    suffix = ".cif" if struct_string.lstrip().startswith("data_") else ".pdb"
+    fd, temp_path = tempfile.mkstemp(suffix=suffix)
+    try:
+        os.write(fd, struct_string.encode("utf-8", errors="replace"))
+        os.close(fd)
+        try:
+            structure = gemmi.read_structure(temp_path)
+        except Exception as e:
+            logger.debug(f"gemmi structure parse failed: {e}")
+            return None
+        if structure is None or len(structure) == 0:
+            return None
+        model = structure[0]  # MODEL 1 ONLY — no ensemble chimeras
+        traces: list[tuple[str, str, np.ndarray]] = []
+        for chain in model:
+            seq_chars: list[str] = []
+            ca_coords: list[list[float]] = []
+            for residue in chain:
+                ca = None
+                for atom in residue:
+                    if atom.name == "CA":
+                        ca = atom
+                        break
+                if ca is None:
+                    continue
+                try:
+                    code = gemmi.find_tabulated_residue(
+                        residue.name).fasta_code()
+                    code = code.upper() if code and code.strip() else "X"
+                except Exception:
+                    code = "X"
+                seq_chars.append(code)
+                ca_coords.append([ca.pos.x, ca.pos.y, ca.pos.z])
+            if ca_coords:
+                traces.append(
+                    (chain.name, "".join(seq_chars),
+                     np.array(ca_coords, dtype=np.float64)))
+        return traces or None
+    finally:
+        os.unlink(temp_path)
+
+
 class StructureVerificationWorker(VerificationWorker):
     """Verifies structural identifications using TM-score or sequence alignment proxy."""
 
@@ -100,62 +165,9 @@ class StructureVerificationWorker(VerificationWorker):
     def _extract_ca_chains(
         self, struct_string: str
     ) -> list[tuple[str, str, np.ndarray]] | None:
-        """Extract PER-CHAIN MODEL-1 CA traces via gemmi (PDB and mmCIF).
-
-        Red-team batch-4 (D-13 defect 1): the previous Bio.PDB iteration
-        walked ALL models and ALL chains into one concatenated trace, so
-        NMR ensembles and multimers became chimera alignments. gemmi also
-        auto-detects mmCIF, covering large entries that have no legacy .pdb
-        (defect 3).
-
-        Sequence and coordinates are collected in the same residue pass, so
-        they stay aligned index-for-index — tm_align requires exactly that.
-
-        Returns:
-            [(chain_id, one-letter-seq, (N, 3) float64 coords)], or None.
-        """
-        if not struct_string or not struct_string.strip():
-            return None
-        suffix = ".cif" if struct_string.lstrip().startswith("data_") else ".pdb"
-        fd, temp_path = tempfile.mkstemp(suffix=suffix)
-        try:
-            os.write(fd, struct_string.encode("utf-8", errors="replace"))
-            os.close(fd)
-            try:
-                structure = gemmi.read_structure(temp_path)
-            except Exception as e:
-                logger.debug(f"gemmi structure parse failed: {e}")
-                return None
-            if structure is None or len(structure) == 0:
-                return None
-            model = structure[0]  # MODEL 1 ONLY — no ensemble chimeras
-            traces: list[tuple[str, str, np.ndarray]] = []
-            for chain in model:
-                seq_chars: list[str] = []
-                ca_coords: list[list[float]] = []
-                for residue in chain:
-                    ca = None
-                    for atom in residue:
-                        if atom.name == "CA":
-                            ca = atom
-                            break
-                    if ca is None:
-                        continue
-                    try:
-                        code = gemmi.find_tabulated_residue(
-                            residue.name).fasta_code()
-                        code = code.upper() if code and code.strip() else "X"
-                    except Exception:
-                        code = "X"
-                    seq_chars.append(code)
-                    ca_coords.append([ca.pos.x, ca.pos.y, ca.pos.z])
-                if ca_coords:
-                    traces.append(
-                        (chain.name, "".join(seq_chars),
-                         np.array(ca_coords, dtype=np.float64)))
-            return traces or None
-        finally:
-            os.unlink(temp_path)
+        """Delegate to the module-level extract_ca_chains (kept as a method
+        for existing callers/tests)."""
+        return extract_ca_chains(struct_string)
 
     @staticmethod
     def _seq_match_ratio(a: str, b: str) -> float:

@@ -16,7 +16,11 @@ logger = logging.getLogger(__name__)
 class CompoundVerificationWorker(VerificationWorker):
     """Verifies compound identifications using SMILES fingerprint similarity."""
     
-    SUPPORTED_IDENT_TYPES = {"PUBCHEM_CID", "CHEMBL_ID", "CHEBI_ID"}
+    # Red-team batch-4 (D-09): LM_ID added — with the LMSD structure fetch
+    # (compound fetcher) the multi-fingerprint comparison is a real
+    # molecule-vs-record measurement for lipids, not record existence.
+    SUPPORTED_IDENT_TYPES = {"PUBCHEM_CID", "CHEMBL_ID", "CHEBI_ID",
+                           "LM_ID", "LIPIDMAPS_ID"}
     SUPPORTED_SIGNATURE_TYPES = {"smiles", "selfies"}
     
     def is_applicable(self, signature_type: str, ident_type: str) -> bool:
