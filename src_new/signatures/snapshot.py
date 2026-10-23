@@ -31,6 +31,11 @@ class SegmentSignatureSnapshot:
     chain_ids: list[str]
     copy_number: int
     element_composition: dict[str, int]
+    # B-18 (red-team 4.10): faithful atom->residue / chain mapping so the
+    # worker can rebuild a REAL AtomGroup (None = legacy snapshot, falls
+    # back to resid-first-appearance grouping)
+    atom_resindices: list[int] | None = None
+    atom_chain_ids: list[str] | None = None
 
 
 def build_signature_snapshot(
@@ -114,4 +119,8 @@ def build_signature_snapshot(
         chain_ids=list(instance.chain_ids) if instance.chain_ids else [segment_name],
         copy_number=instance.copy_number,
         element_composition=elem_comp,
+        atom_resindices=([int(r) for r in atoms.resindices]
+                         if hasattr(atoms, 'resindices') else None),
+        atom_chain_ids=([str(c) for c in atoms.chainIDs]
+                        if hasattr(atoms, 'chainIDs') else None),
     )

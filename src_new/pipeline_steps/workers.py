@@ -295,6 +295,108 @@ class MockAtomGroup:
             f.write("\n".join(lines))
 
 
+
+
+def _reconstruct_fragment(snapshot):
+    """B-18 (red-team 4.10): rebuild a REAL MDAnalysis AtomGroup from a
+    snapshot so the parallel worker runs the identical generator code path
+    as the serial pipeline. The MockAtomGroup approximations (resid-keyed
+    residue grouping that merged same-numbered chains, ids=indices, cross
+    bonds kept with global indices, divergent mmCIF schema) are retired.
+    """
+    import numpy as np
+    from MDAnalysis import Universe
+
+    n = int(snapshot.atom_count)
+    # canonical snapshots carry per-atom arrays; legacy hand-built ones may
+    # store per-residue/per-segment scalars — normalize both shapes
+    raw_ri = getattr(snapshot, "atom_resindices", None)
+    if raw_ri and len(raw_ri) == n:
+        remap: dict[int, int] = {}
+        arr = []
+        for r in raw_ri:
+            ri = int(r)
+            if ri not in remap:
+                remap[ri] = len(remap)
+            arr.append(remap[ri])
+    elif len(snapshot.resids) == n:
+        remap2: dict[int, int] = {}
+        arr = []
+        for r in snapshot.resids:
+            ri = int(r)
+            if ri not in remap2:
+                remap2[ri] = len(remap2)
+            arr.append(remap2[ri])
+    else:
+        # per-residue resids in a legacy snapshot: contiguous blocks
+        arr = []
+        resids_list = list(snapshot.resids)
+        if resids_list:
+            per_res = n / len(resids_list)
+            for ri in range(len(resids_list)):
+                arr.extend([ri] * int(round(per_res)))
+            arr = (arr + [len(resids_list) - 1] * n)[:n]
+        else:
+            arr = [0] * n
+    n_res = max(arr) + 1 if arr else max(int(snapshot.residue_count) or 1, 1)
+
+    u = Universe.empty(n, n_residues=n_res, n_segments=1,
+                       atom_resindex=arr, trajectory=True)
+    if any(snapshot.elements):
+        u.add_TopologyAttr("elements", [str(e) for e in snapshot.elements])
+    if any(snapshot.names):
+        names = list(snapshot.names)
+        if len(names) != n:
+            names = (names + [""] * n)[:n]
+        u.add_TopologyAttr("names", [str(x) for x in names])
+
+    # per-residue attributes: first-atom-of-residue for per-atom arrays,
+    # direct indexing for per-residue arrays
+    first_atom = {}
+    for i, ri in enumerate(arr):
+        first_atom.setdefault(ri, i)
+
+    def _per_residue(values, default):
+        values = list(values) if values else []
+        if len(values) == n:
+            return [values[first_atom[r]] for r in range(n_res)]
+        if len(values) >= n_res:
+            return values[:n_res]
+        return ([values[0]] if values else [default]) * n_res
+
+    u.add_TopologyAttr("resnames", [str(x) for x in
+                                    _per_residue(snapshot.resnames, "UNK")])
+    _res_ids = [int(x) for x in _per_residue(snapshot.resids, 1)]
+    u.add_TopologyAttr("resids", _res_ids)
+    # writers (topology_less/mmcif) key on resums as well
+    try:
+        u.add_TopologyAttr("resnums", list(_res_ids))
+    except Exception:
+        pass
+    segid = str(snapshot.segids[0]) if snapshot.segids else "SEG"
+    u.add_TopologyAttr("segids", [segid])
+    if any(snapshot.masses) and len(snapshot.masses) == n:
+        u.add_TopologyAttr("masses", [float(m) for m in snapshot.masses])
+    if (getattr(snapshot, "atom_chain_ids", None)
+            and len(snapshot.atom_chain_ids) == n):
+        u.add_TopologyAttr("chainIDs", [str(c) for c in snapshot.atom_chain_ids])
+
+    # bonds: snapshot carries universe indices; keep intra-fragment bonds
+    # and remap to local positions (B-08 semantics for free)
+    pos_of = {int(g): i for i, g in enumerate(snapshot.atom_indices)}
+    intra = []
+    for a1, a2 in snapshot.bonds:
+        p1 = pos_of.get(int(a1))
+        p2 = pos_of.get(int(a2))
+        if p1 is not None and p2 is not None:
+            intra.append((p1, p2))
+    if intra:
+        u.add_bonds(intra)
+
+    u.atoms.positions = np.array(snapshot.positions, dtype=np.float32)
+    return u.atoms
+
+
 def _generate_signatures_worker(item: tuple) -> dict[str, Any]:
     """Worker function for parallel signature generation.
     
@@ -319,8 +421,9 @@ def _generate_signatures_worker(item: tuple) -> dict[str, Any]:
             return {"segment_name": snapshot.segment_name, "generated": {}, "attempted": [],
                     "errors": [{"generator": "worker", "error": "stage_time_budget exceeded before start"}]}
         
-        # Reconstruct mock AtomGroup from snapshot
-        mock_fragment = MockAtomGroup(snapshot)
+        # B-18: REAL reconstructed AtomGroup (production-identical path);
+        # variable name kept so the generator loop below is untouched
+        mock_fragment = _reconstruct_fragment(snapshot)
         
         # Reconstruct mock facade
         mock_facade = _build_mock_facade(snapshot)

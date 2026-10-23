@@ -709,3 +709,76 @@ class TestB15LipidShorthand:
             "PC(16:0/18:1(9Z))"
         assert self._run(["PC", "PA", "PA"], MoleculeType.LIPID) == \
             "PC(16:0/16:0)"
+
+
+class TestB18SerialWorkerParity:
+    """4.10 - B-18: the parallel (snapshot) path must emit EXACTLY the
+    serial path's payloads (the mock AtomGroup grouped residues by resid,
+    merging same-numbered chains and diverging from production)."""
+
+    def _serial_run(self, config, instance, fragment, facade):
+        from src_new.signatures.registry import get_default_generators
+        generated = {}
+        for gen in get_default_generators(config.signatures):
+            try:
+                if gen.is_applicable(instance, fragment, facade):
+                    sig = gen.generate(instance, fragment, facade)
+                    if isinstance(sig, dict):
+                        for label, val in sig.items():
+                            if val:
+                                generated[f"{gen.name}[{label}]"] = val
+                    elif sig is not None:
+                        generated[gen.name] = sig
+            except Exception:
+                pass
+        return generated
+
+    def test_shared_resid_chains_serial_vs_worker(self):
+        from src_new.config.loader import RunConfig
+        from src_new.molecules.instances import (
+            MoleculeInstance, MoleculeType)
+        from src_new.signatures.snapshot import build_signature_snapshot
+        from src_new.pipeline_steps.workers import (
+            _generate_signatures_worker, _build_mock_facade,
+            _build_mock_instance)
+
+        frag = _two_chain_fragment(chainids=True)
+        instance = MoleculeInstance(instance_id="t", resnames=["ALA"],
+                                    molecule_type=MoleculeType.PROTEIN,
+                                    chain_ids=["A", "B"], copy_number=1)
+        config = RunConfig()
+        # protein-perception is budget-gated in production but wall-unbounded
+        # per generator — this parity test targets the sequence/pdb lanes
+        for _f in ("smiles", "smiles_not_sanitized", "inchi_key",
+                   "selfies", "skeleton_fingerprint", "fingerprint"):
+            if hasattr(config.signatures, _f):
+                setattr(config.signatures, _f, False)
+
+        snapshot = build_signature_snapshot("PROT", frag, instance, None)
+        assert snapshot.atom_resindices is not None, \
+            "snapshot must carry per-atom residue mapping (B-18)"
+        # flag stamp normally provided by the LoadedUniverse facade
+        from src_new.loader.universe_facade import SegmentProperty
+        snapshot.flags = {
+            SegmentProperty.IS_PROTEIN.value: True,
+            SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value: True,
+            SegmentProperty.HAS_ELEMENTS.value: True,
+        }
+
+        worker_out = _generate_signatures_worker((snapshot.__dict__,
+                                                  config.to_dict()))
+        # serial side: same snapshot-derived instance/facade, LIVE fragment
+        serial_out = self._serial_run(config,
+                                      _build_mock_instance(snapshot), frag,
+                                      _build_mock_facade(snapshot))
+
+        assert worker_out["errors"] == [], worker_out["errors"]
+        assert worker_out["generated"] == serial_out, (
+            "worker/serial divergence: "
+            + str({k: (worker_out["generated"].get(k), serial_out.get(k))
+                   for k in set(worker_out["generated"]) | set(serial_out)
+                   if worker_out["generated"].get(k) != serial_out.get(k)}))
+        # both chains must appear (resid-restart chains are not merged)
+        fasta_keys = [k for k in serial_out if k.startswith("fasta_")]
+        assert any(k.endswith("[A]") for k in fasta_keys), fasta_keys
+        assert any(k.endswith("[B]") for k in fasta_keys), fasta_keys

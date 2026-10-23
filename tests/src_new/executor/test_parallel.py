@@ -595,8 +595,12 @@ class TestComprehensiveMockCoverage:
         for pdb_key in pdb_generators:
             pdb_content = protein_generated[pdb_key]
             assert len(pdb_content) > 0, f"PDB content should not be empty for {pdb_key}"
-            assert pdb_content.strip().startswith("HEADER"), \
-                f"PDB content should start with HEADER for {pdb_key}"
+            # B-18: the realistic (non-mock) path may legally emit content
+            # from either writer (HEADER-prefixed direct or Biopython ATOM)
+            first = pdb_content.strip().splitlines()[0][:6]
+            assert first.strip() in ("HEADER", "ATOM", "HETATM", "REMARK",
+                                     "CRYST1", "MODEL"), \
+                f"PDB content should be a parseable record for {pdb_key}: {first!r}"
         
         tdi_errors = [e for e in protein_result.get("errors", []) if e.get("generator") == "tdi"]
         for error in tdi_errors:
