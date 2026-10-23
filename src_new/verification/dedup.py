@@ -270,6 +270,22 @@ def deduplicate_and_score(
         # Pick representative signature from hit with highest resolver_score
         best_hit = max(group_hits, key=lambda h: h.resolver_score)
         
+        # Red-team batch-4 (D-02): the representative alone is not enough —
+        # expose every DISTINCT member signature (resolver_score order,
+        # representative first) so the manager can run workers against all
+        # of them. The representative may be an inchikey/name while another
+        # member carries the smiles/fasta that has a real worker.
+        ordered = sorted(group_hits, key=lambda h: -h.resolver_score)
+        member_signatures: list[tuple[str, str]] = []
+        seen_types: set[str] = set()
+        if best_hit.signature:
+            member_signatures.append((best_hit.signature, best_hit.signature_type))
+            seen_types.add(best_hit.signature_type)
+        for h in ordered:
+            if h.signature and h.signature_type not in seen_types:
+                seen_types.add(h.signature_type)
+                member_signatures.append((h.signature, h.signature_type))
+        
         # Determine hit_type (identity takes precedence if mixed)
         has_identity = any(h.hit_type == "identity" for h in group_hits)
         effective_hit_type = "identity" if has_identity else "similarity"
@@ -279,6 +295,7 @@ def deduplicate_and_score(
             "source_resolvers": source_resolvers,
             "signature": best_hit.signature,
             "signature_type": best_hit.signature_type,
+            "member_signatures": member_signatures,
             "hit_type": effective_hit_type,
             "belief": belief,
             "n_identity_chains": n_identity_chains,

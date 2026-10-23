@@ -130,6 +130,18 @@ def _molecule_skeleton_fp_hex(results, segment: str):
     return hex_part
 
 
+def _molecule_smiles(results, segment: str) -> str | None:
+    """Fetch the molecule's generated smiles signature for a segment (the
+    molecule's OWN structure, used by the D-02 always-compare rule)."""
+    try:
+        value = results.get_data(f"signatures/{segment}/generated/smiles")
+    except Exception:
+        return None
+    if not value or not isinstance(value, str):
+        return None
+    return value.split(":", 1)[1] if value.startswith("smiles:") else value
+
+
 _FORMULA_PARTS_RE = re.compile(r"([A-Z][a-z]?)(\d*)")
 
 
@@ -326,9 +338,14 @@ def _fidelity_order_key(hit):
     ranking, UI owns presentation; the verified flag is never a sort key for
     display purposes (it only defines which hits participate in block 1).
 
-    Chain: skeleton_sim desc -> similarity_score desc -> supporting_evidence_count
-    desc -> final_confidence desc -> identifier asc -> ident_type asc.
-    None skeleton_sim/similarity_score sinks to -1.0 within their slot.
+    Red-team batch-4 (D-02): tuple = skeleton bucket (0.05) desc ->
+    is-identity desc -> similarity desc (None = -1.0, "unknown") ->
+    belief desc -> evidence count desc -> confidence desc -> identifier ->
+    ident_type. The identity slot ranks asserted-identity rows (whose S is
+    legitimately absent) above similarity-only rows with a measured score,
+    and a missing S no longer sinks below a measured degenerate 0.0 in the
+    identity case that produced that absence (d_p3 DPPC-vs-DMPC, d_p4
+    mmCIF-identity-vs-tm:0.0).
 
     v3.140-1 (observed run b4813beb): similarity_score joins the chain. With
     skel all-equal and confidence plateau-nulled, the prior chain degenerated
@@ -339,17 +356,24 @@ def _fidelity_order_key(hit):
     """
     s = hit.skeleton_sim
     if s is None or (isinstance(s, float) and (math.isnan(s) or math.isinf(s))):
-        s = -1.0
+        bucket = -1
+    else:
+        bucket = round(s / 0.05)
+    identity = 1 if getattr(hit, "hit_type", None) == "identity" else 0
     sim = getattr(hit, "similarity_score", None)
     if sim is None or (isinstance(sim, float) and (math.isnan(sim) or math.isinf(sim))):
         sim = -1.0
+    belief = getattr(hit, "belief", None)
+    if belief is None or (isinstance(belief, float) and (math.isnan(belief) or math.isinf(belief))):
+        belief = -1.0
     ev = getattr(hit, "supporting_evidence_count", 1) or 1
     ident = str(hit.identifier)
     # v3.143 (D-15): compare numerically-typed ids numerically in the
     # tie-break — '10' < '2' under a plain string sort inverted presentation
     # order on every plateau. Numeric ids first, then lexical, both asc.
     ident_key = (0, int(ident), "") if ident.isdigit() else (1, 0, ident)
-    return (-s, -sim, -ev, -(hit.final_confidence or 0.0), ident_key, str(hit.ident_type))
+    return (-bucket, -identity, -sim, -belief, -ev,
+            -(hit.final_confidence or 0.0), ident_key, str(hit.ident_type))
 
 
 def _fidelity_order_hits(hits):
@@ -563,30 +587,89 @@ class VerificationManager:
                     )
                     skeleton_method = _c_m if skeleton_sim is not None else None
 
-                # Look up applicable workers
-                workers = self._registry.get_applicable_workers(
-                    signature_type, ident_type
-                )
+                # Red-team batch-4 (D-02): verify against EVERY member
+                # signature of the group — the representative may be an
+                # inchikey/name while another member carries the smiles/
+                # fasta with a real worker. The best applicable score wins.
+                sig_candidates: list[tuple[str, str | None]] = []
+                if signature:
+                    sig_candidates.append((signature, signature_type))
+                for m_sig, m_type in metadata.get("member_signatures", []):
+                    if m_sig and (m_sig, m_type) not in sig_candidates:
+                        sig_candidates.append((m_sig, m_type))
                 
-                # Try verification with workers
+                # Lazily re-fetch a canonical per distinct signature kind
+                # only when the representative's fetch does not apply
+                # (structure-vs-sequence routing, 5.1); cached per group.
+                _canonical_cache: dict = {signature_type: canonical_signature}
+
+                def _canonical_for(st):
+                    if st not in _canonical_cache:
+                        f = self._registry.get_fetcher(ident_type, signature_type=st)
+                        c = None
+                        if f:
+                            try:
+                                c = f.fetch(normalized_id, ident_type)
+                            except Exception:
+                                pass
+                        _canonical_cache[st] = c
+                    return _canonical_cache[st]
+                
                 similarity_score: VerificationScore | None = None
                 rejection_reason: str | None = None
+                saw_workers = False
                 
-                if workers:
+                for sig_c, st_c in sig_candidates:
+                    workers = self._registry.get_applicable_workers(st_c, ident_type)
+                    if not workers:
+                        continue
+                    saw_workers = True
+                    canon_c = _canonical_for(st_c)
                     for worker in workers:
                         try:
-                            score = worker.verify(signature, normalized_id, ident_type, canonical_signature, signature_type=signature_type)
-                            if score is not None:
-                                similarity_score = score
-                                break
+                            score = worker.verify(
+                                sig_c, normalized_id, ident_type,
+                                canon_c, signature_type=st_c)
                         except Exception:
                             # Worker failed, try next one
                             continue
-                    
-                    if similarity_score is None:
-                        rejection_reason = "verification_failed"
-                else:
-                    rejection_reason = "no_worker"
+                        if score is not None and (
+                                similarity_score is None
+                                or score.normalized_score
+                                > similarity_score.normalized_score):
+                            similarity_score = score
+                            break  # first non-None for this signature kind
+                
+                # D-02 fix b: with a fetched canonical SMILES for a chemical,
+                # ALWAYS compare against the molecule's own generated smiles
+                # — even when no member signature was worker-applicable —
+                # so inchikey/formula/name-represented groups still get a
+                # real multi-fingerprint measurement.
+                if (ident_type in CHEMICAL_IDENT_TYPES
+                        and isinstance(canonical_signature, str)
+                        and canonical_signature
+                        and similarity_score is None):
+                    mol_smiles = _molecule_smiles(results, segment)
+                    if mol_smiles:
+                        for worker in self._registry.get_applicable_workers(
+                                "smiles", ident_type):
+                            saw_workers = True
+                            try:
+                                score = worker.verify(
+                                    mol_smiles, normalized_id, ident_type,
+                                    canonical_signature,
+                                    signature_type="smiles")
+                            except Exception:
+                                continue
+                            if score is not None and (
+                                    similarity_score is None
+                                    or score.normalized_score
+                                    > similarity_score.normalized_score):
+                                similarity_score = score
+                                break
+                
+                if similarity_score is None:
+                    rejection_reason = "verification_failed" if saw_workers else "no_worker"
                 
                 
                 # Look up AnnotationQualityScorer (v3.142: honor the
@@ -757,6 +840,7 @@ class VerificationManager:
                         ground_truth_override=gt_override,
                         similarity_details=(similarity_score.details or None
                                             if similarity_score else None),
+                        hit_type=hit_type,
                     )
                 else:
                     # Create unverified hit (workers may still have run for it)
@@ -783,6 +867,7 @@ class VerificationManager:
                         annotation_quality_score=annotation_score,
                         similarity_details=(similarity_score.details or None
                                             if similarity_score else None),
+                        hit_type=hit_type,
                     )
                     verified_hit.belief = metadata.get("belief")
                     verified_hit.equivalence_class_id = eq_class_id

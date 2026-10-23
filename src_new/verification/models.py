@@ -112,6 +112,11 @@ class VerifiedHit:
     # (query-vs-reference normalization, matched chain pair, later per 5.2
     # alignment identity/coverage). None on hits emitted before batch 4.
     similarity_details: dict | None = None
+    # Red-team batch-4 (D-02): the group's effective hit_type ("identity" /
+    # "similarity"), so the fidelity ordering can rank asserted identity
+    # above degenerate similarity instead of sinking S=None rows below
+    # measured near-zero rows. None on hits emitted before batch 4.
+    hit_type: str | None = None
     # Element ground truth (user ruling 2026-10-11): for a monoatomic segment,
     # an ELEMENT identity hit IS the ground truth — there is no fetchable
     # annotation evidence for a bare element by construction, so the weighted
@@ -132,6 +137,7 @@ class VerifiedHit:
         similarity_score: float | None = None,
         annotation_quality_score: float | None = None,
         similarity_details: dict | None = None,
+        hit_type: str | None = None,
     ) -> VerifiedHit:
         """Create an unverified hit representing the non-failure non-verification path.
 
@@ -152,4 +158,5 @@ class VerifiedHit:
             is_verified=False,
             rejection_reason=rejection_reason,
             similarity_details=similarity_details,
+            hit_type=hit_type,
         )
