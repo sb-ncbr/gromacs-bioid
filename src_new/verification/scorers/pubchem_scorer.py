@@ -31,14 +31,28 @@ def _pubchem_schema_score(signals: list[str]) -> float:
 
 def _pug_props_url(identifier: str, is_inchikey: bool) -> str:
     kind = "inchikey" if is_inchikey else "cid"
+    # D-07: current PUG property names (legacy CanonicalSMILES/
+    # IsomericSMILES requests now return renamed columns — see
+    # _extract_pug_signals).
     return (f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/{kind}/"
-            f"{identifier}/property/CanonicalSMILES,IsomericSMILES,IUPACName,MolecularFormula/JSON")
+            f"{identifier}/property/ConnectivitySMILES,SMILES,IUPACName,MolecularFormula/JSON")
 
 
 def _pug_synonyms_url(identifier: str, is_inchikey: bool) -> str:
     kind = "inchikey" if is_inchikey else "cid"
     return (f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/{kind}/"
             f"{identifier}/synonyms/JSON")
+
+
+def _pug_smiles_signals(props: dict) -> tuple[bool, bool]:
+    """(has_connectivity_smiles, has_isomeric_smiles) from a PUG Properties
+    record. Live-verified 2026-10-23 on CID 702: current responses carry
+    'ConnectivitySMILES' and 'SMILES'; the historic 'CanonicalSMILES' and
+    'IsomericSMILES' keys are read as fallbacks only."""
+    has_canonical = bool(props.get("ConnectivitySMILES")
+                         or props.get("CanonicalSMILES"))
+    has_isomeric = bool(props.get("SMILES") or props.get("IsomericSMILES"))
+    return has_canonical, has_isomeric
 
 
 def _local_db():
@@ -89,6 +103,13 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
         self._live_fetch = True
         self._timeout_s = 3.0
         self._remaining = 0
+        # Red-team batch-4 (D-07 position-independence): records are
+        # immutable, so a successful score is cached per (ident_type,
+        # identifier) and served verbatim on repeats — identical records can
+        # no longer decay with window position / budget consumption. The
+        # cache deliberately survives begin_segment (cross-segment repeats
+        # are the same record); transient None failures are never cached.
+        self._score_cache: dict[tuple[str, str], AnnotationQuality] = {}
 
     def configure(self, *, live_fetch: bool, timeout_s: float) -> None:
         """Per-manager wiring (v3.142): live-fetch policy from config."""
@@ -119,6 +140,25 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
 
     def score(self, identifier: str, ident_type: str) -> AnnotationQuality | None:
         """Score the annotation quality for a PubChem CID.
+
+        Caching wrapper around _score_uncached (red-team batch-4, D-07): a
+        record scores once and repeats verbatim — identical records can no
+        longer decay with window position. Transient None failures are not
+        cached (a retry recomputes them).
+        """
+        if not self.supports(ident_type):
+            return None
+        key = (ident_type, str(identifier))
+        cached = self._score_cache.get(key)
+        if cached is not None:
+            return cached
+        result = self._score_uncached(identifier, ident_type)
+        if result is not None:
+            self._score_cache[key] = result
+        return result
+
+    def _score_uncached(self, identifier: str, ident_type: str) -> AnnotationQuality | None:
+        """Score the annotation quality for a PubChem CID (fetch path).
         
         Args:
             identifier: PubChem CID (e.g., "962").
@@ -188,15 +228,13 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
         if prop_list and len(prop_list) > 0:
             props = prop_list[0]
             
-            # Check canonical_smiles
-            canonical_smiles = props.get("CanonicalSMILES", "")
-            if canonical_smiles:
+            # Check canonical_smiles / isomeric_smiles (D-07: PUG renamed
+            # the keys; read via the shared extractor)
+            has_canonical, has_isomeric = _pug_smiles_signals(props)
+            if has_canonical:
                 signals.append("canonical_smiles")
                 score += 20.0
-            
-            # Check isomeric_smiles
-            isomeric_smiles = props.get("IsomericSMILES", "")
-            if isomeric_smiles:
+            if has_isomeric:
                 signals.append("isomeric_smiles")
                 score += 15.0
             
@@ -245,9 +283,10 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
                         signals.append("iupac_name")
                     # free bonus fill (PUG carries these anyway); mirror rows
                     # already hold them, so guard against duplication.
-                    if props.get("CanonicalSMILES") and "canonical_smiles" not in signals:
+                    has_canonical, has_isomeric = _pug_smiles_signals(props)
+                    if has_canonical and "canonical_smiles" not in signals:
                         signals.append("canonical_smiles")
-                    if props.get("IsomericSMILES") and "isomeric_smiles" not in signals:
+                    if has_isomeric and "isomeric_smiles" not in signals:
                         signals.append("isomeric_smiles")
                     if props.get("MolecularFormula") and "molecular_formula" not in signals:
                         signals.append("molecular_formula")

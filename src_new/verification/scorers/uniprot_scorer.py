@@ -49,7 +49,13 @@ class UniProtAnnotationScorer(AnnotationQualityScorer):
             uniprot_id = identifier
         
         try:
-            url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.json"
+            # Red-team batch-4 (D-07): the full entry JSON is hundreds of kB;
+            # ask only for the fields the scorer reads (live-validated field
+            # names: accession, reviewed, protein_existence, annotation_score,
+            # gene_names, go).
+            url = (f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.json"
+                   f"?fields=reviewed,protein_existence,annotation_score,"
+                   f"gene_names,go")
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             entry = response.json()
@@ -71,9 +77,12 @@ class UniProtAnnotationScorer(AnnotationQualityScorer):
             signals.append("annotation_score")
             score += annotation_score * 4  # 4-20 points
         
-        # Check protein_existence == 1 (Evidence at protein level)
+        # Check protein_existence. D-07: the REST JSON returns the STRING
+        # "1: Evidence at protein level" (live-verified 2026-10-23 on P00698),
+        # never the integer 1 — the old `== 1` comparison never fired.
         protein_existence = entry.get("proteinExistence")
-        if protein_existence == 1:
+        if (isinstance(protein_existence, str) and protein_existence.startswith("1:")) \
+                or protein_existence == 1:
             signals.append("protein_existence")
             score += 20.0
         

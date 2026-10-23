@@ -1,0 +1,13 @@
+{
+  "PropertyTable": {
+    "Properties": [
+      {
+        "CID": 702,
+        "MolecularFormula": "C2H6O",
+        "SMILES": "CCO",
+        "ConnectivitySMILES": "CCO",
+        "IUPACName": "ethanol"
+      }
+    ]
+  }
+}

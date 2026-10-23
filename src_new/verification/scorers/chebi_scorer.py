@@ -59,8 +59,11 @@ class ChebiAnnotationScorer(AnnotationQualityScorer):
                 signals.append("smiles")
                 score += 20.0
             
-            # Check inchi_key
-            inchi_key = default_structure.get("inchi_key", "")
+            # Check inchi_key. D-07: the API exposes it as
+            # 'standard_inchi_key' (live-verified 2026-10-23 on CHEBI:15377);
+            # the old 'inchi_key' read never fired.
+            inchi_key = (default_structure.get("standard_inchi_key")
+                         or default_structure.get("inchi_key", ""))
             if inchi_key:
                 signals.append("inchi_key")
                 score += 20.0
