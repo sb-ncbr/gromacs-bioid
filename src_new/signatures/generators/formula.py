@@ -55,16 +55,14 @@ class MolecularFormulaGenerator(SignatureGenerator):
         # Hill, and ChEMBL's exact-string lookup was missing every compound
         # containing B/Br/Cl/F because our output was plain alphabetical.
         def _hill_order(elems):
-            rest = sorted(e for e in elems if e not in ("C", "H"))
-            out = []
+            # Deploy-gate fix (v3.143-b1 E2E): the no-carbon branch previously
+            # did rest.remove("H") on a list that excludes H -> water crashed
+            # the generator ('list.remove(x)' error on TIP3). Hill without C
+            # is plain alphabetical (H2O -> H,O).
             if "C" in elems:
-                out.append("C")
-                if "H" in elems:
-                    out.append("H")
-            elif "H" in elems:
-                rest.remove("H")
-                out = ["H"]
-            return out + rest
+                out = ["C"] + (["H"] if "H" in elems else [])
+                return out + sorted(e for e in elems if e not in ("C", "H"))
+            return sorted(elems)
         sorted_elements = _hill_order(list(composition.keys()))
         
         # Build formula string like C6H12O6

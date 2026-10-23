@@ -136,6 +136,21 @@ class TestB16HillFormula:
         out = g._generate(instance, None, None)
         assert out == "C28H30F2N6O8S", f"alphabetical, not Hill: {out}"
 
+    def test_formula_hill_without_carbon(self):
+        """Deploy-gate bug (v3.143-b1 E2E): the no-carbon Hill branch did
+        rest.remove("H") on a list that excludes H by construction — every
+        carbon-free molecule (WATER!) crashed the generator with
+        'list.remove(x): x not in list'."""
+        from src_new.signatures.generators.formula import MolecularFormulaGenerator
+
+        g = MolecularFormulaGenerator(RunConfig().signatures)
+        for comp, want in (({"O": 1, "H": 2}, "H2O"),
+                           ({"N": 2}, "N2"),
+                           ({"Cl": 1, "H": 1}, "ClH"),  # no-C Hill: fully alphabetical
+                           ({"Na": 1}, "Na")):
+            instance = SimpleNamespace(element_composition=comp)
+            assert g._generate(instance, None, None) == want
+
 
 class TestA14ExportMmcifMultiChain:
     def test_homo_oligomer_export_does_not_crash(self):
