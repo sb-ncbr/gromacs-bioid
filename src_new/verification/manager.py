@@ -402,6 +402,76 @@ def _fidelity_order_hits(hits):
     return block1 + block2
 
 
+def _ident_family(ident_type: str) -> str:
+    """Coarse diversity family for the verify window (red-team batch-4,
+    D-03). Each ident type is its own family except three deliberate pools:
+    UniProt+SwissProt (same database), the NCBI sequence stores, and all
+    chemical identifiers (one chemical window family)."""
+    if not ident_type:
+        return "other"
+    it = ident_type.upper()
+    if it in ("UNIPROT_ID", "SWISSPROT_ID"):
+        return "uniprot"
+    if it in ("NR_ID", "NT_ID", "CORE_NT_ID"):
+        return "ncbi"
+    if it in CHEMICAL_IDENT_TYPES or it.startswith("CHEBI") or it in (
+            "LM_ID", "GLYTOUCAN_ID", "LIPIDMAPS_ID"):
+        return "chemical"
+    _FAMILIES = {
+        "PDB_ID": "pdb",
+        "ALPHAFOLD_ID": "alphafold",
+        "ALPHAFIND_ID": "alphafind",
+        "ELEMENT": "other",
+    }
+    return _FAMILIES.get(it, "other")
+
+
+def _family_interleave(sorted_groups, top_n: int):
+    """Round-robin the consensus-sorted groups across ident families.
+
+    Red-team batch-4 (D-03): one shared window sorted by consensus let a
+    single ident type (150 identical lysozyme PDB chains, all consensus 100)
+    fill 100/100 slots, evicting the only UniProt-family record entirely.
+    Round-robin keeps consensus order WITHIN each family (input order is
+    the consensus order) but rotates across families, so every family
+    represented in the segment gets window slots before any family's
+    flood fills the rest.
+
+    Returns (window, stats) with stats = {"n_groups", "n_window",
+    "n_dropped_by_type"} for additive persistence under
+    verification/<seg>/window.
+    """
+    from collections import deque
+
+    families: dict[str, deque] = {}
+    order: list[str] = []
+    for key, meta in sorted_groups:
+        fam = _ident_family(key[1])
+        if fam not in families:
+            families[fam] = deque()
+            order.append(fam)
+        families[fam].append((key, meta))
+
+    window: list = []
+    while len(window) < top_n:
+        progressed = False
+        for fam in order:
+            if len(window) >= top_n:
+                break
+            if families[fam]:
+                window.append(families[fam].popleft())
+                progressed = True
+        if not progressed:
+            break
+
+    stats = {
+        "n_groups": len(sorted_groups),
+        "n_window": len(window),
+        "n_dropped_by_type": {fam: len(q) for fam, q in families.items() if q},
+    }
+    return window, stats
+
+
 class VerificationManager:
     """Manages the verification pipeline for identification results.
     
@@ -528,7 +598,10 @@ class VerificationManager:
                     f"({exc}); keeping consensus order"
                 )
 
-            top_groups = sorted_groups[:top_n]
+            top_groups, window_stats = _family_interleave(sorted_groups, top_n)
+            # D-03: persist window composition/truncation additively (legacy
+            # runs simply lack the key).
+            results.set_data(f"verification/{segment}/window", window_stats)
             
             # Batch-warm canonical structures for chemical candidates (one CSV
             # call per ~50 CIDs instead of N serial 503-prone calls; F7 gate)
