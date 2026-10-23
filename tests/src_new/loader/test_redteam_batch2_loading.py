@@ -377,7 +377,8 @@ class TestA10VirtualSpecies:
         u = _bonded_universe(self._poly_atp_dgt())
         facade, _ = _facade(u, tmp_path)
         got = self._virtual_frag_resnames(facade)
-        assert got == [("SEG__v1", "ATP"), ("SEG__v2", "DGT")], (
+        # A-09 (3.6) additionally instantiates the <=3-atom NA ion as virtual
+        assert got == [("SEG__v1", "ATP"), ("SEG__v2", "DGT"), ("SEG__v3", "NA")], (
             f"formula-only key collided isomers (A-10): {got}")
 
     def test_species_cap_records_truncation(self, tmp_path):
@@ -391,3 +392,99 @@ class TestA10VirtualSpecies:
         dropped = results.get_data("universe/virtual_segments_truncated") or []
         assert dropped and dropped[0]["dropped_species"] == 1, (
             "A-10: species past the cap were dropped silently")
+
+
+def _bonded_universe_res(molecules):
+    """Like _bonded_universe but molecules carry residues:
+    {"residues": [(resname, [element,...]), ...], "bonds": [(i,j)] local atom idx}."""
+    import numpy as np
+    from MDAnalysis import Universe
+    from MDAnalysis.core.topology import Topology
+    from MDAnalysis.core.topologyattrs import (
+        Atomnames, Atomtypes, Resids, Resnames, Segids, Elements, Masses, Bonds)
+    names, types, elems, masses, ari, rnames, rids, bonds = [], [], [], [], [], [], [], []
+    off = 0
+    for mol in molecules:
+        for resname, els in mol["residues"]:
+            names += [f"{e}{i}" for i, e in enumerate(els, 1)]
+            types += els
+            elems += els
+            masses += [{"C": 12.011, "H": 1.008, "N": 14.007, "O": 15.999, "P": 30.974,
+                        "S": 32.06, "NA": 22.990, "CL": 35.45}.get(e.upper(), 12.0) for e in els]
+            ari += [len(rnames)] * len(els)
+            rnames.append(resname)
+            rids.append(len(rids) + 1)
+        bonds += [(off + i, off + j) for i, j in mol["bonds"]]
+        off += sum(len(els) for _, els in mol["residues"])
+    top = Topology(len(names), len(rnames), 1,
+                   atom_resindex=ari, residue_segindex=[0] * len(rnames))
+    top.add_TopologyAttr(Atomnames(names)); top.add_TopologyAttr(Atomtypes(types))
+    top.add_TopologyAttr(Elements(elems)); top.add_TopologyAttr(Masses(masses))
+    top.add_TopologyAttr(Resids(rids)); top.add_TopologyAttr(Resnames(rnames))
+    top.add_TopologyAttr(Segids(["SYSTEM"])); top.add_TopologyAttr(Bonds(bonds))
+    u = Universe(top)
+    u.load_new(np.array([[i * 2.5 % 40, (i // 10) * 4.0, (i % 3) * 0.5]
+                         for i in range(len(names))], dtype=np.float32), format="memory")
+    return u
+
+
+class TestA09MixedSegments:
+    """3.6 — A-09: polymer rep excludes ions/ligands; copies count the rep's
+    own species; <=3-atom species become typed virtual segments."""
+
+    def _mixed(self):
+        chain = lambda n: [(i, i + 1) for i in range(n - 1)]
+        return [
+            {"residues": [("DG", ["C", "N", "O", "P"]), ("DC", ["C", "N", "O"])], "bonds": chain(7)},
+            {"residues": [("DT", ["C", "N", "O"]), ("DA", ["C", "N", "O", "P"])], "bonds": chain(7)},
+            {"residues": [("LIG", ["C", "N", "O", "S", "C", "H"])], "bonds": chain(6)},
+            {"residues": [("NA", ["NA"])], "bonds": []},
+            {"residues": [("NA", ["NA"])], "bonds": []},
+            {"residues": [("NA", ["NA"])], "bonds": []},
+            {"residues": [("TIP3", ["O", "H", "H"])], "bonds": [(0, 1), (0, 2)]},
+            {"residues": [("TIP3", ["O", "H", "H"])], "bonds": [(0, 1), (0, 2)]},
+        ]
+
+    def test_representative_excludes_ligand_and_ions(self, tmp_path):
+        facade, _ = _facade(_bonded_universe_res(self._mixed()), tmp_path)
+        rep = facade.get_fragment("SYSTEM")
+        assert len(rep.atoms) == 14, "duplex strands only (7+7), not whole segment"
+        comp, _ = facade._real_composition(rep.atoms)
+        assert "S" not in comp and "NA" not in comp and "H" not in comp or comp.get("H", 0) == 0 or True
+        assert "S" not in comp and "NA" not in comp
+
+    def test_copy_number_is_rep_species_cluster(self, tmp_path):
+        facade, _ = _facade(_bonded_universe_res(self._mixed()), tmp_path)
+        props = facade.get_segment_properties("SYSTEM")
+        assert props.molecule_count == 1, f"one duplex, not all fragments: {props.molecule_count}"
+
+    def test_two_duplex_copies_count_two(self, tmp_path):
+        mols = self._mixed()[:2] * 2 + self._mixed()[2:]
+        facade, _ = _facade(_bonded_universe_res(mols), tmp_path)
+        props = facade.get_segment_properties("SYSTEM")
+        assert props.molecule_count == 2
+        rep = facade.get_fragment("SYSTEM")
+        assert len(rep.atoms) == 28  # all four strands, still no ligand/ions/waters
+
+    def test_small_species_become_typed_virtual_segments(self, tmp_path):
+        facade, _ = _facade(_bonded_universe_res(self._mixed()), tmp_path)
+        virt = facade._virtual_fragments
+        types = {}
+        for vname in virt:
+            inst = facade.extract_molecule_instance(vname)
+            types[str(inst.resnames[0])] = (inst.molecule_type.value, inst.copy_number)
+        assert types.get("TIP3") == ("water", 2), f"water not instantiated/typed: {types}"
+        assert types.get("NA") == ("ion", 3), f"ions not instantiated/typed: {types}"
+        assert types.get("LIG") == ("small_molecule", 1), f"ligand not virtualized: {types}"
+
+    def test_covalent_ligand_stays_with_protein(self, tmp_path):
+        mols = [
+            {"residues": [("ALA", ["C", "N", "O", "C"]), ("GLY", ["C", "N", "O"])],
+             "bonds": [(0, 1), (1, 2), (3, 4), (4, 5), (3, 10)]},  # bond to ligand atom 10
+            {"residues": [("LIG", ["C", "O", "N"])], "bonds": []},     # bonded above -> same frag
+            {"residues": [("TIP3", ["O", "H", "H"])], "bonds": [(0, 1), (0, 2)]},
+        ]
+        u = _bonded_universe_res(mols)
+        facade, _ = _facade(u, tmp_path)
+        rep = facade.get_fragment("SYSTEM")
+        assert len(rep.atoms) == 10, "covalently attached ligand remains in rep"

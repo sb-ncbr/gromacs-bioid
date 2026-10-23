@@ -178,7 +178,15 @@ class LoadedUniverse:
                     fragments = selected.fragments
                 except MDAnalysis.exceptions.NoDataError:
                     fragments = []
-                props.molecule_count = len(fragments)
+                # A-09 (red-team 3.6): copies = size of the representative's
+                # own species cluster — not the raw fragment count, which
+                # swept unrelated ions/ligands into the copy number (1920:
+                # copies=80 incl. Cl/Na; 1567: copies=2 for one duplex).
+                pool = self._polymer_fragments(selected, segment_name) or list(fragments)
+                rep_src = max(pool, key=lambda f: len(f.atoms))
+                rep_key = self._species_key(rep_src)
+                props.molecule_count = sum(
+                    1 for f in fragments if self._species_key(f) == rep_key)
                 props.residue_count = len(fragment.residues)
             
             # Compute flags using the same representative fragment
@@ -437,22 +445,29 @@ class LoadedUniverse:
                 clusters.setdefault(self._species_key(frag), []).append(frag)
             if len(clusters) < 2:
                 continue
-            rep_key = self._species_key(LoadedUniverse.get_fragment(self, segment_name))
+            # A-09: skip the representative-generating clusters (polymer
+            # fragments when present, else the largest fragment's kind);
+            # ligands/ions/waters now form their OWN virtual segments.
+            poly = self._polymer_fragments(selected, segment_name)
+            rep_pool = poly if poly else [max(fragments, key=lambda f: len(f.atoms))]
+            rep_keys = {self._species_key(f) for f in rep_pool}
+            rep_key = next(iter(rep_keys))  # kept for key-compat below
             n = 0
+            vidx = 0
             # A-10: deterministic order so truncation is reproducible; dropped
             # species are RECORDED (universe/virtual_segments_truncated) instead
             # of vanishing silently past the cap.
             ordered = sorted(clusters.items(),
                              key=lambda kv: (-len(kv[1][0].atoms), repr(kv[0])))
             for key, members in ordered:
-                if key == rep_key:
+                if key in rep_keys:
                     continue
-                if len(members[0].atoms) <= 3:
-                    continue  # waters / tiny species keep classic flow
-                n += 1
-                if n > self._MAX_VIRTUAL_PER_SEGMENT:
-                    dropped = ordered[ordered.index((key, members)):]
-                    dropped = [kv for kv in dropped
+                tiny = len(members[0].atoms) <= 3
+                if not tiny:
+                    n += 1
+                if not tiny and n > self._MAX_VIRTUAL_PER_SEGMENT:
+                    cur = next(i for i, kv in enumerate(ordered) if kv[0] is key)
+                    dropped = [kv for kv in ordered[cur:]
                                if kv[0] != rep_key and len(kv[1][0].atoms) > 3]
                     self._virtual_truncated.append({
                         "segment": segment_name,
@@ -463,7 +478,8 @@ class LoadedUniverse:
                         "virtual_segments_truncated: segment %s dropped %d species past cap %d",
                         segment_name, len(dropped), self._MAX_VIRTUAL_PER_SEGMENT)
                     break
-                vname = f"{segment_name}__v{n}"
+                vidx += 1
+                vname = f"{segment_name}__v{vidx}"
                 frag0 = members[0]
                 self._virtual_fragments[vname] = frag0
                 props = SegmentProperties(
@@ -490,6 +506,46 @@ class LoadedUniverse:
         segs |= set(getattr(self, "_virtual_fragments", {}).keys())
         return segs
     
+    def _polymer_fragments(self, selected: AtomGroup, seg: str) -> list:
+        """A-09 (red-team 3.6): fragments that are polymer by resname content.
+
+        A fragment counts as polymer when >=50% of its atoms carry residues
+        from the protein/NA tables. Covalently attached ligands ride along
+        inside the same fragment (bond graph), non-covalent species stay in
+        their own fragments — which is exactly what the old whole-segment
+        representative got wrong (it swept ions/waters/ligands INTO both the
+        composition and the copy number).
+        """
+        try:
+            fragments = selected.fragments
+        except MDAnalysis.exceptions.NoDataError:
+            return []
+        out = []
+        for f in fragments:
+            if len(set(f.atoms.segids)) != 1 or f.atoms.segids[0] != seg:
+                continue
+            total = 0
+            poly = 0
+            try:
+                residues = list(f.residues)
+            except Exception:
+                continue
+            for res in residues:
+                rn = str(res.resname or "").strip().upper()
+                n = len(res.atoms)
+                total += n
+                if (rn in KNOWN_RESIDUE_CODES or rn in KNOWN_NUCLEIC_ACIDS_CODES
+                        or normalize_nucleic_resname(rn) is not None):
+                    poly += n
+                elif residue_has_sugar_phosphate(list(res.atoms.names)):
+                    # modified/terminal nucleics the closed tables miss (ENAR
+                    # tier-2 signal) — the chain stays polymer even when only
+                    # its base atoms happen to carry table resnames
+                    poly += n
+            if total and poly / total >= 0.5:
+                out.append(f)
+        return out
+
     def get_fragment(self, segment_name: str) -> AtomGroup:
         """Get the representative fragment for a segment.
         
@@ -528,15 +584,26 @@ class LoadedUniverse:
         
         # Get largest fragment
         largest = max(fragments, key=lambda f: len(f.atoms))
-        
+
         # If largest fragment is most of the segment, return it
         if len(largest.atoms) >= len(selected.atoms) * 0.8:
             return largest
-        
+
+        # A-09 (red-team 3.6): polymer representative = union of polymer
+        # fragments ONLY (both strands, covalently attached partners) — never
+        # the whole segment with ions/ligands/waters swept into composition
+        # and signatures (fixture 1602's chimeric duplex+92-atom ligand).
+        poly = self._polymer_fragments(selected, segment_name)
+        if poly:
+            import numpy as _np
+            idx = _np.array(sorted({int(i) for f in poly for i in f.atoms.indices}),
+                            dtype=_np.int64)
+            return self.universe.atoms[idx]
+
         # If this is a polymer segment, return full segment (broken bonds case)
         if self._is_polymer_segment(selected):
             return selected
-        
+
         # Otherwise return largest fragment (small molecule case)
         return largest
     
