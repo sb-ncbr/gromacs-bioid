@@ -1,7 +1,7 @@
 # CEITEC Deployment — Live Facts (ceitec-biodata-ns)
 
 ## Core Concept
-Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-10-22 (v3.142.1/w19 rollout + E2E 41db1f7c all-green; earlier 2026-10-23 typo date superseded); older verified 2026-09-10.
+Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-10-23 (v3.143-batch1 red-team wave, E2E rerun 3b784ee9 ALL-OK; gate caught+fixed no-carbon Hill crash `a17525722`); earlier 2026-10-22 (v3.142.1/w19, E2E 41db1f7c).
 
 ## Cluster / Access
 - Kubeconfig context: `kuba-cluster` (namespace-scoped user; `kubectl get nodes` forbidden = normal)
@@ -10,9 +10,9 @@ Ground truth about what is ACTUALLY deployed, versus stale docs. Verified 2026-1
 ## Components & Images (pinned; verified 2026-10-21, v3.140/141 wave)
 | Deploy | Replicas | Image | Notes |
 |---|---|---|---|
-| bat3-ceitec-bat3-worker | 15 | `bat3-validation-api@sha256:f3a19d3a` (tag `v3.142`, Dockerfile.full build #3) | celery pipeline workers (src_new); v3.142.1 confidence rework + warning-severity/segment polish; PyMOL present again (Dockerfile.full). E2E runs 456d0bab + 41db1f7c (battery ALL OK); v3.138: gemmi/tmtools/mini3di/numpy<2 + static foldseek (avx2/sse2 wrapper, curl for `databases`) |
-| bat3-ceitec-bat3-ui-worker | 2 | `bat3-validation-api@sha256:f3a19d3a` (tag `v3.142`, Dockerfile.full build #3) | celery pipeline workers (src_new) |
-| bat3-ceitec-bat3-api | 1 | `bat3-validation-api@sha256:f3a19d3a` (tag `v3.142`, Dockerfile.full build #3) | **pins command/args `uvicorn src_new.api.main:app --workers 4` + DATABASE_URL env** — image CMD is `main:app` (validation API), wrong app + probes 404 otherwise (V-28) |
+| bat3-ceitec-bat3-worker | 15 | `bat3-validation-api@sha256:c90bc6b47ba1` (tag `v3.143-b2`, Dockerfile.full, red-team batch1) | celery pipeline workers (src_new); v3.142.1 confidence rework + warning-severity/segment polish; PyMOL present again (Dockerfile.full). E2E runs 456d0bab + 41db1f7c (battery ALL OK); v3.138: gemmi/tmtools/mini3di/numpy<2 + static foldseek (avx2/sse2 wrapper, curl for `databases`) |
+| bat3-ceitec-bat3-ui-worker | 2 | `bat3-validation-api@sha256:c90bc6b47ba1` (tag `v3.143-b2`, Dockerfile.full, red-team batch1) | celery pipeline workers (src_new) |
+| bat3-ceitec-bat3-api | 1 | `bat3-validation-api@sha256:c90bc6b47ba1` (tag `v3.143-b2`, Dockerfile.full, red-team batch1) | **pins command/args `uvicorn src_new.api.main:app --workers 4` + DATABASE_URL env** — image CMD is `main:app` (validation API), wrong app + probes 404 otherwise (V-28) |
 | bat3-ceitec-bat3-web | 1 | `bat3-frontend@sha256:82444e0e` (tag `w19`) | w18 + verification-tab molecule selector + signature-skip warnings show segment |
 | validation-api | 1 | `bat3-validation-api:v3.132` | `uvicorn main:app`; **VALIDATION_DISPATCH_ENABLED=0 — MDDBR dispatch OFF (intentional, 2026-10-09)** |
 | validation-worker | **0 (was 244)** | `bat3-validation-api:v3.132` | **scaled to 0 2026-10-09 (MDDBR OFF); reverse: scale 244 + dispatch env 1** |
