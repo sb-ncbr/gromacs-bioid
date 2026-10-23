@@ -123,14 +123,12 @@ def get_default_generators(config: SignaturesConfig) -> list[SignatureGenerator]
     generators.append(ResnameFastaGeneratorProtein(config))
     generators.append(ResnameFastaGeneratorNucleotide(config))
     
+    # B-12 (red-team 4.8): sanitized and not-sanitized pdb variants are
+    # byte-identical whenever verification parses OK — emit each kind once
     generators.append(PDBGeneratorSanitizeProtein(config))
-    generators.append(PDBGeneratorNoSanitizeProtein(config))
     generators.append(PDBBackboneGeneratorSanitizeProtein(config))
-    generators.append(PDBBackboneGeneratorNoSanitizeProtein(config))
     generators.append(PDBGeneratorSanitizeNucleic(config))
-    generators.append(PDBGeneratorNoSanitizeNucleic(config))
     generators.append(PDBBackboneGeneratorSanitizeNucleic(config))
-    generators.append(PDBBackboneGeneratorNoSanitizeNucleic(config))
     
     generators.append(TopologyLessPDBGenerator(config))
     generators.append(CAOnlyPDBGenerator(config))

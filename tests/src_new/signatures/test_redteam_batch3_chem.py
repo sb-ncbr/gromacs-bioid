@@ -607,3 +607,62 @@ class TestB08CrossFragmentBonds:
         prot = u3.atoms[:n]
         seq = fasta.fragment_to_protseq_map_based(prot, SignaturesConfig())
         assert seq == "AAAAAA", seq
+
+
+class TestB12ProteinBackboneRealCA:
+    """4.8 - B-12: protein backbone variant must be the REAL CA atom
+    (mirroring the NA selector), keyed by (chain, resindex), with
+    chain-aware ATOM/CONECT serials; duplicate pdb variants dropped."""
+
+    def test_backbone_positions_are_real_ca(self):
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.generators.pdb import PDBBackboneGeneratorSanitizeProtein
+        frag = _protein_chain(4)
+        out = PDBBackboneGeneratorSanitizeProtein(
+            SignaturesConfig())._generate(_instance(frag), frag, None)
+        lines = [l for l in out.splitlines() if l.startswith("ATOM")]
+        assert len(lines) == 4
+        ca_positions = frag.atoms.positions[[i * 5 + 1 for i in range(4)]]
+        for i, l in enumerate(lines):
+            assert l[12:16].strip() == "CA", l          # real CA, not centroid
+            x, y, z = float(l[30:38]), float(l[38:46]), float(l[46:54])
+            exp = ca_positions[i]
+            assert abs(x - exp[0]) < 0.01 and abs(y - exp[1]) < 0.01, (l, exp)
+
+    def test_shared_numbering_chains_no_fallback_crash(self):
+        from src_new.signatures.generators.pdb import fragment_to_pdb_biopython
+        frag = _two_chain_fragment(chainids=True)
+        out = fragment_to_pdb_biopython(frag, only_backbone=False)
+        lines = [l for l in out.splitlines() if l.startswith("ATOM")]
+        assert len(lines) == frag.n_atoms, len(lines)
+        # 'Atom N defined twice' must not happen any more: shared resnums
+        # (1..5 in chain A and B) are emitted as two separate chain blocks
+        assert any(l[21] == "B" for l in lines), out[:200]
+
+    def test_direct_writer_serials_and_chains(self):
+        from src_new.signatures.generators.pdb import fragment_to_pdb_direct
+        frag = _two_chain_fragment(chainids=True)
+        out = fragment_to_pdb_direct(frag, only_backbone=False, include_bonds=True)
+        atom_lines = [l for l in out.splitlines() if l.startswith("ATOM")]
+        serials = {int(l[6:11]) for l in atom_lines}
+        conect_refs = set()
+        for l in out.splitlines():
+            if l.startswith("CONECT"):
+                conect_refs |= {int(t) for t in l[6:].split()}
+        assert conect_refs <= serials, (
+            f"CONECT references outside ATOM serials: {conect_refs - serials}")
+        # chain letters present, per-chain numbering restarts
+        assert any(l[21] == "B" for l in atom_lines)
+        resseq_b = [int(l[22:26]) for l in atom_lines if l[21] == "B"]
+        assert min(resseq_b) == 1, resseq_b
+
+    def test_registry_drops_duplicate_pdb_variants(self):
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.registry import get_default_generators
+        names = [g.name for g in get_default_generators(SignaturesConfig())]
+        pdb_names = [n for n in names if n.startswith("pdb")]
+        assert len(pdb_names) == len(set(pdb_names)), pdb_names
+        assert "pdb_not_sanitized_protein" not in pdb_names
+        assert "pdb_backbone_not_sanitized_protein" not in pdb_names
+        assert "pdb_not_sanitized_nucleic" not in pdb_names
+        assert "pdb_backbone_not_sanitized_nucleic" not in pdb_names

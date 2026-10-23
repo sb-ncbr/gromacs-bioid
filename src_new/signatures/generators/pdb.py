@@ -104,11 +104,15 @@ class PDBGenerator(SignatureGenerator):
         # (C4' -> C3' -> P, PyMOL parity) at REAL coordinates instead of a
         # per-residue centroid pseudo-atom. Protein behavior is unchanged
         # (selector stays None).
-        selector = (
-            select_na_backbone_atom
-            if (self._backbone_only and self._is_nucleotide)
-            else None
-        )
+        # B-12 (red-team 4.8): protein backbone variant selects the real CA
+        # per residue (mirroring the NA guide-atom selector) instead of a
+        # centroid pseudo-atom (RCS search accuracy, ~1.5 A mean deviation).
+        if self._backbone_only and self._is_nucleotide:
+            selector = select_na_backbone_atom
+        elif self._backbone_only and self._is_protein:
+            selector = _protein_backbone_atom
+        else:
+            selector = None
         pdb = fragment_to_pdb(fragment, self._backbone_only, backbone_selector=selector)
         if self._sanitize:
             temp_dir = tempfile.gettempdir()
@@ -205,6 +209,49 @@ def fragment_to_pdb(
     raise RuntimeError("Unable to generate PDB signature")
 
 
+def _protein_backbone_atom(residue_atoms):
+    """B-12 (red-team 4.8): pick the REAL CA atom of one protein residue
+    (mirrors the NA guide-atom selector). None falls back to the legacy
+    per-residue pseudo-centroid below."""
+    try:
+        for atom in residue_atoms:
+            if str(atom.name).strip() == "CA":
+                return atom
+    except Exception:
+        pass
+    return None
+
+
+def _per_chain_labels_resseq(fragment):
+    """B-12: residues keyed by (chain, resindex). Chain label from the
+    first atom's chainID (fallback 'A'); resSeq restarts 1..n per chain in
+    residue order (numbering restarts between chains no longer collide,
+    and the 4-column resSeq field cannot overflow)."""
+    labels = {}
+    resseq = {}
+    counters = {}
+    try:
+        chainids = fragment.atoms.chainIDs
+        pos_of = {int(a): i for i, a in enumerate(fragment.atoms.indices)}
+    except Exception:
+        chainids = None
+    for residue in fragment.residues:
+        cid = "A"
+        if chainids is not None:
+            try:
+                a0 = int(residue.atoms[0].index)
+                cand = str(chainids[pos_of[a0]]).strip()
+                if cand:
+                    cid = cand
+            except Exception:
+                pass
+        counters.setdefault(cid, 0)
+        counters[cid] += 1
+        labels[int(residue.resindex)] = cid
+        resseq[int(residue.resindex)] = counters[cid]
+    return labels, resseq
+
+
 def _na_backbone_element(name: str) -> str:
     """Derive a PDB element from a backbone atom name (fallback when the
     topology carries no elements: backbone mode does not gate on elements).
@@ -251,16 +298,28 @@ def fragment_to_pdb_biopython(
     """
     structure = Structure.Structure("export")
     model = Model.Model(0)
-    chain = Chain.Chain("A")
+    # B-12: key residues by (chain, resindex) — select_atoms("resid X")
+    # merged same-numbered chains into one residue and crashed with
+    # 'Atom N defined twice' (silent fallback to the direct writer).
+    labels, resseq = _per_chain_labels_resseq(fragment)
+    chains_out = {}
+    serial = 0
 
-    for resid, resname in zip(fragment.residues.resnums, fragment.residues.resnames):
-        atoms = fragment.select_atoms(f"resid {resid}")
-        residue = Residue.Residue((" ", resid, " "), resname, "")
+    for residue in fragment.residues:
+        rindex = int(residue.resindex)
+        cid = labels[rindex]
+        chain = chains_out.get(cid)
+        if chain is None:
+            chain = chains_out[cid] = Chain.Chain(cid)
+        atoms = residue.atoms
+        residue_out = Residue.Residue(
+            (" ", resseq[rindex], " "), str(residue.resname)[:3], "")
 
         if only_backbone:
             selected = (
-                backbone_selector(atoms.atoms) if backbone_selector is not None else None
+                backbone_selector(atoms) if backbone_selector is not None else None
             )
+            serial += 1
             if selected is not None:
                 try:
                     element = str(selected.element).strip().upper()
@@ -273,26 +332,30 @@ def fragment_to_pdb_biopython(
                     1.0,
                     " ",
                     selected.name,
-                    resid + 1,
+                    serial,
                     element or _na_backbone_element(selected.name),
                 )
             else:
-                mean_position = np.array(atoms.atoms.positions, dtype=float)
-                # Use 1-based serial number
+                # legacy centroid pseudo-atom (only when no selector atom)
+                mean_position = np.array(atoms.positions, dtype=float)
                 atom = Atom.Atom(
-                    atoms.atoms.names[0],
+                    atoms.names[0],
                     np.array(mean_position.mean(axis=0)),
                     1.0,
                     1.0,
                     " ",
                     "CA",
-                    resid + 1,
+                    serial,
                     "C"
                 )
-            residue.add(atom)
+            residue_out.add(atom)
         else:
             for i in range(len(atoms)):
-                # Use 1-based sequential serial number
+                serial += 1
+                try:
+                    element = str(atoms.elements[i]).strip().upper()
+                except Exception:
+                    element = ""
                 atom = Atom.Atom(
                     atoms.names[i],
                     np.array(atoms.positions[i]),
@@ -300,14 +363,15 @@ def fragment_to_pdb_biopython(
                     1.0,
                     " ",
                     atoms.names[i],
-                    i + 1,
-                    str(atoms.elements[i]).upper()
+                    serial,
+                    element
                 )
-                residue.add(atom)
-        
-        chain.add(residue)
-    
-    model.add(chain)
+                residue_out.add(atom)
+
+        chain.add(residue_out)
+
+    for chain in chains_out.values():
+        model.add(chain)
     structure.add(model)
     
     io = PDBIO()
@@ -373,15 +437,16 @@ def _pdb_atom_line(
     pos_x: float,
     pos_y: float,
     pos_z: float,
+    chain_id: str = "A",
 ) -> str:
-    """Create ATOM line for PDB file."""
+    """Create ATOM line for PDB file (B-12: real chain column)."""
     return "{:6s}{:5d} {:^4s}{:1s}{:3s} {:1s}{:4d}{:1s}   {:8.3f}{:8.3f}{:8.3f}{:6.2f}{:6.2f}          {:>2s}{:2s}".format(
         "ATOM",
         atom_idx,
         atom_name,
         "",
         _std_resname3(residue_name),
-        "A",
+        (chain_id or "A")[:1],
         residue_idx,
         "",
         pos_x,
@@ -436,27 +501,42 @@ def fragment_to_pdb_direct(
 
     fd.write("HEADER    export\n")
 
+    # B-12: chain labels + per-chain 1..n resSeq; CONECT references the
+    # serials actually written on the ATOM records.
+    labels, resseq = _per_chain_labels_resseq(fragment)
+    serial_of: dict[int, int] = {}
+    try:
+        atom_ids = fragment.atoms.ids
+    except Exception:
+        atom_ids = None
+
     if only_backbone and backbone_selector is not None:
         # Wave-7: real guide atom per residue at real coordinates
-        # (nucleic backbone trace). Selector returning None falls back to
-        # the legacy first-atom choice for that residue.
+        # (nucleic backbone trace; B-12 adds the protein CA selector).
         for residue in fragment.residues:
             selected = backbone_selector(residue.atoms)
             atom = selected if selected is not None else residue.atoms[0]
+            gidx = int(atom.index)
             try:
                 serial = int(atom.id)
             except Exception:
-                serial = int(atom.index) + 1
+                serial = gidx + 1
+            try:
+                element = str(atom.element).strip().upper()
+            except Exception:
+                element = ""
+            serial_of[gidx] = serial
             fd.write(
                 _pdb_atom_line(
                     serial,
                     atom.name,
-                    _na_backbone_element(atom.name),
+                    element or _na_backbone_element(atom.name),
                     residue.resname,
-                    residue.resindex,
+                    resseq[int(residue.resindex)],
                     float(atom.position[0]),
                     float(atom.position[1]),
                     float(atom.position[2]),
+                    chain_id=labels[int(residue.resindex)],
                 ) + "\n"
             )
     else:
@@ -467,29 +547,43 @@ def fragment_to_pdb_direct(
                 else:
                     processed_residues.add(fragment.atoms.resindices[atom_i])
 
+            try:
+                element = (fragment.atoms.elements[atom_i]
+                           if not only_backbone else "C")
+            except Exception:
+                element = "" if not only_backbone else "C"
+            serial = (int(atom_ids[atom_i]) if atom_ids is not None
+                      else atom_i + 1)
+            resindex = int(fragment.atoms.resindices[atom_i])
+            serial_of[int(fragment.atoms.indices[atom_i])] = serial
             fd.write(
                 _pdb_atom_line(
-                    fragment.atoms.ids[atom_i],
+                    serial,
                     fragment.atoms.names[atom_i],
-                    fragment.atoms.elements[atom_i] if not only_backbone else "C",
+                    element,
                     fragment.atoms.resnames[atom_i],
-                    fragment.atoms.resindices[atom_i],
+                    resseq.get(resindex, resindex + 1),
                     float(fragment.atoms.positions[atom_i][0]),
                     float(fragment.atoms.positions[atom_i][1]),
                     float(fragment.atoms.positions[atom_i][2]),
+                    chain_id=labels.get(resindex, "A"),
                 ) + "\n"
             )
-    
+
     if include_bonds:
         conns = defaultdict(set)
         for atom_idx1, atom_idx2 in fragment.atoms.bonds.indices:
-            conns[atom_idx1].add(atom_idx2)
-            conns[atom_idx2].add(atom_idx1)
-        for atom_idx in conns:
-            # Bug fix: _pdb_bonds_line now returns list of lines for >4 bonds
-            for line in _pdb_bonds_line(atom_idx, conns[atom_idx]):
+            # B-12: reference written serials only (B-08: skip cross bonds)
+            s1 = serial_of.get(int(atom_idx1))
+            s2 = serial_of.get(int(atom_idx2))
+            if s1 is None or s2 is None:
+                continue
+            conns[s1].add(s2)
+            conns[s2].add(s1)
+        for atom_serial in conns:
+            for line in _pdb_bonds_line(atom_serial, conns[atom_serial]):
                 fd.write(line + "\n")
-        
+
         fd.write("END\n")
     
     pdb = fd.getvalue()
