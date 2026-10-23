@@ -606,7 +606,10 @@ class TestBlastResolverClasses:
         assert resolver.db_path == "/test/swissprot"
         assert resolver.is_protein is True
         assert resolver.name == "blast_swissprot_protein"
-        assert resolver.identifier_type == "SWISSPROT_ID"
+        # v3.143 (C-18): canonical UNIPROT_ID — blast_swissprot and
+        # blast_uniprot accessions now merge into one consensus group;
+        # the source DB stays in the resolver name/metadata.
+        assert resolver.identifier_type == "UNIPROT_ID"
         assert resolver.accepted_signatures == ["residue_sequence_protein"]
 
     def test_swissprot_uses_correct_executable(self, config: RunConfig) -> None:

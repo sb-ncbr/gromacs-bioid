@@ -177,38 +177,9 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
             # nothing provable locally about this record.
             return None
         
-        signals = []
-        score = 20.0  # Base points for having the entry
-        
-        # Extract properties from response
-        prop_list = props_data.get("PropertyTable", {}).get("Properties", [])
-        if prop_list and len(prop_list) > 0:
-            props = prop_list[0]
-            
-            # Check canonical_smiles
-            canonical_smiles = props.get("CanonicalSMILES", "")
-            if canonical_smiles:
-                signals.append("canonical_smiles")
-                score += 20.0
-            
-            # Check isomeric_smiles
-            isomeric_smiles = props.get("IsomericSMILES", "")
-            if isomeric_smiles:
-                signals.append("isomeric_smiles")
-                score += 15.0
-            
-            # Check iupac_name
-            iupac_name = props.get("IUPACName", "")
-            if iupac_name:
-                signals.append("iupac_name")
-                score += 15.0
-            
-            # Check molecular_formula
-            mol_formula = props.get("MolecularFormula", "")
-            if mol_formula:
-                signals.append("molecular_formula")
-                score += 15.0
-        
+        # v3.143 (D-17): the signal extraction below used to appear
+        # twice in a row; the first copy was overwritten before use
+        # (dead code, removed).
         signals = []
         score = 20.0  # Base points for having the entry
         

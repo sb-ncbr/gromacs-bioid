@@ -158,7 +158,15 @@ class FormulaHFamilyResolver(IdentifierResolver):
         candidates: list[str] = []
         seen: set[str] = set()
         total_cap = self._local_max_total if self._local_db is not None else _MAX_TOTAL_CANDIDATES
-        for delta in range(-self.h_range, self.h_range + 1):
+        # v3.143 (C-11): iterate by |delta| (exact formula first) instead of
+        # H-range..H upwards — the old fill order exhausted the total cap on
+        # H-4..H-2 variants, so the EXACT formula and the PROTONATED forms
+        # (simulations deprotonate acids; neutral PubChem = H+1/H+2) were
+        # exactly the rows that got dropped. The cap is shared per-delta.
+        deltas = [0] + [d for i in range(1, self.h_range + 1) for d in (-i, i)]
+        per_delta_cap = max(1, total_cap // max(1, len(deltas)))
+        truncated_variants: list[str] = []
+        for delta in deltas:
             if self._over_budget():
                 logger.warning("hfamily: stage deadline exceeded after %d candidates for %s; returning partial", len(candidates), signature)
                 break
@@ -178,15 +186,21 @@ class FormulaHFamilyResolver(IdentifierResolver):
                     f"/compound/fastformula/{formula}/cids/JSON?MaxRecords={_MAX_RECORDS_PER_QUERY}"
                 )
                 cids = (data or {}).get("IdentifierList", {}).get("CID") or []
+            variant_added = 0
             for cid in cids:
                 scid = str(cid)
                 if scid not in seen:
                     seen.add(scid)
                     candidates.append(scid)
-                    if len(candidates) >= total_cap:
+                    variant_added += 1
+                    if variant_added >= per_delta_cap and len(deltas) > 1:
+                        truncated_variants.append(formula)
                         break
             if len(candidates) >= total_cap:
                 logger.warning("hfamily: candidate cap hit for %s", signature)
                 break
+        if truncated_variants:
+            logger.debug("hfamily: per-variant cap %d truncated %s for %s",
+                         per_delta_cap, truncated_variants, signature)
         # flat candidate score; the F7 verification gate does structural rescoring
         return [(cid, 50.0) for cid in candidates]

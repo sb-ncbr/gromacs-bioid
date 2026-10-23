@@ -211,7 +211,10 @@ def test_blast_resolver_swissprot_initialization(config: RunConfig) -> None:
     assert resolver.db_path == "/app/databases/swissprot"
     assert resolver.is_protein is True
     assert resolver.name == "blast_swissprot_protein"
-    assert resolver.identifier_type == "SWISSPROT_ID"
+    # v3.143 (C-18): canonical UNIPROT_ID — blast_swissprot and
+    # blast_uniprot accessions now merge into one consensus group;
+    # the source DB stays in the resolver name/metadata.
+    assert resolver.identifier_type == "UNIPROT_ID"
 
 
 def test_blast_resolver_uniprot_uses_swissprot_fallback(config: RunConfig) -> None:

@@ -232,6 +232,10 @@ class VerifiedHitItem(BaseModel):
         None, description="Annotation quality score"
     )
     final_confidence: Optional[float] = Field(None, description="Final confidence score (always numeric as of v3.142; null only on legacy v3.140 plateau rows)")
+    # v3.143 (D-17): additive — without a segment filter the endpoint
+    # concatenates all segments' hits into one list; each item now carries
+    # its own segment (None for legacy single-segment payloads).
+    segment: Optional[str] = Field(None, description="Segment this hit belongs to")
     is_verified: bool = Field(..., description="Whether the hit passed verification")
     rejection_reason: Optional[str] = Field(None, description="Reason for rejection if not verified")
     supporting_evidence_count: int = Field(default=0, description="Number of supporting evidence")

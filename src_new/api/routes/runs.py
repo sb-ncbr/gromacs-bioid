@@ -1175,6 +1175,13 @@ async def get_verification(run_id: str, segment: Optional[str] = None) -> Verifi
     primary_segment = ""
     
     for seg_name, seg_data in verification_data.items():
+        # v3.143 (D-17): `_meta` (written first by verify_all) is bookkeeping,
+        # not a segment — it must never become the "primary segment" and its
+        # keys must never leak into the hit list.
+        if seg_name == "_meta":
+            continue
+        if not isinstance(seg_data, dict):
+            continue
         if not primary_segment:
             primary_segment = seg_name
         
@@ -1189,6 +1196,7 @@ async def get_verification(run_id: str, segment: Optional[str] = None) -> Verifi
                 identifier=display_identifier,
                 ident_type=ident_type,
                 database=hit.get("database", ""),
+                segment=seg_name,
                 resolver_score=hit.get("resolver_score"),
                 similarity_score=hit.get("similarity_score"),
                 annotation_quality_score=hit.get("annotation_quality_score"),

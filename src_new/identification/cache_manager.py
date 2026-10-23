@@ -102,10 +102,30 @@ class ResolverCache:
         self._lock = threading.RLock()
         self._conn: sqlite3.Connection | None = None
         self._cache_path: str | None = None
+        # v3.143 (C-13): after the first init failure (unwritable/missing
+        # directory) the cache goes no-op — log once, never retry the
+        # connect on every call (was: exception on EVERY resolver).
+        self._disabled: bool = False
     
+    def _get_connection(self) -> sqlite3.Connection | None:
+        """Connection or None when the cache is disabled (v3.143, C-13)."""
+        if self._disabled:
+            return None
+        try:
+            return self._connection
+        except (OSError, sqlite3.Error) as exc:
+            if not self._disabled:
+                self._disabled = True
+                logger.warning(
+                    "[Cache] disabled after initialization failure (%s); "
+                    "resolvers continue without cache", exc)
+            return None
+
     @property
     def _connection(self) -> sqlite3.Connection:
         """Lazy connection initialization."""
+        if self._disabled:
+            raise OSError("cache disabled after prior initialization failure")
         if self._conn is None:
             cache_directory: str = self._config.identifiers_cache.directory
             cache_file: str = self._config.identifiers_cache.file
@@ -133,7 +153,9 @@ class ResolverCache:
             identifiers: List of identifier strings to save.
         """
         with self._lock:
-            conn = self._connection
+            conn = self._get_connection()
+            if conn is None:
+                return
             identifiers_already_cached: set[str] = set(
                 self.fetch_identity_identifiers(resolver_name, signature)
             )
@@ -161,7 +183,9 @@ class ResolverCache:
             List of cached identifier strings.
         """
         with self._lock:
-            conn = self._connection
+            conn = self._get_connection()
+            if conn is None:
+                return []
             records = conn.execute(
                 "SELECT IDENTIFIER FROM CACHE_IDENTITY WHERE RESOLVER_NAME=? AND SIGNATURE=?",
                 (resolver_name, signature),
@@ -182,7 +206,9 @@ class ResolverCache:
             identifiers: List of (identifier, similarity) tuples to save.
         """
         with self._lock:
-            conn = self._connection
+            conn = self._get_connection()
+            if conn is None:
+                return
             identifiers_already_cached: set[str] = set(
                 _ident
                 for _ident, _ in self.fetch_similarity_identifiers(
@@ -213,7 +239,9 @@ class ResolverCache:
             List of (identifier, similarity) tuples.
         """
         with self._lock:
-            conn = self._connection
+            conn = self._get_connection()
+            if conn is None:
+                return []
             records = conn.execute(
                 "SELECT IDENTIFIER, SIMILARITY FROM CACHE_SIMILARITY "
                 "WHERE RESOLVER_NAME=? AND SIGNATURE=?",

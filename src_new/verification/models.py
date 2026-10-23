@@ -70,10 +70,6 @@ class VerifiedHit:
     # legacy min(consensus,100) trace for old-runner comparability. Additive;
     # None on hits emitted before v3.142.
     belief: float | None = None
-    # v3.142 (R-a): calibrated agreement-structure belief for THIS hit's group
-    # (dedup.resolver_belief). Stored additively; the legacy `resolver_score`
-    # field keeps its capped-consensus meaning for traceability.
-    belief: float | None = None
     # v3.142 (Phase 4): visual-collapse equivalence class id ("skeleton:",
     # "align:", "tm:", "element:", "record:" prefixes). Same verified
     # structure => same class id across database records. Additive; None on
@@ -96,18 +92,23 @@ class VerifiedHit:
         resolver_score: float = 0.0,
         supporting_evidence_count: int = 1,
         rejection_reason: str = "not_verified",
+        similarity_score: float | None = None,
+        annotation_quality_score: float | None = None,
     ) -> VerifiedHit:
         """Create an unverified hit representing the non-failure non-verification path.
-        
+
         This factory method encodes that non-verification is a normal outcome.
+        v3.143 (D-17): keep the measurements when a worker/scorer actually
+        ran — a rejected row with S=12 must not look like 'never compared'.
+        final_confidence stays the 0.0 rejection floor.
         """
         return cls(
             identifier=identifier,
             ident_type=ident_type,
             database=database,
             resolver_score=resolver_score,
-            similarity_score=None,
-            annotation_quality_score=None,
+            similarity_score=similarity_score,
+            annotation_quality_score=annotation_quality_score,
             final_confidence=0.0,
             supporting_evidence_count=supporting_evidence_count,
             is_verified=False,

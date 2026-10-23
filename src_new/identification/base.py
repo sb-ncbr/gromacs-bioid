@@ -71,6 +71,23 @@ class IdentifierResolver(ABC):
         self._last_resolution_metadata: dict[str, dict] | None = None
         self._last_error: str | None = None
 
+    def _remaining_budget_seconds(self) -> float | None:
+        """Wall-clock budget left before the stage deadline (None = none)."""
+        dl = getattr(self, "_stage_deadline_epoch", None)
+        if dl is None:
+            return None
+        import time as _t
+        return max(0.0, dl - _t.time())
+
+    def _call_timeout(self, default: float) -> float:
+        """v3.143 (C-16): clamp a single subprocess/HTTP timeout to the
+        remaining stage budget — the deadline was only enforced BETWEEN
+        resolvers, so one long call (BLAST timeout=300) ran far past it."""
+        rem = self._remaining_budget_seconds()
+        if rem is None:
+            return default
+        return max(0.0, min(default, rem))
+
     @property
     def enabled_identity(self) -> bool:
         """Identity-attempt enablement from ``[identifiers] <name>`` toggle
@@ -151,7 +168,10 @@ class IdentifierResolver(ABC):
                     cached = cache.fetch_identity_identifiers(self.name, signature)
                     if cached:
                         return cached
-            except sqlite3.Error as exc:
+            except (sqlite3.Error, OSError) as exc:
+                # v3.143 (C-13): OSError from lazy cache init (unwritable/
+                # missing directory) must degrade to a MISS too, not zero the
+                # whole identification stage.
                 logger.warning(
                     "[Cache] read failed for resolver '%s' (%s); resolving without cache",
                     self.name, exc,
@@ -182,7 +202,8 @@ class IdentifierResolver(ABC):
                                 )
                             else:
                                 cache.save_identity_identifiers(self.name, signature, result)
-                except sqlite3.Error as exc:
+                except (sqlite3.Error, OSError) as exc:
+                    # v3.143 (C-13): same for the write side.
                     logger.warning(
                         "[Cache] write failed for resolver '%s' (%s); result kept uncached",
                         self.name, exc,

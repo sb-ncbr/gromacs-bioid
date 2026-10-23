@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import re
 from typing import TYPE_CHECKING
 
 import logging
@@ -122,6 +123,58 @@ def _molecule_skeleton_fp_hex(results, segment: str):
         return None
     hex_part, _ = parse_signature(str(value))
     return hex_part
+
+
+_FORMULA_PARTS_RE = re.compile(r"([A-Z][a-z]?)(\d*)")
+
+
+def _formula_parts(formula: str) -> dict | None:
+    """Parse a plain formula string into element counts (Hill or not)."""
+    if not formula or not isinstance(formula, str):
+        return None
+    parts: dict = {}
+    for sym, num in _FORMULA_PARTS_RE.findall(formula.strip()):
+        parts[sym] = parts.get(sym, 0) + (int(num) if num else 1)
+    return parts or None
+
+
+def _candidate_formula_parts(canonical_signature) -> dict | None:
+    """Formula+H count of a candidate's canonical SMILES via RDKit.
+    None when unparseable (never matches, D-16)."""
+    if not canonical_signature:
+        return None
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import rdMolDescriptors
+        mol = Chem.MolFromSmiles(canonical_signature)
+        if mol is None:
+            return None
+        return _formula_parts(rdMolDescriptors.CalcMolFormula(mol))
+    except Exception:
+        return None
+
+
+def _water_formula_match(results, segment: str, canonical_signature):
+    """v3.143 (D-16): does the candidate stoichiometry match the molecule's
+    generated formula? True=match (pin OK), False=mismatch (never pin),
+    None=formula unknown (legacy first-skel-1.0 pin behavior).
+
+    The v3.140 pin named the FIRST fingerprint-identical hit "water" — db
+    order put hydroxide/hydronium/peroxide in that slot because their
+    skeleton fingerprints are identical to water's."""
+    try:
+        formula = results.get_data(f"signatures/{segment}/generated/molecular_formula")
+    except Exception:
+        return None
+    if not formula:
+        return None
+    mol_parts = _formula_parts(str(formula))
+    if mol_parts is None:
+        return None
+    cand_parts = _candidate_formula_parts(canonical_signature)
+    if cand_parts is None:
+        return False
+    return cand_parts == mol_parts
 
 
 def _monoatomic_atom_count(results, segment: str):
@@ -249,6 +302,18 @@ def _chemical_corroboration(results, segment: str, canonical_signature):
         return None, "fingerprint_unavailable"
 
 
+def _database_name(ident_type: str) -> str:
+    """v3.143 (D-17): consistent target-database naming derived from the
+    ident type. Plain replace("_ID","").lower() yielded 'pubchem_cid' and
+    'inchikey' next to 'pdb'/'uniprot' — normalize to the SOURCE database."""
+    _MAP = {
+        "PUBCHEM_CID": "pubchem", "INCHIKEY": "pubchem",
+        "PUBCHEM_FORMULA": "pubchem", "PUBCHEM_STRUCT": "pubchem",
+        "CHEMBL_ID": "chembl",
+    }
+    return _MAP.get(ident_type, ident_type.replace("_ID", "").lower())
+
+
 def _fidelity_order_key(hit):
     """Deterministic tie-break chain for fidelity-first presentation order.
 
@@ -274,7 +339,12 @@ def _fidelity_order_key(hit):
     if sim is None or (isinstance(sim, float) and (math.isnan(sim) or math.isinf(sim))):
         sim = -1.0
     ev = getattr(hit, "supporting_evidence_count", 1) or 1
-    return (-s, -sim, -ev, -(hit.final_confidence or 0.0), str(hit.identifier), str(hit.ident_type))
+    ident = str(hit.identifier)
+    # v3.143 (D-15): compare numerically-typed ids numerically in the
+    # tie-break — '10' < '2' under a plain string sort inverted presentation
+    # order on every plateau. Numeric ids first, then lexical, both asc.
+    ident_key = (0, int(ident), "") if ident.isdigit() else (1, 0, ident)
+    return (-s, -sim, -ev, -(hit.final_confidence or 0.0), ident_key, str(hit.ident_type))
 
 
 def _fidelity_order_hits(hits):
@@ -634,7 +704,9 @@ class VerificationManager:
                     # same confidence lift as element_monoatomic, same rationale
                     # (identity is owned ground truth, corroboration unprovable).
                     elif (water_seg and ident_type in CHEMICAL_IDENT_TYPES
-                          and skeleton_sim == 1.0 and not water_pinned):
+                          and skeleton_sim == 1.0 and not water_pinned
+                          and _water_formula_match(results, segment,
+                                                   canonical_signature) is not False):
                         final_confidence = 100.0
                         gt_override = "water_triatomic"
                         water_pinned = True
@@ -651,7 +723,7 @@ class VerificationManager:
                     verified_hit = VerifiedHit(
                         identifier=normalized_id,
                         ident_type=ident_type,
-                        database=ident_type.replace("_ID", "").lower(),
+                        database=_database_name(ident_type),
                         resolver_score=min(consensus_score, 100.0),
                         similarity_score=similarity_score.normalized_score if similarity_score else None,
                         annotation_quality_score=annotation_score,
@@ -679,10 +751,15 @@ class VerificationManager:
                     verified_hit = VerifiedHit.unverified(
                         identifier=normalized_id,
                         ident_type=ident_type,
-                        database=ident_type.replace("_ID", "").lower(),
+                        database=_database_name(ident_type),
                         resolver_score=min(consensus_score, 100.0),
                         supporting_evidence_count=len(source_resolvers),
                         rejection_reason=rejection_reason,
+                        # v3.143 (D-17): keep measurements that were actually
+                        # taken for this row (worker ran, scorer ran).
+                        similarity_score=(similarity_score.normalized_score
+                                          if similarity_score else None),
+                        annotation_quality_score=annotation_score,
                     )
                     verified_hit.belief = metadata.get("belief")
                     verified_hit.equivalence_class_id = eq_class_id

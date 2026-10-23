@@ -62,7 +62,11 @@ def test_hfamily_unions_and_dedupes(monkeypatch):
     monkeypatch.setattr(r, "_pug_get", fake_get)
     hits = r._resolve_similarity("C10H13N2", "/tmp")
     cids = [c for c, _ in hits]
-    assert cids == ["101", "102", "103", "104"]           # union, deduped, order-preserved
+    # v3.143 (C-11): |delta| order starts at the exact formula (was H-1
+    # first), so union insertion order changed; the union-dedupe contract
+    # itself is unchanged.
+    assert cids == ["102", "103", "101", "104"]           # union, deduped, order-preserved
+    assert sorted(cids) == ["101", "102", "103", "104"]
     assert all(score == 50.0 for _, score in hits)
     # h_range=2 -> 5 variant queries with clamped H
     assert len(calls) == 5

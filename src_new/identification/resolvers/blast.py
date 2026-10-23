@@ -265,12 +265,14 @@ class BLASTResolver(IdentifierResolver):
                 "-max_target_seqs", str(max_target_seqs)
             ] + short_search
 
+            # v3.143 (C-16): a single BLAST subprocess must not run past the
+            # stage deadline (timeout was a fixed config 300 s).
             result = subprocess.run(
                 cmd,
                 input=self._sanitize_sequence(sequence),
                 text=True,
                 capture_output=True,
-                timeout=timeout_s,
+                timeout=self._call_timeout(timeout_s),
             )
             if result.returncode != 0:
                 stderr_msg = result.stderr.strip() if result.stderr else "(no stderr)"
@@ -603,7 +605,7 @@ class BLASTResolverSWISSPROT(BLASTResolver):
             db_path=db_path,
             is_protein=True,
             resolver_name="blast_swissprot_protein",
-            identifier_type="SWISSPROT_ID"
+            identifier_type="UNIPROT_ID"
         )
 
 class BLASTResolverCORENT(BLASTResolver):
