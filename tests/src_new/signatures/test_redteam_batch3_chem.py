@@ -666,3 +666,46 @@ class TestB12ProteinBackboneRealCA:
         assert "pdb_backbone_not_sanitized_protein" not in pdb_names
         assert "pdb_not_sanitized_nucleic" not in pdb_names
         assert "pdb_backbone_not_sanitized_nucleic" not in pdb_names
+
+
+class TestB15LipidShorthand:
+    """4.9 - B-15: lipid shorthand must cover the common CHARMM names and
+    AMBER Lipid21 splits, use LIPID-MAPS-valid abbreviations, and never
+    emit the literal 'LIPID'."""
+
+    def _run(self, resnames, molecule_type):
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.generators.lipid import LipidShorthandGenerator
+        from src_new.molecules.instances import MoleculeInstance
+        n = len(resnames) * 2
+        u = mda.Universe.empty(n, n_residues=len(resnames), n_segments=1,
+                               atom_resindex=[i for i in range(len(resnames))
+                                              for _ in range(2)],
+                               trajectory=True)
+        u.add_TopologyAttr("elements", ["C"] * n)
+        u.add_TopologyAttr("resnames", resnames)
+        u.add_TopologyAttr("resids", list(range(1, len(resnames) + 1)))
+        inst = MoleculeInstance(instance_id="lip", molecule_type=molecule_type)
+        return LipidShorthandGenerator(SignaturesConfig())._generate(
+            inst, u.atoms, None)
+
+    def test_charmm_pg_and_cardiolipin_mapped(self):
+        from src_new.molecules.instances import MoleculeType
+        assert self._run(["POPG"], MoleculeType.LIPID) == "PG(16:0/18:1(9Z))"
+        assert self._run(["TOCL2"], MoleculeType.LIPID) == \
+            "CL(18:1(9Z)/18:1(9Z)/18:1(9Z)/18:1(9Z))"
+
+    def test_cholesterol_valid_lipidmaps_abbrev(self):
+        from src_new.molecules.instances import MoleculeType
+        assert self._run(["CHL1"], MoleculeType.LIPID) == "ST 27:1;O"
+
+    def test_unmapped_lipid_returns_none_not_literal(self):
+        from src_new.molecules.instances import MoleculeType
+        assert self._run(["XYLIP"], MoleculeType.LIPID) is None
+
+    def test_lipid21_head_tail_split(self):
+        from src_new.molecules.instances import MoleculeType
+        assert self._run(["PC", "PA", "OL"], MoleculeType.LIPID) == \
+            "PC(16:0/18:1(9Z))"
+        assert self._run(["PC", "PA", "PA"], MoleculeType.LIPID) == \
+            "PC(16:0/16:0)"

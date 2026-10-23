@@ -12,8 +12,26 @@ LIPID_FORCEFIELD_MAPS: dict[str, dict[str, str]] = {
         "DOPS": "PS(18:1(9Z)/18:1(9Z))",
         "POPE": "PE(16:0/18:1(9Z))",
         "DOPE": "PE(18:1(9Z)/18:1(9Z))",
-        "CHL1": "sterol(cholesterol)",
-        "CHOL": "sterol(cholesterol)",
+        "DPPE": "PE(16:0/16:0)",
+        "DLPC": "PC(12:0/12:0)",
+        # B-15 (red-team 4.9): PG class + cardiolipins were unmapped and
+        # fell through to the literal "LIPID"
+        "POPG": "PG(16:0/18:1(9Z))",
+        "DOPG": "PG(18:1(9Z)/18:1(9Z))",
+        "DLPG": "PG(12:0/12:0)",
+        "DMPG": "PG(14:0/14:0)",
+        "TOCL1": "CL(18:1(9Z)/18:1(9Z)/18:1(9Z)/18:1(9Z))",
+        "TOCL2": "CL(18:1(9Z)/18:1(9Z)/18:1(9Z)/18:1(9Z))",
+        "TMCL1": "CL(14:0/14:0/14:0/14:0)",
+        "TMCL2": "CL(14:0/14:0/14:0/14:0)",
+        "CDL":  "CL",
+        "CDL1": "CL",
+        "CDL2": "CL",
+        # B-15: valid LIPID MAPS abbreviation for cholesterol (the
+        # "sterol(cholesterol)" literal resolved to nothing)
+        "CHL1": "ST 27:1;O",
+        "CHOL": "ST 27:1;O",
+        "CHL":  "ST 27:1;O",
         "DPSC": "SM(d18:1/16:0)",
         "DPSM": "SM(d18:1/16:0)",
         "POPA": "PA(16:0/18:1(9Z))",
@@ -27,7 +45,7 @@ LIPID_FORCEFIELD_MAPS: dict[str, dict[str, str]] = {
         "POPC": "PC(16:0/18:1(9Z))",
         "DOPC": "PC(18:1(9Z)/18:1(9Z))",
         "DPPC": "PC(16:0/16:0)",
-        "CHOL": "sterol(cholesterol)",
+        "CHOL": "ST 27:1;O",
     },
     # GROMOS common names
     "gromos": {
