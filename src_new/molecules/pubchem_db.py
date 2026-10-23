@@ -388,6 +388,32 @@ class PubChemDB:
         )
         return self._to_row(raw[0]) if raw else None
 
+    def by_cids(self, cids, chunk_size: int = 500) -> dict[str, CompoundRow]:
+        """Bulk CID lookup via chunked SQL IN (D-10: the verification rerank
+        resolves ALL chemical candidates through the mirror, network-free).
+
+        Returns {str(cid): CompoundRow}; unknown/malformed CIDs are absent.
+        """
+        ids = []
+        seen = set()
+        for c in cids:
+            s = str(c)
+            if s.isdigit() and s not in seen:
+                seen.add(s)
+                ids.append(int(s))
+        out: dict[str, CompoundRow] = {}
+        for i in range(0, len(ids), chunk_size):
+            chunk = ids[i:i + chunk_size]
+            placeholders = ",".join("?" * len(chunk))
+            raw = self._query(
+                "SELECT cid, smiles, inchikey, formula_hill, exact_mass "
+                f"FROM compounds WHERE cid IN ({placeholders})",
+                tuple(chunk))
+            for r in raw:
+                row = self._to_row(r)
+                out[str(row.cid)] = row
+        return out
+
     def by_inchikey_block(self, inchikey: str) -> CompoundRow | None:
         """InChIKey connectivity-block (first block) lookup, lowest CID wins.
 

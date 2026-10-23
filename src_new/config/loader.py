@@ -343,6 +343,11 @@ class VerificationConfig:
     # window cut. Above this many chemical candidates in a segment, rerank is
     # skipped (legacy consensus order kept) to bound worst-case cost.
     verify_rerank_max_candidates: int = 25000
+    # D-10 (batch-4): the rerank resolves candidates through the local
+    # mirror ONLY (zero network); a hard wall cap plus a fraction of the
+    # remaining stage budget bound its cost.
+    verify_rerank_wall_cap_s: float = 30.0
+    verify_rerank_budget_fraction: float = 0.2
 
 
 

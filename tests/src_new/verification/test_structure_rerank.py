@@ -96,7 +96,17 @@ def _manager_with(skel_hex, fetcher, max_cands=25000):
     registry.get_fetcher = lambda ident_type: fetcher
     mgr._registry = registry
     mgr._verification_config = SimpleNamespace(
-        verify_rerank_max_candidates=max_cands)
+        verify_rerank_max_candidates=max_cands,
+        verify_rerank_wall_cap_s=30.0,
+        verify_rerank_budget_fraction=0.2)
+    # D-10 (batch-4): the rerank resolves candidates through the mirror,
+    # never through fetchers — the stub therefore feeds the resolve path.
+    from unittest.mock import patch as _patch
+    mgr._resolve_patcher = _patch(
+        "src_new.verification.manager.resolve_cids_offline",
+        side_effect=lambda cids: {c: fetcher._m.get(c) for c in cids
+                                  if fetcher._m.get(c)})
+    mgr._resolve_patcher.start()
     results = Mock()
     mol_v = f"skelfp:v1:{skel_hex}|C6H6" if skel_hex else ""
     results.get_data = lambda path: mol_v if "skeleton_fp" in path else None
@@ -125,7 +135,7 @@ class TestManagerRerank:
         mgr, results = _manager_with(_hex(BENZENE), fetcher)
         groups = self._groups(5)
         top_n = 3
-        out = mgr._maybe_structure_rerank(results, "B", groups, top_n, lambda: False)
+        out, _sk, _t2, _st = mgr._maybe_structure_rerank(results, "B", groups, top_n, lambda: False)
         # benzene-exact candidate must climb to the first chemical slot
         chem_ids = [g[0][0] for g in out[:top_n] if g[0][1] == "PUBCHEM_CID"]
         assert chem_ids[0] == "962"
@@ -134,7 +144,7 @@ class TestManagerRerank:
         fetcher = _StubFetcher({})
         mgr, results = _manager_with(_hex(BENZENE), fetcher)
         groups = self._groups(2)
-        out = mgr._maybe_structure_rerank(results, "B", groups, 100, lambda: False)
+        out, _sk, _t2, _st = mgr._maybe_structure_rerank(results, "B", groups, 100, lambda: False)
         assert out == groups
         assert fetcher.calls == []
 
@@ -142,7 +152,7 @@ class TestManagerRerank:
         fetcher = _StubFetcher({})
         mgr, results = _manager_with("", fetcher)
         groups = self._groups(5)
-        out = mgr._maybe_structure_rerank(results, "B", groups, 3, lambda: False)
+        out, _sk, _t2, _st = mgr._maybe_structure_rerank(results, "B", groups, 3, lambda: False)
         assert out == groups
         assert fetcher.calls == []
 
@@ -150,14 +160,14 @@ class TestManagerRerank:
         fetcher = _StubFetcher({"962": HEXANE, **{f"J{i}": HEXANE for i in range(4)}})
         mgr, results = _manager_with(_hex(BENZENE), fetcher)
         groups = self._groups(4)
-        out = mgr._maybe_structure_rerank(results, "B", groups, 3, lambda: False)
+        out, _sk, _t2, _st = mgr._maybe_structure_rerank(results, "B", groups, 3, lambda: False)
         assert out == groups
 
     def test_candidate_cap_falls_back_to_legacy(self):
         fetcher = _StubFetcher({f"J{i}": BENZENE for i in range(4)} | {"962": BENZENE})
         mgr, results = _manager_with(_hex(BENZENE), fetcher, max_cands=3)
         groups = self._groups(4)
-        out = mgr._maybe_structure_rerank(results, "B", groups, 3, lambda: False)
+        out, _sk, _t2, _st = mgr._maybe_structure_rerank(results, "B", groups, 3, lambda: False)
         assert out == groups
         assert fetcher.calls == []
 
@@ -165,7 +175,7 @@ class TestManagerRerank:
         fetcher = _StubFetcher({"962": BENZENE, **{f"J{i}": HEXANE for i in range(4)}})
         mgr, results = _manager_with(_hex(BENZENE), fetcher)
         groups = self._groups(4)
-        out = mgr._maybe_structure_rerank(results, "B", groups, 3, lambda: True)
+        out, _sk, _t2, _st = mgr._maybe_structure_rerank(results, "B", groups, 3, lambda: True)
         assert out == groups
 
 

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 from .base import VerificationWorker, SignatureFetcher, AnnotationQualityScorer
 from .dedup import RawHit, collect_hits, deduplicate_and_score, BELIEF_RHO, BELIEF_KAPPA
+from .fetchers.compound_fetcher import resolve_cids_offline
 from .models import VerifiedHit, VerificationScore, AnnotationQuality, similarity_meets_floor
 
 _SEQUENCE_SIG_TAGS = ("residue_sequence",)
@@ -582,6 +583,9 @@ class VerificationManager:
         def _over_budget() -> bool:
             return deadline_epoch is not None and _time.time() > deadline_epoch
 
+        def _remaining_budget_s():
+            return (deadline_epoch - _time.time()) if deadline_epoch is not None else None
+
         # Get all segment names from identifiers data
         identifiers_data = results.get_data("identifiers")
         if not identifiers_data or not isinstance(identifiers_data, dict):
@@ -649,15 +653,24 @@ class VerificationManager:
             # stops being a consensus lottery over formula-family floods
             # (gt_absent C1 class, audit 2026-09-26). Raise-only: legacy order
             # is preserved whenever no candidate reaches the gate threshold.
+            # D-10: mirror-only resolution (zero network), wall-capped; the
+            # measured maps are REUSED by the candidate loop below.
+            rerank_skel: dict = {}
+            rerank_t2: dict = {}
+            rerank_stats = {"n_candidates": 0, "n_resolved": 0,
+                            "reason": "error", "wall_s": 0.0}
             try:
-                sorted_groups = self._maybe_structure_rerank(
-                    results, segment, sorted_groups, top_n, _over_budget
+                sorted_groups, rerank_skel, rerank_t2, rerank_stats = (
+                    self._maybe_structure_rerank(
+                        results, segment, sorted_groups, top_n, _over_budget,
+                        _remaining_budget_s)
                 )
             except Exception as exc:
                 logger.warning(
                     f"structure rerank failed for segment {segment} "
                     f"({exc}); keeping consensus order"
                 )
+            results.set_data(f"verification/{segment}/rerank", rerank_stats)
 
             top_groups, window_stats = _family_interleave(sorted_groups, top_n)
             # D-03: persist window composition/truncation additively (legacy
@@ -730,10 +743,18 @@ class VerificationManager:
                 skeleton_method = None
                 skeleton_t2 = None
                 if ident_type in CHEMICAL_IDENT_TYPES:
-                    skeleton_sim, _c_m, skeleton_t2 = _chemical_corroboration(
-                        results, segment, canonical_signature
-                    )
-                    skeleton_method = _c_m if skeleton_sim is not None else None
+                    # D-10: reuse the rerank's mirror-resolved measurements
+                    # (never compute the same Tanimoto twice).
+                    _rk = (normalized_id, ident_type)
+                    if rerank_skel.get(_rk) is not None:
+                        skeleton_sim = rerank_skel[_rk]
+                        skeleton_method = "skelfp:v1"
+                        skeleton_t2 = rerank_t2.get(_rk)
+                    else:
+                        skeleton_sim, _c_m, skeleton_t2 = _chemical_corroboration(
+                            results, segment, canonical_signature
+                        )
+                        skeleton_method = _c_m if skeleton_sim is not None else None
 
                 # Red-team batch-4 (D-02): verify against EVERY member
                 # signature of the group — the representative may be an
@@ -1054,29 +1075,46 @@ class VerificationManager:
         
         return per_segment_results
 
-    def _maybe_structure_rerank(self, results, segment, sorted_groups, top_n, _over_budget):
+    def _maybe_structure_rerank(self, results, segment, sorted_groups, top_n,
+                                _over_budget, _remaining_budget_s=None):
         """Try skeleton-aware rerank of chemical groups before the window cut.
+
+        Returns (groups, skel_map, t2_map, stats):
+          - groups: reordered (or unchanged) candidate list
+          - skel_map/t2_map: measured values (reused by the main loop so the
+            same Tanimoto is never computed twice — D-10)
+          - stats: {"n_candidates", "n_resolved", "reason", "wall_s"} for
+            additive persistence under verification/<seg>/rerank
 
         Only acts when the window actually binds: more chemical candidate
         groups than verify_top_n AND the segment has a molecule skeleton_fp.
         Raises no exceptions; falls back to legacy consensus order.
 
-        Cost: one mirror/canonical fetch + skeleton FP per chemical candidate
-        (~ms each offline), bounded by verify_rerank_max_candidates and the
-        stage budget probe `_over_budget`.
+        D-10 (batch-4): candidates resolve through the LOCAL MIRROR ONLY
+        (chunked SQL IN — zero network in the rerank; mirror misses keep
+        their consensus slot), bounded by verify_rerank_wall_cap_s and
+        verify_rerank_budget_fraction of the remaining stage budget. The
+        old per-candidate fetcher.fetch fan-out (25k × ≥0.34 s) could eat
+        the whole stage budget, after which D-04 emptied the segment.
         """
+        stats = {"n_candidates": 0, "n_resolved": 0, "reason": None,
+                 "wall_s": 0.0}
         chem_groups = [
             (key, meta) for (key, meta) in sorted_groups
             if key[1] in CHEMICAL_IDENT_TYPES
         ]
+        stats["n_candidates"] = len(chem_groups)
         if len(chem_groups) <= top_n:
-            return sorted_groups  # window fits: nothing to rescue
+            stats["reason"] = "window_all_fits"
+            return sorted_groups, {}, {}, stats
         mol_hex = _molecule_skeleton_fp_hex(results, segment)
         if not mol_hex:
-            return sorted_groups
+            stats["reason"] = "no_molecule_skeleton"
+            return sorted_groups, {}, {}, stats
         mol_fp = hex_to_fp(mol_hex)
         if mol_fp is None:
-            return sorted_groups
+            stats["reason"] = "no_molecule_skeleton"
+            return sorted_groups, {}, {}, stats
         max_cands = int(
             getattr(self._verification_config, "verify_rerank_max_candidates", 25000)
             or 25000
@@ -1087,10 +1125,32 @@ class VerificationManager:
                 f"{len(chem_groups)} chemical candidates > cap {max_cands}; "
                 f"keeping consensus order"
             )
-            return sorted_groups
+            stats["reason"] = "too_many_candidates"
+            return sorted_groups, {}, {}, stats
 
         import time as _time
         t0 = _time.time()
+        hard_cap = getattr(self._verification_config,
+                           "verify_rerank_wall_cap_s", 30.0)
+        hard_cap = 30.0 if hard_cap is None else float(hard_cap)
+        if _remaining_budget_s is not None:
+            rem = _remaining_budget_s()
+            frac = getattr(self._verification_config,
+                           "verify_rerank_budget_fraction", 0.2)
+            frac = 0.2 if frac is None else float(frac)
+            cap = min(hard_cap, max(0.0, frac * rem)) if rem is not None else hard_cap
+        else:
+            cap = hard_cap
+
+        # D-10 part 1: mirror-only bulk CID -> SMILES resolution.
+        resolved: dict[str, str] = {}
+        cids = [nid for (nid, it), _m in chem_groups if it == "PUBCHEM_CID"]
+        if not cids or cap <= 0.0:
+            stats["reason"] = ("wall_cap_exceeded" if cids else "no_cid_candidates")
+            stats["wall_s"] = round(_time.time() - t0, 3)
+            return sorted_groups, {}, {}, stats
+        resolved = resolve_cids_offline(cids)
+
         # D-05: molecule tier-2 fp from its ORIGINAL smiles (fine-grained
         # pre-rank within the tier-1-equal homologue family).
         try:
@@ -1098,39 +1158,41 @@ class VerificationManager:
             mol_t2 = _t2fp(from_smiles(_mol_sm)) if _mol_sm else None
         except Exception:
             mol_t2 = None
+
         skel_map: dict = {}
         t2_map: dict = {}
-        n_fetched = 0
+        capped = False
         for key, meta in chem_groups:
-            if _over_budget():
-                logger.warning(
-                    f"structure rerank budget-exceeded for segment {segment} "
-                    f"after {len(skel_map)}/{len(chem_groups)} candidates; "
-                    f"keeping consensus order"
-                )
-                return sorted_groups
-            nid, ident_type = key
+            if _over_budget() or (_time.time() - t0 > cap):
+                capped = True
+                break
+            nid, _it = key
+            canonical = resolved.get(nid)
             sim = None
             t2 = None
-            fetcher = self._registry.get_fetcher(ident_type)
-            if fetcher:
+            if canonical:
                 try:
-                    canonical = fetcher.fetch(nid, ident_type)
+                    cand_mol = from_smiles(canonical)
+                    cand_fp = _skel_fp(cand_mol)
+                    if cand_fp is not None:
+                        sim = _skel_tanimoto(mol_fp, cand_fp)
+                    t2 = _t2tanimoto(mol_t2, _t2fp(cand_mol))
                 except Exception:
-                    canonical = None
-                if canonical:
-                    n_fetched += 1
-                    try:
-                        cand_mol = from_smiles(canonical)
-                        cand_fp = _skel_fp(cand_mol)
-                        if cand_fp is not None:
-                            sim = _skel_tanimoto(mol_fp, cand_fp)
-                        t2 = _t2tanimoto(mol_t2, _t2fp(cand_mol))
-                    except Exception:
-                        sim = None
-                        t2 = None
+                    sim = None
+                    t2 = None
             skel_map[key] = sim
             t2_map[key] = t2
+
+        stats["n_resolved"] = sum(1 for v in skel_map.values() if v is not None)
+        stats["wall_s"] = round(_time.time() - t0, 3)
+        if capped:
+            logger.warning(
+                f"structure rerank wall-cap for segment {segment} after "
+                f"{len(skel_map)}/{len(chem_groups)} candidates "
+                f"({stats['wall_s']}s > cap {cap:.1f}s); keeping consensus order"
+            )
+            stats["reason"] = "wall_cap_exceeded"
+            return sorted_groups, skel_map, t2_map, stats
 
         if not any((s or 0.0) >= SKELF_VERIFY_THRESHOLD for s in skel_map.values()):
             logger.debug(
@@ -1138,14 +1200,16 @@ class VerificationManager:
                 f"{len(chem_groups)} chemical candidates, none reached "
                 f"{SKELF_VERIFY_THRESHOLD}; consensus order kept"
             )
-            return sorted_groups
+            stats["reason"] = "below_threshold"
+            return sorted_groups, skel_map, t2_map, stats
         out = _structure_rerank_groups(sorted_groups, skel_map, SKELF_VERIFY_THRESHOLD, t2_map)
         best = max((s or 0.0) for s in skel_map.values())
         n_gate = sum(1 for s in skel_map.values() if (s or 0.0) >= SKELF_VERIFY_THRESHOLD)
+        stats["reason"] = "ok"
         logger.info(
             f"structure rerank for segment {segment}: {len(chem_groups)} "
-            f"chemical candidates ({n_fetched} structures fetched), "
+            f"chemical candidates ({stats['n_resolved']} mirror-resolved), "
             f"{n_gate} at/above gate {SKELF_VERIFY_THRESHOLD}, best={best:.3f}; "
-            f"rerank took {_time.time() - t0:.1f}s"
+            f"rerank took {stats['wall_s']}s"
         )
-        return out
+        return out, skel_map, t2_map, stats

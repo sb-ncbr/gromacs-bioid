@@ -122,6 +122,23 @@ def _polite_get(url: str, tries: int = 4) -> requests.Response | None:
     return None
 
 
+def resolve_cids_offline(cids) -> dict[str, str]:
+    """Mirror-only bulk CID -> SMILES resolution (D-10: network-free rerank).
+
+    Returns {cid_str: smiles}; CIDs the mirror lacks are simply absent —
+    callers keep their consensus slot instead of paying network latency.
+    """
+    db = _local_db()
+    if db is None:
+        return {}
+    try:
+        rows = db.by_cids(cids)
+    except Exception as exc:
+        logger.warning(f"mirror by_cids bulk resolve failed: {exc}")
+        return {}
+    return {c: r.smiles for c, r in rows.items() if r and r.smiles}
+
+
 def prefetch_pubchem(cids) -> int:
     """Batch-warm the NFS SMILES cache for a list of CIDs (CSV chunked).
 
