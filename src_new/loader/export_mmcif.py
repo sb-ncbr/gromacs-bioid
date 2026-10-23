@@ -44,6 +44,17 @@ def _get_universe_dimensions(universe):
         return None
 
 
+def _build_biopython_structure_from_atoms(atoms) -> Structure.Structure:
+    """Build a Biopython Structure from an AtomGroup (virtual segments)."""
+    class _Wrapper:
+        pass
+    w = _Wrapper()
+    w.atoms = atoms
+    # Reuse the same builder; atoms already carry their own segids, so no
+    # filter is applied.
+    return _build_biopython_structure(w)
+
+
 def _build_biopython_structure(universe: MDAnalysis.Universe, filter_segment: str | None = None) -> Structure.Structure:
     """Build a Biopython Structure from an MDAnalysis Universe."""
     if not BIOPYTHON_AVAILABLE:
@@ -73,14 +84,17 @@ def _build_biopython_structure(universe: MDAnalysis.Universe, filter_segment: st
             chain = chains[chain_id]
         
         resid = int(atom.resid) if hasattr(atom, 'resid') else 0
+        # v3.143 (A-14): key the cache by true residue identity — (resid,
+        # resname) collides across chains, so chain B's MET-1 landed in chain
+        # A's residue and Biopython raised 'Atom N defined twice' on every
+        # homo-oligomer whole-system export (recorded as system_export_failed).
+        rindex = int(atom.resindex) if hasattr(atom, 'resindex') else (chain_id, resid, resname)
         
-        if resid in cached_residues and resname in cached_residues[resid]:
-            residue = cached_residues[resid][resname]
+        if rindex in cached_residues:
+            residue = cached_residues[rindex]
         else:
             residue = Residue.Residue((' ', resid, ' '), resname, '')
-            if resid not in cached_residues:
-                cached_residues[resid] = {}
-            cached_residues[resid][resname] = residue
+            cached_residues[rindex] = residue
             chain.add(residue)
         
         pos = atom.position if hasattr(atom, 'position') else [0.0, 0.0, 0.0]
@@ -128,7 +142,13 @@ def export_segment_mmcif(facade: LoadedUniverse, segment_name: str, output_path:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    structure = _build_biopython_structure(facade.universe, filter_segment=segment_name)
+    # v3.143 (A-14): virtual segments carry the PARENT segid on their atoms —
+    # filtering the universe by the virtual name matched nothing and wrote
+    # empty mmCIFs; export the facade's fragment directly instead.
+    if segment_name is not None and segment_name not in set(facade.universe.segments.segids):
+        structure = _build_biopython_structure_from_atoms(facade.get_fragment(segment_name))
+    else:
+        structure = _build_biopython_structure(facade.universe, filter_segment=segment_name)
     
     # Use MMCIFIOWithCell to preserve box dimensions
     cell = _get_universe_dimensions(facade.universe)

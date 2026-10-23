@@ -50,9 +50,22 @@ class MolecularFormulaGenerator(SignatureGenerator):
                 if elem:
                     composition[elem] = composition.get(elem, 0) + 1
         
-        # Sort elements alphabetically (Hill system would put C first, then H, then alphabetical)
-        # For simplicity, just sort alphabetically as specified
-        sorted_elements = sorted(composition.keys())
+        # v3.143 (B-16): Hill system — C first, H second, then alphabetical
+        # (no C: fully alphabetical). The local PubChem mirror normalises to
+        # Hill, and ChEMBL's exact-string lookup was missing every compound
+        # containing B/Br/Cl/F because our output was plain alphabetical.
+        def _hill_order(elems):
+            rest = sorted(e for e in elems if e not in ("C", "H"))
+            out = []
+            if "C" in elems:
+                out.append("C")
+                if "H" in elems:
+                    out.append("H")
+            elif "H" in elems:
+                rest.remove("H")
+                out = ["H"]
+            return out + rest
+        sorted_elements = _hill_order(list(composition.keys()))
         
         # Build formula string like C6H12O6
         parts = []

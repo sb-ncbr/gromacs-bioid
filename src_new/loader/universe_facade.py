@@ -204,9 +204,14 @@ class LoadedUniverse:
         # segid silently untyped the real molecule, red-team A-01/A-03).
         flag_scope = representative if representative is not None else selected
         
-        # HAS_ELEMENTS: all non-empty
+        # HAS_ELEMENTS: all non-empty over REAL atoms (v3.143: massless
+        # virtual sites no longer veto the representative's chemistry, A-11).
         if hasattr(flag_scope.atoms, 'elements'):
-            flags[SegmentProperty.HAS_ELEMENTS.value] = all(e for e in flag_scope.atoms.elements)
+            pseudo = self._pseudo_atom_indices(flag_scope.atoms)
+            elems = flag_scope.atoms.elements
+            flags[SegmentProperty.HAS_ELEMENTS.value] = all(
+                elems[i] for i in range(len(elems)) if i not in pseudo
+            )
         else:
             flags[SegmentProperty.HAS_ELEMENTS.value] = False
         
@@ -293,6 +298,14 @@ class LoadedUniverse:
         resnames = selected.atoms.resnames
         atom_total = len(resnames)
         if atom_total == 0:
+            return False, "none", 0
+
+        # v3.143 (A-08): a single residue is NEVER a nucleic acid — free
+        # nucleosides/nucleotides ('A', 'DA', 'G5') and ligands that collide
+        # with base codes (DTX = digitoxigenin, fixture 4725) typed as NUCLEIC.
+        n_residues = len(set(int(r) for r in selected.atoms.resindices)) \
+            if hasattr(selected.atoms, "resindices") else 0
+        if n_residues < 2:
             return False, "none", 0
 
         if not self.enhanced_nucleic_recognition:
@@ -526,6 +539,42 @@ class LoadedUniverse:
     #      band (P>0, 2.5<=C/O<=12), sugar band (no P, C/O>2)
     #   6. small molecule           7. UNKNOWN (never silently guessed)
     @staticmethod
+    def _pseudo_atom_indices(atoms) -> set[int]:
+        """v3.143 (A-11/B-13): virtual sites / massless particles (TIP4P MW,
+        EPW, LP*, Drude) are not chemistry. Excluded from composition, water
+        atom counts and element-completeness so four-site water is H2O, not
+        H2O2 'hydrogen peroxide'. Masses are the robust signal; when absent,
+        nothing is excluded (status quo ante)."""
+        try:
+            masses = atoms.masses
+        except Exception:
+            return set()
+        try:
+            return {i for i, m in enumerate(masses) if float(m) < 0.5}
+        except Exception:
+            return set()
+
+    @staticmethod
+    def _real_composition(atoms) -> tuple[dict, int]:
+        """Element composition + atom count over REAL (non-pseudo) atoms."""
+        composition: dict = {}
+        real = 0
+        pseudo = LoadedUniverse._pseudo_atom_indices(atoms)
+        elements = getattr(atoms, "elements", None)
+        try:
+            n = len(atoms)
+        except TypeError:  # duck-typed fixtures carry only .elements
+            n = len(elements) if elements is not None else 0
+        for i in range(n):
+            if i in pseudo:
+                continue
+            real += 1
+            elem = elements[i] if elements is not None else ""
+            if elem:
+                composition[elem] = composition.get(elem, 0) + 1
+        return composition, real
+
+    @staticmethod
     def _classify_molecule_type(props, fragment) -> MoleculeType:
         if props.flags.get(SegmentProperty.IS_PROTEIN.value):
             return MoleculeType.PROTEIN
@@ -534,18 +583,16 @@ class LoadedUniverse:
         if props.atom_count_fragment == 1:
             return MoleculeType.ION
 
-        composition = {}
-        if hasattr(fragment.atoms, "elements"):
-            for elem in fragment.atoms.elements:
-                if elem:
-                    composition[elem] = composition.get(elem, 0) + 1
+        # v3.143 (A-11/B-13): pseudo atoms out of composition and counts —
+        # a TIP4P water (O,H,H + massless MW) is 3 real atoms and H2O.
+        composition, real_atom_count = LoadedUniverse._real_composition(fragment.atoms)
         try:
             resnames = {str(rn).upper() for rn in fragment.residues.resnames}
         except Exception:
             resnames = set()
 
         # 3. Water
-        if props.atom_count_fragment == 3 and (
+        if real_atom_count == 3 and (
             resnames & WATER_RESNAMES
             or (composition.get("O", 0) == 1 and composition.get("H", 0) == 2
                 and composition.get("C", 0) == 0)
@@ -587,11 +634,8 @@ class LoadedUniverse:
         mtype = self._classify_molecule_type(props, fragment)
 
         # Element composition (recorded on the instance regardless of type)
-        composition = {}
-        if hasattr(fragment.atoms, 'elements'):
-            for elem in fragment.atoms.elements:
-                if elem:
-                    composition[elem] = composition.get(elem, 0) + 1
+        # v3.143 (A-11/B-13): pseudo/virtual-site atoms excluded.
+        composition, _real_n = self._real_composition(fragment.atoms)
         
         # resname-less engines (LAMMPS .data) carry no residue nomenclature:
         # degrade to UNK per residue instead of crashing (NoDataError from

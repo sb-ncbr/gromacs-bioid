@@ -161,7 +161,7 @@ KNOWN_RESIDUE_CODES: dict[str, object] = {
     'HID': 'H',
     'HIE': 'H',
     'HIP': 'H',
-    'HYP': 'O',
+    'HYP': 'P',  # v3.143 (B-09): hydroxyproline is proline-based, not pyrrolysine
     'ILE': 'I',
     'sI': 'I',
     'LEU': 'L',
@@ -188,6 +188,19 @@ KNOWN_RESIDUE_CODES: dict[str, object] = {
     'PYL': 'O',
     'ACE': 'X',
     'NME': 'X',
+    # v3.143 (B-09/A-19): common force-field variants & modified residues,
+    # mapped to parent letters (were silently 'X', which poisons BLAST
+    # identity and drops the IS_PROTEIN fraction below 0.8).
+    'CYX': 'C', 'CYM': 'C', 'CYSH': 'C',
+    'LYN': 'K', 'LSN': 'K',
+    'HISD': 'H', 'HISE': 'H', 'HISH': 'H', 'HIS1': 'H', 'HISA': 'H', 'HISB': 'H',
+    'ASPP': 'D', 'ASPH': 'D',
+    'GLUP': 'E', 'GLUH': 'E',
+    'ARN': 'R', 'TYM': 'Y',
+    'MSE': 'M', 'SEP': 'S', 'TPO': 'T', 'PTR': 'Y', 'NLE': 'L',
+    'DAL': 'A', 'DCY': 'C', 'DPN': 'P', 'DSN': 'S', 'DTY': 'Y', 'DTH': 'T',
+    'DLE': 'L', 'DIL': 'I', 'DLY': 'K', 'DAR': 'R', 'DVA': 'V', 'DGL': 'E',
+    'DGN': 'Q', 'DAS': 'D', 'DTR': 'W', 'DHI': 'H', 'DPN': 'P',
 }
 
 KNOWN_NUCLEIC_ACIDS_CODES: dict[str, object] = {
@@ -211,10 +224,9 @@ KNOWN_NUCLEIC_ACIDS_CODES: dict[str, object] = {
     'RT': 'T',
     'RG': 'G',
     'RU': 'U',
-    'DAX': 'A',
-    'DCX': 'C',
-    'DTX': 'T',
-    'DGX': 'G',
+    # v3.143 (A-08): removed DAX/DCX/DTX/DGX — they collide with common CCD
+    # ligand codes (DTX = digitoxigenin typed a steroid as NUCLEIC in fixture
+    # 4725). The >=2-residue rule in _classify_nucleic is the real guard.
     'RA5': 'A',
     'RAN': 'A',
     'DA5': 'A',

@@ -178,6 +178,10 @@ class ResnameFastaGeneratorNucleotide(SignatureGenerator):
         return fragment_to_protseq_resname_based(fragment)
 
 
+# v3.143 (B-09): terminal caps that must never enter a sequence string.
+_PEPTIDE_CAPS = frozenset({"ACE", "NME", "NH2", "FOR", "ACY", "NHE"})
+
+
 def resname_to_one_letter(resname: str) -> str:
     """Transform residue name to one-letter representation.
 
@@ -186,6 +190,12 @@ def resname_to_one_letter(resname: str) -> str:
     """
     if len(resname) == 1:
         return resname.upper()
+
+    rn_up = resname.upper()
+    # v3.143 (B-09): peptide caps are not residues — they were mapped to 'X'
+    # and INSERTED into the sequence (cytc probe: 'XGDVEKGKK...').
+    if rn_up in _PEPTIDE_CAPS:
+        return ""
 
     base = normalize_nucleic_resname(resname)
     if base is not None:
@@ -204,6 +214,11 @@ def resname_to_one_letter(resname: str) -> str:
     fix_mapping = {'sN': 'N', 'sQ': 'Q', 'sE': 'E'}
     if resname in fix_mapping:
         return fix_mapping[resname]
+    
+    # v3.143 (B-09/A-19): AMBER/GROMACS terminal variants (NALA, CGLY, NMET,
+    # NSER, NPRO, CPHE, ...) -> parent residue by stripping the terminus prefix.
+    if len(rn_up) == 4 and rn_up[1:] in KNOWN_RESIDUE_CODES:
+        return KNOWN_RESIDUE_CODES[rn_up[1:]]
     
     return KNOWN_RESIDUE_CODES.get(resname.upper(), 'X')
 
@@ -399,6 +414,8 @@ def _fragment_extract_residues(
     for res_name, res_indice in zip(fragment.resnames, fragment.resindices):
         res_indice = int(res_indice)
         res_name = resname_to_one_letter(res_name)
+        if not res_name:  # v3.143 (B-09): caps are not part of the sequence
+            continue
         if res_indice not in residue_indices_to_code:
             residue_indices_to_code[res_indice] = res_name
             residue_indices_to_index[res_indice] = res_i

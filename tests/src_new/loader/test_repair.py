@@ -188,12 +188,18 @@ class TestInvalidElementStrings:
         # Get final elements
         final_elements = list(u.atoms.elements)
         
-        # All elements should now be valid chemical symbols
+        # All elements should now be valid chemical symbols — or blank for
+        # virtual sites (v3.143/A-11: MW is no longer guessed as 'O', which
+        # had turned TIP4P water into H2O2 'hydrogen peroxide').
         for elem in final_elements:
-            assert elem.strip().capitalize() in ATOMTABLE_ELEMENTS_MASSES, f"Invalid element remains: {elem}"
+            assert elem == "" or elem.strip().capitalize() in ATOMTABLE_ELEMENTS_MASSES, \
+                f"Invalid element remains: {elem}"
+        mw_idx = list(u.atoms.names).index("MW")
+        assert final_elements[mw_idx] == "", \
+            f"virtual site MW must stay element-blank (A-11), got {final_elements[mw_idx]!r}"
         
-        # Expected: O stays O, OW->O, HW1->H, MW->O, C stays C
-        expected = ['O', 'O', 'H', 'O', 'C']
+        # Expected: O stays O, OW->O, HW1->H, MW->'' (A-11, was 'O'), C stays C
+        expected = ['O', 'O', 'H', '', 'C']
         assert final_elements == expected, f"Expected {expected}, got {final_elements}"
         
         # At least 3 should have been guessed (OW, HW1, MW)

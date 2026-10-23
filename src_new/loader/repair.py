@@ -113,7 +113,9 @@ class TopologyRepair:
                 self._guess_elements_fallback()
 
         count_after = sum(1 for e in self.u.atoms.elements if self._is_valid_element(e)) if hasattr(self.u.atoms, 'elements') else 0
-        guessed = count_after - count_before
+        # v3.143 (A-11): intentionally blanked virtual sites ARE resolved
+        # (they carry no chemistry); count them with the real guesses.
+        guessed = count_after - count_before + getattr(self, "_virtual_sites_blanked", 0)
         self.report.elements_guessed += guessed
         if guessed == 0:
             self.report.warnings.append("Could not guess elements for any atoms")
@@ -147,6 +149,13 @@ class TopologyRepair:
                 )
                 if element:
                     elements[i] = element
+                elif names[i] is not None and str(names[i]).upper().strip().startswith(
+                        ("MW", "EPW", "EP", "LP", "DP", "VS", "DUM")):
+                    # v3.143 (A-11/B-13): _guess_single_element returns '' for
+                    # virtual-site names — that's an INTENTIONAL blank (no
+                    # chemistry), so replace the leftover invalid string.
+                    elements[i] = ""
+                    self._virtual_sites_blanked = getattr(self, "_virtual_sites_blanked", 0) + 1
 
         # Add topology attr if missing
         if not hasattr(self.u, 'elements'):
@@ -173,8 +182,14 @@ class TopologyRepair:
                 return 'O'
             if name_upper.startswith('HW') or name_upper.startswith('H1') or name_upper.startswith('H2'):
                 return 'H'
-            if name_upper.startswith('MW'):  # Water virtual site - place at oxygen
-                return 'O'
+            # v3.143 (A-11/B-13): virtual sites / lone-pair / massless
+            # particles (TIP4P MW*, AMBER EPW, CGenFF LP*, Drude DP*) carry
+            # NO chemistry. Guessing 'O' for MW turned TIP4P water into
+            # H2O2 (hydrogen peroxide) for formula resolvers; leave them
+            # element-blank — the facade's pseudo-atom exclusion (mass<0.5)
+            # keeps them out of composition and completeness checks.
+            if name_upper.startswith(('MW', 'EPW', 'EP', 'LP', 'DP', 'VS', 'DUM')):
+                return ''
             
             # Try single-letter prefix first (most reliable)
             first_char = name[0].upper()
