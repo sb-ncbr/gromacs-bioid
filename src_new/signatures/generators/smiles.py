@@ -14,6 +14,7 @@ from ...config.loader import SignaturesConfig
 from ...molecules.instances import MoleculeInstance
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 from ..base import SignatureGenerator
+from ._perceive_cache import build_once_cached
 
 logger = logging.getLogger("base")
 
@@ -75,37 +76,12 @@ class SimpleSmilesGenerator(SignatureGenerator):
         fragment: AtomGroup,
         facade: LoadedUniverse,
     ) -> str:
-        atom_idx_to_index = {
-            atom_idx: i for i, atom_idx in enumerate(fragment.atoms.indices)
-        }
-        
-        molecule_build = EditableMol(Chem.Mol())
-        atom_idx_to_rdkit_idx = _fragment_to_rdkit_atoms(
-            fragment, atom_idx_to_index, molecule_build
+        # B-14 (red-team 4.1): smiles-class family cache (both sanitize
+        # variants share the identical build incl. _fix_bond_orders_rdkit).
+        molecule = build_once_cached(
+            fragment, "smiles_class", lambda: _build_smiles_mol(fragment),
+            timeout_s=getattr(self.config, "perceive_timeout_s", 300),
         )
-        perceived = False
-        try:
-            _fragment_to_rdkit_bonds(fragment, atom_idx_to_rdkit_idx, molecule_build)
-        except Exception:
-            # Topology carries no bond records: perceive bonds from 3D
-            # coordinates (small molecules only, guarded by _is_applicable)
-            mol_tmp = molecule_build.GetMol()
-            conf = Chem.Conformer(mol_tmp.GetNumAtoms())
-            for atom_idx, rdkit_idx in atom_idx_to_rdkit_idx.items():
-                pos = fragment.atoms.positions[atom_idx_to_index[atom_idx]]
-                conf.SetAtomPosition(
-                    rdkit_idx,
-                    (float(pos[0]), float(pos[1]), float(pos[2])),
-                )
-            mol_tmp.AddConformer(conf, assignId=True)
-            rdDetermineBonds.DetermineBonds(mol_tmp, charge=0)
-            molecule_build = EditableMol(mol_tmp)
-            perceived = True
-
-        molecule = molecule_build.GetMol()
-        if perceived:
-            logger.debug("smiles: bonds perceived from coordinates (%d atoms)", fragment.n_atoms)
-        _fix_bond_orders_rdkit(molecule)
 
         # Kekulization is the DOCUMENTED unbounded RDKit operation on
         # pathological molecules (coordinate perception of junk clusters
@@ -251,6 +227,44 @@ def _fragment_to_rdkit_bonds(
         atom_idx1_rdkit = atom_idx_to_rdkit_idx[atom_idx1]
         atom_idx2_rdkit = atom_idx_to_rdkit_idx[atom_idx2]
         molecule.AddBond(atom_idx1_rdkit, atom_idx2_rdkit, Chem.BondType.SINGLE)
+
+
+def _build_smiles_mol(fragment) -> Mol:
+    """Smiles-class build: atoms -> topology bonds (or 3D-coordinate
+    perception fallback) -> _fix_bond_orders_rdkit. Verbatim hoist of the
+    historical _generate prologue (B-14 caching makes it shared)."""
+    atom_idx_to_index = {
+        atom_idx: i for i, atom_idx in enumerate(fragment.atoms.indices)
+    }
+
+    molecule_build = EditableMol(Chem.Mol())
+    atom_idx_to_rdkit_idx = _fragment_to_rdkit_atoms(
+        fragment, atom_idx_to_index, molecule_build
+    )
+    perceived = False
+    try:
+        _fragment_to_rdkit_bonds(fragment, atom_idx_to_rdkit_idx, molecule_build)
+    except Exception:
+        # Topology carries no bond records: perceive bonds from 3D
+        # coordinates (small molecules only, guarded by _is_applicable)
+        mol_tmp = molecule_build.GetMol()
+        conf = Chem.Conformer(mol_tmp.GetNumAtoms())
+        for atom_idx, rdkit_idx in atom_idx_to_rdkit_idx.items():
+            pos = fragment.atoms.positions[atom_idx_to_index[atom_idx]]
+            conf.SetAtomPosition(
+                rdkit_idx,
+                (float(pos[0]), float(pos[1]), float(pos[2])),
+            )
+        mol_tmp.AddConformer(conf, assignId=True)
+        rdDetermineBonds.DetermineBonds(mol_tmp, charge=0)
+        molecule_build = EditableMol(mol_tmp)
+        perceived = True
+
+    molecule = molecule_build.GetMol()
+    if perceived:
+        logger.debug("smiles: bonds perceived from coordinates (%d atoms)", fragment.n_atoms)
+    _fix_bond_orders_rdkit(molecule)
+    return molecule
 
 
 def _fix_bond_orders_rdkit(molecule: Mol, max_attempts: int = 20) -> None:

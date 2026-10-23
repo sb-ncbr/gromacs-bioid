@@ -12,6 +12,7 @@ from ...config.loader import SignaturesConfig
 from ...molecules.instances import MoleculeInstance
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 from ..base import SignatureGenerator
+from ._perceive_cache import build_once_cached, build_once_family_mol
 
 logger = logging.getLogger("base")
 
@@ -68,27 +69,14 @@ class InchiKeyGenerator(SignatureGenerator):
         fragment: AtomGroup,
         facade: LoadedUniverse,
     ) -> str:
-        atom_idx_to_index = {
-            atom_idx: i for i, atom_idx in enumerate(fragment.atoms.indices)
-        }
-        
-        molecule_build = EditableMol(Chem.Mol())
-        atom_idx_to_rdkit_idx = _fragment_to_rdkit_atoms(
-            fragment, atom_idx_to_index, molecule_build
+        # B-14 (red-team 4.1): shared perceive-once cache families
+        # "rdkit_once" (inchi == selfies, byte-identical build); the cached
+        # pristine Mol is copied here, so RemoveHs stays private.
+        molecule = build_once_cached(
+            fragment, "rdkit_once", lambda: build_once_family_mol(fragment),
+            timeout_s=getattr(self.config, "perceive_timeout_s", 300),
         )
-        _fragment_to_rdkit_bonds(fragment, atom_idx_to_rdkit_idx, molecule_build)
-        
-        molecule = molecule_build.GetMol()
-        
-        # Try to determine bond orders
-        try:
-            charge = sum(atom.GetFormalCharge() for atom in molecule.GetAtoms())
-            rdDetermineBonds.DetermineBondOrders(
-                molecule, allowChargedFragments=True, embedChiral=False, charge=charge
-            )
-        except Exception:
-            pass  # Continue without bond order determination
-        
+
         molecule = Chem.RemoveHs(molecule, sanitize=False)
         
         inchi_key = Chem.MolToInchiKey(molecule)

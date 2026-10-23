@@ -73,6 +73,9 @@ class SignaturesConfig:
     overwrite_existing: bool = False
     generation_attempts: int = 10
     smiles_maximum_number_of_atoms: int = 250
+    # B-14 (red-team 4.1): soft cap for a single RDKit perceive build (s);
+    # 0 disables. Hard subprocess cap lives in the 4.3 deadline plumbing.
+    perceive_timeout_s: int = 300
     fasta_map_determine_sequence_partial_mode: bool = False
     fasta_map_determine_sequence_strict_mode: bool = False
     name_minimum_length: int = 1
