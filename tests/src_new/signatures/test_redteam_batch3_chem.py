@@ -782,3 +782,58 @@ class TestB18SerialWorkerParity:
         fasta_keys = [k for k in serial_out if k.startswith("fasta_")]
         assert any(k.endswith("[A]") for k in fasta_keys), fasta_keys
         assert any(k.endswith("[B]") for k in fasta_keys), fasta_keys
+
+
+class TestB01GateChargedLigandGoldens:
+    """4.11 gate scope — B-01 auditor-table charged goldens. First block =
+    connectivity (must match PubChem grounding), trailing charge suffix =
+    net-charge ladder (-4/-1 accepted solutions); the stereo middle block
+    comes from the ETKDG-embedded 3D coordinates (B-11, seed-pinned)."""
+
+    ATP_KEY = "ZKHQWZAMYRWXGA-HUEBKHCJSA-J"    # ATP(4-): ZKHQWZAMYRWXGA
+    POPS_KEY = "OIWCYIUQAVBPGV-FMECKOKGSA-M"   # POPS(1-): OIWCYIUQAVBPGV
+
+    def _run(self, smiles, seed=0xF00D):
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.generators.inchi import InchiKeyGenerator
+        from src_new.signatures.generators import _perceive_cache as pc
+        mol = _embed_rdkit(smiles, seed=seed)
+        frag = _frag_from_rdkit_mol(mol)
+        frag.universe.add_TopologyAttr(
+            "charges", [float(a.GetFormalCharge()) for a in mol.GetAtoms()])
+        pc.clear_cache()
+        return InchiKeyGenerator(SignaturesConfig())._generate(
+            _instance(frag), frag, None)
+
+    def test_atp4minus(self):
+        key = self._run(
+            "Nc1ncnc2c1ncn2C3OC(COP(=O)([O-])OP(=O)([O-])OP(=O)([O-])[O-])"
+            "C(O)C3O")
+        assert key.split("-")[0] == "ZKHQWZAMYRWXGA", key
+        assert key.endswith("-J"), key
+        assert key == self.ATP_KEY, key
+
+    def test_pops1minus(self):
+        key = self._run(
+            "CCCCCCCCCCCCCCCC(=O)OCC(COP(=O)([O-])OCC([NH3+])C(=O)[O-])"
+            "OC(=O)CCCCCCCC=CCCCCCCCC", seed=2026)
+        assert key.split("-")[0] == "OIWCYIUQAVBPGV", key
+        assert key.endswith("-M"), key
+        assert key == self.POPS_KEY, key
+
+    def test_no_bare_proton_artifact(self):
+        """B-01 acceptance rule: no key may come from a [H+]-fragmented
+        misfit (the historical 'input (-3)' failure mode)."""
+        from src_new.config.loader import SignaturesConfig
+        from src_new.signatures.generators.smiles import SimpleSmilesGenerator
+        from src_new.signatures.generators import _perceive_cache as pc
+        mol = _embed_rdkit(
+            "Nc1ncnc2c1ncn2C3OC(COP(=O)([O-])OP(=O)([O-])OP(=O)([O-])[O-])"
+            "C(O)C3O")
+        frag = _frag_from_rdkit_mol(mol)
+        frag.universe.add_TopologyAttr(
+            "charges", [float(a.GetFormalCharge()) for a in mol.GetAtoms()])
+        pc.clear_cache()
+        sm = SimpleSmilesGenerator(SignaturesConfig())._generate(
+            _instance(frag), frag, None)
+        assert "[H+]" not in sm and ".[H" not in sm, sm
