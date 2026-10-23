@@ -41,16 +41,47 @@ _STRUCTURE_TYPES = {t for t, role in _CANONICAL_SUFFIX_TABLE.values() if role ==
 
 
 def discover_input_kind(dir_path: Path) -> InputKind | None:
-    """Detect input format from files present in directory.
+    """Light extension-based input sniff (banner/UIs); the authoritative
+    decision is select_best_file_combination.
 
-    A-16 (red-team 3.3): the hand-rolled extension ladder duplicated the
-    decision logic and disagreed with it (e.g. {parm7, xtc} -> None here,
-    AMBER in select_best_file_combination). Single source of truth: delegate.
+    A-16 (red-team 3.3): plain delegation to select lost this function's
+    light sniff role (a bare .prmtop MUST still read AMBER here — pinned);
+    the disagreement cases the audit cited ({parm7, xtc} -> None vs AMBER)
+    are fixed in the ladder itself.
     """
     if not dir_path.exists() or not dir_path.is_dir():
         return None
-    decision = select_best_file_combination(inspect_directory(dir_path))
-    return decision.input_kind
+
+    extensions = set()
+    for f in dir_path.iterdir():
+        if f.is_file():
+            extensions.add(f.suffix.lower())
+
+    if ".tpr" in extensions:
+        return InputKind.GROMACS
+    if ".top" in extensions and ".gro" in extensions:
+        return InputKind.GROMACS
+    if ".itp" in extensions and ".gro" in extensions:
+        return InputKind.GROMACS
+
+    if ".prmtop" in extensions:
+        return InputKind.AMBER
+    _COORD = {".nc", ".rst7", ".inpcrd", ".restrt", ".xtc", ".dcd", ".mdcrd", ".pdb"}
+    if ".parm7" in extensions and extensions & _COORD:  # A-16: any coordinate, not only .nc
+        return InputKind.AMBER
+
+    if ".psf" in extensions:
+        return InputKind.CHARMM
+
+    if ".data" in extensions:
+        return InputKind.LAMMPS
+
+    if ".pdb" in extensions:
+        return InputKind.PDB
+    if ".cif" in extensions or ".mmcif" in extensions:
+        return InputKind.MMCIF
+
+    return None
 
 
 def _looks_like_lammps_data(path: Path, max_lines: int = 64) -> bool:
