@@ -89,6 +89,14 @@ celery.conf.update(
     # The fast guarantee stays with src_new/api/run_reaper.py (minutes).
     task_acks_late=True,
     task_reject_on_worker_lost=True,
+    # G-A compute telemetry (user, 2026-10-23): emit task-received/started/
+    # succeeded/failed events over the broker so the ga1 listener can
+    # attribute every run to its pod with exact wall-clock bounds; extended
+    # results carry worker hostname + kwargs in the result backend for the
+    # same attribution after the fact. Telemetry-only change — no task
+    # execution semantics touched.
+    worker_send_task_events=True,
+    result_extended=True,
     # Reconnect on broker loss instead of dying (and silence the 5.3+
     # deprecation warning); pairs with retry_on_timeout in transport opts.
     broker_connection_retry=True,
