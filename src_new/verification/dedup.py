@@ -99,8 +99,15 @@ _POOL_IDENT_TYPES = {"SWISSPROT_ID": "UNIPROT_ID"}
 
 
 def _resolver_source(resolver_name: str) -> str:
-    """Evidence-family id for a resolver name (fallback: the name itself)."""
-    return RESOLVER_SOURCES.get(resolver_name, resolver_name)
+    """Evidence-family id for a resolver name (fallback: the name itself).
+
+    D-13: collect_hits passes the record KEY as resolver_name, and the
+    dual-key layout persists similarity listings under "{resolver}@sim" —
+    strip the tier suffix so both listings of one resolver map to the same
+    evidence family (and unknown "@sim" names fall back to the base name).
+    """
+    name = resolver_name.split("@", 1)[0]
+    return RESOLVER_SOURCES.get(name, name)
 
 
 @dataclass
@@ -324,6 +331,12 @@ def deduplicate_and_score(
                             for h in group_hits if h.hit_type == "identity"}
         similarity_sources = {_resolver_source(h.resolver_name)
                               for h in group_hits if h.hit_type == "similarity"}
+        # D-13b: a dual-mode resolver's identity and similarity listings
+        # now persist under distinct keys (2a) and one accession can carry
+        # the SAME source in both tiers. Count each source at its
+        # strongest tier only — otherwise every exact construct would
+        # inherit n_id=1 + n_sim=1 = 60.3 from its own database.
+        similarity_sources -= identity_sources
         # C-09b: split identity chains into exact-record sources and
         # formula/candidate-list sources — a formula-index hit is not an
         # accession confirmation. Candidates count with the κ-weighted
