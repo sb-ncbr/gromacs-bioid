@@ -1,0 +1,724 @@
+{
+ "_about": "Synthetic system 33 min in.",
+ "run": {
+  "id": "00000000-synthetic-large",
+  "short_id": "synthetic",
+  "name": "β2AR–Gs complex in mixed membrane",
+  "status": "running",
+  "input": {
+   "format": "GROMACS",
+   "files": [
+    "step7_production.tpr",
+    "step7_production.gro"
+   ],
+   "atoms": 412560
+  },
+  "submitted_at": "2026-10-20T08:00:00Z",
+  "started_at": "2026-10-20T08:00:04Z",
+  "finished_at": null,
+  "elapsed_s": 1980,
+  "retention_days": null
+ },
+ "progress": {
+  "stages": [
+   {
+    "key": "read",
+    "label": "Read files",
+    "status": "done",
+    "duration_s": 627
+   },
+   {
+    "key": "find",
+    "label": "Find molecules",
+    "status": "done",
+    "duration_s": 7
+   },
+   {
+    "key": "describe",
+    "label": "Describe molecules",
+    "status": "done",
+    "duration_s": 34
+   },
+   {
+    "key": "search",
+    "label": "Search databases",
+    "status": "active",
+    "duration_s": null
+   },
+   {
+    "key": "check",
+    "label": "Check matches",
+    "status": "waiting",
+    "duration_s": null
+   },
+   {
+    "key": "save",
+    "label": "Prepare downloads",
+    "status": "waiting",
+    "duration_s": null
+   }
+  ],
+  "molecules_done": 12,
+  "molecules_total": 25,
+  "typical": "30–120 min",
+  "queue_position": null
+ },
+ "error": null,
+ "notes": [
+  {
+   "id": "L5",
+   "severity": "info",
+   "code": "signature_generator_failed",
+   "title": "One chemical fingerprint could not be computed for 4 molecules",
+   "body": "Other descriptions were used for searching. Exact-structure matches are unaffected.",
+   "action": null,
+   "affects": [
+    "seg_POPC",
+    "seg_POPE",
+    "seg_PSM",
+    "seg_DPPC"
+   ],
+   "raw_count": 4
+  },
+  {
+   "id": "L6",
+   "severity": "info",
+   "code": "pbc_unwrap_applied",
+   "title": "Molecules were made whole across the periodic box",
+   "body": "Some molecules crossed the box edge. BioID joined them before identification. Your files were not changed.",
+   "action": null,
+   "affects": [],
+   "raw_count": 1
+  }
+ ],
+ "hidden_note_count": 9,
+ "molecules": [
+  {
+   "id": "seg_A",
+   "display_name": "Chain A",
+   "kind": "protein",
+   "chain": "A",
+   "residue_names": [
+    "standard amino acids"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 5700,
+   "residues_per_copy": 380,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {},
+   "note_ids": []
+  },
+  {
+   "id": "seg_B",
+   "display_name": "Chain B",
+   "kind": "protein",
+   "chain": "B",
+   "residue_names": [
+    "standard amino acids"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 5100,
+   "residues_per_copy": 340,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {},
+   "note_ids": []
+  },
+  {
+   "id": "seg_G",
+   "display_name": "Chain G",
+   "kind": "protein",
+   "chain": "G",
+   "residue_names": [
+    "standard amino acids"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 1020,
+   "residues_per_copy": 68,
+   "status": "searching",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {},
+   "note_ids": []
+  },
+  {
+   "id": "seg_N",
+   "display_name": "Chain N",
+   "kind": "protein",
+   "chain": "N",
+   "residue_names": [
+    "standard amino acids"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 1920,
+   "residues_per_copy": 128,
+   "status": "waiting",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {},
+   "note_ids": []
+  },
+  {
+   "id": "seg_R",
+   "display_name": "Chain R",
+   "kind": "protein",
+   "chain": "R",
+   "residue_names": [
+    "standard amino acids"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 4230,
+   "residues_per_copy": 282,
+   "status": "waiting",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {},
+   "note_ids": []
+  },
+  {
+   "id": "seg_P0G",
+   "display_name": "P0G",
+   "kind": "small_molecule",
+   "chain": null,
+   "residue_names": [
+    "P0G"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 50,
+   "residues_per_copy": null,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "formula": "C20H26N2O4"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_UNL",
+   "display_name": "UNL",
+   "kind": "small_molecule",
+   "chain": null,
+   "residue_names": [
+    "UNL"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 38,
+   "residues_per_copy": null,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "formula": "C21H21N3O3"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_MOL",
+   "display_name": "MOL",
+   "kind": "small_molecule",
+   "chain": null,
+   "residue_names": [
+    "MOL"
+   ],
+   "copies": 2,
+   "atoms_per_copy": 24,
+   "residues_per_copy": null,
+   "status": "searching",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "formula": "C8H10N4O2"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_POPC",
+   "display_name": "POPC",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "POPC"
+   ],
+   "copies": 212,
+   "atoms_per_copy": 134,
+   "residues_per_copy": null,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "formula": "C42H82NO8P"
+   },
+   "note_ids": [
+    "L5"
+   ]
+  },
+  {
+   "id": "seg_POPE",
+   "display_name": "POPE",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "POPE"
+   ],
+   "copies": 140,
+   "atoms_per_copy": 125,
+   "residues_per_copy": null,
+   "status": "waiting",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "formula": "C39H76NO8P"
+   },
+   "note_ids": [
+    "L5"
+   ]
+  },
+  {
+   "id": "seg_POPS",
+   "display_name": "POPS",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "POPS"
+   ],
+   "copies": 38,
+   "atoms_per_copy": 130,
+   "residues_per_copy": null,
+   "status": "waiting",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "formula": "C40H75NO10P"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_CHL1",
+   "display_name": "CHL1",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "CHL1"
+   ],
+   "copies": 96,
+   "atoms_per_copy": 74,
+   "residues_per_copy": null,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "formula": "C27H46O"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_PSM",
+   "display_name": "PSM",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "PSM"
+   ],
+   "copies": 44,
+   "atoms_per_copy": 129,
+   "residues_per_copy": null,
+   "status": "waiting",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "formula": "C39H79N2O6P"
+   },
+   "note_ids": [
+    "L5"
+   ]
+  },
+  {
+   "id": "seg_SAPI24",
+   "display_name": "SAPI24",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "SAPI24"
+   ],
+   "copies": 6,
+   "atoms_per_copy": 168,
+   "residues_per_copy": null,
+   "status": "waiting",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {},
+   "note_ids": []
+  },
+  {
+   "id": "seg_TOCL2",
+   "display_name": "TOCL2",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "TOCL2"
+   ],
+   "copies": 8,
+   "atoms_per_copy": 266,
+   "residues_per_copy": null,
+   "status": "waiting",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {},
+   "note_ids": []
+  },
+  {
+   "id": "seg_DPPC",
+   "display_name": "DPPC",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "DPPC"
+   ],
+   "copies": 20,
+   "atoms_per_copy": 130,
+   "residues_per_copy": null,
+   "status": "waiting",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {},
+   "note_ids": [
+    "L5"
+   ]
+  },
+  {
+   "id": "seg_LPPC",
+   "display_name": "LPPC",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "LPPC"
+   ],
+   "copies": 4,
+   "atoms_per_copy": 84,
+   "residues_per_copy": null,
+   "status": "waiting",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {},
+   "note_ids": []
+  },
+  {
+   "id": "seg_NAG",
+   "display_name": "NAG",
+   "kind": "small_molecule",
+   "chain": null,
+   "residue_names": [
+    "NAG"
+   ],
+   "copies": 3,
+   "atoms_per_copy": 27,
+   "residues_per_copy": null,
+   "status": "waiting",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {},
+   "note_ids": []
+  },
+  {
+   "id": "seg_GOL",
+   "display_name": "GOL",
+   "kind": "small_molecule",
+   "chain": null,
+   "residue_names": [
+    "GOL"
+   ],
+   "copies": 4,
+   "atoms_per_copy": 14,
+   "residues_per_copy": null,
+   "status": "waiting",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "formula": "C3H8O3"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_SOD",
+   "display_name": "SOD",
+   "kind": "ion",
+   "chain": null,
+   "residue_names": [
+    "SOD"
+   ],
+   "copies": 126,
+   "atoms_per_copy": 1,
+   "residues_per_copy": null,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "element": "Na"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_CLA",
+   "display_name": "CLA",
+   "kind": "ion",
+   "chain": null,
+   "residue_names": [
+    "CLA"
+   ],
+   "copies": 141,
+   "atoms_per_copy": 1,
+   "residues_per_copy": null,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "element": "Cl"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_POT",
+   "display_name": "POT",
+   "kind": "ion",
+   "chain": null,
+   "residue_names": [
+    "POT"
+   ],
+   "copies": 12,
+   "atoms_per_copy": 1,
+   "residues_per_copy": null,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "element": "K"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_MG",
+   "display_name": "MG",
+   "kind": "ion",
+   "chain": null,
+   "residue_names": [
+    "MG"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 1,
+   "residues_per_copy": null,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "element": "Mg"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_CAL",
+   "display_name": "CAL",
+   "kind": "ion",
+   "chain": null,
+   "residue_names": [
+    "CAL"
+   ],
+   "copies": 2,
+   "atoms_per_copy": 1,
+   "residues_per_copy": null,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "element": "Ca"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_TIP3",
+   "display_name": "TIP3",
+   "kind": "water",
+   "chain": null,
+   "residue_names": [
+    "TIP3"
+   ],
+   "copies": 98412,
+   "atoms_per_copy": 3,
+   "residues_per_copy": null,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "formula": "H2O",
+    "smiles": "O"
+   },
+   "note_ids": []
+  }
+ ],
+ "downloads": [],
+ "technical": [
+  {
+   "key": "input",
+   "title": "Your files and how they were read",
+   "desc": "File list, detected format, reading method"
+  },
+  {
+   "key": "timings",
+   "title": "Step timings",
+   "desc": "Duration of each step"
+  },
+  {
+   "key": "descriptors",
+   "title": "Molecule descriptions",
+   "desc": "Sequences, SMILES, InChIKeys and fingerprints used for searching"
+  },
+  {
+   "key": "searches",
+   "title": "Database searches",
+   "desc": "Every search service, what it returned, which ones failed"
+  },
+  {
+   "key": "candidates",
+   "title": "All candidates with scores",
+   "desc": "Including related and rejected entries, with reasons · TSV / JSON"
+  },
+  {
+   "key": "messages",
+   "title": "All messages with codes",
+   "desc": "Raw warnings for bug reports, including hidden ones"
+  },
+  {
+   "key": "logs",
+   "title": "Logs and settings used",
+   "desc": "Run log, debug log, configuration"
+  }
+ ]
+}

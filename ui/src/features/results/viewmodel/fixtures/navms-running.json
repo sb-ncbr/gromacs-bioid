@@ -1,0 +1,390 @@
+{
+ "_about": "NavMs run as it would look 47 min in, during the database search. Per-molecule status needs a backend progress event that does not exist yet.",
+ "run": {
+  "id": "9d90d777-1ce6-4d0c-b1ed-f5830014a612",
+  "short_id": "9d90d777",
+  "name": "NavMs in POPC membrane",
+  "status": "running",
+  "input": {
+   "format": "GROMACS",
+   "files": [
+    "awh.tpr",
+    "alpha_model.gro"
+   ],
+   "atoms": 209838
+  },
+  "submitted_at": "2026-10-11T19:37:05Z",
+  "started_at": "2026-10-11T19:37:07Z",
+  "finished_at": null,
+  "elapsed_s": 2820,
+  "retention_days": null
+ },
+ "progress": {
+  "stages": [
+   {
+    "key": "read",
+    "label": "Read files",
+    "status": "done",
+    "duration_s": 627
+   },
+   {
+    "key": "find",
+    "label": "Find molecules",
+    "status": "done",
+    "duration_s": 7
+   },
+   {
+    "key": "describe",
+    "label": "Describe molecules",
+    "status": "done",
+    "duration_s": 34
+   },
+   {
+    "key": "search",
+    "label": "Search databases",
+    "status": "active",
+    "duration_s": null
+   },
+   {
+    "key": "check",
+    "label": "Check matches",
+    "status": "waiting",
+    "duration_s": null
+   },
+   {
+    "key": "save",
+    "label": "Prepare downloads",
+    "status": "waiting",
+    "duration_s": null
+   }
+  ],
+  "molecules_done": 6,
+  "molecules_total": 10,
+  "typical": "30–120 min",
+  "queue_position": null
+ },
+ "error": null,
+ "notes": [
+  {
+   "id": "n2",
+   "severity": "info",
+   "code": "signature_generator_failed",
+   "title": "One chemical fingerprint could not be computed for 3 molecules",
+   "body": "Other descriptions of these molecules were used for searching. Exact-structure matches are unaffected.",
+   "action": null,
+   "affects": [
+    "seg_4_POPX",
+    "seg_5_POPC",
+    "seg_9_SOL"
+   ],
+   "raw_count": 3
+  },
+  {
+   "id": "n3",
+   "severity": "info",
+   "code": "pbc_unwrap_applied",
+   "title": "Molecules were made whole across the periodic box",
+   "body": "Some molecules crossed the box edge in your coordinates. BioID joined them before identification. Your files were not changed.",
+   "action": null,
+   "affects": [],
+   "raw_count": 1
+  }
+ ],
+ "hidden_note_count": 4,
+ "molecules": [
+  {
+   "id": "seg_0_Protein_chain_A",
+   "display_name": "Chain A",
+   "kind": "protein",
+   "chain": "A",
+   "residue_names": [
+    "standard amino acids"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 4260,
+   "residues_per_copy": 264,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "sequence": "SHMSRKIRDLIESKRFQNVITAIIVLNGAVLGLLTDTTLSASSQNLLERVDQLCLTIFIVEISLKIYAYGVRGFFRSGWNLFDFVIVAIALMPAQGSLSVLRTFRIFRVMRLVSVIPTMRRVVQGMLLALPGVGSVAALLTVVFYIAAVMATNLYGATFPEWFGDLSKSLYTLFQVMTLESWSMGIVRPVMNVHPNAWVFFIPFIMLTTFTVLNLFIGIIVDAMAITKEQEEEAKTGHHQEPISQTLLHLGDRLDRIEKQLAQN",
+    "formula": "C1362H2173N350O363S12"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_1_Protein_chain_B",
+   "display_name": "Chain B",
+   "kind": "protein",
+   "chain": "B",
+   "residue_names": [
+    "standard amino acids"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 4260,
+   "residues_per_copy": 264,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "sequence": "SHMSRKIRDLIESKRFQNVITAIIVLNGAVLGLLTDTTLSASSQNLLERVDQLCLTIFIVEISLKIYAYGVRGFFRSGWNLFDFVIVAIALMPAQGSLSVLRTFRIFRVMRLVSVIPTMRRVVQGMLLALPGVGSVAALLTVVFYIAAVMATNLYGATFPEWFGDLSKSLYTLFQVMTLESWSMGIVRPVMNVHPNAWVFFIPFIMLTTFTVLNLFIGIIVDAMAITKEQEEEAKTGHHQEPISQTLLHLGDRLDRIEKQLAQN",
+    "formula": "C1362H2173N350O363S12"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_2_Protein_chain_C",
+   "display_name": "Chain C",
+   "kind": "protein",
+   "chain": "C",
+   "residue_names": [
+    "standard amino acids"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 4260,
+   "residues_per_copy": 264,
+   "status": "searching",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "sequence": "SHMSRKIRDLIESKRFQNVITAIIVLNGAVLGLLTDTTLSASSQNLLERVDQLCLTIFIVEISLKIYAYGVRGFFRSGWNLFDFVIVAIALMPAQGSLSVLRTFRIFRVMRLVSVIPTMRRVVQGMLLALPGVGSVAALLTVVFYIAAVMATNLYGATFPEWFGDLSKSLYTLFQVMTLESWSMGIVRPVMNVHPNAWVFFIPFIMLTTFTVLNLFIGIIVDAMAITKEQEEEAKTGHHQEPISQTLLHLGDRLDRIEKQLAQN",
+    "formula": "C1362H2173N350O363S12"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_3_Protein_chain_D",
+   "display_name": "Chain D",
+   "kind": "protein",
+   "chain": "D",
+   "residue_names": [
+    "standard amino acids"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 4260,
+   "residues_per_copy": 264,
+   "status": "waiting",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "sequence": "SHMSRKIRDLIESKRFQNVITAIIVLNGAVLGLLTDTTLSASSQNLLERVDQLCLTIFIVEISLKIYAYGVRGFFRSGWNLFDFVIVAIALMPAQGSLSVLRTFRIFRVMRLVSVIPTMRRVVQGMLLALPGVGSVAALLTVVFYIAAVMATNLYGATFPEWFGDLSKSLYTLFQVMTLESWSMGIVRPVMNVHPNAWVFFIPFIMLTTFTVLNLFIGIIVDAMAITKEQEEEAKTGHHQEPISQTLLHLGDRLDRIEKQLAQN",
+    "formula": "C1362H2173N350O363S12"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_4_POPX",
+   "display_name": "POPX",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "POPX"
+   ],
+   "copies": 4,
+   "atoms_per_copy": 134,
+   "residues_per_copy": null,
+   "status": "waiting",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "formula": "C42H82NO8P",
+    "smiles": "CCCCCCCCC=CCCCCCCCC(=O)OC(COC(=O)CCCCCCCCCCCCCCC)COP(=O)([O-])OCC[N+](C)(C)C",
+    "inchikey": "WTJKGGKOPKCXLL-UHFFFAOYSA-N"
+   },
+   "note_ids": [
+    "n2"
+   ]
+  },
+  {
+   "id": "seg_5_POPC",
+   "display_name": "POPC",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "POPC"
+   ],
+   "copies": 358,
+   "atoms_per_copy": 134,
+   "residues_per_copy": null,
+   "status": "waiting",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "formula": "C42H82NO8P",
+    "smiles": "CCCCCCCCC=CCCCCCCCC(=O)OC(COC(=O)CCCCCCCCCCCCCCC)COP(=O)([O-])OCC[N+](C)(C)C",
+    "inchikey": "WTJKGGKOPKCXLL-UHFFFAOYSA-N"
+   },
+   "note_ids": [
+    "n2"
+   ]
+  },
+  {
+   "id": "seg_6_SOD",
+   "display_name": "SOD",
+   "kind": "ion",
+   "chain": null,
+   "residue_names": [
+    "SOD"
+   ],
+   "copies": 130,
+   "atoms_per_copy": 1,
+   "residues_per_copy": null,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "element": "Na"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_7_PORE_ION",
+   "display_name": "PORE_ION",
+   "kind": "ion",
+   "chain": null,
+   "residue_names": [
+    "PORE_ION"
+   ],
+   "copies": 3,
+   "atoms_per_copy": 1,
+   "residues_per_copy": null,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "element": "Na"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_8_CLA",
+   "display_name": "CLA",
+   "kind": "ion",
+   "chain": null,
+   "residue_names": [
+    "CLA"
+   ],
+   "copies": 145,
+   "atoms_per_copy": 1,
+   "residues_per_copy": null,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "element": "Cl"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_9_SOL",
+   "display_name": "SOL",
+   "kind": "water",
+   "chain": null,
+   "residue_names": [
+    "SOL"
+   ],
+   "copies": 48004,
+   "atoms_per_copy": 3,
+   "residues_per_copy": null,
+   "status": "searched",
+   "result": null,
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "formula": "H2O",
+    "smiles": "O",
+    "inchikey": "XLYOFNOQVPJJNP-UHFFFAOYSA-N"
+   },
+   "note_ids": [
+    "n2"
+   ]
+  }
+ ],
+ "downloads": [],
+ "technical": [
+  {
+   "key": "input",
+   "title": "Your files and how they were read",
+   "desc": "File list, detected format, reading method"
+  },
+  {
+   "key": "timings",
+   "title": "Step timings",
+   "desc": "Duration of each step"
+  },
+  {
+   "key": "descriptors",
+   "title": "Molecule descriptions",
+   "desc": "Sequences, SMILES, InChIKeys and fingerprints used for searching"
+  },
+  {
+   "key": "searches",
+   "title": "Database searches",
+   "desc": "Every search service, what it returned, which ones failed"
+  },
+  {
+   "key": "candidates",
+   "title": "All candidates with scores",
+   "desc": "Including related and rejected entries, with reasons · TSV / JSON"
+  },
+  {
+   "key": "messages",
+   "title": "All messages with codes",
+   "desc": "Raw warnings for bug reports, including hidden ones"
+  },
+  {
+   "key": "logs",
+   "title": "Logs and settings used",
+   "desc": "Run log, debug log, configuration"
+  }
+ ]
+}

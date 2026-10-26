@@ -1,0 +1,108 @@
+{
+ "_about": "Run waiting in the queue. Molecules are not known yet.",
+ "run": {
+  "id": "9d90d777-1ce6-4d0c-b1ed-f5830014a612",
+  "short_id": "9d90d777",
+  "name": "NavMs in POPC membrane",
+  "status": "queued",
+  "input": {
+   "format": "GROMACS",
+   "files": [
+    "awh.tpr",
+    "alpha_model.gro"
+   ],
+   "atoms": 209838
+  },
+  "submitted_at": "2026-10-11T19:37:05Z",
+  "started_at": null,
+  "finished_at": null,
+  "elapsed_s": null,
+  "retention_days": null
+ },
+ "progress": {
+  "stages": [
+   {
+    "key": "read",
+    "label": "Read files",
+    "status": "waiting",
+    "duration_s": null
+   },
+   {
+    "key": "find",
+    "label": "Find molecules",
+    "status": "waiting",
+    "duration_s": null
+   },
+   {
+    "key": "describe",
+    "label": "Describe molecules",
+    "status": "waiting",
+    "duration_s": null
+   },
+   {
+    "key": "search",
+    "label": "Search databases",
+    "status": "waiting",
+    "duration_s": null
+   },
+   {
+    "key": "check",
+    "label": "Check matches",
+    "status": "waiting",
+    "duration_s": null
+   },
+   {
+    "key": "save",
+    "label": "Prepare downloads",
+    "status": "waiting",
+    "duration_s": null
+   }
+  ],
+  "molecules_done": 0,
+  "molecules_total": null,
+  "typical": "30–120 min",
+  "queue_position": 3
+ },
+ "error": null,
+ "notes": [],
+ "hidden_note_count": 0,
+ "molecules": [],
+ "downloads": [],
+ "technical": [
+  {
+   "key": "input",
+   "title": "Your files and how they were read",
+   "desc": "File list, detected format, reading method"
+  },
+  {
+   "key": "timings",
+   "title": "Step timings",
+   "desc": "Duration of each step"
+  },
+  {
+   "key": "descriptors",
+   "title": "Molecule descriptions",
+   "desc": "Sequences, SMILES, InChIKeys and fingerprints used for searching"
+  },
+  {
+   "key": "searches",
+   "title": "Database searches",
+   "desc": "Every search service, what it returned, which ones failed"
+  },
+  {
+   "key": "candidates",
+   "title": "All candidates with scores",
+   "desc": "Including related and rejected entries, with reasons · TSV / JSON"
+  },
+  {
+   "key": "messages",
+   "title": "All messages with codes",
+   "desc": "Raw warnings for bug reports, including hidden ones"
+  },
+  {
+   "key": "logs",
+   "title": "Logs and settings used",
+   "desc": "Run log, debug log, configuration"
+  }
+ ]
+}

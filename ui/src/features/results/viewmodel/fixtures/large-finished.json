@@ -1,0 +1,1314 @@
+{
+ "_about": "Synthetic system for layout testing. Composition loosely follows PDB 3SN6 in a mixed membrane. [CID] marks identifiers left as placeholders; all confidences are invented.",
+ "run": {
+  "id": "00000000-synthetic-large",
+  "short_id": "synthetic",
+  "name": "β2AR–Gs complex in mixed membrane",
+  "status": "finished",
+  "input": {
+   "format": "GROMACS",
+   "files": [
+    "step7_production.tpr",
+    "step7_production.gro"
+   ],
+   "atoms": 412560
+  },
+  "submitted_at": "2026-10-20T08:00:00Z",
+  "started_at": "2026-10-20T08:00:04Z",
+  "finished_at": "2026-10-20T09:10:27Z",
+  "elapsed_s": 4223,
+  "retention_days": null
+ },
+ "progress": {
+  "stages": [
+   {
+    "key": "read",
+    "label": "Read files",
+    "status": "done",
+    "duration_s": 214
+   },
+   {
+    "key": "find",
+    "label": "Find molecules",
+    "status": "done",
+    "duration_s": 12
+   },
+   {
+    "key": "describe",
+    "label": "Describe molecules",
+    "status": "done",
+    "duration_s": 96
+   },
+   {
+    "key": "search",
+    "label": "Search databases",
+    "status": "done",
+    "duration_s": 3720
+   },
+   {
+    "key": "check",
+    "label": "Check matches",
+    "status": "done",
+    "duration_s": 140
+   },
+   {
+    "key": "save",
+    "label": "Prepare downloads",
+    "status": "done",
+    "duration_s": 41
+   }
+  ],
+  "molecules_done": 25,
+  "molecules_total": 25,
+  "typical": "30–120 min",
+  "queue_position": null
+ },
+ "error": null,
+ "notes": [
+  {
+   "id": "L1",
+   "severity": "attention",
+   "code": "derived:not_identified",
+   "title": "2 molecules were not identified",
+   "body": "UNL had no database match. MOL has only a weak lead (confidence 38). Check their residue names and topology, or describe them in your deposition by hand.",
+   "action": null,
+   "affects": [
+    "seg_UNL",
+    "seg_MOL"
+   ],
+   "raw_count": 0
+  },
+  {
+   "id": "L2",
+   "severity": "attention",
+   "code": "stage_time_budget",
+   "title": "Database search stopped early for 3 molecules",
+   "body": "The search hit its time limit before every service answered. Some matches for these molecules may be missing.",
+   "action": "Rerun later, or contact us if it happens again.",
+   "affects": [
+    "seg_PSM",
+    "seg_SAPI24",
+    "seg_TOCL2"
+   ],
+   "raw_count": 3
+  },
+  {
+   "id": "L3",
+   "severity": "attention",
+   "code": "verification_failed",
+   "title": "Matches for SAPI24 could not be checked",
+   "body": "The candidate structures could not be compared with your molecule, so their confidence is lower than usual.",
+   "action": "Treat these matches with caution.",
+   "affects": [
+    "seg_SAPI24"
+   ],
+   "raw_count": 1
+  },
+  {
+   "id": "L4",
+   "severity": "attention",
+   "code": "identifier_resolver_failed",
+   "title": "NCBI nr protein search did not finish",
+   "body": "The search was stopped after 5 minutes for each chain. Matches from PDB, UniProt and AlphaFold DB are complete.",
+   "action": "Usually temporary. Rerun later if you need nr matches.",
+   "affects": [
+    "seg_A",
+    "seg_B",
+    "seg_G",
+    "seg_N",
+    "seg_R"
+   ],
+   "raw_count": 10
+  },
+  {
+   "id": "L5",
+   "severity": "info",
+   "code": "signature_generator_failed",
+   "title": "One chemical fingerprint could not be computed for 4 molecules",
+   "body": "Other descriptions were used for searching. Exact-structure matches are unaffected.",
+   "action": null,
+   "affects": [
+    "seg_POPC",
+    "seg_POPE",
+    "seg_PSM",
+    "seg_DPPC"
+   ],
+   "raw_count": 4
+  },
+  {
+   "id": "L6",
+   "severity": "info",
+   "code": "pbc_unwrap_applied",
+   "title": "Molecules were made whole across the periodic box",
+   "body": "Some molecules crossed the box edge. BioID joined them before identification. Your files were not changed.",
+   "action": null,
+   "affects": [],
+   "raw_count": 1
+  },
+  {
+   "id": "L7",
+   "severity": "info",
+   "code": "render_failed",
+   "title": "Preview image could not be created",
+   "body": "Only the thumbnail in your run list is affected. Results and the 3D view are fine.",
+   "action": null,
+   "affects": [],
+   "raw_count": 1
+  }
+ ],
+ "hidden_note_count": 9,
+ "molecules": [
+  {
+   "id": "seg_A",
+   "display_name": "Chain A",
+   "kind": "protein",
+   "chain": "A",
+   "residue_names": [
+    "standard amino acids"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 5700,
+   "residues_per_copy": 380,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "Guanine nucleotide-binding protein G(s) subunit alpha",
+    "description": "Homo sapiens",
+    "best": {
+     "db": "UniProt",
+     "id": "P63092",
+     "url": "https://www.uniprot.org/uniprotkb/P63092"
+    },
+    "confidence": 91.4
+   },
+   "matches": [
+    {
+     "db": "UniProt",
+     "id": "P63092",
+     "url": "https://www.uniprot.org/uniprotkb/P63092",
+     "what": "Guanine nucleotide-binding protein G(s) subunit alpha",
+     "evidence": "100% identity over 98% of your sequence",
+     "confidence": 91.4
+    },
+    {
+     "db": "PDB",
+     "id": "3SN6",
+     "url": "https://www.rcsb.org/structure/3SN6",
+     "what": "β2-adrenergic receptor–Gs complex",
+     "evidence": "chain A, 100% identity",
+     "confidence": 89.9
+    }
+   ],
+   "more": {
+    "verified": 8,
+    "related": 3,
+    "rejected": 40
+   },
+   "descriptor": {},
+   "note_ids": [
+    "L4"
+   ]
+  },
+  {
+   "id": "seg_B",
+   "display_name": "Chain B",
+   "kind": "protein",
+   "chain": "B",
+   "residue_names": [
+    "standard amino acids"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 5100,
+   "residues_per_copy": 340,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "Guanine nucleotide-binding protein G(I)/G(S)/G(T) subunit beta-1",
+    "description": "Homo sapiens",
+    "best": {
+     "db": "UniProt",
+     "id": "P62873",
+     "url": "https://www.uniprot.org/uniprotkb/P62873"
+    },
+    "confidence": 93.0
+   },
+   "matches": [
+    {
+     "db": "UniProt",
+     "id": "P62873",
+     "url": "https://www.uniprot.org/uniprotkb/P62873",
+     "what": "Guanine nucleotide-binding protein G(I)/G(S)/G(T) subunit beta-1",
+     "evidence": "100% identity over 98% of your sequence",
+     "confidence": 93.0
+    },
+    {
+     "db": "PDB",
+     "id": "3SN6",
+     "url": "https://www.rcsb.org/structure/3SN6",
+     "what": "β2-adrenergic receptor–Gs complex",
+     "evidence": "chain B, 100% identity",
+     "confidence": 91.5
+    }
+   ],
+   "more": {
+    "verified": 8,
+    "related": 3,
+    "rejected": 40
+   },
+   "descriptor": {},
+   "note_ids": [
+    "L4"
+   ]
+  },
+  {
+   "id": "seg_G",
+   "display_name": "Chain G",
+   "kind": "protein",
+   "chain": "G",
+   "residue_names": [
+    "standard amino acids"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 1020,
+   "residues_per_copy": 68,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "Guanine nucleotide-binding protein G(I)/G(S)/G(O) subunit gamma-2",
+    "description": "Homo sapiens",
+    "best": {
+     "db": "UniProt",
+     "id": "P59768",
+     "url": "https://www.uniprot.org/uniprotkb/P59768"
+    },
+    "confidence": 88.2
+   },
+   "matches": [
+    {
+     "db": "UniProt",
+     "id": "P59768",
+     "url": "https://www.uniprot.org/uniprotkb/P59768",
+     "what": "Guanine nucleotide-binding protein G(I)/G(S)/G(O) subunit gamma-2",
+     "evidence": "100% identity over 98% of your sequence",
+     "confidence": 88.2
+    },
+    {
+     "db": "PDB",
+     "id": "3SN6",
+     "url": "https://www.rcsb.org/structure/3SN6",
+     "what": "β2-adrenergic receptor–Gs complex",
+     "evidence": "chain G, 100% identity",
+     "confidence": 86.7
+    }
+   ],
+   "more": {
+    "verified": 8,
+    "related": 3,
+    "rejected": 40
+   },
+   "descriptor": {},
+   "note_ids": [
+    "L4"
+   ]
+  },
+  {
+   "id": "seg_N",
+   "display_name": "Chain N",
+   "kind": "protein",
+   "chain": "N",
+   "residue_names": [
+    "standard amino acids"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 1920,
+   "residues_per_copy": 128,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "Nanobody 35",
+    "description": "synthetic construct (Lama glama)",
+    "best": {
+     "db": "PDB",
+     "id": "3SN6",
+     "url": "https://www.rcsb.org/structure/3SN6"
+    },
+    "confidence": 64.0
+   },
+   "matches": [
+    {
+     "db": "PDB",
+     "id": "3SN6",
+     "url": "https://www.rcsb.org/structure/3SN6",
+     "what": "β2-adrenergic receptor–Gs complex",
+     "evidence": "chain N, 100% identity",
+     "confidence": 62.5
+    }
+   ],
+   "more": {
+    "verified": 1,
+    "related": 3,
+    "rejected": 40
+   },
+   "descriptor": {},
+   "note_ids": [
+    "L4"
+   ]
+  },
+  {
+   "id": "seg_R",
+   "display_name": "Chain R",
+   "kind": "protein",
+   "chain": "R",
+   "residue_names": [
+    "standard amino acids"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 4230,
+   "residues_per_copy": 282,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "Beta-2 adrenergic receptor",
+    "description": "Homo sapiens",
+    "best": {
+     "db": "UniProt",
+     "id": "P07550",
+     "url": "https://www.uniprot.org/uniprotkb/P07550"
+    },
+    "confidence": 86.5
+   },
+   "matches": [
+    {
+     "db": "UniProt",
+     "id": "P07550",
+     "url": "https://www.uniprot.org/uniprotkb/P07550",
+     "what": "Beta-2 adrenergic receptor",
+     "evidence": "100% identity over 98% of your sequence",
+     "confidence": 86.5
+    },
+    {
+     "db": "PDB",
+     "id": "3SN6",
+     "url": "https://www.rcsb.org/structure/3SN6",
+     "what": "β2-adrenergic receptor–Gs complex",
+     "evidence": "chain R, 100% identity",
+     "confidence": 85.0
+    }
+   ],
+   "more": {
+    "verified": 8,
+    "related": 3,
+    "rejected": 40
+   },
+   "descriptor": {},
+   "note_ids": [
+    "L4"
+   ]
+  },
+  {
+   "id": "seg_P0G",
+   "display_name": "P0G",
+   "kind": "small_molecule",
+   "chain": null,
+   "residue_names": [
+    "P0G"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 50,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "BI-167107",
+    "description": "β2-adrenergic agonist",
+    "best": {
+     "db": "PDB ligand",
+     "id": "P0G",
+     "url": "https://www.rcsb.org/ligand/P0G"
+    },
+    "confidence": 84.0
+   },
+   "matches": [
+    {
+     "db": "PDB ligand",
+     "id": "P0G",
+     "url": "https://www.rcsb.org/ligand/P0G",
+     "what": "BI-167107",
+     "evidence": "same structure",
+     "confidence": 84.0
+    }
+   ],
+   "more": {
+    "verified": 2,
+    "related": 6,
+    "rejected": 12
+   },
+   "descriptor": {
+    "formula": "C20H26N2O4"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_UNL",
+   "display_name": "UNL",
+   "kind": "small_molecule",
+   "chain": null,
+   "residue_names": [
+    "UNL"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 38,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "not_identified",
+    "name": null,
+    "description": "No database entry matched this molecule",
+    "best": null,
+    "confidence": null
+   },
+   "matches": [],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 7
+   },
+   "descriptor": {
+    "formula": "C21H21N3O3"
+   },
+   "note_ids": [
+    "L1"
+   ]
+  },
+  {
+   "id": "seg_MOL",
+   "display_name": "MOL",
+   "kind": "small_molecule",
+   "chain": null,
+   "residue_names": [
+    "MOL"
+   ],
+   "copies": 2,
+   "atoms_per_copy": 24,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "lead",
+    "name": "Caffeine",
+    "description": "closest lead only",
+    "best": {
+     "db": "PubChem",
+     "id": "2519",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/2519"
+    },
+    "confidence": 38.0
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "2519",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/2519",
+     "what": "Caffeine",
+     "evidence": "similar skeleton (41%)",
+     "confidence": 38.0
+    }
+   ],
+   "more": {
+    "verified": 2,
+    "related": 6,
+    "rejected": 12
+   },
+   "descriptor": {
+    "formula": "C8H10N4O2"
+   },
+   "note_ids": [
+    "L1"
+   ]
+  },
+  {
+   "id": "seg_POPC",
+   "display_name": "POPC",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "POPC"
+   ],
+   "copies": 212,
+   "atoms_per_copy": 134,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "POPC",
+    "description": "1-palmitoyl-2-oleoyl-glycero-3-phosphocholine",
+    "best": {
+     "db": "PubChem",
+     "id": "65167",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/65167"
+    },
+    "confidence": 94.0
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "65167",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/65167",
+     "what": "POPC",
+     "evidence": "same structure",
+     "confidence": 94.0
+    }
+   ],
+   "more": {
+    "verified": 2,
+    "related": 6,
+    "rejected": 12
+   },
+   "descriptor": {
+    "formula": "C42H82NO8P"
+   },
+   "note_ids": [
+    "L5"
+   ]
+  },
+  {
+   "id": "seg_POPE",
+   "display_name": "POPE",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "POPE"
+   ],
+   "copies": 140,
+   "atoms_per_copy": 125,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "POPE",
+    "description": "1-palmitoyl-2-oleoyl-glycero-3-phosphoethanolamine",
+    "best": {
+     "db": "PubChem",
+     "id": "[POPE CID]",
+     "url": "#placeholder"
+    },
+    "confidence": 93.0
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "[POPE CID]",
+     "url": "#placeholder",
+     "what": "POPE",
+     "evidence": "same structure",
+     "confidence": 93.0
+    }
+   ],
+   "more": {
+    "verified": 2,
+    "related": 6,
+    "rejected": 12
+   },
+   "descriptor": {
+    "formula": "C39H76NO8P"
+   },
+   "note_ids": [
+    "L5"
+   ]
+  },
+  {
+   "id": "seg_POPS",
+   "display_name": "POPS",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "POPS"
+   ],
+   "copies": 38,
+   "atoms_per_copy": 130,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "POPS",
+    "description": "1-palmitoyl-2-oleoyl-glycero-3-phospho-L-serine",
+    "best": {
+     "db": "PubChem",
+     "id": "[POPS CID]",
+     "url": "#placeholder"
+    },
+    "confidence": 90.2
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "[POPS CID]",
+     "url": "#placeholder",
+     "what": "POPS",
+     "evidence": "same structure",
+     "confidence": 90.2
+    }
+   ],
+   "more": {
+    "verified": 2,
+    "related": 6,
+    "rejected": 12
+   },
+   "descriptor": {
+    "formula": "C40H75NO10P"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_CHL1",
+   "display_name": "CHL1",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "CHL1"
+   ],
+   "copies": 96,
+   "atoms_per_copy": 74,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "Cholesterol",
+    "description": "",
+    "best": {
+     "db": "PubChem",
+     "id": "5997",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/5997"
+    },
+    "confidence": 97.0
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "5997",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/5997",
+     "what": "Cholesterol",
+     "evidence": "same structure",
+     "confidence": 97.0
+    }
+   ],
+   "more": {
+    "verified": 2,
+    "related": 6,
+    "rejected": 12
+   },
+   "descriptor": {
+    "formula": "C27H46O"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_PSM",
+   "display_name": "PSM",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "PSM"
+   ],
+   "copies": 44,
+   "atoms_per_copy": 129,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "N-palmitoyl sphingomyelin",
+    "description": "stereochemistry not compared",
+    "best": {
+     "db": "PubChem",
+     "id": "[PSM CID]",
+     "url": "#placeholder"
+    },
+    "confidence": 72.4
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "[PSM CID]",
+     "url": "#placeholder",
+     "what": "N-palmitoyl sphingomyelin",
+     "evidence": "same structure",
+     "confidence": 72.4
+    }
+   ],
+   "more": {
+    "verified": 2,
+    "related": 6,
+    "rejected": 12
+   },
+   "descriptor": {
+    "formula": "C39H79N2O6P"
+   },
+   "note_ids": [
+    "L2",
+    "L5"
+   ]
+  },
+  {
+   "id": "seg_SAPI24",
+   "display_name": "SAPI24",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "SAPI24"
+   ],
+   "copies": 6,
+   "atoms_per_copy": 168,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "PI(4,5)P2 (18:0/20:4)",
+    "description": "phosphatidylinositol 4,5-bisphosphate",
+    "best": {
+     "db": "PubChem",
+     "id": "[SAPI24 CID]",
+     "url": "#placeholder"
+    },
+    "confidence": 61.0
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "[SAPI24 CID]",
+     "url": "#placeholder",
+     "what": "PI(4,5)P2 (18:0/20:4)",
+     "evidence": "same structure",
+     "confidence": 61.0
+    }
+   ],
+   "more": {
+    "verified": 2,
+    "related": 6,
+    "rejected": 12
+   },
+   "descriptor": {},
+   "note_ids": [
+    "L2",
+    "L3"
+   ]
+  },
+  {
+   "id": "seg_TOCL2",
+   "display_name": "TOCL2",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "TOCL2"
+   ],
+   "copies": 8,
+   "atoms_per_copy": 266,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "Tetraoleoyl cardiolipin",
+    "description": "",
+    "best": {
+     "db": "PubChem",
+     "id": "[TOCL2 CID]",
+     "url": "#placeholder"
+    },
+    "confidence": 81.5
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "[TOCL2 CID]",
+     "url": "#placeholder",
+     "what": "Tetraoleoyl cardiolipin",
+     "evidence": "same structure",
+     "confidence": 81.5
+    }
+   ],
+   "more": {
+    "verified": 2,
+    "related": 6,
+    "rejected": 12
+   },
+   "descriptor": {},
+   "note_ids": [
+    "L2"
+   ]
+  },
+  {
+   "id": "seg_DPPC",
+   "display_name": "DPPC",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "DPPC"
+   ],
+   "copies": 20,
+   "atoms_per_copy": 130,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "DPPC",
+    "description": "1,2-dipalmitoyl-glycero-3-phosphocholine",
+    "best": {
+     "db": "PubChem",
+     "id": "[DPPC CID]",
+     "url": "#placeholder"
+    },
+    "confidence": 92.0
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "[DPPC CID]",
+     "url": "#placeholder",
+     "what": "DPPC",
+     "evidence": "same structure",
+     "confidence": 92.0
+    }
+   ],
+   "more": {
+    "verified": 2,
+    "related": 6,
+    "rejected": 12
+   },
+   "descriptor": {},
+   "note_ids": [
+    "L5"
+   ]
+  },
+  {
+   "id": "seg_LPPC",
+   "display_name": "LPPC",
+   "kind": "lipid",
+   "chain": null,
+   "residue_names": [
+    "LPPC"
+   ],
+   "copies": 4,
+   "atoms_per_copy": 84,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "Lyso-PC (16:0)",
+    "description": "1-palmitoyl-glycero-3-phosphocholine",
+    "best": {
+     "db": "PubChem",
+     "id": "[LPPC CID]",
+     "url": "#placeholder"
+    },
+    "confidence": 88.0
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "[LPPC CID]",
+     "url": "#placeholder",
+     "what": "Lyso-PC (16:0)",
+     "evidence": "same structure",
+     "confidence": 88.0
+    }
+   ],
+   "more": {
+    "verified": 2,
+    "related": 6,
+    "rejected": 12
+   },
+   "descriptor": {},
+   "note_ids": []
+  },
+  {
+   "id": "seg_NAG",
+   "display_name": "NAG",
+   "kind": "small_molecule",
+   "chain": null,
+   "residue_names": [
+    "NAG"
+   ],
+   "copies": 3,
+   "atoms_per_copy": 27,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "N-acetyl-D-glucosamine",
+    "description": "glycan residue on chain R",
+    "best": {
+     "db": "PubChem",
+     "id": "[NAG CID]",
+     "url": "#placeholder"
+    },
+    "confidence": 88.0
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "[NAG CID]",
+     "url": "#placeholder",
+     "what": "N-acetyl-D-glucosamine",
+     "evidence": "same structure",
+     "confidence": 88.0
+    }
+   ],
+   "more": {
+    "verified": 2,
+    "related": 6,
+    "rejected": 12
+   },
+   "descriptor": {},
+   "note_ids": []
+  },
+  {
+   "id": "seg_GOL",
+   "display_name": "GOL",
+   "kind": "small_molecule",
+   "chain": null,
+   "residue_names": [
+    "GOL"
+   ],
+   "copies": 4,
+   "atoms_per_copy": 14,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "Glycerol",
+    "description": "",
+    "best": {
+     "db": "PubChem",
+     "id": "753",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/753"
+    },
+    "confidence": 96.0
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "753",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/753",
+     "what": "Glycerol",
+     "evidence": "same structure",
+     "confidence": 96.0
+    }
+   ],
+   "more": {
+    "verified": 2,
+    "related": 6,
+    "rejected": 12
+   },
+   "descriptor": {
+    "formula": "C3H8O3"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_SOD",
+   "display_name": "SOD",
+   "kind": "ion",
+   "chain": null,
+   "residue_names": [
+    "SOD"
+   ],
+   "copies": 126,
+   "atoms_per_copy": 1,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "exact",
+    "name": "Sodium ion",
+    "description": "single Na atom, identified by element",
+    "best": {
+     "db": "PubChem",
+     "id": "923",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/923"
+    },
+    "confidence": null
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "923",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/923",
+     "what": "Sodium ion",
+     "evidence": "same element",
+     "confidence": null
+    }
+   ],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "element": "Na"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_CLA",
+   "display_name": "CLA",
+   "kind": "ion",
+   "chain": null,
+   "residue_names": [
+    "CLA"
+   ],
+   "copies": 141,
+   "atoms_per_copy": 1,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "exact",
+    "name": "Chloride ion",
+    "description": "single Cl atom, identified by element",
+    "best": {
+     "db": "PubChem",
+     "id": "312",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/312"
+    },
+    "confidence": null
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "312",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/312",
+     "what": "Chloride ion",
+     "evidence": "same element",
+     "confidence": null
+    }
+   ],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "element": "Cl"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_POT",
+   "display_name": "POT",
+   "kind": "ion",
+   "chain": null,
+   "residue_names": [
+    "POT"
+   ],
+   "copies": 12,
+   "atoms_per_copy": 1,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "exact",
+    "name": "Potassium ion",
+    "description": "single K atom, identified by element",
+    "best": {
+     "db": "PubChem",
+     "id": "813",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/813"
+    },
+    "confidence": null
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "813",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/813",
+     "what": "Potassium ion",
+     "evidence": "same element",
+     "confidence": null
+    }
+   ],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "element": "K"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_MG",
+   "display_name": "MG",
+   "kind": "ion",
+   "chain": null,
+   "residue_names": [
+    "MG"
+   ],
+   "copies": 1,
+   "atoms_per_copy": 1,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "exact",
+    "name": "Magnesium ion",
+    "description": "single Mg atom, identified by element",
+    "best": {
+     "db": "PubChem",
+     "id": "888",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/888"
+    },
+    "confidence": null
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "888",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/888",
+     "what": "Magnesium ion",
+     "evidence": "same element",
+     "confidence": null
+    }
+   ],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "element": "Mg"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_CAL",
+   "display_name": "CAL",
+   "kind": "ion",
+   "chain": null,
+   "residue_names": [
+    "CAL"
+   ],
+   "copies": 2,
+   "atoms_per_copy": 1,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "exact",
+    "name": "Calcium ion",
+    "description": "single Ca atom, identified by element",
+    "best": {
+     "db": "PubChem",
+     "id": "271",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/271"
+    },
+    "confidence": null
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "271",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/271",
+     "what": "Calcium ion",
+     "evidence": "same element",
+     "confidence": null
+    }
+   ],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "element": "Ca"
+   },
+   "note_ids": []
+  },
+  {
+   "id": "seg_TIP3",
+   "display_name": "TIP3",
+   "kind": "water",
+   "chain": null,
+   "residue_names": [
+    "TIP3"
+   ],
+   "copies": 98412,
+   "atoms_per_copy": 3,
+   "residues_per_copy": null,
+   "status": "done",
+   "result": {
+    "state": "identified",
+    "name": "Water",
+    "description": "3-site water model (TIP3P)",
+    "best": {
+     "db": "PubChem",
+     "id": "962",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/962"
+    },
+    "confidence": 94
+   },
+   "matches": [
+    {
+     "db": "PubChem",
+     "id": "962",
+     "url": "https://pubchem.ncbi.nlm.nih.gov/compound/962",
+     "what": "Water",
+     "evidence": "same structure",
+     "confidence": 94
+    }
+   ],
+   "more": {
+    "verified": 0,
+    "related": 0,
+    "rejected": 0
+   },
+   "descriptor": {
+    "formula": "H2O",
+    "smiles": "O"
+   },
+   "note_ids": []
+  }
+ ],
+ "downloads": [
+  {
+   "key": "csv",
+   "label": "Results table (CSV)",
+   "primary": true
+  },
+  {
+   "key": "json",
+   "label": "All results (JSON)",
+   "primary": false
+  }
+ ],
+ "technical": [
+  {
+   "key": "input",
+   "title": "Your files and how they were read",
+   "desc": "File list, detected format, reading method"
+  },
+  {
+   "key": "timings",
+   "title": "Step timings",
+   "desc": "Duration of each step"
+  },
+  {
+   "key": "descriptors",
+   "title": "Molecule descriptions",
+   "desc": "Sequences, SMILES, InChIKeys and fingerprints used for searching"
+  },
+  {
+   "key": "searches",
+   "title": "Database searches",
+   "desc": "Every search service, what it returned, which ones failed"
+  },
+  {
+   "key": "candidates",
+   "title": "All candidates with scores",
+   "desc": "Including related and rejected entries, with reasons · TSV / JSON"
+  },
+  {
+   "key": "messages",
+   "title": "All messages with codes",
+   "desc": "Raw warnings for bug reports, including hidden ones"
+  },
+  {
+   "key": "logs",
+   "title": "Logs and settings used",
+   "desc": "Run log, debug log, configuration"
+  }
+ ]
+}
