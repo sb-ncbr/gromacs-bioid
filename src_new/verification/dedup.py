@@ -301,8 +301,15 @@ def deduplicate_and_score(
         if math.isnan(base_score) or math.isinf(base_score):
             base_score = 0.0
         
-        # diversity = number of distinct resolver_names
-        distinct_resolvers = set(hit.resolver_name for hit in group_hits)
+        # diversity = number of distinct resolver BASE names; D-13a:
+        # collect_hits passes the record KEY as resolver_name and dual-mode
+        # resolvers persist their similarity listing under "{resolver}@sim",
+        # so a record-name count would score one dual-listed resolver as two
+        # evidence sources.  Source attribution (source_resolvers and the
+        # supporting_evidence_count derived from it) uses the same base-name
+        # collapse.
+        distinct_resolvers = {hit.resolver_name.split("@", 1)[0]
+                              for hit in group_hits}
         diversity = len(distinct_resolvers)
         
         # consensus_score = base_score * log2(1 + diversity)
