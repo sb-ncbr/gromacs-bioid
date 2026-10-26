@@ -174,11 +174,14 @@ export const CATALOG_CODES: CatalogCode[] = [
   },
   {
     code: "signature_generator_failed",
-    kind: "warning",
+    // E-22 (d2e4ca000): the executor flags genuinely dead channels with
+    // critical=true; the catalog floor is info. Aligned with the redesign
+    // copy (COPY.md §3: info) — superseding the a7d20a26c "warning" drift.
+    kind: "info",
     stage: "signatures",
-    user_title: "A signature failed to generate",
-    user_what: "The {generator_human} signature for {segment} raised an error or produced nothing. This is a real failure - the run continues with the remaining signatures, but identification for this molecule may be incomplete.",
-    user_action: "If this repeats on every molecule, report it - the channel may be dead.",
+    user_title: "A signature could not be generated",
+    user_what: "The {generator_human} signature for {segment} returned nothing and was skipped. Other descriptions of the molecule were used for searching; exact-structure matches are unaffected.",
+    user_action: "Only report this if it repeats on every molecule - otherwise the channel may simply not apply.",
     details_show: ["generator_human", "segment"],
   },
   {
