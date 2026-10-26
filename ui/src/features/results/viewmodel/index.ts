@@ -16,6 +16,8 @@ export type {
   Stage,
   StageKey,
   StageStatus,
+  DownloadEntry,
+  TechnicalEntry,
 } from "./types";
 export type { ApiBundle, AdapterOptions } from "./adapter";
 export { adapt } from "./adapter";
