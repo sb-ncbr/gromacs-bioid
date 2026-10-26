@@ -320,6 +320,12 @@ class TestMoleculesEndpoint:
                     },
                     "type_counts": {"protein": 1, "ligand": 1},
                     "total_count": 2,
+                    # segments list mirrors the pipeline shape consumed by the
+                    # endpoint (fragments/segments, then universe/segment_list)
+                    "segments": [
+                        {"segment": "PROA", "type": "protein",
+                         "atoms_per_copy": 150, "residue_count": 50},
+                    ],
                     "by_segment": {
                         "PROA": {"count": 2, "molecules": ["mol_001", "mol_002"]},
                     },
@@ -577,6 +583,9 @@ version = 1.0.0
 
 [loading]
 strategy = auto_detect
+
+[identifiers]
+overwrite_existing = yes
 """
         
         response = client.post(
@@ -600,7 +609,12 @@ strategy = auto_detect
         
         assert saved_pdb.exists()
         assert saved_config.exists()
-        assert saved_config.read_text() == config_content
+        # The endpoint normalizes uploads through RunConfig (unknown sections
+        # like [pipeline]/[loading] are dropped on round-trip; known keys must
+        # survive), so byte-equality with the upload is not the contract.
+        saved_text = saved_config.read_text()
+        assert "overwrite_existing = yes" in saved_text
+        assert "guess_missing_bonds = " in saved_text
 
 
 class TestStaticFilesEndpoint:

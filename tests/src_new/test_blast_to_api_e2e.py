@@ -267,16 +267,18 @@ def test_blast_identity_to_verification_to_api(
     identifiers_data = identifiers_response.json()
     assert identifiers_data.get("segment") == "seg1"
     
-    # API returns raw identifiers (not normalized)
+    # Since f8d78423a (api: canonical database_url for identifiers/
+    # verification) the identifiers endpoint canonicalizes PDB chain IDs for
+    # display ("2HHB_A" -> "2HHB"); the response surface follows that contract.
     hits_from_api = identifiers_data.get("hits", [])
     hhb_hit = None
     for hit in hits_from_api:
-        if hit.get("identifier") == "2HHB_A":
+        if hit.get("identifier") == "2HHB":
             hhb_hit = hit
             break
-    
+
     assert hhb_hit is not None
-    assert hhb_hit.get("identifier") == "2HHB_A"
+    assert hhb_hit.get("identifier") == "2HHB"
     assert hhb_hit.get("segment") == "seg1"
     assert hhb_hit.get("ident_type") == "PDB_ID"
     assert hhb_hit.get("database_url") is not None

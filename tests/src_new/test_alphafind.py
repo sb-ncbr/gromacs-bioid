@@ -140,8 +140,10 @@ class TestAlphaFindIdentityFilter:
         """Test that identity filter only returns 100% matches."""
         post_response = {
             "results": [
-                {"object_id": "A0A1", "aligned_percentage": 100.0},
-                {"object_id": "A0A2", "aligned_percentage": 95.0},
+                {"object_id": "A0A1", "aligned_percentage": 100.0,
+                 "tm_score": 1.0, "sequence_aligned_percentage": 1.0},
+                {"object_id": "A0A2", "aligned_percentage": 95.0,
+                 "tm_score": 0.95, "sequence_aligned_percentage": 0.95},
                 {"object_id": "A0A3", "aligned_percentage": 80.0}
             ],
             "digest": "d1"
@@ -157,7 +159,8 @@ class TestAlphaFindIdentityFilter:
             assert similarity[1] == ("A0A2", 95.0)
             assert similarity[2] == ("A0A3", 80.0)
             
-            # Identity returns only 100% match
+            # Identity (v3.143 C-02): TM-score >= 0.98 AND sequence-aligned
+            # percentage >= 0.99 — entries lacking the metrics are NOT identity
             identity = resolver._alphafind_identity("/fake/path.pdb")
             assert len(identity) == 1
             assert identity[0] == "A0A1"
@@ -285,7 +288,8 @@ class TestAlphaFindResolveMethods:
         """Test _resolve_identity returns list of strings."""
         post_response = {
             "results": [
-                {"object_id": "PDB1", "aligned_percentage": 100.0}
+                {"object_id": "PDB1", "aligned_percentage": 100.0,
+                 "tm_score": 1.0, "sequence_aligned_percentage": 1.0}
             ],
             "digest": "d1"
         }
