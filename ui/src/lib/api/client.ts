@@ -80,6 +80,7 @@ export const endpoints = {
   runRender: (runId: string) => `${API_BASE}/runs/${runId}/render`,
   runLogs: (runId: string) => `${API_BASE}/runs/${runId}/logs`,
   runRerun: (runId: string) => `${API_BASE}/runs/${runId}/rerun`,
+  runCancel: (runId: string) => `${API_BASE}/runs/${runId}/cancel`,
   runQueue: (runId: string) => `${API_BASE}/runs/${runId}/queue`,
   runExamples: `${API_BASE}/runs/examples`,
   configDefault: `${API_BASE}/runs/config/default`,

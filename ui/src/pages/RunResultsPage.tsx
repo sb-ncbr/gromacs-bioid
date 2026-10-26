@@ -1,25 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
+/**
+ * /runs/:id — the redesigned run-results page (bioid_ui_handoff SPEC §2–3),
+ * replaced in place. Layout: run header → error banner → status strip →
+ * molecule list | stage → technical details fold → citation/retention.
+ * Selection lives in the `?segment=` URL param so links/deep-selects work
+ * and polling never resets it.
+ */
+import { useCallback, useEffect, useMemo } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-  Badge,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Skeleton,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@e-infra/design-system";
-import { Boxes, Clock } from "lucide-react";
-import { DEFAULT_SEGMENT, DEFAULT_TAB, TABS, parseRunQuery, type TabKey } from "../lib/nav";
-import TaskBar from "../features/results/TaskBar";
-import MoleculeSelector, { type SegmentMeta } from "../features/results/MoleculeSelector";
-import ResultsPanel from "../features/results/ResultsPanel";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Alert, AlertDescription, AlertTitle, Skeleton } from "@e-infra/design-system";
+import { toast } from "sonner";
+import { api, endpoints } from "../lib/api/client";
+import { parseRunQuery } from "../lib/nav";
 import {
   useRunStatus,
   useRunSummary,
@@ -27,7 +19,6 @@ import {
   useRunQueue,
   useRunVerification,
   useRunIdentifiers,
-  useRunSignatures,
   useRunLoading,
   useRunFiles,
   useRunRender,
@@ -35,45 +26,51 @@ import {
   isLive,
   isPending,
   stageActive,
-  segmentMeta,
+  payloadRefetchInterval,
+  type SignaturesResponse,
+  type VerificationResponse,
 } from "../features/results/hooks";
-import WarningsPanel from "../features/results/WarningsPanel";
-import OverviewTab from "../features/results/OverviewTab";
-import InputFilesTab from "../features/results/InputFilesTab";
-import SignaturesTab from "../features/results/SignaturesTab";
-import IdentifiersTab from "../features/results/IdentifiersTab";
-import VerificationTab from "../features/results/VerificationTab";
-import MolstarViewer from "../features/results/MolstarViewer";
+import { adapt, type ApiBundle, type ViewModel } from "../features/results/viewmodel";
+import { MoleculeList } from "../features/results/list";
+import { Stage } from "../features/results/stage";
+import { StageCanvas } from "../features/results/viewer";
+import { StatusStrip } from "../features/results/status";
+import { RunHeader } from "../features/results/header/RunHeader";
+import { ErrorBanner } from "../features/results/header/ErrorBanner";
+import { bugReport, pageName, pageTitle } from "../features/results/header/headerModel";
+import { TechnicalFold } from "../features/results/TechnicalFold";
 
-const TAB_LABELS: Record<TabKey, string> = {
-  overview: "Overview",
-  input: "Input & Files",
-  signatures: "Signatures",
-  identifiers: "Identifiers",
-  verification: "Verification",
-  warnings: "Warnings",
-};
+/** Placeholder until the paper is out (SPEC §3.7). */
+const CITATION = "MD BioID (manuscript in preparation)";
+
+/** Whole-run verification: the endpoint aggregates every segment with a
+ *  per-hit `segment` attribution (v3.143, D-17) → group back into the
+ *  per-segment views the adapter expects. */
+function groupVerification(data: VerificationResponse | undefined): ApiBundle["verification"] {
+  if (!data?.hits) return null;
+  const bySeg = new Map<string, NonNullable<VerificationResponse["hits"]>[number][]>();
+  for (const h of data.hits) {
+    const key = (h as { segment?: string | null }).segment ?? "";
+    if (!bySeg.has(key)) bySeg.set(key, []);
+    bySeg.get(key)!.push(h);
+  }
+  return [...bySeg.entries()].map(([segment, hits]) => ({ segment, hits }));
+}
 
 export default function RunResultsPage() {
   const { runId = "" } = useParams<{ runId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { segment, tab } = parseRunQuery(searchParams.toString());
+  const queryClient = useQueryClient();
+  const { segment } = parseRunQuery(searchParams.toString());
 
-  const [pendingAnchor, setPendingAnchor] = useState<string | null>(null);
-
-  /* ---------- URL state helpers (replace, not push) ---------- */
   const patchQuery = useCallback(
-    (patch: Partial<{ segment: string; tab: TabKey }>) => {
+    (patch: Partial<{ segment: string | null }>) => {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
           if (patch.segment !== undefined) {
-            if (patch.segment === DEFAULT_SEGMENT) next.delete("segment");
+            if (patch.segment == null) next.delete("segment");
             else next.set("segment", patch.segment);
-          }
-          if (patch.tab !== undefined) {
-            if (patch.tab === DEFAULT_TAB) next.delete("tab");
-            else next.set("tab", patch.tab);
           }
           return next;
         },
@@ -83,296 +80,242 @@ export default function RunResultsPage() {
     [setSearchParams],
   );
 
-  /* ---------- Data hooks (adaptive polling) ---------- */
+  /* ---------- Data hooks (adaptive polling: 10–15 s while live, §2) --- */
   const statusQ = useRunStatus(runId);
   const summaryQ = useRunSummary(runId);
-  const pipeline = statusQ.data?.pipeline ?? null;
   const pStatus = pipelineStatus(statusQ.data);
   const live = isLive(pStatus);
   const pending = isPending(pStatus);
 
   const queueQ = useRunQueue(runId, pending);
   const moleculesQ = useRunMolecules(runId, live);
-
-  /* Whole-system handling (v3.140, user ruling on run 99abca31 feedback):
-     - "Whole system" is a viewer/selection concept; verification lives under
-       real segment keys (never under SYSTEM).
-     - Single-segment analysis: the system IS that molecule -> the pane shows
-       its results (panelSegment = the sole segment).
-     - Multi-segment: system has no own results -> the pane shows a neutral
-       "select a molecule" empty state (no fabricated alerts/bars).
-     - Guard: if the backend ever records SYSTEM-level signatures, the system
-       genuinely was analyzed as a molecule -> keep the pane for it. */
-  const isSystem = segment === DEFAULT_SEGMENT;
-  const moleculeSegments: string[] = moleculesQ.data?.segments ?? [];
-  const singleSegment = moleculeSegments.length === 1;
-  const panelSegment = isSystem && singleSegment ? moleculeSegments[0] : segment;
-
-  const verificationQ = useRunVerification(
-    runId,
-    panelSegment,
-    stageActive(statusQ.data, "verify_results"),
-    live,
-  );
-  const identifiersQ = useRunIdentifiers(
-    runId,
-    panelSegment,
-    stageActive(statusQ.data, "identify_molecules"),
-    live,
-  );
-  const signaturesQ = useRunSignatures(
-    runId,
-    segment,
-    stageActive(statusQ.data, "generate_signatures"),
-    live,
-  );
-  const loadingQ = useRunLoading(runId, live);
   const filesQ = useRunFiles(runId, live);
+  const loadingQ = useRunLoading(runId, live);
   const renderQ = useRunRender(runId, live);
 
-  /* ---------- Derived values ---------- */
-  const segments: string[] = moleculesQ.data?.segments ?? [];
-  const rawMeta = moleculesQ.data?.segment_meta ?? null;
-  const segMeta = (rawMeta ?? null) as Record<string, SegmentMeta> | null;
-  const molecule =
-    panelSegment === DEFAULT_SEGMENT ? null : segmentMeta(moleculesQ.data ?? null, panelSegment);
-  const systemHasSignatures = isSystem
-    && (signaturesQ.data?.signatures ?? []).some((s) => s.segment === DEFAULT_SEGMENT);
-  const showSystemEmpty = isSystem && !singleSegment && !systemHasSignatures;
+  // Whole-run signatures + verification drive the view model.
+  const signaturesAllQ = useQuery({
+    queryKey: ["runSignaturesAll", runId],
+    queryFn: () => api.get<SignaturesResponse>(endpoints.runSignatures(runId!)),
+    enabled: !!runId,
+    retry: 1,
+    refetchInterval: () => payloadRefetchInterval(live),
+  });
+  const verificationAllQ = useQuery({
+    queryKey: ["runVerificationAll", runId],
+    queryFn: () => api.get<VerificationResponse>(endpoints.runVerification(runId!)),
+    enabled: !!runId && !pending,
+    retry: 1,
+    refetchInterval: () => payloadRefetchInterval(live),
+  });
 
-  /* ---------- TaskBar → Warnings tab + anchor ---------- */
-  const handleGroupClick = useCallback(
-    (groupId: string) => {
-      setPendingAnchor(groupId);
-      patchQuery({ tab: "warnings" });
+  /* ---------- View model (single derivation for the whole page) ------- */
+  const vm: ViewModel | null = useMemo(() => {
+    if (!statusQ.data && !summaryQ.data && !moleculesQ.data) return null;
+    const bundle: ApiBundle = {
+      runId,
+      summary: summaryQ.data ?? null,
+      status: statusQ.data ?? null,
+      molecules: (moleculesQ.data ?? null) as ApiBundle["molecules"],
+      signatures: signaturesAllQ.data ?? null,
+      verification: groupVerification(verificationAllQ.data),
+      queue: queueQ.data ?? null,
+      files: filesQ.data ?? null,
+    };
+    return adapt(bundle);
+  }, [runId, statusQ.data, summaryQ.data, moleculesQ.data, signaturesAllQ.data, verificationAllQ.data, queueQ.data, filesQ.data]);
+
+  const molecules = vm?.molecules ?? [];
+  const selectedId = molecules.find((m) => m.id === segment)?.id ?? molecules[0]?.id ?? null;
+  const selected = molecules.find((m) => m.id === selectedId) ?? null;
+  const onSelect = useCallback((id: string) => patchQuery({ segment: id }), [patchQuery]);
+
+  // Per-segment developer views inside the technical fold.
+  const verificationQ = useRunVerification(runId, selectedId ?? "", stageActive(statusQ.data, "verify_results"), live);
+  const identifiersQ = useRunIdentifiers(runId, selectedId ?? "", stageActive(statusQ.data, "identify_molecules"), live);
+
+  // Browser tab title per run state (SPEC §2).
+  useEffect(() => {
+    if (!vm) return;
+    const name = pageName(vm.run);
+    document.title = pageTitle(name, vm.run.status);
+    return () => {
+      document.title = "MD BioID";
+    };
+  }, [vm]);
+
+  /* ---------- Header actions ------------------------------------------ */
+  const copy = useCallback((text: string, ok: string) => {
+    void navigator.clipboard?.writeText(text).then(
+      () => toast.success(ok),
+      () => toast.error("Copy failed"),
+    );
+  }, []);
+  const copyLink = useCallback(() => copy(window.location.href, "Link copied"), [copy]);
+
+  const onCancel = useCallback(() => {
+    void api
+      .postJson(endpoints.runCancel(runId), {})
+      .then(() => {
+        toast.success("Run cancelled");
+        void queryClient.invalidateQueries({ queryKey: ["runStatus", runId] });
+      })
+      .catch(() => toast.error("Could not cancel the run"));
+  }, [runId, queryClient]);
+
+  const onRerun = useCallback(() => {
+    void api
+      .postJson<{ run_id: string }>(endpoints.runRerun(runId), {})
+      .then((res) => {
+        toast.success("Run queued");
+        if (res?.run_id) window.location.assign(`/runs/${res.run_id}`);
+      })
+      .catch(() => toast.error("Could not rerun"));
+  }, [runId]);
+
+  const onCite = useCallback(() => {
+    copy(`Using these results? Please cite: ${CITATION}\n${window.location.href}`, "Citation copied");
+  }, [copy]);
+
+  const onReport = useCallback(() => {
+    if (!vm?.error) {
+      copy(`MD BioID problem report\nRun: ${runId}\n\nDescribe the problem here:`, "Details copied");
+      return;
+    }
+    copy(bugReport(vm.run, vm.error), "Details copied");
+  }, [vm, runId, copy]);
+
+  const onDownload = useCallback(
+    (key: "csv" | "json") => {
+      const file = key === "csv" ? "results.csv" : "results.json";
+      window.open(endpoints.runFileUrl(runId, file), "_blank", "noopener");
     },
-    [patchQuery],
+    [runId],
   );
 
-  useEffect(() => {
-    if (tab !== "warnings" || !pendingAnchor) return;
-    const t = window.setTimeout(() => {
-      document
-        .getElementById(`warn-${pendingAnchor}`)
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      setPendingAnchor(null);
-    }, 150);
-    return () => window.clearTimeout(t);
-  }, [tab, pendingAnchor]);
-
-  /* ---------- Initial loading ---------- */
-  // Copy-run-id feedback (hooks must precede early returns).
-  const [copied, setCopied] = useState(false);
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(runId).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [runId]);
+  /* ---------- Early states -------------------------------------------- */
   if (statusQ.isPending) {
     return (
-      <div className="mx-auto max-w-6xl space-y-6 p-6">
-        <Skeleton className="h-10 w-64" />
-        <Skeleton className="h-12 w-full" />
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-          <div className="xl:col-span-7 space-y-4">
-            <Skeleton className="h-48 w-full rounded-lg" />
-            <Skeleton className="h-96 w-full rounded-lg" />
-          </div>
-          <div className="min-h-0 xl:relative xl:col-span-5">
-            <Skeleton className="h-96 w-full rounded-lg" />
-          </div>
+      <div className="mx-auto max-w-[1400px] space-y-4 p-4 sm:p-6" aria-busy>
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-14 w-full rounded-lg" />
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(340px,380px)_1fr]">
+          <Skeleton className="h-[520px] w-full rounded-lg" />
+          <Skeleton className="h-[520px] w-full rounded-lg" />
         </div>
       </div>
     );
   }
 
-  /* ---------- Error / not-found ---------- */
-  if (statusQ.isError) {
+  if (statusQ.isError || !vm) {
     return (
       <div className="mx-auto max-w-4xl p-6">
         <Alert variant="error">
           <AlertTitle>Run not found</AlertTitle>
           <AlertDescription>
-            Could not load results for run{" "}
-            <code className="font-mono text-sm">{runId.slice(0, 8)}</code>. The run may have
-            been deleted or the ID is incorrect.
+            Could not load results for run <code className="font-mono text-sm">{runId.slice(0, 8)}</code>. The run may
+            have been deleted or the ID is incorrect.
           </AlertDescription>
         </Alert>
       </div>
     );
   }
 
-  const displayTitle = summaryQ.data?.run_name?.trim() || "Annotation results";
-  const badgeVariant = pStatus === "failed" ? "error" : pStatus === "success" ? "default" : "outline";
-  const badgeClassName =
-    pStatus === "success"
-      ? "border-transparent bg-green-100 text-green-800"
-      : pStatus === "failed"
-        ? "border-transparent bg-red-100 text-red-800"
-        : "";
+  const segments = molecules.map((m) => m.id);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
-      {/* Title */}
-      <header>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold text-text-heading">{displayTitle}</h1>
-          <Badge variant={badgeVariant} className={badgeClassName}>
-            {pStatus ?? "loading"}
-          </Badge>
-        </div>
-        <div className="mt-1 flex items-center gap-2">
-          <span className="font-mono text-xs text-text-muted">{runId}</span>
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="rounded p-0.5 text-text-muted transition-colors hover:text-text-heading"
-            title={copied ? "Copied!" : "Copy run ID"}
-            aria-label={copied ? "Copied" : "Copy run ID to clipboard"}
-          >
-            {copied ? (
-              <svg className="h-3.5 w-3.5 text-green-600" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-              </svg>
-            ) : (
-              <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M8 3a1 1 0 000 2H2a1 1 0 000 2h2v7a1 1 0 001 1h12a1 1 0 001-1V7h1a1 1 0 100-2h-4v-2a1 1 0 00-1-1H8z" />
-              </svg>
-            )}
-          </button>
-        </div>
-      </header>
+    <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">
+      <RunHeader
+        run={vm.run}
+        runStatus={vm.run.status}
+        downloads={vm.downloads}
+        onCopyLink={copyLink}
+        onCancel={onCancel}
+        onRerun={onRerun}
+        onCite={onCite}
+        onDownload={onDownload}
+        onReport={onReport}
+      />
 
-      {/* TaskBar */}
-      <TaskBar tasks={statusQ.data?.tasks ?? []} onGroupClick={handleGroupClick} />
+      {vm.run.status === "failed" && vm.error && <ErrorBanner run={vm.run} error={vm.error} onRerun={onRerun} />}
 
-      {/* Queued banner */}
-      {pending && (
-        <Alert>
-          <AlertTitle className="flex items-center gap-2">
-            <Clock size={16} aria-hidden /> In the queue
-          </AlertTitle>
-          <AlertDescription>
-            {queueQ.data?.position != null
-              ? `Position ${queueQ.data.position} in queue`
-              : "Waiting for a worker to pick up this job…"}
-          </AlertDescription>
-        </Alert>
-      )}
+      <StatusStrip
+        runStatus={vm.run.status}
+        progress={vm.progress}
+        elapsedS={vm.run.elapsed_s}
+        notes={vm.notes}
+        hiddenNoteCount={vm.hidden_note_count}
+        molecules={molecules}
+        onSelect={onSelect}
+        onCopyLink={copyLink}
+      />
 
-      {/* Main grid: viewer left (7/12), results right (5/12) */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-        {/* LEFT: selector + Mol* viewer */}
-        <div className="space-y-4 xl:col-span-7">
-          <MoleculeSelector
-            segments={segments}
-            segmentMeta={segMeta}
-            selected={segment}
-            onSelect={(s) => patchQuery({ segment: s })}
+      {/* List | stage */}
+      <div className="mt-4 grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(340px,380px)_1fr]">
+        <MoleculeList
+          molecules={molecules}
+          runStatus={vm.run.status}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          groupBy={vm.run.status === "finished" ? "identification" : "kind"}
+          onGroupByChange={() => {}}
+          filter={null}
+          onFilterChange={() => {}}
+          storageKey={runId}
+        />
+        {selected ? (
+          <Stage
+            molecule={selected}
+            molecules={molecules}
+            notes={vm.notes}
+            runStatus={vm.run.status}
+            onSelect={onSelect}
+            canvas={
+              <StageCanvas
+                runId={runId}
+                runStatus={vm.run.status}
+                molecules={molecules}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                renderPaths={renderQ.data ?? null}
+                fallbackSegment={selectedId ?? undefined}
+              />
+            }
           />
-          <MolstarViewer
-            runId={runId}
-            segment={segment}
-            segments={segments}
-            segmentMeta={segMeta}
-            renderPaths={renderQ.data ?? null}
-          />
-        </div>
-
-        {/* RIGHT: ResultsPanel (per-segment hits) */}
-        <div className="min-h-0 xl:relative xl:col-span-5">
-          {showSystemEmpty ? (
-            <Card className="flex h-full flex-col xl:absolute xl:inset-0">
-              <CardHeader>
-                <CardTitle className="text-lg">Segment: Whole system</CardTitle>
-              </CardHeader>
-              <CardContent className="flex min-h-0 flex-1 flex-col items-center justify-center text-center">
-                <Boxes size={28} className="mb-3 text-gray-300" aria-hidden />
-                <p className="text-sm font-medium text-text-heading">Select a molecule to show result.</p>
-                <p className="mt-1 text-sm text-text-muted">
-                  Identification runs per molecule &mdash; pick a segment in the list on the left.
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <ResultsPanel
-              segment={panelSegment}
-              molecule={molecule}
-              verification={
-                verificationQ.data
-                  ? { hits: (verificationQ.data.hits ?? []) as never[] }
-                  : null
-              }
-              identifiers={identifiersQ.data ?? null}
-              onJumpToIdentifiers={() => patchQuery({ tab: "identifiers" })}
-            />
-          )}
-        </div>
+        ) : (
+          <section className="rounded-lg border border-(--vm-line) bg-(--vm-surface) p-6 text-sm text-(--vm-muted)">
+            Molecules appear once your files are read.
+          </section>
+        )}
       </div>
 
-      {/* Tabs */}
-      <Tabs value={tab} onValueChange={(v) => patchQuery({ tab: v as TabKey })}>
-        <TabsList className="flex flex-wrap gap-1">
-          {TABS.map((t) => (
-            <TabsTrigger key={t} value={t}>
-              {TAB_LABELS[t]}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+      <TechnicalFold
+        entries={vm.technical}
+        runId={runId}
+        segment={selectedId ?? ""}
+        segments={segments}
+        onSegmentChange={onSelect}
+        status={statusQ.data ?? null}
+        summary={summaryQ.data ?? null}
+        loading={loadingQ.data ?? null}
+        files={filesQ.data?.files ?? []}
+        signatures={signaturesAllQ.data ?? null}
+        identifiers={identifiersQ.data ?? null}
+        verification={verificationQ.data ?? null}
+      />
 
-        <TabsContent value="overview">
-          <OverviewTab
-            runId={runId}
-            status={statusQ.data}
-            summary={summaryQ.data ?? null}
-          />
-        </TabsContent>
-
-        <TabsContent value="input">
-          <InputFilesTab
-            runId={runId}
-            loading={loadingQ.data ?? null}
-            inputFiles={pipeline?.input_files ?? null}
-            files={filesQ.data?.files ?? []}
-          />
-        </TabsContent>
-
-        <TabsContent value="signatures">
-          <SignaturesTab
-            segment={segment}
-            onSegmentChange={(s) => patchQuery({ segment: s })}
-            segments={segments}
-            signatures={signaturesQ.data ?? null}
-          />
-        </TabsContent>
-
-        <TabsContent value="identifiers">
-          <IdentifiersTab
-            segment={segment}
-            onSegmentChange={(s) => patchQuery({ segment: s })}
-            segments={segments}
-            identifiers={identifiersQ.data ?? null}
-          />
-        </TabsContent>
-
-        <TabsContent value="verification">
-          <VerificationTab
-            segment={segment}
-            segments={segments}
-            onSegmentChange={(s) => patchQuery({ segment: s })}
-            verification={verificationQ.data ?? null}
-            onJumpToIdentifiers={() => patchQuery({ tab: "identifiers" })}
-          />
-        </TabsContent>
-
-        <TabsContent value="warnings">
-          <WarningsPanel
-            warnings={statusQ.data?.warnings ?? []}
-            criticalErrors={statusQ.data?.critical_errors ?? []}
-          />
-        </TabsContent>
-      </Tabs>
+      {/* Citation + retention (SPEC §3.7) */}
+      <footer className="mt-4 space-y-1 text-sm text-(--vm-muted)">
+        <p>
+          Using these results? Please cite: {CITATION}.{" "}
+          <button type="button" onClick={onCite} className="text-(--vm-accent) underline-offset-2 hover:underline">
+            Copy citation
+          </button>
+        </p>
+        {vm.run.retention_days != null && (
+          <p>Anyone with this link can see these results. They are kept for {vm.run.retention_days} days.</p>
+        )}
+      </footer>
     </div>
   );
 }
