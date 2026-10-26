@@ -514,6 +514,25 @@ def _family_interleave(sorted_groups, top_n: int):
             order.append(fam)
         families[fam].append((key, meta))
 
+    # D-13b: inside the chemical family, non-formula identity groups
+    # (inchikey_*, pubchem_struct identity rows, ...; dedup marks them
+    # hit_type "identity") enter the window before candidate and similarity
+    # groups.  The consensus-tie lottery (≈14k capped-100 candidates in a
+    # formula-flood segment) and the mirror-driven skeleton rerank (which
+    # cannot resolve non-CID identifiers such as an InChIKey and buries them
+    # below all resolved PubChem candidates) must not evict the exact row:
+    # 2026-10-26 campaign evidence — the d13 run dropped the exact
+    # inchikey_self @1 answer on all nine 14k-flood segments (2504, 2605,
+    # 2623, 2821, 2907, 3098, 5499, 6100, 7564) while ga1 kept it by luck of
+    # tie order.
+    chem = families.get("chemical")
+    if chem:
+        exact = deque((k, m) for k, m in chem
+                      if (m or {}).get("hit_type") == "identity")
+        rest = deque((k, m) for k, m in chem
+                     if (m or {}).get("hit_type") != "identity")
+        families["chemical"] = exact + rest
+
     window: list = []
     while len(window) < top_n:
         progressed = False

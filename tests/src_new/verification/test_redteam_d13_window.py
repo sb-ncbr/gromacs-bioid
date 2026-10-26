@@ -95,3 +95,76 @@ class TestDualTierEvidenceCounting:
             _hit("chembl_struct", 55.0, "similarity"),
         ])[("X", "INCHIKEY")]
         assert two["consensus_score"] > one["consensus_score"]
+
+
+# ---------------------------------------------------------------- D-13b ----
+
+def _cand(cid: int, hit_type: str = "candidate") -> tuple:
+    return (
+        (f"{170000000 + cid}", "PUBCHEM_CID"),
+        {"consensus_score": 100.0, "hit_type": hit_type, "belief": 50.0},
+    )
+
+
+_GT_KEY = ("KFDIFJWRZNKQEO-UHFFFAOYSA-N", "INCHIKEY")
+_GT_META = {"consensus_score": 100.0, "hit_type": "identity", "belief": 50.0}
+
+
+class TestChemicalWindowExactIdentityFirst:
+    def test_exact_inchikey_group_survives_post_rerank_burial(self):
+        """Simulate the rerank-buried order observed live on 2605/B: 130
+        candidate groups first (skeleton-matched), the exact InChIKEY identity
+        group dead last.  The window must still hold the exact row."""
+        sorted_groups = [_cand(i) for i in range(130)] + [(_GT_KEY, _GT_META)]
+        window, _stats = _family_interleave(sorted_groups, 100)
+        keys = [k for k, _m in window]
+        assert _GT_KEY in keys
+        # and it must come first — exact identity outranks the lottery
+        assert keys[0] == _GT_KEY
+
+    def test_formula_candidates_are_not_promoted(self):
+        """Formula identity-typed rows keep flowing through the mirror/candidate
+        pool path; only *non-formula identity* groups (dedup sets hit_type
+        'candidate'/'similarity' for formula-only groups) get priority."""
+        sorted_groups = [_cand(i) for i in range(130)]
+        window, _ = _family_interleave(sorted_groups, 100)
+        assert len(window) == 100  # unchanged for pure-candidate input
+
+    def test_real_2504_segment_exact_row_in_window_worst_case_order(self):
+        """Real entry 2504 segment B identifiers (d13 campaign): rebuild the
+        dedup groups via collect_hits, force the worst-case ordering (exact
+        InChIKEY group moved to the end, as the mirror-driven rerank does in
+        production), and require the window to keep the exact row."""
+        from src_new.verification.dedup import collect_hits
+
+        fixture = json.load(open(FIXTURE_PATH))
+        seg_data = fixture["segments"]["B"]
+
+        class _Stub:
+            def get_data(self, path):
+                if path == "identifiers/B":
+                    return seg_data
+                return None
+
+            def data_exists(self, path):
+                return path == "identifiers/B"
+
+        raw = collect_hits(_Stub(), "B")
+        assert raw, "fixture must yield hits"
+        deduped = deduplicate_and_score(raw)
+        gt = "FZUTWGQMCFORPQ-OAHLLOKOSA-N"
+        assert (gt, "INCHIKEY") in deduped
+        assert deduped[(gt, "INCHIKEY")]["hit_type"] == "identity"
+
+        sorted_groups = sorted(
+            deduped.items(),
+            key=lambda x: x[1].get("consensus_score", 0.0),
+            reverse=True,
+        )
+        # worst case: exact row buried at the very end (rerank ordering)
+        rest = [(k, m) for k, m in sorted_groups if k != (gt, "INCHIKEY")]
+        sorted_groups = rest + [((gt, "INCHIKEY"), deduped[(gt, "INCHIKEY")])]
+
+        window, _stats = _family_interleave(sorted_groups, 100)
+        keys = [k for k, _m in window]
+        assert (gt, "INCHIKEY") in keys
