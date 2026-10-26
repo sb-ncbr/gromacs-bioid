@@ -111,8 +111,63 @@ class TestGateTiering:
             assert sim_meta["9PRTL_A"]["identity_gate_fail"] == "qcov"
 
 
+class TestFixBTerminalOverhang:
+    """D-13 Fix B (subtask 4): scov < 0.9 is accepted ONLY when the
+    unaligned subject residues sit at the termini (expression tags,
+    unobserved/disordered ends) — never a domain inside a larger protein."""
+
+    def _run_identity(self, r, hits, monkeypatch):
+        monkeypatch.setattr(r, "_processed_hits", lambda seq, wd: hits)
+        accepted = r._run_blast_identity("Q" * 50, "/tmp")
+        return accepted, r.get_last_resolution_metadata()
+
+    def test_expression_tag_accepted(self, monkeypatch):
+        """50-aa query exact over residues 26..75 of a 100-aa subject
+        (25-aa N-tag + 25-aa C-tail) -> identity, tagged as override."""
+        r = _resolver()
+        hits = [_hit(["0TAG_A"], 1.0, 1.0, subject_len=100,
+                     subject_cov_p=0.50, subject_span=(26, 75), subject_gap=0)]
+        accepted, meta = self._run_identity(r, hits, monkeypatch)
+        assert accepted == ["0TAG_A"]
+        assert meta["0TAG_A"]["scov_gate"] == "terminal_override"
+
+    def test_domain_inside_larger_protein_rejected(self, monkeypatch):
+        """Exact 58-aa domain at residues 100..157 of a 580-aa protein:
+        99-aa unaligned N-side + huge C-side -> stays similarity as scov."""
+        r = _resolver()
+        hits = [_hit(["9DOM_A"], 1.0, 1.0, subject_len=580,
+                     subject_cov_p=0.10, subject_span=(100, 157), subject_gap=0)]
+        accepted, meta = self._run_identity(r, hits, monkeypatch)
+        assert accepted == []
+
+    def test_internal_gap_rejected(self, monkeypatch):
+        """Termini fine but a 30-aa unaligned stretch INSIDE the subject
+        alignment is not an expression tag -> similarity."""
+        r = _resolver()
+        hits = [_hit(["9GAP_A"], 1.0, 1.0, subject_len=110,
+                     subject_cov_p=0.73, subject_span=(1, 110), subject_gap=30)]
+        accepted, meta = self._run_identity(r, hits, monkeypatch)
+        assert accepted == []
+
+    def test_one_long_terminal_rejected(self, monkeypatch):
+        """A 200-aa unaligned C-terminus exceeds the tag allowance even
+        with no internal gaps — that is a different construct."""
+        r = _resolver()
+        hits = [_hit(["9LONG_A"], 1.0, 1.0, subject_len=250,
+                     subject_cov_p=0.20, subject_span=(1, 50), subject_gap=0)]
+        accepted, meta = self._run_identity(r, hits, monkeypatch)
+        assert accepted == []
+
+    def test_normal_scov_pass_untagged(self, monkeypatch):
+        r = _resolver()
+        hits = [_hit(["1FI3_A"], 1.0, 1.0, subject_len=82,
+                     subject_cov_p=1.0, subject_span=(1, 82), subject_gap=0)]
+        accepted, meta = self._run_identity(r, hits, monkeypatch)
+        assert accepted == ["1FI3_A"]
+        assert "scov_gate" not in meta["1FI3_A"]
+
+
 class TestSubjectGeometryParsing:
-    def test_span_and_internal_gap_from_hsps(self):
         r = _resolver()
         payload = [{
             "BlastOutput2": {

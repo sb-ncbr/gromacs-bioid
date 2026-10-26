@@ -51,6 +51,20 @@ class BlastHit:
 # the rest mostly 20-mers with none), 53 of them also subject-length-exact.
 _SHORT_IDENTITY_MAX_QLEN = 25
 
+# D-13 (Fix B): subject-coverage override geometry. A short exact
+# alignment inside a larger subject normally fails C-03 subject coverage
+# (a 58-aa ligase inside a 580-aa fusion is NOT the same molecule). But
+# PDB SEQRES routinely carries expression tags and unobserved/disordered
+# termini (the 26/440 = 6% ga1 measurement class): for those, the
+# unaligned subject residues sit at the ENDS. scov < 0.9 is therefore
+# admissible only when the unaligned subject overhang at each terminus is
+# at most ~25 residues AND there is no internal unaligned stretch longer
+# than a few residues (a domain-sized internal gap means a different
+# construct). Identity >= 0.99 and query coverage >= 0.99 stay mandatory;
+# <99%-identity engineered constructs remain similarity untouched.
+EXACT_MATCH_MAX_TERMINAL_OVERHANG_AA = 25
+EXACT_MATCH_MAX_INTERNAL_GAP_AA = 5
+
 
 class BLASTResolver(IdentifierResolver):
     """
@@ -445,10 +459,26 @@ class BLASTResolver(IdentifierResolver):
         return id_min, qcov_min
 
     def _subject_cov_ok(self, hit: BlastHit) -> bool:
-        """C-03 subject-coverage gate: a short exact alignment inside a
-        much larger subject is not the same molecule (58-aa ligase inside a
-        580-aa fusion). Unknown coverage stays admissible (legacy)."""
-        return hit.subject_cov_p is None or hit.subject_cov_p >= 0.9
+        """C-03 subject-coverage gate, with the D-13 (Fix B) terminal
+        override: a short exact alignment inside a much larger subject is
+        not the same molecule (58-aa ligase inside a 580-aa fusion) UNLESS
+        the unaligned subject residues are confined to the termini
+        (expression tags, unobserved/disordered ends) with no internal
+        unaligned stretch. Unknown coverage stays admissible (legacy)."""
+        if hit.subject_cov_p is None:
+            return True
+        if hit.subject_cov_p >= 0.9:
+            return True
+        if hit.subject_span is None or not hit.subject_len:
+            return False
+        left_overhang = hit.subject_span[0] - 1
+        right_overhang = hit.subject_len - hit.subject_span[1]
+        internal_gap = hit.subject_max_internal_gap or 0
+        return (
+            left_overhang <= EXACT_MATCH_MAX_TERMINAL_OVERHANG_AA
+            and right_overhang <= EXACT_MATCH_MAX_TERMINAL_OVERHANG_AA
+            and internal_gap <= EXACT_MATCH_MAX_INTERNAL_GAP_AA
+        )
 
     def _identity_gate_fail(self, hit: BlastHit) -> str | None:
         """None if the hit passes the protein C-03 identity gate, else the
@@ -511,6 +541,10 @@ class BLASTResolver(IdentifierResolver):
                 "coverage_p": hit.coverage_p,
                 "subject_cov_p": hit.subject_cov_p,  # additive (C-21)
             }
+            if hit.subject_cov_p is not None and hit.subject_cov_p < 0.9:
+                # passed only via the D-13 terminal-overhang override —
+                # tag it so the ablation can attribute Fix B's contribution
+                meta["scov_gate"] = "terminal_override"
             for accession in hit.accessions:
                 metadata[accession] = meta
 
