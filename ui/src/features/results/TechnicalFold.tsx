@@ -5,7 +5,7 @@
  * entries open the existing developer views unchanged — this is where
  * internal ids (seg_, resolvers, task ids) legitimately live.
  */
-import { useState } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger, cn } from "@e-infra/design-system";
 import { ChevronDown } from "lucide-react";
 import type { RunStatusResponse, RunSummaryWithTitle, LoadingInfoResponse } from "./hooks";
@@ -37,7 +37,11 @@ export interface TechnicalFoldProps {
   verification: unknown | null;
 }
 
-export function TechnicalFold({
+export interface TechnicalFoldHandle {
+  open: () => void;
+}
+
+export const TechnicalFold = forwardRef<TechnicalFoldHandle, TechnicalFoldProps>(function TechnicalFold({
   entries,
   runId,
   segment,
@@ -50,9 +54,16 @@ export function TechnicalFold({
   signatures,
   identifiers,
   verification,
-}: TechnicalFoldProps) {
+}, ref) {
   const [open, setOpen] = useState(false);
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useImperativeHandle(ref, () => ({
+    open: () => {
+      setOpen(true);
+      setTimeout(() => rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    },
+  }), []);
 
   const render = (key: string) => {
     switch (key) {
@@ -110,7 +121,7 @@ export function TechnicalFold({
   };
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="mt-5 rounded-lg border border-(--vm-line) bg-(--vm-surface)">
+    <Collapsible ref={rootRef} open={open} onOpenChange={setOpen} className="mt-5 rounded-lg border border-(--vm-line) bg-(--vm-surface)">
       <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left" aria-expanded={open}>
         <span>
           <span className="text-sm font-semibold text-(--vm-fg)">Technical details</span>
@@ -147,6 +158,6 @@ export function TechnicalFold({
       </CollapsibleContent>
     </Collapsible>
   );
-}
+});
 
 export default TechnicalFold;

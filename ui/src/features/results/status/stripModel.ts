@@ -159,3 +159,6 @@ export function affectsNames(note: Note, molecules: Molecule[]): { id: string; n
 export function hiddenNotesFooter(hiddenCount: number): string | null {
   return hiddenCount > 0 ? `${hiddenCount} technical messages that don't affect results are in Technical details` : null;
 }
+
+/** The clickable tail of the footer. */
+export const FOOTER_LINK_TEXT = "Technical details";

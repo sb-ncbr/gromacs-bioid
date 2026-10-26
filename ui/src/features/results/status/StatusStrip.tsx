@@ -112,9 +112,11 @@ export interface StatusStripProps {
   molecules: Molecule[];
   onSelect: (id: string) => void;
   onCopyLink?: () => void;
+  /** Opens the Technical-details fold (footer link, SPEC §3.3). */
+  onOpenTechnical?: () => void;
 }
 
-export function StatusStrip({ runStatus, progress, elapsedS, notes, hiddenNoteCount, molecules, onSelect, onCopyLink }: StatusStripProps) {
+export function StatusStrip({ runStatus, progress, elapsedS, notes, hiddenNoteCount, molecules, onSelect, onCopyLink, onOpenTechnical }: StatusStripProps) {
   const [timingsOpen, setTimingsOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const left = leftLine(runStatus, progress);
@@ -211,7 +213,18 @@ export function StatusStrip({ runStatus, progress, elapsedS, notes, hiddenNoteCo
               <NoteRow key={n.id} note={n} molecules={molecules} onSelect={onSelect} />
             ))}
           </div>
-          {footer && <p className="mt-2 text-xs text-(--vm-muted)">{footer}</p>}
+          {footer && (
+            <p className="mt-2 text-xs text-(--vm-muted)">
+              {hiddenNoteCount} technical messages that don't affect results are in{" "}
+              {onOpenTechnical ? (
+                <button type="button" onClick={onOpenTechnical} className="text-(--vm-accent) underline-offset-2 hover:underline">
+                  Technical details
+                </button>
+              ) : (
+                "Technical details"
+              )}
+            </p>
+          )}
         </div>
       )}
     </section>

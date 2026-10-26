@@ -5,7 +5,7 @@
  * Selection lives in the `?segment=` URL param so links/deep-selects work
  * and polling never resets it.
  */
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle, Skeleton } from "@e-infra/design-system";
@@ -38,7 +38,7 @@ import { StatusStrip } from "../features/results/status";
 import { RunHeader } from "../features/results/header/RunHeader";
 import { ErrorBanner } from "../features/results/header/ErrorBanner";
 import { bugReport, pageName, pageTitle } from "../features/results/header/headerModel";
-import { TechnicalFold } from "../features/results/TechnicalFold";
+import { TechnicalFold, type TechnicalFoldHandle } from "../features/results/TechnicalFold";
 
 /** Placeholder until the paper is out (SPEC §3.7). */
 const CITATION = "MD BioID (manuscript in preparation)";
@@ -193,6 +193,9 @@ export default function RunResultsPage() {
     [runId],
   );
 
+  const onOpenTechnical = useCallback(() => foldRef.current?.open(), []);
+  const foldRef = useRef<TechnicalFoldHandle>(null);
+
   /* ---------- Early states -------------------------------------------- */
   if (statusQ.isPending) {
     return (
@@ -248,6 +251,7 @@ export default function RunResultsPage() {
         molecules={molecules}
         onSelect={onSelect}
         onCopyLink={copyLink}
+        onOpenTechnical={onOpenTechnical}
       />
 
       {/* List | stage */}
@@ -290,6 +294,7 @@ export default function RunResultsPage() {
       </div>
 
       <TechnicalFold
+        ref={foldRef}
         entries={vm.technical}
         runId={runId}
         segment={selectedId ?? ""}
