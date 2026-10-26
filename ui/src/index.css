@@ -72,4 +72,64 @@ html[data-theme="custom"] {
   --color-tertiary-800: #38804b;
   --color-tertiary-900: #245c34;
   --color-tertiary-950: #123a20;
+
+  /* ------------------------------------------------------------------ */
+  /* Run-results redesign semantic tokens (bioid_ui_handoff/tokens.json) */
+  /* Light values here; dark below. Referenced as e.g. text-(--vm-high). */
+  /* ------------------------------------------------------------------ */
+  --vm-surface-2: #f8f9fa;
+  --vm-line: #dde1e6;
+  --vm-line-2: #eef0f3;
+  --vm-fg: #1a1d21;
+  --vm-fg-2: #3d444d;
+  --vm-muted: #5b6470;
+  --vm-accent: #1f5f26;
+  --vm-accent-soft: #e8f2e9;
+  --vm-high: #1f5f26;
+  --vm-medium: #b07508;
+  --vm-low: #6b7480;
+  --vm-none: #9a3412;
+  --vm-attention: #7a4b00;
+  --vm-attention-bg: #fdf4e3;
+  --vm-attention-line: #f0d9a8;
+  --vm-info: #24507a;
+  --vm-info-bg: #eaf1f8;
+  --vm-info-line: #c9dbee;
+  --vm-error: #9f1c13;
+  --vm-error-bg: #fdecea;
+  --vm-error-line: #f3c0ba;
+  --vm-progress-track: #e3e7eb;
+  --vm-viewer-bg: #f3f5f7;
+  --vm-scene-other: #c3c9d0;
+  --vm-scene-water: #9cc0e4;
+  --vm-scene-ion: #8a6fc0;
+}
+
+html[data-theme="custom"].dark {
+  --vm-surface-2: #22262b;
+  --vm-line: #2f343a;
+  --vm-line-2: #272b30;
+  --vm-fg: #e7eaee;
+  --vm-fg-2: #c3c8cf;
+  --vm-muted: #9aa3ad;
+  --vm-accent: #6fbf73;
+  --vm-accent-soft: #1f3322;
+  --vm-high: #6fbf73;
+  --vm-medium: #e0a83a;
+  --vm-low: #9aa3ad;
+  --vm-none: #f08a5d;
+  --vm-attention: #f2c66d;
+  --vm-attention-bg: #2e2513;
+  --vm-attention-line: #5a4719;
+  --vm-info: #9cc3ec;
+  --vm-info-bg: #17263a;
+  --vm-info-line: #2a4466;
+  --vm-error: #ff9b8f;
+  --vm-error-bg: #3a1714;
+  --vm-error-line: #6b2a24;
+  --vm-progress-track: #2f343a;
+  --vm-viewer-bg: #0f1113;
+  --vm-scene-other: #4a525b;
+  --vm-scene-water: #2f5679;
+  --vm-scene-ion: #a58ad8;
 }
