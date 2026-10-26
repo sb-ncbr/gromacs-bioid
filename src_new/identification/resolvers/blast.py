@@ -35,6 +35,12 @@ class BlastHit:
     coverage_p: float
     subject_len: int | None = None  # F-N1c: needed for both-directions exact rule
     subject_cov_p: float | None = None  # v3.143 (C-21): merged subject coverage
+    # D-13 (Fix B): merged subject alignment span (1-based, inclusive) and the
+    # longest unaligned subject stretch BETWEEN HSPs — the geometry the
+    # terminal-overhang subject-coverage rule needs to tell expression tags /
+    # unobserved termini apart from domain-in-larger-protein matches.
+    subject_span: tuple[int, int] | None = None
+    subject_max_internal_gap: int | None = None
 
 
 # F-N1c: exact short identity rule applies only to nucleotide queries up to
@@ -79,6 +85,8 @@ class BLASTResolver(IdentifierResolver):
         # Store config references
         self.config = config
         self.blast_config = config.blast
+        # D-13 (2a): processed-hits cache, one BLAST run per (db, sequence)
+        self._processed_hits_cache: dict[tuple[str, str], list[BlastHit]] = {}
 
     def _preflight_check(self) -> None:
         """
@@ -367,12 +375,32 @@ class BLASTResolver(IdentifierResolver):
                     covered += ce - cs + 1
                     return covered / total_len if total_len > 0 else 0.0
 
+                def _subject_geometry() -> tuple[tuple[int, int] | None, int | None]:
+                    """D-13 (Fix B): merged subject span + longest internal
+                    unaligned gap (1-based inclusive coords; None = unknown)."""
+                    ivs = sorted(
+                        (h["hit_from"], h["hit_to"]) for h in hsps
+                        if "hit_from" in h and "hit_to" in h
+                    )
+                    if not ivs:
+                        return None, None
+                    span_lo, span_hi = ivs[0][0], ivs[0][1]
+                    max_gap, ce = 0, ivs[0][1]
+                    for st, en in ivs[1:]:
+                        if st > ce + 1:
+                            max_gap = max(max_gap, st - ce - 1)
+                        span_lo = min(span_lo, st)
+                        ce = max(ce, en)
+                        span_hi = max(span_hi, en)
+                    return (span_lo, span_hi), max_gap
+
                 qcov = _merged_coverage("query_from", "query_to", query_len)
                 if qcov is None:  # malformed payload: keep legacy estimate
                     qcov = total_align / query_len if query_len > 0 else 0.0
                 subject_len = hit.get("len")
                 scov = (_merged_coverage("hit_from", "hit_to", subject_len)
                         if subject_len else None)
+                subj_span, subj_gap = _subject_geometry()
                 # Pooled long-run gates stay meaningful: strictest evalue and
                 # best bit score across the hit's HSPs.
                 bits: float = max((h.get("bit_score", 0.0) for h in hsps), default=0.0)
@@ -380,7 +408,9 @@ class BLASTResolver(IdentifierResolver):
 
                 results.append(BlastHit(accessions, evalue, bits, identity_p, qcov,
                                         subject_len=subject_len,
-                                        subject_cov_p=scov))
+                                        subject_cov_p=scov,
+                                        subject_span=subj_span,
+                                        subject_max_internal_gap=subj_gap))
         
         return results
 
@@ -389,10 +419,52 @@ class BLASTResolver(IdentifierResolver):
         """Filter BLAST results."""
         return [hit for hit in results if filter_func(hit)]
 
+    def _processed_hits(self, sequence: str, working_directory: str) -> list[BlastHit]:
+        """D-13 (2a): ONE BLAST run per (resolver, signature) — the identity
+        and similarity tiers are two views over the same processed hits
+        (previously each phase re-ran blastp, doubling the protein BLAST
+        wall time that dominates the identify stage)."""
+        cache = getattr(self, "_processed_hits_cache", None)
+        if cache is None:
+            cache = self._processed_hits_cache = {}
+        key = (self.db_path, sequence)
+        if key not in cache:
+            cache[key] = self._process_blast_results(
+                self._run_blast_local(sequence, working_directory)
+            )
+        return cache[key]
+
+    # --- D-13 protein identity gate (C-03) as a pure per-hit predicate ---
+    # Threshold order preserved: identity -> qcov -> scov; the first
+    # failing gate is recorded so similarity metadata can say WHY an
+    # exact-looking hit stayed similarity (2d).
+
+    def _identity_thresholds(self) -> tuple[float, float]:
+        id_min = max(0.99, self.blast_config.exact_match_min_identity_p)
+        qcov_min = max(0.99, self.blast_config.exact_match_min_query_cov_p)
+        return id_min, qcov_min
+
+    def _subject_cov_ok(self, hit: BlastHit) -> bool:
+        """C-03 subject-coverage gate: a short exact alignment inside a
+        much larger subject is not the same molecule (58-aa ligase inside a
+        580-aa fusion). Unknown coverage stays admissible (legacy)."""
+        return hit.subject_cov_p is None or hit.subject_cov_p >= 0.9
+
+    def _identity_gate_fail(self, hit: BlastHit) -> str | None:
+        """None if the hit passes the protein C-03 identity gate, else the
+        first failing gate name: 'identity' | 'qcov' | 'scov'."""
+        id_min, qcov_min = self._identity_thresholds()
+        if hit.identity_p < id_min:
+            return "identity"
+        if hit.coverage_p < qcov_min:
+            return "qcov"
+        if not self._subject_cov_ok(hit):
+            return "scov"
+        return None
+
     def _run_blast_identity(self, sequence: str, working_directory: str) -> list[str]:
         """Execute identity search with BLAST."""
-        raw_json = self._run_blast_local(sequence, working_directory)
-        hits = self._process_blast_results(raw_json)
+        hits = self._processed_hits(sequence, working_directory)
 
         # Apply filters for exact matches
         if self.is_protein:
@@ -410,20 +482,7 @@ class BLASTResolver(IdentifierResolver):
             # 580-aa fusion protein is not the same molecule). The F-N1c
             # nucleotide rule below already worked this way; evalue/bits keep
             # gating the SIMILARITY path unchanged.
-            strict_hits = self._filter_blast_results(
-                hits,
-                lambda hit: hit.identity_p >= max(
-                    0.99, self.blast_config.exact_match_min_identity_p),
-            )
-            strict_hits = self._filter_blast_results(
-                strict_hits,
-                lambda hit: hit.coverage_p >= max(
-                    0.99, self.blast_config.exact_match_min_query_cov_p),
-            )
-            strict_hits = self._filter_blast_results(
-                strict_hits,
-                lambda hit: hit.subject_cov_p is None or hit.subject_cov_p >= 0.9,
-            )
+            strict_hits = [h for h in hits if self._identity_gate_fail(h) is None]
         else:
             strict_hits = self._filter_blast_results(
                 hits,
@@ -491,9 +550,7 @@ class BLASTResolver(IdentifierResolver):
 
     def _run_blast_similarity(self, sequence: str, working_directory: str) -> list[tuple[str, float]]:
         """Execute similarity search with BLAST."""
-        hits = self._process_blast_results(
-            self._run_blast_local(sequence, working_directory)
-        )
+        hits = self._processed_hits(sequence, working_directory)
 
         # Apply filters for similarity matches
         hits = self._filter_blast_results(
@@ -513,7 +570,11 @@ class BLASTResolver(IdentifierResolver):
             lambda hit: hit.coverage_p >= self.blast_config.similarity_match_min_query_cov_p,
         )
         
-        # Capture metadata for each hit
+        # Capture metadata for each hit. D-13 (2d): similarity rows now
+        # carry subject coverage AND, for protein hits that failed the
+        # identity gate, the first failing gate — so a rerun's gate-fail
+        # classes are measurable offline (the A/B ablation needs this) and
+        # the UI can show "{p}% identity over {c}%".
         metadata: dict[str, dict] = {}
         for hit in hits:
             meta = {
@@ -521,7 +582,12 @@ class BLASTResolver(IdentifierResolver):
                 "bit_score": hit.bits,
                 "identity_p": hit.identity_p,
                 "coverage_p": hit.coverage_p,
+                "subject_cov_p": hit.subject_cov_p,
             }
+            if self.is_protein:
+                fail = self._identity_gate_fail(hit)
+                if fail is not None:
+                    meta["identity_gate_fail"] = fail
             for accession in hit.accessions:
                 metadata[accession] = meta
         self._last_resolution_metadata = metadata
