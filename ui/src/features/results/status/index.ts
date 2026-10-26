@@ -1,3 +1,18 @@
-/** Public surface of the status feature. */
+/** Public surface of the status feature (SPEC.md §3.3). */
 export { StatusStrip, default as StatusStripDefault, type StatusStripProps } from "./StatusStrip";
-export { humanDuration, activeStepIndex, factsLine, notesPill, affectsNames, STEP_STATUS_WORD, type NotesPill } from "./stripModel";
+export {
+  humanDuration,
+  activeStepIndex,
+  leftLine,
+  timingsLine,
+  stepFill,
+  factsLine,
+  notesPill,
+  sortedNotes,
+  affectsNames,
+  hiddenNotesFooter,
+  AFFECTS_VISIBLE,
+  type RunProgress,
+  type NotesPill,
+  type Facts,
+} from "./stripModel";

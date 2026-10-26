@@ -1,147 +1,220 @@
 /**
- * StatusStrip — the 6-step progress bar + facts line + notes pill
- * (SPEC.md §3.3). Steps come from viewmodel/steps.ts, notes from
- * viewmodel/notes.ts through the adapter; this component only renders.
+ * StatusStrip (SPEC.md §3.3): one card under the run header.
+ * - finished: collapsed one-liner "✓ Finished in …" with [Step timings ▾]
+ * - queued/running/failed: left line + slim 6-segment bar; running also
+ *   gets the facts line with [Copy link]
+ * - right: notes pill ("⚠ 1 ⓘ 2 · 3 notes: {title} and 2 more"), expanded
+ *   as one line per note with "Affects:" chips (hidden until G4) and
+ *   per-note disclosure. Open notes survive polling re-renders.
  */
 import { useState, type ComponentType } from "react";
-import { Badge, Popover, PopoverContent, PopoverTrigger, cn } from "@e-infra/design-system";
-import { Check, Circle, CircleX, Info, Loader2, TriangleAlert } from "lucide-react";
-import type { Molecule, Note, RunStatus, Stage, StageStatus } from "../viewmodel";
-import { affectsNames, factsLine, humanDuration, notesPill } from "./stripModel";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger, Tooltip, TooltipContent, TooltipTrigger, cn } from "@e-infra/design-system";
+import { Check, ChevronDown, CircleX, Info, Link2, Loader2, TriangleAlert } from "lucide-react";
+import type { Molecule, Note, RunStatus, Stage } from "../viewmodel";
+import {
+  AFFECTS_VISIBLE,
+  affectsNames,
+  factsLine,
+  hiddenNotesFooter,
+  humanDuration,
+  leftLine,
+  notesPill,
+  sortedNotes,
+  stepFill,
+  timingsLine,
+  type RunProgress,
+} from "./stripModel";
 
-const STEP_ICON: Record<StageStatus, ComponentType<{ size?: number; className?: string; "aria-hidden"?: boolean }>> = {
-  done: Check,
-  active: Loader2,
-  waiting: Circle,
-  failed: CircleX,
-};
-
-const STEP_COLOR: Record<StageStatus, string> = {
-  done: "text-(--vm-high)",
-  active: "text-(--vm-info)",
-  waiting: "text-(--vm-muted)",
-  failed: "text-(--vm-none)",
-};
-
-function Step({ stage, last }: { stage: Stage; last: boolean }) {
-  const Icon = STEP_ICON[stage.status];
+function SlimBar({ stages, progress }: { stages: Stage[]; progress: RunProgress }) {
   return (
-    <li className="flex min-w-0 flex-1 items-center" aria-current={stage.status === "active" ? "step" : undefined}>
-      <div className="flex min-w-0 flex-col items-start gap-0.5">
-        <span className="flex items-center gap-1.5">
-          <Icon
-            size={15}
-            aria-hidden
-            className={cn("shrink-0", STEP_COLOR[stage.status], stage.status === "active" && "motion-safe:animate-spin")}
-          />
-          <span
-            className={cn(
-              "truncate text-[13px]",
-              stage.status === "active" ? "font-semibold text-(--vm-fg)" : stage.status === "waiting" ? "text-(--vm-muted)" : "text-(--vm-fg-2)",
-            )}
-          >
-            {stage.label}
-          </span>
-        </span>
-        {stage.duration_s != null && stage.status !== "waiting" && (
-          <span className="pl-[21px] text-xs tabular-nums text-(--vm-muted)">
-            {stage.status === "active" ? `${humanDuration(stage.duration_s)} so far` : humanDuration(stage.duration_s)}
-          </span>
-        )}
-      </div>
-      {!last && <span aria-hidden className="mx-2 h-px flex-1 self-start mt-2.5 bg-(--vm-line)" />}
-    </li>
+    <ol className="mt-2 flex gap-1" aria-label="Pipeline steps">
+      {stages.map((s) => {
+        const fill = stepFill(s, progress);
+        const tip = s.duration_s != null ? `${s.label} · ${humanDuration(s.duration_s)}` : s.label;
+        return (
+          <li key={s.key} className="flex-1" aria-current={s.status === "active" ? "step" : undefined}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="group" aria-label={`${s.label}: ${s.status}`}>
+                  <div
+                    className={cn(
+                      "relative h-1.5 overflow-hidden rounded-full bg-(--vm-line)",
+                      s.status === "failed" && "bg-(--vm-none)",
+                    )}
+                  >
+                    {fill >= 0 && s.status !== "failed" && (
+                      <div
+                        className={cn("absolute inset-y-0 left-0 rounded-full", s.status === "done" ? "bg-(--vm-high)" : "bg-(--vm-info)")}
+                        style={{ width: `${Math.round(fill * 100)}%` }}
+                      />
+                    )}
+                    {fill === -1 && (
+                      <div className="absolute inset-y-0 w-1/3 rounded-full bg-(--vm-info) motion-safe:animate-[sweep_1.2s_ease-in-out_infinite]" />
+                    )}
+                  </div>
+                  <p className="mt-1 truncate text-center text-[12px] text-(--vm-muted) group-aria-[current=step]:font-semibold group-aria-[current=step]:text-(--vm-fg)">
+                    {s.label}
+                  </p>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>{tip}</TooltipContent>
+            </Tooltip>
+          </li>
+        );
+      })}
+      <style>{`@keyframes sweep { 0% { left: -33%; } 100% { left: 100%; } }`}</style>
+    </ol>
   );
 }
 
-function NoteCard({ note, molecules }: { note: Note; molecules: Molecule[] }) {
-  const names = affectsNames(note, molecules); // chips hide until G4 lands
+function NoteRow({ note, molecules, onSelect }: { note: Note; molecules: Molecule[]; onSelect: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
   const attention = note.severity === "attention";
-  const Icon = attention ? TriangleAlert : Info;
+  const Icon: ComponentType<{ size?: number; className?: string; "aria-hidden"?: boolean }> = attention ? TriangleAlert : Info;
+  const chips = affectsNames(note, molecules);
+  const shown = chips.slice(0, AFFECTS_VISIBLE);
+  const extra = chips.length - shown.length;
   return (
-    <div
-      className={cn(
-        "rounded-md border p-3",
-        attention ? "border-(--vm-attention-line) bg-(--vm-attention-bg)" : "border-(--vm-info-line) bg-(--vm-info-bg)",
-      )}
-    >
-      <p className={cn("flex items-center gap-1.5 text-sm font-semibold", attention ? "text-(--vm-attention)" : "text-(--vm-info)")}>
-        <Icon size={15} aria-hidden />
-        {note.title}
-      </p>
-      <p className="mt-1 text-sm text-(--vm-fg-2)">{note.body}</p>
-      {note.action && <p className="mt-1 text-sm font-medium text-(--vm-fg)">What to do: {note.action}</p>}
-      {names.length > 0 && (
-        <p className="mt-1.5 flex flex-wrap items-center gap-1 text-xs text-(--vm-muted)">
-          Affects:
-          {names.map((n) => (
-            <Badge key={n} variant="secondary" className="text-xs">
-              {n}
-            </Badge>
-          ))}
-        </p>
-      )}
-    </div>
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <div className="flex items-baseline gap-2">
+        <CollapsibleTrigger className="flex min-w-0 flex-1 items-baseline gap-1.5 py-0.5 text-left" aria-expanded={open}>
+          <Icon size={14} aria-hidden className={cn("shrink-0 translate-y-0.5", attention ? "text-(--vm-attention)" : "text-(--vm-info)")} />
+          <span className="truncate text-sm font-medium text-(--vm-fg)">{note.title}</span>
+          {note.raw_count > 1 && <span className="shrink-0 text-xs text-(--vm-muted)">{note.raw_count} messages</span>}
+          <ChevronDown size={13} aria-hidden className={cn("shrink-0 translate-y-0.5 text-(--vm-muted) transition-transform", open && "rotate-180")} />
+        </CollapsibleTrigger>
+        {chips.length > 0 && (
+          <span className="flex shrink-0 items-baseline gap-1 text-xs text-(--vm-muted)">
+            Affects:
+            {shown.map((c) => (
+              <button key={c.id} type="button" onClick={() => onSelect(c.id)} className="text-(--vm-accent) underline-offset-2 hover:underline">
+                {c.name}
+              </button>
+            ))}
+            {extra > 0 && <span>and {extra} more</span>}
+          </span>
+        )}
+      </div>
+      <CollapsibleContent className="pb-1 pl-[21px]">
+        <p className="text-sm text-(--vm-fg-2)">{note.body}</p>
+        {note.action && <p className="mt-0.5 text-sm font-medium text-(--vm-fg)">What to do: {note.action}</p>}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
 export interface StatusStripProps {
   runStatus: RunStatus;
-  stages: Stage[];
+  progress: RunProgress;
+  elapsedS: number | null;
   notes: Note[];
+  hiddenNoteCount: number;
   molecules: Molecule[];
-  errorTitle?: string | null;
+  onSelect: (id: string) => void;
+  onCopyLink?: () => void;
 }
 
-export function StatusStrip({ runStatus, stages, notes, molecules, errorTitle }: StatusStripProps) {
-  const [open, setOpen] = useState(false);
-  const facts = factsLine(runStatus, stages, errorTitle);
+export function StatusStrip({ runStatus, progress, elapsedS, notes, hiddenNoteCount, molecules, onSelect, onCopyLink }: StatusStripProps) {
+  const [timingsOpen, setTimingsOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const left = leftLine(runStatus, progress);
+  const timings = timingsLine(progress.stages);
+  const facts = factsLine(runStatus, progress, elapsedS);
   const pill = notesPill(notes);
-  const sorted = [...notes].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "attention" ? -1 : 1));
+  const footer = hiddenNotesFooter(hiddenNoteCount);
+  const finished = runStatus === "finished";
 
   return (
-    <div aria-label="Run progress" className="rounded-lg border border-(--vm-line) bg-(--vm-surface) px-4 py-3">
+    <section aria-label="Run progress" className="rounded-lg border border-(--vm-line) bg-(--vm-surface) px-4 py-3">
       <div className="flex items-start justify-between gap-3">
-        <ol className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
-          {stages.map((s, i) => (
-            <Step key={s.key} stage={s} last={i === stages.length - 1} />
-          ))}
-        </ol>
+        <div className="min-w-0 flex-1">
+          {left && (
+            <p
+              className={cn(
+                "flex items-center gap-1.5 text-sm",
+                runStatus === "failed" ? "font-medium text-(--vm-none)" : runStatus === "running" ? "font-medium text-(--vm-fg)" : "text-(--vm-fg-2)",
+              )}
+              aria-live="polite"
+            >
+              {finished && <Check size={15} aria-hidden className="shrink-0 text-(--vm-high)" />}
+              {runStatus === "running" && <Loader2 size={15} aria-hidden className="shrink-0 motion-safe:animate-spin text-(--vm-info)" />}
+              {runStatus === "failed" && <CircleX size={15} aria-hidden className="shrink-0" />}
+              {left}
+              {finished && timings && (
+                <button
+                  type="button"
+                  onClick={() => setTimingsOpen((v) => !v)}
+                  aria-expanded={timingsOpen}
+                  className="ml-1 inline-flex items-center gap-0.5 text-(--vm-accent) underline-offset-2 hover:underline"
+                >
+                  Step timings <ChevronDown size={13} aria-hidden className={cn("transition-transform", timingsOpen && "rotate-180")} />
+                </button>
+              )}
+            </p>
+          )}
+          {finished && timingsOpen && timings && <p className="mt-1 pl-[21px] text-sm text-(--vm-muted)">{timings}</p>}
+          {!finished && <SlimBar stages={progress.stages} progress={progress} />}
+          {facts && (
+            <p className="mt-2 text-sm text-(--vm-muted)">
+              {[facts.searched, facts.elapsed, facts.typical].filter(Boolean).join(" · ")}
+              {[facts.searched, facts.elapsed, facts.typical].some(Boolean) && " · "}
+              {facts.closeNote}
+              {onCopyLink && (
+                <>
+                  {" "}
+                  <button type="button" onClick={onCopyLink} className="inline-flex items-center gap-0.5 text-(--vm-accent) underline-offset-2 hover:underline">
+                    <Link2 size={13} aria-hidden /> Copy link
+                  </button>
+                </>
+              )}
+            </p>
+          )}
+        </div>
+
         {pill && (
-          <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-[13px] font-medium",
-                  pill.needsAttention
-                    ? "border-(--vm-attention-line) bg-(--vm-attention-bg) text-(--vm-attention)"
-                    : "border-(--vm-line) bg-(--vm-surface-2) text-(--vm-fg-2)",
-                )}
-              >
-                {pill.needsAttention ? <TriangleAlert size={14} aria-hidden /> : <Info size={14} aria-hidden />}
-                {pill.label}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-[min(420px,90vw)]">
-              <p className="mb-2 text-xs uppercase tracking-wide text-(--vm-muted)">
-                {pill.attention > 0 ? `${pill.attention} need${pill.attention === 1 ? "s" : ""} attention` : "No action needed"}
-              </p>
-              <div className="max-h-[50vh] space-y-2 overflow-y-auto">
-                {sorted.map((n) => (
-                  <NoteCard key={n.id} note={n} molecules={molecules} />
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
+          <button
+            type="button"
+            onClick={() => setNotesOpen((v) => !v)}
+            aria-expanded={notesOpen}
+            className={cn(
+              "flex max-w-[55%] shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-[13px]",
+              pill.needsAttention
+                ? "border-(--vm-attention-line) bg-(--vm-attention-bg) text-(--vm-attention)"
+                : "border-(--vm-line) bg-(--vm-surface-2) text-(--vm-fg-2)",
+            )}
+          >
+            <span className="inline-flex items-center gap-1 whitespace-nowrap font-medium">
+              {pill.attention > 0 && (
+                <span className="inline-flex items-center gap-0.5">
+                  <TriangleAlert size={13} aria-hidden /> {pill.attention}
+                </span>
+              )}
+              {pill.info > 0 && (
+                <span className="inline-flex items-center gap-0.5">
+                  <Info size={13} aria-hidden /> {pill.info}
+                </span>
+              )}
+            </span>
+            <span className="truncate max-[560px]:hidden">
+              {pill.total} {pill.total === 1 ? "note" : "notes"}: {pill.leadTitle}
+              {pill.others > 0 && ` and ${pill.others} more`}
+            </span>
+            <ChevronDown size={13} aria-hidden className={cn("shrink-0 transition-transform", notesOpen && "rotate-180")} />
+          </button>
         )}
       </div>
-      {facts && (
-        <p className={cn("mt-2 text-sm", runStatus === "failed" ? "text-(--vm-none)" : "text-(--vm-muted)")} aria-live="polite">
-          {facts}
-        </p>
+
+      {pill && notesOpen && (
+        <div className="mt-2 border-t border-(--vm-line) pt-2">
+          <div className="space-y-1">
+            {sortedNotes(notes).map((n) => (
+              <NoteRow key={n.id} note={n} molecules={molecules} onSelect={onSelect} />
+            ))}
+          </div>
+          {footer && <p className="mt-2 text-xs text-(--vm-muted)">{footer}</p>}
+        </div>
       )}
-    </div>
+    </section>
   );
 }
 
