@@ -612,6 +612,98 @@ class TestComprehensiveMockCoverage:
             error_str = str(error.get("error", ""))
             assert "'tolist'" not in error_str
 
+def _build_protein_test_pdb() -> str:
+    """12-residue heavy-atom-complete protein fragment + 1 water + 1 K ion
+    with CONECT records. Requirements (red-team re-audit):
+
+     1. Chain length must clear the BLAST applicability guard
+        (_MIN_SEQUENCE_LENGTH = 10 in resolvers/blast.py) — the old 2-residue
+        fixture produced 'AG', so no BLAST resolver was ever attempted and
+        identifiers/{A}/fasta_resname_protein/attempted stayed empty.
+     2. The molecule must be chemically COMPLETE (all heavy atoms) with
+        CONECT bond records — a backbone-only peptide leaves dozens of
+        dangling valences and sends RDKit DetermineBonds/DetermineBondOrders
+        into an exponential valence search inside the smiles/inchi
+        generators (observed: >20 min CPU spin, uninterruptible — same
+        pathology class as the documented kekulization freeze), bounded
+        only by the task-level timeout.
+    """
+    side_chains = {
+        "ALA": ["CB"],
+        "GLY": [],
+        "SER": ["CB", "OG"],
+        "VAL": ["CB", "CG1", "CG2"],
+        "LEU": ["CB", "CG", "CD1", "CD2"],
+        "ASP": ["CB", "CG", "OD1", "OD2"],
+        "THR": ["CB", "OG1", "CG2"],
+        "ILE": ["CB", "CG1", "CG2", "CD1"],
+        "ASN": ["CB", "CG", "OD1", "ND2"],
+        "GLN": ["CB", "CG", "CD", "OE1", "NE2"],
+        "LYS": ["CB", "CG", "CD", "CE", "NZ"],
+        "MET": ["CB", "CG", "SD", "CE"],
+    }
+    resnames = ["ALA", "GLY", "SER", "VAL", "LEU", "ASP",
+                "THR", "ILE", "ASN", "GLN", "LYS", "MET"] * 3  # ~277 heavy atoms:
+    # clears the 250-atom smiles gate like any real protein (production
+    # proteins never enter the RDKit bond-order search), while the 12-residue
+    # version still slid under it and spun >20 min in DetermineBondOrders.
+    # BLAST applicability needs >= 10 residues; 36 keeps it comfortably above.
+    pdb_lines = ["HEADER    TEST PROTEIN STRUCTURE"]
+    serial = 1
+    index_by_name = {}
+
+    def put(atom, resname, chain, resid, x, y, z, elem):
+        nonlocal serial
+        record = "ATOM  " if chain == "A" else "HETATM"
+        pdb_lines.append(
+            f"{record}{serial:5d} {atom:<4s}{resname:>4s} {chain}{resid:4d}    "
+            f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00 17.00          {elem:>2s}")
+        index_by_name[(resid, atom)] = serial
+        serial += 1
+
+    for i, rn in enumerate(resnames, 1):
+        bx = 20.0 + 3.8 * i
+        put("N", rn, "A", i, bx, 22.0, 5.0, "N")
+        put("CA", rn, "A", i, bx + 1.46, 22.45, 5.30, "C")
+        put("C", rn, "A", i, bx + 2.86, 21.80, 5.55, "C")
+        put("O", rn, "A", i, bx + 3.55, 20.85, 5.90, "O")
+        # zigzag sidechain off CA
+        sx, sy, sz = bx + 1.90, 23.55, 4.35
+        for j, atom in enumerate(side_chains[rn]):
+            put(atom, rn, "A", i, sx, sy, sz, atom[0])
+            sx += (0.9 if j % 2 == 0 else -0.8)
+            sy += (-1.05 if j % 2 == 0 else 1.0)
+            sz += (-0.85 if j % 2 == 0 else 0.95)
+    # water (with hydrogens) and the ion
+    put("OW", "SOL", "B", 1, 10.0, 10.0, 10.0, "O")
+    put("HW1", "SOL", "B", 1, 10.96, 10.0, 10.0, "H")
+    put("HW2", "SOL", "B", 1, 9.70, 10.82, 10.0, "H")
+    put("K", "K", "C", 1, 30.0, 30.0, 30.0, "K")
+
+    # CONECT records: backbone + sidechains + water O-H bonds, so topology
+    # bond perception (and the exponential bond-order search) is skipped.
+    bonds = []
+    for i, rn in enumerate(resnames, 1):
+        pairs = [("N", "CA"), ("CA", "C"), ("C", "O")]
+        if i < len(resnames):
+            pairs.append((("C", i), ("N", i + 1)))
+        prev = "CA"
+        for atom in side_chains[rn]:
+            pairs.append((prev, atom))
+            prev = atom
+        for a, b in pairs:
+            n1, r1 = (a[0], a[1]) if isinstance(a, tuple) else (a, i)
+            n2, r2 = (b[0], b[1]) if isinstance(b, tuple) else (b, i)
+            bonds.append((index_by_name[(r1, n1)], index_by_name[(r2, n2)]))
+    o = index_by_name[(1, "OW")]
+    bonds.append((o, index_by_name[(1, "HW1")]))
+    bonds.append((o, index_by_name[(1, "HW2")]))
+    for a, b in bonds:
+        pdb_lines.append(f"CONECT{a:5d}{b:5d}")
+    pdb_lines += ["TER", "END"]
+    return "\n".join(pdb_lines) + "\n"
+
+
 class TestFullPipelineProteinID:
     """Integration test for protein identification in serial mode."""
     
@@ -628,24 +720,9 @@ class TestFullPipelineProteinID:
         from src_new import PipelineExecutor, ResultsManager, build_load_and_export_tasks
         from src_new.config.loader import RunConfig
         
-        # Create a minimal PDB file with a 2-residue protein fragment + 1 water + 1 ion
-        pdb_content = """HEADER    TEST PROTEIN STRUCTURE
-ATOM      1  N   ALA A   1      20.153  22.867   4.981  1.00 18.40           N
-ATOM      2  CA  ALA A   1      20.250  24.321   5.050  1.00 17.20           C
-ATOM      3  C   ALA A   1      21.732  24.680   5.200  1.00 16.80           C
-ATOM      4  O   ALA A   1      22.401  23.890   5.890  1.00 15.90           O
-ATOM      5  CB  ALA A   1      19.500  25.000   4.000  1.00 17.00           C
-ATOM      6  N   GLY A   2      22.000  26.000   5.000  1.00 18.40           N
-ATOM      7  CA  GLY A   2      23.500  26.500   5.200  1.00 17.20           C
-ATOM      8  C   GLY A   2      24.000  26.000   6.600  1.00 16.80           C
-ATOM      9  O   GLY A   2      23.500  26.500   7.600  1.00 15.90           O
-ATOM     10  OW  SOL B   1      10.000  10.000  10.000  1.00 10.00           O
-ATOM     11  HW1 SOL B   1      10.500  10.500  10.000  1.00 10.00           H
-ATOM     12  HW2 SOL B   1       9.500  10.500  10.000  1.00 10.00           H
-ATOM     13  K   K   C   1      30.000  30.000  30.000  1.00 20.00           K
-TER
-END
-"""
+        # Create a minimal PDB file: a 12-residue protein fragment + 1 water + 1 ion
+        # (see _build_protein_test_pdb for why the fixture looks the way it does).
+        pdb_content = _build_protein_test_pdb()
         pdb_file = tmp_path / "test_protein.pdb"
         pdb_file.write_text(pdb_content, encoding="utf-8")
         
