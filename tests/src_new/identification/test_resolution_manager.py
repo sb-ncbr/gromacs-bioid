@@ -190,11 +190,11 @@ def test_resolution_manager_two_phase_identity_then_similarity(tmp_path: Path, c
     # Verify both phases were called
     assert mock_resolver.call_count == 2
     
-    # Verify similarity hits were stored
-    hits_data = results.get_data("identifiers/frag1/smiles/mock_resolver")
+    # Verify similarity hits were stored (D-13: under the tier's own key)
+    hits_data = results.get_data("identifiers/frag1/smiles/mock_resolver@sim")
     assert hits_data is not None
     assert hits_data["hit_type"] == "similarity"
-    assert ("SIM_ID", 90.0) in hits_data["hits"]
+    assert ("SIM_ID", 90.0) in [tuple(h) for h in hits_data["hits"]]
 
 
 def test_resolution_manager_handles_missing_signatures_data(tmp_path: Path, config: RunConfig) -> None:

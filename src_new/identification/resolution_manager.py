@@ -274,16 +274,22 @@ class IdentifierResolutionManager:
             if not resolver.is_applicable(signature, signature_type, as_similarity=True):
                 continue
             
-            attempted_resolvers.append(resolver.name)
+            # D-13 (2a/2c): similarity listings persist under their OWN key
+            # ("{resolver}@sim"). Historically both phases wrote to the
+            # base key, so one listing always clobbered the other —
+            # with overwrite_existing=yes the ga1 campaign lost every
+            # protein identity listing to the similarity phase.
+            sim_name = f"{resolver.name}@sim"
+            attempted_resolvers.append(sim_name)
             
-            # Check if we should skip due to existing data
-            data_path = f"identifiers/{segment}/{signature_generator_name}/{resolver.name}"
+            # Skip check reads the @sim key only (each tier independent).
+            data_path = f"identifiers/{segment}/{signature_generator_name}/{sim_name}"
             if not self._config.identifiers.overwrite_existing:
                 if results.data_exists(data_path):
                     existing = results.get_data(data_path)
                     if existing and existing.get("hits"):
                         logger.debug(
-                            f"Skipping {resolver.name} for {segment}: "
+                            f"Skipping {sim_name} for {segment}: "
                             f"existing hits found"
                         )
                         hits_found = True
@@ -298,13 +304,13 @@ class IdentifierResolutionManager:
                     cache=cache
                 )
             except Exception as e:
-                errors.append({"resolver": resolver.name, "generator": signature_generator_name, "error": str(e)})
+                errors.append({"resolver": sim_name, "generator": signature_generator_name, "error": str(e)})
                 continue
 
             if not result:
                 _last_err = getattr(resolver, "get_last_error", lambda: None)()
                 if _last_err:
-                    errors.append({"resolver": resolver.name, "generator": signature_generator_name, "error": _last_err})
+                    errors.append({"resolver": sim_name, "generator": signature_generator_name, "error": _last_err})
 
             if result:
                 hits_found = True
@@ -319,7 +325,7 @@ class IdentifierResolutionManager:
                 if metadata is not None:
                     resolver_data["hits_metadata"] = metadata
                 results.set_data(
-                    f"identifiers/{segment}/{signature_generator_name}/{resolver.name}",
+                    f"identifiers/{segment}/{signature_generator_name}/{sim_name}",
                     resolver_data
                 )
         
