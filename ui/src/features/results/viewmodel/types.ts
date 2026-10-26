@@ -68,6 +68,8 @@ export interface MoleculeResult {
   best: { db: string; id: string; url: string } | null;
   /** 0–100; null for exact matches. */
   confidence: number | null;
+  /** "Match to your molecule" phrase for the best hit (matches-table top row). */
+  evidence?: string | null;
 }
 
 export interface MoleculeDescriptor {
@@ -76,6 +78,14 @@ export interface MoleculeDescriptor {
   smiles?: string;
   inchikey?: string;
   element?: string;
+}
+
+export interface RejectedEntry {
+  db: string;
+  id: string;
+  what: string;
+  /** Short rewritten clause (COPY.md §4); raw reason stays under Technical details. */
+  clause: string;
 }
 
 export interface Molecule {
@@ -92,6 +102,8 @@ export interface Molecule {
   result: MoleculeResult | null;
   matches: MatchEntry[];
   more: { verified: number; related: number; rejected: number };
+  /** Rejected candidates with rewritten reasons ("Rejected candidates (N)"). */
+  rejected?: RejectedEntry[];
   descriptor: MoleculeDescriptor;
   note_ids: string[];
 }

@@ -3,7 +3,7 @@
  * Thin renderer over moleculeList.ts; selection is owned by the parent and
  * persisted in the URL together with group-by and filter (SPEC.md §5).
  */
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   Button,
   Card,
@@ -184,15 +184,19 @@ export function MoleculeList({
   molecules, runStatus, selectedId, onSelect, groupBy, onGroupByChange, filter, onFilterChange, storageKey,
 }: MoleculeListProps) {
   const [query, setQuery] = useState("");
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed(storageKey ? window.localStorage : null, storageKey ?? ""));
+  const [prevKey, setPrevKey] = useState(storageKey);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() =>
+    loadCollapsed(storageKey ? window.localStorage : null, storageKey ?? ""),
+  );
   const [openIdents, setOpenIdents] = useState<Set<string>>(new Set());
   const listRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (storageKey) {
-      setCollapsed((prev) => (prev.size ? prev : loadCollapsed(window.localStorage, storageKey)));
-    }
-  }, [storageKey]);
+  // Reset persisted collapsed state when the run changes (render-time
+  // adjustment — no setState-in-effect).
+  if (prevKey !== storageKey) {
+    setPrevKey(storageKey);
+    setCollapsed(loadCollapsed(storageKey ? window.localStorage : null, storageKey ?? ""));
+  }
 
   const finished = runStatus === "finished";
   const effectiveGroupBy: GroupBy = finished ? groupBy : "kind";

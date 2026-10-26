@@ -188,9 +188,10 @@ function resultOf(hits: HitView[]): {
   result: MoleculeResult;
   matches: Molecule["matches"];
   more: Molecule["more"];
+  rejected: NonNullable<Molecule["rejected"]>;
 } {
   const verified = sorted(hits.filter((h) => h.is_verified));
-  const rejected = hits.filter((h) => !h.is_verified);
+  const rejectedHits = hits.filter((h) => !h.is_verified);
   const related = hits.filter(
     (h) => h.equivalence_class_id != null || (h.similarity_score == null && h.skeleton_sim != null),
   );
@@ -207,6 +208,7 @@ function resultOf(hits: HitView[]): {
       description: top?.organism ?? null,
       best,
       confidence: exact ? null : (top?.final_confidence ?? null),
+      evidence: top ? evidence(top) : null,
     },
     matches: verified.slice(1).map((h) => ({
       db: formatDb(h.database),
@@ -216,7 +218,13 @@ function resultOf(hits: HitView[]): {
       evidence: evidence(h),
       confidence: h.final_confidence ?? null,
     })),
-    more: { verified: verified.length, related: related.length, rejected: rejected.length },
+    more: { verified: verified.length, related: related.length, rejected: rejectedHits.length },
+    rejected: rejectedHits.map((h) => ({
+      db: formatDb(h.database),
+      id: h.identifier ?? "",
+      what: h.name ?? `${formatDb(h.database)} ${h.identifier ?? ""}`,
+      clause: clause(h.rejection_reason),
+    })),
   };
 }
 
@@ -240,10 +248,15 @@ function buildMolecules(bundle: ApiBundle, status: RunStatus, stageSearch = true
     const hits = bySeg.get(id) ?? (bundle.verification != null ? [] : undefined);
     const mine = sigs.get(id) ?? [];
     const find = (gen: string) => mine.find((s) => s.generator === gen)?.signature;
-    const { result, matches, more } =
+    const { result, matches, more, rejected } =
       hits != null
         ? resultOf(hits)
-        : { result: null, matches: [], more: { verified: 0, related: 0, rejected: 0 } };
+        : {
+            result: null,
+            matches: [],
+            more: { verified: 0, related: 0, rejected: 0 },
+            rejected: [],
+          };
     return {
       id,
       display_name: m.display_name ?? named.name,
@@ -257,6 +270,7 @@ function buildMolecules(bundle: ApiBundle, status: RunStatus, stageSearch = true
       result,
       matches,
       more,
+      rejected,
       descriptor: {
         sequence: sequence(find("fasta_map_protein")),
         formula: text(find("molecular_formula"), ["formula", "value"]) ?? undefined,
