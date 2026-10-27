@@ -75,10 +75,10 @@ def test_unnormalized_weights_flow_through_ini_and_are_normalized_at_use(tmp_pat
     assert meta["belief_constants"]["rho"] == 0.5
     assert abs(meta["belief_constants"]["kappa"] - 1.0 / 3.0) < 1e-12
 
-    # element hit, 1 identity chain: 1/3*belief(50) + 1/3*match(100) + 1/3*0 = 50
+    # element hit, 1 identity chain: wave-2 (item 1c) — (1/3*belief(50) + 1/3*match(100)) / (2/3) = 75; annotation unknown, not zero
     verified = [h for h in hits if h["is_verified"]]
     assert verified, f"no verified hits in {hits}"
-    assert abs(verified[0]["final_confidence"] - 50.0) < 1e-9
+    assert abs(verified[0]["final_confidence"] - 75.0) < 1e-9  # wave-2 re-weighted (was 50 with the 0-tax)
     assert verified[0]["final_confidence"] <= 100.0
 
 
@@ -93,4 +93,4 @@ def test_zero_sum_weights_fall_back_to_equal_thirds(tmp_path):
     meta, hits = _run_verify(tmp_path, cfg)
     assert all(abs(w - 1.0 / 3.0) < 1e-12 for w in meta["weights_effective"])
     verified = [h for h in hits if h["is_verified"]]
-    assert abs(verified[0]["final_confidence"] - 50.0) < 1e-9
+    assert abs(verified[0]["final_confidence"] - 75.0) < 1e-9  # wave-2 re-weighted (was 50 with the 0-tax)

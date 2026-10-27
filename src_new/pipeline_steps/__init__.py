@@ -761,6 +761,17 @@ def _verify_results(context):
         from ..verification.manager import build_confidence_meta
         context.results.set_data("verification/_meta",
                                  build_confidence_meta(context.config.verification))
+        # red-team wave-2 (item 1c): aggregate counted annotation-scorer
+        # failures forwarded by the workers (additive).
+        ann_scorer_errors: dict[str, int] = {}
+        for result in results or []:
+            if not result:
+                continue
+            for ident_type, n in (result.get("annotation_scorer_errors") or {}).items():
+                ann_scorer_errors[ident_type] = ann_scorer_errors.get(ident_type, 0) + n
+        if ann_scorer_errors:
+            context.results.set_data("verification/_meta/annotation_scorer_errors",
+                                     ann_scorer_errors)
     except Exception:
         logger.warning("verify_results: confidence meta persist failed (additive only)",
                        exc_info=True)

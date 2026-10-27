@@ -731,18 +731,22 @@ def _verify_results_worker(item: tuple) -> dict[str, Any]:
             # Create VerificationManager and run verification
             manager = VerificationManager(config)
             manager.verify_all(temp_manager, deadline_epoch=deadline_epoch)
-            
+
             # Extract verified hits
             verified_hits = temp_manager.get_data(f"verification/{segment}/verified_hits", [])
             # v3.143 (red-team E-01/D-04): propagate the budget-cut marker so
             # the step can set budget_hit on the PARALLEL path too (it
             # previously only ever fired on the serial path).
             partial = bool(temp_manager.get_data(f"verification/{segment}/partial", False))
-            
+            # red-team wave-2 (item 1c): forward counted annotation-scorer
+            # failures — the temp manager is discarded, the step aggregates.
+            ann_scorer_errors = temp_manager.get_data(
+                "verification/_meta/annotation_scorer_errors", {}) 
             return {
                 "segment": segment,
                 "verified_hits": verified_hits,
                 "partial": partial,
+                "annotation_scorer_errors": ann_scorer_errors,
                 "errors": errors,
             }
         finally:

@@ -81,7 +81,7 @@ def test_worker_e2e_without_props_stays_conservative():
     result = _run_worker(props=None)
     h = _hit(result)
     assert h["is_verified"] is True
-    assert h["final_confidence"] == 60.0
+    assert h["final_confidence"] == 75.0  # wave-2 (item 1c): unknown annotation re-weighted over present terms (was 60 with the 0-tax)
     assert h["ground_truth_override"] is None
 
 
@@ -89,7 +89,7 @@ def test_worker_e2e_polyatomic_guard():
     """Facts present but molecule multi-atom -> override must NOT fire."""
     result = _run_worker(props={"atom_count_fragment": 8})
     h = _hit(result)
-    assert h["final_confidence"] == 60.0
+    assert h["final_confidence"] == 75.0  # wave-2 (item 1c): unknown annotation re-weighted over present terms (was 60 with the 0-tax)
     assert h["ground_truth_override"] is None
 
 
@@ -149,7 +149,7 @@ def test_verify_results_step_without_props_stays_conservative(tmp_path):
     ctx = _FakeContext(_results_manager(tmp_path, None), RunConfig())
     out = _verify_results(ctx)
     h = _stored_hit(ctx)
-    assert h["final_confidence"] == 60.0
+    assert h["final_confidence"] == 75.0  # wave-2 (item 1c): unknown annotation re-weighted over present terms (was 60 with the 0-tax)
     assert h["ground_truth_override"] is None
 
 

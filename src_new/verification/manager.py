@@ -553,6 +553,44 @@ def _family_interleave(sorted_groups, top_n: int):
     return window, stats
 
 
+def _compose_confidence(
+    w_resolver: float,
+    w_similarity: float,
+    w_annotation: float,
+    resolver_component: float,
+    similarity_component: float,
+    annotation_component: float | None,
+) -> float:
+    """Weighted confidence composition.
+
+    None annotation_component means UNKNOWN (fetch/parse failure) and must
+    never act as a zero: the formula re-weights over the terms that are
+    actually measured (red-team wave-2, item 1c). A real zero score stays a
+    real zero and keeps the annotation weight.
+    """
+    if annotation_component is not None:
+        return (
+            w_resolver * resolver_component
+            + w_similarity * similarity_component
+            + w_annotation * annotation_component
+        )
+    present = w_resolver + w_similarity
+    if present <= 0:
+        return 0.0
+    return (
+        w_resolver * resolver_component
+        + w_similarity * similarity_component
+    ) / present
+
+
+def _persist_ann_scorer_errors(results, errors: dict) -> None:
+    """Persist counted annotation-scorer failures additively (red-team
+    wave-2 item 1c). In the parallel step path this temp-manager write is
+    discarded; the worker returns the dict and the step re-persists it."""
+    if errors:
+        results.set_data("verification/_meta/annotation_scorer_errors", dict(errors))
+
+
 class VerificationManager:
     """Manages the verification pipeline for identification results.
     
@@ -598,6 +636,9 @@ class VerificationManager:
         """
         import time as _time
         per_segment_results: dict[str, list[VerifiedHit]] = {}
+        # Red-team wave-2 (item 1c): counted annotation-scorer failures,
+        # persisted additively under verification/_meta at the end.
+        _ann_scorer_errors: dict[str, int] = {}
 
         def _over_budget() -> bool:
             return deadline_epoch is not None and _time.time() > deadline_epoch
@@ -870,9 +911,18 @@ class VerificationManager:
                         quality = scorer.score(normalized_id, ident_type)
                         if quality is not None:
                             annotation_score = quality.normalized_score if hasattr(quality, 'normalized_score') else quality.score
-                    except Exception:
-                        # Scorer failed, continue
-                        pass
+                    except Exception as exc:
+                        # Red-team wave-2 (item 1c): a scorer failure leaves
+                        # the annotation UNKNOWN (None) — never silently
+                        # swallowed anymore. Counted per ident_type and
+                        # persisted under verification/_meta so a scorer
+                        # regression is visible in run telemetry.
+                        _ann_scorer_errors[ident_type] = \
+                            _ann_scorer_errors.get(ident_type, 0) + 1
+                        logger.warning(
+                            "annotation scorer failed for %s %s: %s",
+                            ident_type, normalized_id, exc,
+                        )
                 
                 # Aggregate final confidence with the run's effective
                 # (sum-normalized) weights — computed once in verify_all.
@@ -899,14 +949,16 @@ class VerificationManager:
                     similarity_component = skeleton_sim * 100.0
                 else:
                     similarity_component = 0.0
-                annotation_component = annotation_score if annotation_score else 0.0
-                
+                annotation_component = (
+                    annotation_score if annotation_score is not None else None
+                )
+
                 # Sanitize NaN/Inf in components
                 if similarity_component is not None and (math.isnan(similarity_component) or math.isinf(similarity_component)):
                     similarity_component = 0.0
                 if annotation_component is not None and (math.isnan(annotation_component) or math.isinf(annotation_component)):
                     annotation_component = 0.0
-                
+
                 # F-07 NOTE: resolver_score magnitudes from pubchem-family
                 # resolvers are CONSTANT threshold stubs (ordinal-only within
                 # that resolver; see resolvers/pubchem.py docstrings). They
@@ -914,10 +966,10 @@ class VerificationManager:
                 # chain-count belief term (dedup.resolver_belief, v3.142 R-a).
                 # The legacy capped-consensus value is still stored on hits as
                 # `resolver_score` for traceability of the old field.
-                final_confidence = (
-                    w_resolver * resolver_component +
-                    w_similarity * similarity_component +
-                    w_annotation * annotation_component
+                final_confidence = _compose_confidence(
+                    w_resolver, w_similarity, w_annotation,
+                    resolver_component, similarity_component,
+                    annotation_component,
                 )
                 
                 # Sanitize NaN/Inf in final_confidence
@@ -1090,8 +1142,10 @@ class VerificationManager:
             per_segment_results[segment] = verified_hits
             if seg_budget_hit:
                 results.set_data(f"verification/{segment}/partial", True)
+                _persist_ann_scorer_errors(results, _ann_scorer_errors)
                 return per_segment_results
-        
+
+        _persist_ann_scorer_errors(results, _ann_scorer_errors)
         return per_segment_results
 
     def _maybe_structure_rerank(self, results, segment, sorted_groups, top_n,

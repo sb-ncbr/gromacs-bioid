@@ -206,8 +206,10 @@ def test_plateau_confidence_always_numeric():
     out = _verify(mgr, results, {("CID_A", "PUBCHEM_CID"): _grp()})
     hit = _hits(out, seg)[0]
     assert hit.is_verified is True
-    # 0.4*belief(50) + 0.4*worker(100) + 0.2*annotation(0) = 60
-    assert hit.final_confidence == 60.0
+    # 0.4*belief(50) + 0.4*worker(100), annotation unknown: wave-2 (item 1c)
+    # re-weights over present terms — (0.4*50 + 0.4*100)/0.8 = 75, not the
+    # old 0-taxed 60.
+    assert hit.final_confidence == 75.0
     assert hit.ground_truth_override is None  # plateau is not a verdict
 
 
@@ -240,6 +242,7 @@ def test_non_plateau_confidence_preserved():
                return_value=(0.9, "skelfp:v1", None)):
         hit = _hits(mgr.verify_all(results), seg)[0]
     assert hit.is_verified is True
-    # 0.4*belief(50) + 0.4*worker(100) + 0.2*0: worker-primary (M-a) keeps
-    # the real composed value instead of the old skel-floored 80/94 band.
-    assert hit.final_confidence == 60.0
+    # 0.4*belief(50) + 0.4*worker(100): wave-2 (item 1c) — worker-primary
+    # (M-a) keeps the composed value; unknown annotation now re-weights over
+    # the present terms instead of contributing a 0.2*0 tax (was 60).
+    assert hit.final_confidence == 75.0

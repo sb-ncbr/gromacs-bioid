@@ -100,7 +100,7 @@ def test_polyatomic_same_element_stays_on_weighted_path():
     per = _verify(mgr, _mk_results(atom_count_fragment=8), "S", "ELEMENT", _mk_group())
     hit = per["seg_6_SOD"][0]
     assert hit.is_verified is True
-    assert hit.final_confidence == 80.0   # 0.4*100 + 0.4*100, annotation unscored
+    assert hit.final_confidence == 100.0  # wave-2 (item 1c): unknown annotation re-weights over measured terms; not the old 0-tax 80
     assert hit.ground_truth_override is None
 
 
@@ -109,7 +109,7 @@ def test_missing_universe_props_stays_conservative():
     mgr = _mk_manager()
     per = _verify(mgr, _mk_results(atom_count_fragment=None), "NA", "ELEMENT", _mk_group())
     hit = per["seg_6_SOD"][0]
-    assert hit.final_confidence == 80.0
+    assert hit.final_confidence == 100.0  # wave-2 (item 1c): reweighted over present terms (was 80 with the annotation 0-tax)
     assert hit.ground_truth_override is None
 
 

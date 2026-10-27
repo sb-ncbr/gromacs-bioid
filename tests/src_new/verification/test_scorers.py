@@ -27,7 +27,7 @@ class TestPDBScorer:
                 "deposited_model_count": 1,
                 "polymer_entity_count": 2
             },
-            "refine": {"ls_rfactor_rfree": 0.25},
+            "refine": [{"ls_rfactor_rfree": 0.25}],
             "exptl": [{"method": "X-RAY DIFFRACTION"}]
         }
         mock_get_cached.return_value = mock_response
@@ -41,16 +41,14 @@ class TestPDBScorer:
         assert quality.database == "pdb"
     
     @patch("src_new.verification.scorers.pdb_scorer.rcsb_cache.get_cached")
-    def test_pdb_scorer_failure_returns_zero(self, mock_get_cached) -> None:
-        """Mock returns None (fetch failure). Assert score == 0.0, empty signals."""
+    def test_pdb_scorer_failure_returns_none(self, mock_get_cached) -> None:
+        """Fetch failure -> annotation UNKNOWN (None), never a real 0.0."""
         mock_get_cached.return_value = None
         
         scorer = PDBAnnotationScorer()
         quality = scorer.score("1ABC", "PDB_ID")
         
-        assert quality is not None
-        assert quality.score == 0.0
-        assert quality.signals == []
+        assert quality is None
 
 
 class TestUniProtScorer:
