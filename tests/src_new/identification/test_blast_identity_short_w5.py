@@ -83,7 +83,9 @@ class TestExactShortIdentityOverride:
         assert out == []
 
     def test_partial_identity_refused(self, config):
-        """15/16 identical (93.75%) must stay refused."""
+        """15/16 identical (93.75%) against its OWN-LENGTH subject is now
+        ACCEPTED (Task-13 item 10b: short-NA identity floor >= 0.9 with
+        both directions) — asserted with the relaxed metadata note."""
         resolver = BLASTResolverPDBNT(config)
         json_data = make_blast_json(
             [make_hit(["ALMOST"], identity=L - 1, align_len=L, bits=30.0, evalue=0.01, subject_len=L)],
@@ -91,7 +93,9 @@ class TestExactShortIdentityOverride:
         )
         with patch.object(resolver, "_run_blast_local", return_value=json_data):
             out = resolver._run_blast_identity(SHORT_SEQ, "")
-        assert out == []
+        assert out == ["ALMOST"]
+        assert resolver._last_resolution_metadata["ALMOST"]["note"].startswith(
+            "short_na_identity_ge_0.9")
 
     def test_partial_coverage_refused(self, config):
         """100% identity over 12 of 16 nt (cov 0.75) must stay refused."""

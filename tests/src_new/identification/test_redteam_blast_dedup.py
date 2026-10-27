@@ -96,3 +96,68 @@ class TestWorkerSignatureDedup:
                                counting_resolve):
             _identify_molecules_worker(item)
         assert calls == ["genA", "genB"]
+
+
+class TestShortNucleotideRelaxedIdentity:
+    """wave-2 item 10b: short NA (<= _SHORT_IDENTITY_MAX_QLEN) identity
+    acceptance at >= 0.9 identity / >= 0.9 query coverage. The F-N1c
+    absolute-exact claim (1.0/1.0/subject_len==query_len) stays the only
+    'exact' path; relaxed hits carry their own metadata note."""
+
+    def _nt_resolver(self, hits):
+        r = object.__new__(BLASTResolver)
+        r.is_protein = False
+        r.blast_config = RunConfig().blast
+        return r
+
+    def _hit(self, identity, cov, subject_len, acc="nt.1"):
+        from src_new.identification.resolvers.blast import BlastHit
+        return BlastHit(accessions=[acc], evalue=50.0, bits=5.0,
+                        identity_p=identity, coverage_p=cov,
+                        subject_len=subject_len)
+
+    def test_relaxed_hit_accepted_with_own_note(self):
+        # 20-mer at 95% identity over full query against its OWN-LENGTH
+        # subject (both directions hold)
+        hits = [self._hit(0.95, 1.0, subject_len=20)]
+        r = self._nt_resolver(hits)
+        with mock.patch.object(r, "_processed_hits", return_value=hits):
+            accepted = r._run_blast_identity("ACGTACGTACGTACGTACGT", "/tmp")
+        assert accepted == ["nt.1"]
+        assert r._last_resolution_metadata["nt.1"]["note"] == \
+            "short_na_identity_ge_0.9_len_le_25"
+
+    def test_relaxed_hit_inside_longer_subject_refused(self):
+        # F-N1c both-directionality: 95% match INSIDE a longer subject is
+        # NOT the same molecule, relaxed floor or not
+        hits = [self._hit(0.95, 1.0, subject_len=400, acc="contained")]
+        r = self._nt_resolver(hits)
+        with mock.patch.object(r, "_processed_hits", return_value=hits):
+            accepted = r._run_blast_identity("ACGTACGTACGTACGTACGT", "/tmp")
+        assert accepted == []
+
+    def test_below_relaxed_floor_not_accepted(self):
+        hits = [self._hit(0.85, 1.0, subject_len=400, acc="weak")]
+        r = self._nt_resolver(hits)
+        with mock.patch.object(r, "_processed_hits", return_value=hits):
+            accepted = r._run_blast_identity("ACGTACGTACGTACGTACGT", "/tmp")
+        assert accepted == []
+
+    def test_exact_fn1c_claim_unchanged(self):
+        # perfect self-length match keeps the F-N1c 'exact' note
+        hits = [self._hit(1.0, 1.0, subject_len=20, acc="exact1")]
+        r = self._nt_resolver(hits)
+        with mock.patch.object(r, "_processed_hits", return_value=hits):
+            accepted = r._run_blast_identity("ACGTACGTACGTACGTACGT", "/tmp")
+        assert accepted == ["exact1"]
+        assert r._last_resolution_metadata["exact1"]["note"] == \
+            "exact_short_identity_len_le_25"
+
+    def test_long_sequences_not_relaxed(self):
+        # > 25 nt: the relaxed short-NA path must NOT apply
+        hits = [self._hit(0.95, 1.0, subject_len=600, acc="long")]
+        r = self._nt_resolver(hits)
+        seq = "A" * 60
+        with mock.patch.object(r, "_processed_hits", return_value=hits):
+            accepted = r._run_blast_identity(seq, "/tmp")
+        assert accepted == []

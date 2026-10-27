@@ -613,23 +613,44 @@ class BLASTResolver(IdentifierResolver):
         if not self.is_protein and 0 < query_len <= _SHORT_IDENTITY_MAX_QLEN:
             accepted_set = set(accepted)
             for hit in hits:
-                if (
-                    hit.identity_p == 1.0
+                # F-N1c both-directionality: only subject_len == query_len
+                # can claim identity (a 16-mer inside a 3000-nt rRNA is NOT
+                # the same molecule) — enforced for the relaxed floor too.
+                both_directions = (
+                    hit.subject_len is not None and hit.subject_len == query_len
+                )
+                exact = (
+                    both_directions
+                    and hit.identity_p == 1.0
                     and hit.coverage_p == 1.0
-                    and hit.subject_len is not None
-                    and hit.subject_len == query_len
-                ):
-                    for accession in hit.accessions:
-                        if accession not in accepted_set:
-                            accepted.append(accession)
-                            accepted_set.add(accession)
-                            metadata[accession] = {
-                                "evalue": hit.evalue,
-                                "bit_score": hit.bits,
-                                "identity_p": hit.identity_p,
-                                "coverage_p": hit.coverage_p,
-                                "note": f"exact_short_identity_len_le_{_SHORT_IDENTITY_MAX_QLEN}",
-                            }
+                )
+                # wave-2 item 10b: relaxed SHORT-NA identity acceptance —
+                # >= 0.9 identity over >= 0.9 query coverage with both
+                # directions. A 16-mer at 15/16 inside its own-length
+                # subject is the same molecule, but blastn's length
+                # ceiling put short matches beyond the 0.99 strict gates.
+                # The "exact" claim (note/metadata) stays F-N1c-exclusive;
+                # relaxed hits are accepted with their own note.
+                relaxed = (
+                    both_directions
+                    and hit.identity_p >= 0.9
+                    and hit.coverage_p >= 0.9
+                )
+                if not (exact or relaxed):
+                    continue
+                for accession in hit.accessions:
+                    if accession not in accepted_set:
+                        accepted.append(accession)
+                        accepted_set.add(accession)
+                        metadata[accession] = {
+                            "evalue": hit.evalue,
+                            "bit_score": hit.bits,
+                            "identity_p": hit.identity_p,
+                            "coverage_p": hit.coverage_p,
+                            "note": (f"exact_short_identity_len_le_{_SHORT_IDENTITY_MAX_QLEN}"
+                                     if exact else
+                                     f"short_na_identity_ge_0.9_len_le_{_SHORT_IDENTITY_MAX_QLEN}"),
+                        }
 
         self._last_resolution_metadata = metadata
         return accepted

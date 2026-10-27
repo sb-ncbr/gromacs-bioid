@@ -814,5 +814,7 @@ class LoadedUniverse:
         )
     
     def extract_all_molecule_instances(self) -> list[MoleculeInstance]:
-        """Extract MoleculeInstance for all segments."""
-        return [self.extract_molecule_instance(seg) for seg in sorted(self._segments)]
+        """Extract MoleculeInstance for all segments. Consolidated on
+        get_segments() (wave-2 item 10a) — one enumeration path; the
+        method stays as the batch convenience used by the loader tests."""
+        return [self.extract_molecule_instance(seg) for seg in sorted(self.get_segments())]
