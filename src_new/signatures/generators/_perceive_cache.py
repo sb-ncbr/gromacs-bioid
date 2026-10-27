@@ -155,6 +155,31 @@ def build_once_family_mol(fragment):
 
 _TRIAL_CHARGES = (0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6)
 
+# Wave-2 (item 2a): DetermineBondOrders is an exponential valence search in
+# RDKit C++ and CANNOT be interrupted by perceive_timeout_s (demonstrated
+# wave-1: a 36-residue backbone-only peptide spun >20 min; the d13 75-minute
+# signature entry was this same class). Large H-less / coordinate-described
+# polymer fragments are exactly the pathological shape for it — skip the
+# ladder there (all-single bonds; the sequence/similarity tier carries the
+# chemistry), keep it for drug-like sizes where bond-order determination is
+# both useful and fast. 60 heavy atoms sits between the two classes (demo
+# spin ~46+; typical ligands below).
+_BOND_ORDER_LADDER_MAX_HEAVY_ATOMS_HLESS = 60
+
+
+def _is_hless(mol) -> bool:
+    return not any(a.GetAtomicNum() == 1 for a in mol.GetAtoms())
+
+
+def _is_polymeric_coordinate_mol(mol) -> bool:
+    """Residue-tagged atoms from a coordinate format (PDB/mmCIF) — a polymer
+    whose ground truth is the sequence, not a ligand needing bond orders."""
+    n = mol.GetNumAtoms()
+    if n == 0:
+        return False
+    tagged = sum(1 for a in mol.GetAtoms() if a.GetMonomerInfo() is not None)
+    return tagged * 2 >= n
+
 
 def _net_charge(fragment) -> int:
     """Net molecular charge from topology partial charges (prmtop/tpr/psf/
@@ -189,7 +214,9 @@ def _has_bare_proton_fragment(mol) -> bool:
     return False
 
 
-def determine_bond_orders_safely(mol, net_charge: int = 0) -> bool:
+def determine_bond_orders_safely(mol, net_charge: int = 0,
+                                 max_heavy_atoms_hless: int
+                                 = _BOND_ORDER_LADDER_MAX_HEAVY_ATOMS_HLESS) -> bool:
     """B-01: try the topology net charge first, then a 0,+-1..+-6 ladder.
 
     A successful DetermineBondOrders call is ACCEPTED only when the
@@ -197,8 +224,28 @@ def determine_bond_orders_safely(mol, net_charge: int = 0) -> bool:
     charge was wrong) and its formal-charge sum matches q. Mol is reset to
     the all-single state between attempts for determinism. Non-ValueError
     failures propagate (smiles semantics); callers that historically
-    swallow exceptions keep doing so. Returns True when accepted."""
+    swallow exceptions keep doing so. Returns True when accepted.
+
+    Wave-2 (item 2a): the charge ladder is SKIPPED for (a) H-less
+    fragments above max_heavy_atoms_hless and (b) coordinate-described
+    polymer fragments — the uninterruptible exponential-spin class; the
+    all-single state is kept for similarity-tier chemistry."""
     from rdkit.Chem import rdDetermineBonds as _rdb
+    n_atoms = mol.GetNumAtoms()
+    if (max_heavy_atoms_hless and n_atoms > max_heavy_atoms_hless
+            and _is_hless(mol)):
+        logger.warning(
+            "bond-order ladder skipped: %d-atom H-less fragment > %d "
+            "(uninterruptible valence-search class); keeping all-single "
+            "bonds for similarity-tier chemistry",
+            n_atoms, max_heavy_atoms_hless)
+        return False
+    if _is_polymeric_coordinate_mol(mol):
+        logger.warning(
+            "bond-order ladder skipped: coordinate-described polymer "
+            "fragment (%d atoms; sequence is the ground truth of record)",
+            n_atoms)
+        return False
     order = [net_charge] + [q for q in _TRIAL_CHARGES if q != net_charge]
     for q in order:
         try:
