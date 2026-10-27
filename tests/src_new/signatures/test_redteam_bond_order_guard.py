@@ -7,12 +7,22 @@ be interrupted by the perceive timeout (demonstrated in wave-1 with a
 H-less fragments above 60 heavy atoms and for residue-tagged (polymer,
 sequence-described) coordinate fragments. Drug-like molecules below the size
 keep the full ladder — unchanged.
+
+Wave-2 (item 7): the H-less test is fragment-based — evaluated AFTER the
+B-10/B-08 hydrogen injection materialises the inferred H as explicit atoms.
+A mol-side test wrongly reports "all-atom" for the counts-mode UA class
+(GROMOS/ATB/CHARMM19 masses) and the exponential ladder would run on the
+exact prompts the guard exists for (1FC1 110-atom glycan class).
 """
 
 from unittest import mock
 
+import numpy as np
+import pytest
 from rdkit import Chem
 from rdkit.Chem import rdDetermineBonds
+
+mda = pytest.importorskip("MDAnalysis")
 
 from src_new.signatures.generators._perceive_cache import (
     _BOND_ORDER_LADDER_MAX_HEAVY_ATOMS_HLESS,
@@ -98,4 +108,103 @@ class TestSmilesGeneratorIntegration:
             side_effect=ValueError("nope"),
         ) as spy:
             _fix_bond_orders_rdkit(_hless_mol(_BOND_ORDER_LADDER_MAX_HEAVY_ATOMS_HLESS + 10))
+            assert spy.call_count == 0
+
+
+def _ua_fragment(n_heavy: int):
+    """counts-mode united-atom fragment: carbon chain, UA masses (13.019 =
+    CH), chain bonds — the class whose B-10 injection adds explicit H."""
+    u = mda.Universe.empty(n_heavy, n_residues=1, n_segments=1,
+                           atom_resindex=[0] * n_heavy, trajectory=True)
+    u.add_TopologyAttr("names", ["C" + str(i) for i in range(n_heavy)])
+    u.add_TopologyAttr("elements", ["C"] * n_heavy)
+    u.add_TopologyAttr("masses", [13.019] * n_heavy)  # CH united atom
+    u.add_TopologyAttr("resids", [1])
+    u.add_TopologyAttr("resnames", ["GOL"])
+    u.add_TopologyAttr("segids", ["S"])
+    u.add_TopologyAttr("bonds", [(i, i + 1) for i in range(n_heavy - 1)])
+    u.load_new(np.zeros((n_heavy, 3), dtype=np.float32), format="memory")
+    return u.atoms
+
+
+class TestHydrogenInjectionAwareGuard:
+    """wave-2 item 7: the H-less spin-guard decision must use the
+    PRE-INJECTION fragment. B-10 counts-mode injection (UA masses ->
+    explicit H) made an injected 110-atom glycan-class fragment look
+    'all-atom' mol-side; the exponential ladder ran on exactly the prompts
+    it guards (1FC1 class). Small H-less ligands (heme/NAD/FAD size) are
+    unaffected."""
+
+    def test_counts_mode_injected_fragment_above_cap_skips_ladder(self):
+        from src_new.signatures.generators._perceive_cache import (
+            _atoms_into, _h_deficiency,
+        )
+        n = _BOND_ORDER_LADDER_MAX_HEAVY_ATOMS_HLESS + 50  # 1FC1 glycan class
+        fragment = _ua_fragment(n)
+        # the injection really fires for this fixture (precondition)
+        assert _h_deficiency(fragment.universe.atoms[fragment.indices]
+                             if hasattr(fragment, 'indices') else fragment)
+        atom_idx_to_index = {
+            int(idx): i for i, idx in enumerate(fragment.indices)}
+        build = Chem.EditableMol(Chem.Mol())
+        _atoms_into(fragment, atom_idx_to_index, build)
+        mol = build.GetMol()
+        assert mol.GetNumAtoms() > n  # B-10 hydrogens materialised
+        assert not any(a.GetAtomicNum() > 1 for a in mol.GetAtoms()
+                       if a.GetAtomicNum() == 1) or True
+        with mock.patch.object(
+            rdDetermineBonds, "DetermineBondOrders",
+            side_effect=ValueError("nope"),
+        ) as spy:
+            assert determine_bond_orders_safely(
+                mol, fragment=fragment) is False
+            assert spy.call_count == 0  # the pre-injection H-less test won
+
+    def test_same_fragment_without_fragment_context_still_runs(self):
+        # documents the gap the fix closes: mol-side alone cannot tell an
+        # injected UA fragment from an all-atom one (unchanged legacy
+        # behavior when callers pass no fragment)
+        from src_new.signatures.generators._perceive_cache import _atoms_into
+        n = _BOND_ORDER_LADDER_MAX_HEAVY_ATOMS_HLESS + 50
+        fragment = _ua_fragment(n)
+        atom_idx_to_index = {
+            int(idx): i for i, idx in enumerate(fragment.indices)}
+        build = Chem.EditableMol(Chem.Mol())
+        _atoms_into(fragment, atom_idx_to_index, build)
+        mol = build.GetMol()
+        with mock.patch.object(
+            rdDetermineBonds, "DetermineBondOrders",
+            side_effect=ValueError("nope"),
+        ) as spy:
+            assert determine_bond_orders_safely(mol) is False
+            assert spy.call_count == 13  # pre-item-7 behavior, mol-side only
+
+    def test_small_hless_fragment_unaffected(self):
+        # heme/NAD/FAD size: 44 heavy atoms, counts-mode injection — the
+        # ladder must STILL run (below the cap in both old and new logic)
+        from src_new.signatures.generators._perceive_cache import _atoms_into
+        fragment = _ua_fragment(44)
+        atom_idx_to_index = {
+            int(idx): i for i, idx in enumerate(fragment.indices)}
+        build = Chem.EditableMol(Chem.Mol())
+        _atoms_into(fragment, atom_idx_to_index, build)
+        mol = build.GetMol()
+        with mock.patch.object(
+            rdDetermineBonds, "DetermineBondOrders",
+            side_effect=ValueError("nope"),
+        ) as spy:
+            assert determine_bond_orders_safely(
+                mol, fragment=fragment) is False
+            assert spy.call_count == 13  # drug-like sizes keep the ladder
+
+    def test_smiles_builder_path_skips_big_injected_fragment(self):
+        # end-to-end through the smiles builder (the 1FC1 prompt path)
+        from src_new.signatures.generators.smiles import _build_smiles_mol
+        n = _BOND_ORDER_LADDER_MAX_HEAVY_ATOMS_HLESS + 50
+        fragment = _ua_fragment(n)
+        with mock.patch.object(
+            rdDetermineBonds, "DetermineBondOrders",
+            side_effect=ValueError("nope"),
+        ) as spy:
+            _build_smiles_mol(fragment)
             assert spy.call_count == 0

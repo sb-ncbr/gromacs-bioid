@@ -145,7 +145,8 @@ def build_once_family_mol(fragment):
         # B-01 (red-team 4.2): topology net charge first, then ladder —
         # replaces the charge=0 single attempt (wrong keys for charged
         # ligands: first-block identical, protonation/charge layer wrong)
-        determine_bond_orders_safely(molecule, net_charge=_net_charge(fragment))
+        determine_bond_orders_safely(molecule, net_charge=_net_charge(fragment),
+                                     fragment=fragment)
     except Exception:
         pass  # historical behavior: unsanitized/all-single is fine here
     return molecule
@@ -216,7 +217,8 @@ def _has_bare_proton_fragment(mol) -> bool:
 
 def determine_bond_orders_safely(mol, net_charge: int = 0,
                                  max_heavy_atoms_hless: int
-                                 = _BOND_ORDER_LADDER_MAX_HEAVY_ATOMS_HLESS) -> bool:
+                                 = _BOND_ORDER_LADDER_MAX_HEAVY_ATOMS_HLESS,
+                                 fragment=None) -> bool:
     """B-01: try the topology net charge first, then a 0,+-1..+-6 ladder.
 
     A successful DetermineBondOrders call is ACCEPTED only when the
@@ -229,22 +231,38 @@ def determine_bond_orders_safely(mol, net_charge: int = 0,
     Wave-2 (item 2a): the charge ladder is SKIPPED for (a) H-less
     fragments above max_heavy_atoms_hless and (b) coordinate-described
     polymer fragments — the uninterruptible exponential-spin class; the
-    all-single state is kept for similarity-tier chemistry."""
+    all-single state is kept for similarity-tier chemistry.
+
+    Wave-2 (item 7): the H-less test must reflect the PRE-INJECTION
+    fragment — the B-10 counts-mode injection materialises the inferred
+    hydrogens as explicit atoms BEFORE this call, so a mol-side test
+    wrongly reports "all-atom" for exactly the class the guard exists for
+    (united-atom glycan prompts, 1FC1 110-atom class). Callers pass the
+    source fragment; heavy-atom counting is robust because injection only
+    ever adds H."""
     from rdkit.Chem import rdDetermineBonds as _rdb
-    n_atoms = mol.GetNumAtoms()
-    if (max_heavy_atoms_hless and n_atoms > max_heavy_atoms_hless
-            and _is_hless(mol)):
+    n_heavy = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() > 1)
+    if fragment is not None:
+        try:
+            frag_hless = not any(
+                str(e).title() == "H" for e in fragment.atoms.elements)
+        except Exception:
+            frag_hless = _is_hless(mol)
+    else:
+        frag_hless = _is_hless(mol)
+    if (max_heavy_atoms_hless and n_heavy > max_heavy_atoms_hless
+            and frag_hless):
         logger.warning(
-            "bond-order ladder skipped: %d-atom H-less fragment > %d "
+            "bond-order ladder skipped: %d-heavy-atom H-less fragment > %d "
             "(uninterruptible valence-search class); keeping all-single "
             "bonds for similarity-tier chemistry",
-            n_atoms, max_heavy_atoms_hless)
+            n_heavy, max_heavy_atoms_hless)
         return False
     if _is_polymeric_coordinate_mol(mol):
         logger.warning(
             "bond-order ladder skipped: coordinate-described polymer "
             "fragment (%d atoms; sequence is the ground truth of record)",
-            n_atoms)
+            mol.GetNumAtoms())
         return False
     order = [net_charge] + [q for q in _TRIAL_CHARGES if q != net_charge]
     for q in order:

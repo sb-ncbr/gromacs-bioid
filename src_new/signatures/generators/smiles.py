@@ -296,11 +296,13 @@ def _build_smiles_mol(fragment) -> Mol:
     molecule = molecule_build.GetMol()
     if perceived:
         logger.debug("smiles: bonds perceived from coordinates (%d atoms)", fragment.n_atoms)
-    _fix_bond_orders_rdkit(molecule, net_charge=_net_charge(fragment))
+    _fix_bond_orders_rdkit(molecule, net_charge=_net_charge(fragment),
+                           fragment=fragment)
     return molecule
 
 
-def _fix_bond_orders_rdkit(molecule: Mol, net_charge: int = 0) -> None:
+def _fix_bond_orders_rdkit(molecule: Mol, net_charge: int = 0,
+                           fragment=None) -> None:
     """Determine bond orders via the shared charge-aware helper (B-01,
     red-team 4.2).
 
@@ -310,5 +312,6 @@ def _fix_bond_orders_rdkit(molecule: Mol, net_charge: int = 0) -> None:
     molecule's. Deleted; the ladder starts from the topology net charge and
     accepts the first solution.
     """
-    if not determine_bond_orders_safely(molecule, net_charge=net_charge):
+    if not determine_bond_orders_safely(molecule, net_charge=net_charge,
+                                        fragment=fragment):
         logger.debug("DetermineBondOrders failed, returning unsanitized molecule")
