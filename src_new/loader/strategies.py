@@ -796,6 +796,62 @@ def _record_attempts(results: ResultsManager, attempts: list[LoadAttempt]) -> No
     results.set_data("loading/attempts", attempt_dicts)
 
 
+def summarize_load_failure(attempts: list) -> dict:
+    """bughunt BH-014: user-facing reason from the attempt table.
+
+    The pipeline's generic message ("No loading strategy succeeded after N
+    attempts") hid every real cause: F07's atom-count 30 vs 36, X01's bz2
+    EOFError, X02's UnicodeDecodeError, X06's invalid tpr. Ordered by
+    informativeness: atom-count mismatch first (both counts in the message),
+    then content gates, then the first real exception with a note about how
+    many other strategies also failed.
+    """
+    failed = [a for a in attempts if getattr(a, "status", None) != "success"]
+    if not attempts:
+        return {
+            "reason": "no_recognized_input_files",
+            "message": ("No file combination in the input matched a "
+                        "supported loading strategy (20 strategies tried)."),
+            "details": {"attempt_count": 0},
+        }
+
+    def _summary(reason, attempt, extra=None):
+        def _strategy_name(a):
+            s = getattr(a, "strategy", "?")
+            return getattr(s, "value", s)
+        out = {
+            "reason": reason,
+            "message": getattr(attempt, "error_message", "") or reason,
+            "details": {
+                "attempt_count": len(attempts),
+                "failed_strategies": [_strategy_name(a) for a in failed],
+                **(extra or {}),
+            },
+        }
+        if getattr(attempt, "error_code", None):
+            out["details"]["error_code"] = attempt.error_code
+        return out
+
+    for a in failed:
+        if getattr(a, "error_code", None) == "rejected_atoms":
+            return _summary("atom_count_mismatch", a)
+    for code, reason in (("empty_universe", "empty_universe"),
+                         ("no_positions", "no_positions")):
+        for a in failed:
+            if getattr(a, "error_code", None) == code:
+                return _summary(reason, a)
+    for a in failed:
+        if getattr(a, "error_code", None) == "load_exception":
+            out = _summary("load_exception", a)
+            others = len(failed) - 1
+            if others > 0:
+                out["message"] += f" ({others} other strategies also failed)"
+            return out
+    # structured failures only (gates/probes without an exception message)
+    a = failed[0]
+    return _summary(getattr(a, "error_code", None) or "unknown", a)
+
+
 def load_simulation(
     decision: LoadDecision,
     bundle: InputBundle,
@@ -942,6 +998,10 @@ def load_simulation(
     results.set_data("loading/success", False)
     results.set_data("loading/final_strategy", None)
     results.set_data("loading/warnings", all_warnings)
+    # bughunt BH-014: persist the structured failure summary (reason,
+    # message, which strategies failed) next to the attempt table
+    results.set_data("loading/failure_summary",
+                     summarize_load_failure(attempts))
     
     # Record all attempts
     _record_attempts(results, attempts)

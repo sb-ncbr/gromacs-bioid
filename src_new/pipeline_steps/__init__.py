@@ -26,7 +26,7 @@ def _segment_flags(fragment) -> list:
         pass
     return flags
 from ..input.discovery import inspect_directory, select_best_file_combination
-from ..loader.strategies import load_simulation
+from ..loader.strategies import load_simulation, summarize_load_failure
 from ..loader.repair import TopologyRepair
 from ..loader.unwrap import PbcRepair, PbcRepairReport
 from ..loader.universe_facade import LoadedUniverse
@@ -173,7 +173,28 @@ def _load_simulation(context):
 
     result = load_simulation(decision, bundle, context.config, context.results)
     if not result.success:
-        context.fail("load_failed", f"No loading strategy succeeded after {len(result.attempts)} attempts")
+        # bughunt BH-014: carry the structured failure reason (atom-count
+        # mismatch with both counts, content gates, first real exception)
+        # into the critical error details instead of the generic message.
+        summary = summarize_load_failure(result.attempts)
+        context.fail(
+            "load_failed",
+            f"No loading strategy succeeded after {len(result.attempts)} "
+            f"attempts: {summary['message']}",
+            details={
+                "reason": summary["reason"],
+                "attempts": [
+                    {
+                        "strategy": getattr(a, "strategy", None),
+                        "strategy_name": getattr(getattr(a, "strategy", None), "value", None),
+                        "status": getattr(a, "status", None),
+                        "error_code": getattr(a, "error_code", None),
+                        "error_message": getattr(a, "error_message", None),
+                    }
+                    for a in result.attempts
+                ],
+            },
+        )
 
     # Surface coordinate-scale corrections as coded run warnings (UI catalog).
     if result.scale_report and result.scale_report.get("warning_code"):

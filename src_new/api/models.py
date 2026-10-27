@@ -82,6 +82,7 @@ class LoadingAttemptInfo(BaseModel):
     strategy: str = Field(..., description="Loading strategy name")
     success: bool = Field(..., description="Whether the attempt succeeded")
     error: Optional[str] = Field(None, description="Error message if failed")
+    error_code: Optional[str] = Field(None, description="Structured error code if failed (bughunt BH-014)")
 
 
 class LoadingInfoResponse(BaseModel):
@@ -95,6 +96,7 @@ class LoadingInfoResponse(BaseModel):
     final_strategy: Optional[str] = Field(None, description="Final successful strategy")
     success: bool = Field(default=False, description="Whether loading succeeded")
     warnings: List[str] = Field(default_factory=list, description="Loading warnings")
+    failure_summary: Optional[dict] = Field(None, description="Structured failure reason (bughunt BH-014): reason, message, details")
 
 
 class MoleculeInstanceInfo(BaseModel):

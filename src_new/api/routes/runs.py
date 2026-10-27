@@ -737,13 +737,16 @@ async def get_loading_info(run_id: str) -> LoadingInfoResponse:
         bundle = loading_data.get("bundle", {})
         topology_files = bundle.get("topology_files", [])
     
-    # Get attempts
+    # Get attempts (bughunt BH-014: the loader persists `status` /
+    # `error_code` / `error_message` per attempt — the endpoint used to
+    # read `success`/`error`, so the UI always showed error=None)
     attempts_data = loading_data.get("attempts", [])
     attempts = [
         LoadingAttemptInfo(
             strategy=a.get("strategy", ""),
-            success=a.get("success", False),
-            error=a.get("error"),
+            success=a.get("status", a.get("success", False)) == "success",
+            error=a.get("error_message") or a.get("error"),
+            error_code=a.get("error_code"),
         )
         for a in attempts_data
     ]
@@ -763,6 +766,9 @@ async def get_loading_info(run_id: str) -> LoadingInfoResponse:
     # Get warnings
     warnings = loading_data.get("warnings", [])
     
+    # bughunt BH-014: structured failure reason (None on success)
+    failure_summary = loading_data.get("failure_summary")
+    
     return LoadingInfoResponse(
         run_id=run_id,
         input_kind=input_kind,
@@ -772,6 +778,7 @@ async def get_loading_info(run_id: str) -> LoadingInfoResponse:
         final_strategy=final_strategy,
         success=success,
         warnings=warnings,
+        failure_summary=failure_summary,
     )
 
 

@@ -258,12 +258,18 @@ class TestLoadingEndpoint:
                         "strategy": "pdb_direct",
                     },
                     "attempts": [
-                        {"strategy": "auto_detect", "success": False, "error": "No topology found"},
-                        {"strategy": "pdb_direct", "success": True, "error": None},
+                        # bughunt BH-014: the REAL persisted schema —
+                        # status/error_code/error_message (the old fixture
+                        # used success/error, which the loader never writes)
+                        {"strategy": "auto_detect", "status": "failed",
+                         "error_code": "load_exception",
+                         "error_message": "No topology found"},
+                        {"strategy": "pdb_direct", "status": "success"},
                     ],
                     "final_strategy": "pdb_direct",
                     "success": True,
                     "warnings": ["Missing hydrogens added"],
+                    "failure_summary": None,
                 }
             },
         }
@@ -284,7 +290,54 @@ class TestLoadingEndpoint:
         assert validated.final_strategy == "pdb_direct"
         assert validated.success is True
         assert len(validated.attempts) == 2
+        assert validated.attempts[0].success is False
+        assert validated.attempts[0].error == "No topology found"
+        assert validated.attempts[0].error_code == "load_exception"
+        assert validated.attempts[1].success is True
         assert len(validated.warnings) == 1
+
+
+class TestLoadingFailureSummary:
+    """bughunt BH-014: /loading surfaces the real failure reason."""
+
+    def test_failed_run_reason_and_attempt_errors(self, client: TestClient,
+                                                   tmp_path: Path,
+                                                   monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        run_id = "f14"
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        results_data = {
+            "pipeline": {"name": "BAT3", "status": "failed", "input_kind": "unknown"},
+            "data": {
+                "loading": {
+                    "attempts": [
+                        {"strategy": "gromacs_tpr", "status": "failed",
+                         "error_code": "rejected_atoms",
+                         "error_message": "atom count mismatch: topology has 36 atoms, traj.xtc has 30"},
+                        {"strategy": "pdb_direct", "status": "failed",
+                         "error_code": "load_exception",
+                         "error_message": "UnicodeDecodeError: 'utf-8' codec"},
+                    ],
+                    "final_strategy": None,
+                    "success": False,
+                    "warnings": [],
+                    "failure_summary": {
+                        "reason": "atom_count_mismatch",
+                        "message": "atom count mismatch: topology has 36 atoms, traj.xtc has 30",
+                        "details": {"attempt_count": 2},
+                    },
+                }
+            },
+        }
+        (run_dir / "results.json").write_text(json.dumps(results_data))
+        response = client.get(f"/runs/{run_id}/loading")
+        assert response.status_code == 200
+        validated = LoadingInfoResponse.model_validate(response.json())
+        assert validated.success is False
+        assert validated.failure_summary["reason"] == "atom_count_mismatch"
+        assert "36" in validated.attempts[0].error
+        assert validated.attempts[0].error_code == "rejected_atoms"
 
 
 class TestMoleculesEndpoint:
