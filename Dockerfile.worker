@@ -1,16 +1,58 @@
 FROM python:3.11-slim
 
+# bughunt BH-012: the worker lacked PyMOL (no PNG previews — every run
+# warned render_pymol_unavailable) and Foldseek (structure search fell
+# back to the PUBLIC REMOTE server — the main source of BH-034's
+# nondeterministic tie-sets). Layers ported verbatim from Dockerfile.full
+# (docs/VALIDATION_RERUN_PLAYBOOK.md:32 already required full-image
+# backends).
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential libvips ncbi-blast+ && \
+    apt-get install -y --no-install-recommends build-essential libvips ncbi-blast+ media-types curl ca-certificates \
+        libgl1 libegl1 libglib2.0-0 && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 ENV PYTHONPATH=/app
+# Network-flake hardening for the pip layer (slow-link read timeouts observed 2026-10-11)
+ENV PIP_DEFAULT_TIMEOUT=600 PIP_RETRIES=20
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# render_png task (v3.137): headless static previews for the UI fallback.
+# pymol-open-source 3.1.0a0 ships a cp311 manylinux_2_34 wheel (glibc 2.36
+# ok); batch mode `pymol -cq -` with ray=1 needs NO X/GL (software
+# raytrace). The build gate below verifies a real render works.
+RUN pip install --no-cache-dir pymol-open-source==3.1.0a0
+
+# foldseek static binary (v3.138): 3Di structure search. Release ships
+# per-ISA builds; install avx2 + sse2 under /opt/foldseek and a CPU-feature
+# wrapper as /usr/local/bin/foldseek (see scripts/docker/foldseek-wrapper.sh).
+# `foldseek version` at the end doubles as a build gate (fails the build if
+# the binary cannot run on this toolchain).
+ARG FOLDSEEK_VERSION=9-427df8a
+COPY scripts/docker/download_with_retry.py /tmp/download_with_retry.py
+RUN set -eux; \
+    base="https://github.com/steineggerlab/foldseek/releases/download/${FOLDSEEK_VERSION}"; \
+    mkdir -p /opt/foldseek /tmp/foldseek-dl; \
+    for isa in avx2 sse2; do \
+      python /tmp/download_with_retry.py "${base}/foldseek-linux-${isa}.tar.gz" "/tmp/foldseek-dl/${isa}.tar.gz"; \
+      tar xzf "/tmp/foldseek-dl/${isa}.tar.gz" -C /opt/foldseek; \
+      mv /opt/foldseek/foldseek/bin/foldseek "/opt/foldseek/foldseek-${isa}"; \
+      rm -rf /opt/foldseek/foldseek "/tmp/foldseek-dl/${isa}.tar.gz"; \
+    done; \
+    rmdir /tmp/foldseek-dl
+COPY scripts/docker/foldseek-wrapper.sh /usr/local/bin/foldseek
+RUN chmod +x /usr/local/bin/foldseek && foldseek version && curl --version >/dev/null
+
 COPY . /app
+
+# Build-time self-test (BH-012 fix): render a PNG with headless PyMOL —
+# image content regressions only surface with explicit probes (V-29).
+RUN printf 'REMARK   1 TEST\nATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N\nEND\n' > /tmp/gate.pdb && \
+    pymol -cq /tmp/gate.pdb -d "ray 64,64; png /tmp/gate.png" && \
+    test -s /tmp/gate.png && rm -f /tmp/gate.pdb /tmp/gate.png && \
+    which pymol && foldseek version
 
 # Purge stale __pycache__ and .pyc/.pyo files to prevent AttributeError from stale bytecode
 RUN find /app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && find /app -type f -name "*.pyc" -delete && find /app -type f -name "*.pyo" -delete
