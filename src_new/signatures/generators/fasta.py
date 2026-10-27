@@ -208,6 +208,49 @@ class ResnameFastaGeneratorNucleotide(SignatureGenerator):
 # v3.143 (B-09): terminal caps that must never enter a sequence string.
 _PEPTIDE_CAPS = frozenset({"ACE", "NME", "NH2", "FOR", "ACY", "NHE"})
 
+# wave-2 item 6d (GitHub #3): phosphorylated nucleotide caps — the
+# 5'-terminal GTP/GDP/GMP or ATP/ADP/AMP that crystallographic deposits
+# keep as a separate residue inside an NA chain — map to their base ONLY
+# when bonded into a nucleic chain. Deliberately NOT part of
+# molecules.nucleic_acid.normalize_nucleic_resname (the rejected PR-#6
+# global-alias approach): a free NTP ligand must stay a small molecule,
+# and the normalizer is also the molecule-typing source.
+_PHOSPHO_NUCLEOTIDE_BASES = {
+    "GTP": "G", "GDP": "G", "GMP": "G",
+    "ATP": "A", "ADP": "A", "AMP": "A",
+}
+
+
+def _is_nucleic_resname(resname: str) -> bool:
+    rn = str(resname).strip().upper()
+    return normalize_nucleic_resname(rn) is not None or rn in KNOWN_NUCLEIC_ACIDS_CODES
+
+
+def _apply_phospho_nucleotide_caps(fragment: AtomGroup, codes: dict) -> None:
+    """Second pass (wave-2 item 6d): an X-coded phosphorylated-cap residue
+    that is BONDED to a canonical nucleic residue gets its base letter;
+    unbonded caps (free ligands inside the fragment) stay 'X'."""
+    if not hasattr(fragment, "bonds") or not hasattr(fragment.bonds, "indices"):
+        return
+    if len(fragment.bonds.indices) == 0:
+        return
+    resname_by_resindex = {int(res.resindex): str(res.resname) for res in fragment.residues}
+    caps = {}
+    for ri, rn in resname_by_resindex.items():
+        base = _PHOSPHO_NUCLEOTIDE_BASES.get(rn.strip().upper())
+        if base is not None and codes.get(ri) == "X":
+            caps[ri] = base
+    if not caps:
+        return
+    resindices = fragment.atoms.resindices
+    for a, b in fragment.bonds.indices:
+        ra, rb = int(resindices[a]), int(resindices[b])
+        if ra == rb:
+            continue
+        for cap, nb in ((ra, rb), (rb, ra)):
+            if cap in caps and _is_nucleic_resname(resname_by_resindex.get(nb, "")):
+                codes[cap] = caps[cap]
+
 
 def resname_to_one_letter(resname: str) -> str:
     """Transform residue name to one-letter representation.
@@ -369,6 +412,8 @@ def fragment_to_protseq_resname_based_chains(fragment: AtomGroup) -> list:
             int(res.resindex): resname_to_one_letter(str(res.resname).upper())
             for res in fragment.residues
         }
+        # wave-2 item 6d: bonded phosphorylated caps -> base
+        _apply_phospho_nucleotide_caps(fragment, codes)
         nxt, prev = _backbone_link_maps(
             fragment.atoms.names, fragment.atoms.resindices,
             fragment.bonds.indices, codes,
@@ -426,13 +471,18 @@ def fragment_to_protseq_resname_based(fragment: AtomGroup) -> str:
     """
     try:
         # Bug fix: Sort by residue resnums, not atom indices
-        residue_data = list(zip(fragment.residues.resnums, fragment.residues.resnames))
-        residue_data.sort(key=lambda x: x[0])
-        
-        residue_atom_resnames = [
-            resname_to_one_letter(resname.upper())
-            for _, resname in residue_data
-        ]
+        residue_data = sorted(
+            zip(fragment.residues.resnums, fragment.residues.resnames,
+                fragment.residues.resindices),
+            key=lambda x: x[0],
+        )
+        codes = {
+            int(ri): resname_to_one_letter(str(resname).upper())
+            for _, resname, ri in residue_data
+        }
+        # wave-2 item 6d: bonded phosphorylated caps -> base
+        _apply_phospho_nucleotide_caps(fragment, codes)
+        residue_atom_resnames = [codes[int(ri)] for _, _, ri in residue_data]
         
         return "".join(residue_atom_resnames)
     except Exception as exc:
@@ -606,6 +656,8 @@ def _fragment_extract_residues(
             residue_indices_to_code[res_indice] = res_name
             residue_indices_to_index[res_indice] = res_i
             res_i += 1
+    # wave-2 item 6d: bonded phosphorylated caps -> base (map-based paths)
+    _apply_phospho_nucleotide_caps(fragment, residue_indices_to_code)
     return residue_indices_to_code, residue_indices_to_index
 
 

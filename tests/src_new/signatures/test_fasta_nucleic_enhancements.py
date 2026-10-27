@@ -24,9 +24,12 @@ from src_new.molecules.instances import MoleculeInstance
 from src_new.signatures.generators.fasta import (
     MapFastaGeneratorNucleotide,
     ResnameFastaGeneratorNucleotide,
+    _fragment_extract_residues,
     fragment_to_protseq_map_based,
+    fragment_to_protseq_resname_based,
     resname_to_one_letter,
 )
+from src_new.molecules.nucleic_acid import normalize_nucleic_resname
 
 
 class TestResnameToOneLetterWave7:
@@ -186,6 +189,53 @@ class TestEnoughBondsGate:
             ResnameFastaGeneratorNucleotide(cfg)._is_applicable(inst, fragment, facade),
         ]
         assert applicable == [True, False]
+
+
+class TestPhosphoNucleotideCaps:
+    """wave-2 item 6d (GitHub #3/#6-rejected): GTP/GDP/GMP/ATP map to their
+    base ONLY inside a bonded nucleic chain. The global-alias approach
+    (normalize_nucleic_resname) was REJECTED — free NTP ligands stay
+    small molecules; the mapping is a sequencing-side, bond-gated hook.
+    """
+
+    NA_RES = ["DA", "DC", "DG", "GTP"]
+    NA_ATOMS = [["P", "O5'", "C5'", "C4'", "C3'", "O3'"]] * 4
+
+    def _bonded_cap_universe(self):
+        # full chain incl. the O3'(2)-P(3) link into the terminal GTP
+        bonds = _chain_bonds(4, 6, [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)], (0, 5))
+        return _mk_universe(self.NA_RES, self.NA_ATOMS, bonds=bonds)
+
+    def test_bonded_terminal_gtp_maps_to_g_resname_path(self):
+        u = self._bonded_cap_universe()
+        assert fragment_to_protseq_resname_based(u.atoms) == "ACGG"
+
+    def test_bonded_terminal_gtp_maps_to_g_extract_path(self):
+        u = self._bonded_cap_universe()
+        codes, _ = _fragment_extract_residues(u.atoms)
+        assert codes == {0: "A", 1: "C", 2: "G", 3: "G"}
+
+    def test_free_atp_residue_stays_x(self):
+        # GTP present but with NO bond to the nucleic chain -> free ligand
+        bonds = _chain_bonds(3, 6, [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)],
+                             (0, 5))  # links only residues 0-2
+        bonds = [b for b in bonds if max(b) < 18]
+        u = _mk_universe(self.NA_RES, self.NA_ATOMS, bonds=bonds)
+        codes, _ = _fragment_extract_residues(u.atoms)
+        assert codes[3] == "X"
+
+    def test_gtp_bonded_to_protein_stays_x(self):
+        # bonded, but the neighbour is PROTEIN, not NA -> not an NA chain
+        bonds = _chain_bonds(2, 4, [(0, 1), (1, 2), (2, 3)], (0, 3))
+        u = _mk_universe(["ALA", "GTP"], [["N", "CA", "C", "O"]] * 2, bonds=bonds)
+        codes, _ = _fragment_extract_residues(u.atoms)
+        assert codes == {0: "A", 1: "X"}
+
+    def test_normalizer_untouched_free_atp_not_a_base(self):
+        # guard rail for the REJECTED global-alias direction: free ATP must
+        # never become a nucleic base at the molecule-typing level
+        for rn in ("ATP", "ADP", "AMP", "GTP", "GDP", "GMP"):
+            assert normalize_nucleic_resname(rn) is None
 
 
 class TestAnchorParameterization:
