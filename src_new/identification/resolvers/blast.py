@@ -456,16 +456,29 @@ class BLASTResolver(IdentifierResolver):
         """D-13 (2a): ONE BLAST run per (resolver, signature) — the identity
         and similarity tiers are two views over the same processed hits
         (previously each phase re-ran blastp, doubling the protein BLAST
-        wall time that dominates the identify stage)."""
+        wall time that dominates the identify stage).
+
+        Wave-2 item 9a: cache FAILURES too. A timeout/non-zero exit on
+        (db_path, sequence) is deterministic within a run; without
+        failure caching the identity tier pays the timeout and the
+        similarity tier pays it AGAIN. The cached exception is re-raised
+        as-is."""
         cache = getattr(self, "_processed_hits_cache", None)
         if cache is None:
             cache = self._processed_hits_cache = {}
         key = (self.db_path, sequence)
         if key not in cache:
-            cache[key] = self._process_blast_results(
-                self._run_blast_local(sequence, working_directory)
-            )
-        return cache[key]
+            try:
+                cache[key] = self._process_blast_results(
+                    self._run_blast_local(sequence, working_directory)
+                )
+            except Exception as exc:
+                cache[key] = exc
+                raise
+        result = cache[key]
+        if isinstance(result, BaseException):
+            raise result
+        return result
 
     # --- D-13 protein identity gate (C-03) as a pure per-hit predicate ---
     # Threshold order preserved: identity -> qcov -> scov; the first

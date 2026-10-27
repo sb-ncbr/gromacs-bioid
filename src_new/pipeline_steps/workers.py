@@ -606,6 +606,7 @@ def _identify_molecules_worker(item: tuple) -> dict[str, Any]:
             pre_flat = _blob_flatten(existing_identifiers) if existing_identifiers else {}
 
             errors = []
+            seen_type_signature: set[tuple] = set()
             for generator_name, signature in signatures_dict.items():
                 if not signature:
                     continue
@@ -613,6 +614,14 @@ def _identify_molecules_worker(item: tuple) -> dict[str, Any]:
                     errors.append({"resolver": "worker", "generator": generator_name,
                                    "error": "stage_time_budget exceeded mid-fragment"})
                     break
+                # wave-2 item 9b: two generators can emit the SAME
+                # signature for the same segment (e.g. fasta variants);
+                # resolve each (signature_type, signature) pair once.
+                sig_type = (sig_type_map or {}).get(generator_name)
+                pair = (sig_type, signature)
+                if pair in seen_type_signature:
+                    continue
+                seen_type_signature.add(pair)
                 manager.resolve(
                     results=tmp_mgr,
                     segment=fragment_name,
