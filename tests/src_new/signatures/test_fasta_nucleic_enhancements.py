@@ -141,6 +141,53 @@ class TestResnameFallbackGate:
         assert applicable == [False, True]
 
 
+class TestEnoughBondsGate:
+    """wave-2 item 6c (GitHub #3): map-based applicability requires ENOUGH
+    bonds (>= 0.25/atom), not ANY bond — the 1XJR partial-CONECT class.
+
+    47 nt x 6 atoms = 282 atoms -> threshold 70.5 bonds. A handful of
+    authored CONECT records passed the old any-bond gate: the map emitted
+    garbage fragmented chains while the resname fallback stayed silent.
+    """
+
+    NUC_RES = (["DA", "DC", "DG", "DT"] * 12)[:47]
+    NUC_ATOMS = [["P", "O5'", "C5'", "C4'", "C3'", "O3'"]] * 47
+
+    def _sparse_universe(self):
+        # 9 authored bonds among 282 atoms: 9 < 282*0.25 = 70.5
+        bonds = [(0, 1), (6, 7), (12, 13), (18, 19), (24, 25),
+                 (30, 31), (36, 37), (42, 43), (48, 49)]
+        return _mk_universe(self.NUC_RES, self.NUC_ATOMS, bonds=bonds)
+
+    def test_partial_conect_47nt_map_off_resname_on(self):
+        facade, fragment, inst = _mk_facade(self._sparse_universe())
+        cfg = SignaturesConfig()
+        applicable = [
+            MapFastaGeneratorNucleotide(cfg)._is_applicable(inst, fragment, facade),
+            ResnameFastaGeneratorNucleotide(cfg)._is_applicable(inst, fragment, facade),
+        ]
+        assert applicable == [False, True]  # was [True, False] -> garbage map chains
+
+    def test_partial_conect_47nt_resname_emits_full_chain(self):
+        facade, fragment, inst = _mk_facade(self._sparse_universe())
+        cfg = SignaturesConfig()
+        gen = ResnameFastaGeneratorNucleotide(cfg)
+        assert gen._is_applicable(inst, fragment, facade)
+        seq = gen._generate(inst, fragment, facade)
+        assert len(seq) == 47  # one sequence per residue, 1XJR-style
+
+    def test_full_connectivity_47nt_map_on_resname_off(self):
+        bonds = _chain_bonds(47, 6, [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)], (0, 5))
+        facade, fragment, inst = _mk_facade(
+            _mk_universe(self.NUC_RES, self.NUC_ATOMS, bonds=bonds))
+        cfg = SignaturesConfig()
+        applicable = [
+            MapFastaGeneratorNucleotide(cfg)._is_applicable(inst, fragment, facade),
+            ResnameFastaGeneratorNucleotide(cfg)._is_applicable(inst, fragment, facade),
+        ]
+        assert applicable == [True, False]
+
+
 class TestAnchorParameterization:
     """B3: protein path byte-identical; anchor=None safe for NA."""
 

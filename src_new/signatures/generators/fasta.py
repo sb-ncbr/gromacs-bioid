@@ -70,6 +70,20 @@ class MapFastaGeneratorProtein(SignatureGenerator):
         return _emit_chains(chains)
 
 
+def _has_enough_bonds(fragment: AtomGroup) -> bool:
+    """wave-2 item 6c: 'enough bonds' — >= 0.25 bonds per atom, the same
+    threshold as loader.repair.bonds_insufficient. A partial CONECT set
+    (1XJR class: a handful of authored bonds in a 47-nt chain) passed the
+    old any-bond check: the map generator then emitted garbage fragmented
+    chains and the resname fallback stayed silent. Now 'any bond' no
+    longer counts as bonded topology."""
+    if not hasattr(fragment, 'bonds') or not hasattr(fragment.bonds, 'indices'):
+        return False
+    if len(fragment.bonds.indices) == 0:
+        return False
+    return len(fragment.bonds.indices) >= fragment.n_atoms * 0.25
+
+
 class MapFastaGeneratorNucleotide(SignatureGenerator):
     """FASTA generator for nucleic acids using map-based approach."""
     
@@ -93,10 +107,11 @@ class MapFastaGeneratorNucleotide(SignatureGenerator):
         if not props.flags.get(SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value, False):
             return False
 
-        # Map-based approach requires bond data to build adjacency matrix
-        # Without bonds, fasta_resname_nucleic can still produce a sequence
-        has_bonds = hasattr(fragment, 'bonds') and hasattr(fragment.bonds, 'indices') and len(fragment.bonds.indices) > 0
-        if not has_bonds:
+        # Map-based approach requires enough bond data to build the
+        # adjacency matrix (wave-2 item 6c: any-bond -> 0.25/atom).
+        # Without sufficient bonds, fasta_resname_nucleic can still
+        # produce a sequence.
+        if not _has_enough_bonds(fragment):
             return False
 
         return True
@@ -176,13 +191,9 @@ class ResnameFastaGeneratorNucleotide(SignatureGenerator):
             return False
 
         multi_atom = props.flags.get(SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value, False)
-        has_bonds = (
-            hasattr(fragment, 'bonds')
-            and hasattr(fragment.bonds, 'indices')
-            and len(fragment.bonds.indices) > 0
-        )
-        # Applicable exactly when the map-based generator is not.
-        return not multi_atom or not has_bonds
+        # Applicable exactly when the map-based generator is not
+        # (wave-2 item 6c: 'enough bonds', not 'any bond').
+        return not multi_atom or not _has_enough_bonds(fragment)
     
     def _generate(
         self,
