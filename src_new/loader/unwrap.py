@@ -102,9 +102,10 @@ class PbcRepair:
         try:
             ag = self.u.select_atoms(self.loader_config.unwrap_selection)
 
-            # Guess bonds if missing and enabled
+            # Guess bonds if missing AND enabled
             if self.loader_config.unwrap_guess_bonds_if_missing:
-                if not hasattr(self.u.atoms, 'bonds') or len(self.u.atoms.bonds) == 0:
+                from .repair import bonds_insufficient
+                if bonds_insufficient(self.u):
                     report.bonds_guessed = self._guess_bonds()
 
             # Try unwrapping with configured reference
@@ -160,22 +161,17 @@ class PbcRepair:
         return report
 
     def _guess_bonds(self) -> int:
-        """Guess bonds using DefaultGuesser. Returns count of bonds guessed."""
-        try:
-            # A-04 (red-team 3.2): see repair.guess_bonds — instance-as-context
-            # discarded the radii; element-based table fixes DUMMY/OW/HW kills.
-            self.u.guess_TopologyAttrs(
-                context="default",
-                to_guess=['bonds'],
-                vdwradii=element_based_vdwradii(self.u),
-                fudge_factor=self.config.loader.bond_guess_vdw_factor,
-                lower_bound=0.1,
-            )
-        except Exception as exc:
-            logger.warning(f"Bond guessing for unwrap failed: bond_guess_failed: {exc}")
-            return 0
+        """Guess bonds UNIONED with any existing set using DefaultGuesser.
 
-        return len(self.u.atoms.bonds) if hasattr(self.u.atoms, 'bonds') else 0
+        Wave-2 item 6a: same insufficient-bonds predicate as repair (0.25
+        bonds/atom) — partial bond coverage no longer skips guessing."""
+        from .repair import guess_bonds_union
+        return guess_bonds_union(
+            self.u,
+            vdwradii=element_based_vdwradii(self.u),
+            fudge_factor=self.config.loader.bond_guess_vdw_factor,
+            logger=logger,
+        )
 
     def detect_jumps(self) -> dict[str, Any]:
         """Detect periodic boundary jumps in the structure.

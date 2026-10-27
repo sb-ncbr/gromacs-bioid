@@ -102,6 +102,55 @@ def element_based_vdwradii(u: Universe) -> dict[str, float]:
     return radii
 
 
+def bonds_insufficient(u) -> bool:
+    """wave-2 item 6a/6c: 'enough bonds' predicate — fully bonded systems
+    exceed 0.25 bonds per atom (same threshold repair._has_sufficient_bonds
+    uses). Partial CONECT (e.g. 1XJR) fails this and must get guessed
+    bonds UNIONED in, not skipped."""
+    if not hasattr(u.atoms, 'bonds') or len(u.atoms.bonds) == 0:
+        return True
+    return len(u.atoms.bonds) < u.atoms.n_atoms * 0.25
+
+
+def guess_bonds_union(u, vdwradii, fudge_factor: float, logger=logging) -> int:
+    """Guess bonds from coordinates and UNION them with the existing
+    (CONECT) bonds — the guesser must never drop authored bonds (wave-2
+    item 6a; 1XJR-type partial CONECT). MDAnalysis' guess_TopologyAttrs
+    skips attributes that already exist, so the union dance is:
+    snapshot → del → guess → re-add (re-add replaces). On guesser failure
+    the original bonds are restored.
+
+    Returns the final bond count (0 only when truly nothing could be made).
+    """
+    from MDAnalysis.core.topologyattrs import Bonds
+    existing: set[tuple[int, int]] = set()
+    if hasattr(u.atoms, 'bonds') and len(u.atoms.bonds):
+        existing = {tuple(sorted((int(a), int(b)))) for a, b in u.atoms.bonds.indices}
+    try:
+        if hasattr(u.atoms, 'bonds'):
+            u.del_TopologyAttr('bonds')
+        u.guess_TopologyAttrs(
+            context="default",
+            to_guess=['bonds'],
+            vdwradii=vdwradii,
+            fudge_factor=fudge_factor,
+            lower_bound=0.1,
+        )
+    except Exception as exc:
+        # restore authored bonds on any guesser failure
+        if existing:
+            u.add_TopologyAttr(Bonds(sorted(existing)))
+        logger.warning(f"guesser failed during union guess: {exc}")
+        return len(existing)
+    guessed: set[tuple[int, int]] = set()
+    if hasattr(u.atoms, 'bonds') and len(u.atoms.bonds):
+        guessed = {tuple(sorted((int(a), int(b)))) for a, b in u.atoms.bonds.indices}
+    union = sorted(existing | guessed)
+    if union:
+        u.add_TopologyAttr(Bonds(union))
+    return len(union)
+
+
 @dataclass
 class RepairReport:
     elements_guessed: int = 0
@@ -491,30 +540,25 @@ class TopologyRepair:
         return fixed_count
 
     def guess_bonds(self) -> int:
-        """Guess bonds from positions using DefaultGuesser."""
-        if self._has_bonds():
+        """Guess bonds from positions using DefaultGuesser.
+
+        Wave-2 item 6a: guess when bonds are INSUFFICIENT, not only when
+        absent — partial CONECT coverage (1XJR class) got no guessing at
+        all before, leaving later topology consumers disconnected. Guessed
+        bonds are UNIONED with the authored CONECT set (never replaced)."""
+        if self._has_sufficient_bonds():
             return 0
 
-        try:
-            # A-04 (red-team 3.2): context= must be a STRING/CLASS — passing a
-            # guesser INSTANCE silently discarded all params (the root bug).
-            # Radii come from repaired elements so one odd type (DUMMY/MW,
-            # OW/HW, Martini beads) can no longer zero out all bonds.
-            self.u.guess_TopologyAttrs(
-                context="default",
-                to_guess=['bonds'],
-                vdwradii=element_based_vdwradii(self.u),
-                fudge_factor=self.config.loader.bond_guess_vdw_factor,
-                lower_bound=0.1,
-            )
-        except Exception as exc:
-            logger.warning(f"MDAnalysis bond guesser failed: {exc}")
-            self.report.warnings.append(f"bond_guess_failed: {exc}")
-            return 0
-
-        count = len(self.u.atoms.bonds) if hasattr(self.u.atoms, 'bonds') else 0
+        count = guess_bonds_union(
+            self.u,
+            vdwradii=element_based_vdwradii(self.u),
+            fudge_factor=self.config.loader.bond_guess_vdw_factor,
+            logger=logger,
+        )
+        if count == 0:
+            self.report.warnings.append("bond_guess_failed: guesser produced no bonds")
         self.report.bonds_guessed = count
-        logger.info(f"Guessed {count} bonds")
+        logger.info(f"Bond topology after union guess: {count} bonds")
         return count
 
     def _deduplicate_segids(self) -> None:
