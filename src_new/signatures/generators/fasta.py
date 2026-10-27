@@ -80,9 +80,14 @@ class MapFastaGeneratorNucleotide(SignatureGenerator):
         if not props.flags.get(SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value, False):
             return False
 
-        # Map-based approach requires bond data to build adjacency matrix
-        # Without bonds, fasta_resname_nucleic can still produce a sequence
-        has_bonds = hasattr(fragment, 'bonds') and hasattr(fragment.bonds, 'indices') and len(fragment.bonds.indices) > 0
+        # Map-based approach requires sufficient bond data across the polymer
+        # to build a connected residue adjacency matrix (partial CONECT records
+        # covering only 1-2 modified bases must fall back to fasta_resname_nucleic).
+        has_bonds = (
+            hasattr(fragment, 'bonds')
+            and hasattr(fragment.bonds, 'indices')
+            and len(fragment.bonds.indices) >= max(1, int(fragment.n_atoms * 0.25))
+        )
         if not has_bonds:
             return False
 
@@ -164,7 +169,7 @@ class ResnameFastaGeneratorNucleotide(SignatureGenerator):
         has_bonds = (
             hasattr(fragment, 'bonds')
             and hasattr(fragment.bonds, 'indices')
-            and len(fragment.bonds.indices) > 0
+            and len(fragment.bonds.indices) >= max(1, int(fragment.n_atoms * 0.25))
         )
         # Applicable exactly when the map-based generator is not.
         return not multi_atom or not has_bonds
@@ -214,8 +219,12 @@ def fragment_to_protseq_resname_based(fragment: AtomGroup) -> str:
     Bug fix: Sort by residue resnums, not atom indices.
     """
     try:
-        # Bug fix: Sort by residue resnums, not atom indices
-        residue_data = list(zip(fragment.residues.resnums, fragment.residues.resnames))
+        # Bug fix: Sort by residue resnums (or resids when resnums is absent), not atom indices
+        try:
+            res_numbers = fragment.residues.resnums
+        except Exception:
+            res_numbers = fragment.residues.resids
+        residue_data = list(zip(res_numbers, fragment.residues.resnames))
         residue_data.sort(key=lambda x: x[0])
         
         residue_atom_resnames = [

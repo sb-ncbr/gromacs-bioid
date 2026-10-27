@@ -176,27 +176,36 @@ class TopologyRepair:
             if name_upper.startswith('MW'):  # Water virtual site - place at oxygen
                 return 'O'
             
-            # Try single-letter prefix first (most reliable)
-            first_char = name[0].upper()
-            if first_char in ATOMTABLE_ELEMENTS_MASSES:
-                return first_char
-            
-            # Try two-letter prefix
-            if len(name) >= 2:
-                two_char = name[:2].upper()
-                if two_char in ATOMTABLE_ELEMENTS_MASSES:
-                    return two_char
-            
-            # Try full alpha prefix
+            # Extract leading alphabetic prefix
             prefix = ""
-            for c in name:
+            for c in name_upper:
                 if c.isalpha():
                     prefix += c
                 else:
                     break
-            prefix = prefix.upper()
-            if prefix in ATOMTABLE_ELEMENTS_MASSES:
-                return prefix
+
+            # Unambiguous two-letter halogens/metals that never collide with
+            # standard biomolecular C-alpha/C-beta/N-alpha atom names (e.g. CL1, BR1, FE, ZN, MG)
+            if prefix in ("CL", "BR", "FE", "ZN", "MG", "CU", "MN", "SE", "SI"):
+                return prefix.capitalize()
+            if len(prefix) >= 2 and prefix[:2] in ("CL", "BR"):
+                return prefix[:2].capitalize()
+
+            # Try single-letter prefix first (preserves CA -> C for protein C-alpha)
+            first_char = name_upper[0] if name_upper else ""
+            if first_char in ATOMTABLE_ELEMENTS_MASSES:
+                return first_char
+            
+            # Try two-letter prefix (title-case to match ATOMTABLE_ELEMENTS_MASSES keys)
+            if len(name_upper) >= 2:
+                two_char = name_upper[:2].capitalize()
+                if two_char in ATOMTABLE_ELEMENTS_MASSES:
+                    return two_char
+            
+            # Try full alpha prefix (title-case)
+            prefix_cap = prefix.capitalize()
+            if prefix_cap in ATOMTABLE_ELEMENTS_MASSES:
+                return prefix_cap
 
         # From atom type prefix
         if atom_type:
@@ -323,26 +332,141 @@ class TopologyRepair:
 
     def guess_bonds(self) -> int:
         """Guess bonds from positions using DefaultGuesser."""
-        if self._has_bonds():
+        if self._has_sufficient_bonds():
             return 0
 
+        existing_bonds: set[tuple[int, int]] = set()
+        if self._has_bonds():
+            for b0, b1 in self.u.atoms.bonds.indices:
+                i0, i1 = int(b0), int(b1)
+                existing_bonds.add((min(i0, i1), max(i0, i1)))
+
         try:
+            # Sync atom types from valid elements when types are missing or blank
+            # so DefaultGuesser VdW lookup succeeds on element-repaired topologies.
+            if hasattr(self.u.atoms, "elements"):
+                elems = [str(e).strip().upper() if e else "" for e in self.u.atoms.elements]
+                if not hasattr(self.u.atoms, "types"):
+                    self.u.add_TopologyAttr("types", [e or "C" for e in elems])
+                else:
+                    cur_types = list(self.u.atoms.types)
+                    updated_types = [
+                        elems[i] if (not cur_types[i] or not str(cur_types[i]).strip()) and elems[i] else cur_types[i]
+                        for i in range(len(cur_types))
+                    ]
+                    self.u.atoms.types = updated_types
+
             guesser = DefaultGuesser(
                 self.u,
                 vdwradii=None,
                 fudge_factor=self.config.loader.bond_guess_vdw_factor,
                 lower_bound=0.1,
             )
-            self.u.guess_TopologyAttrs(to_guess=['bonds'], context=guesser)
+            self.u.guess_TopologyAttrs(force_guess=['bonds'], context=guesser)
+            if existing_bonds and hasattr(self.u.atoms, 'bonds'):
+                merged_bonds = set(existing_bonds)
+                for b0, b1 in self.u.atoms.bonds.indices:
+                    i0, i1 = int(b0), int(b1)
+                    merged_bonds.add((min(i0, i1), max(i0, i1)))
+                self.u.add_TopologyAttr('bonds', sorted(merged_bonds))
         except Exception as exc:
             logger.warning(f"MDAnalysis bond guesser failed: {exc}")
             self.report.warnings.append(f"Bond guessing failed: {exc}")
             return 0
 
-        count = len(self.u.atoms.bonds) if hasattr(self.u.atoms, 'bonds') else 0
-        self.report.bonds_guessed = count
-        logger.info(f"Guessed {count} bonds")
-        return count
+        self._prune_multivalent_hydrogens()
+        self._repair_truncated_halogens()
+
+        count_after = len(self.u.atoms.bonds) if hasattr(self.u.atoms, 'bonds') else 0
+        guessed_count = max(0, count_after - len(existing_bonds))
+        self.report.bonds_guessed = guessed_count
+        logger.info(f"Guessed {guessed_count} bonds (total {count_after})")
+        return guessed_count
+
+    def _prune_multivalent_hydrogens(self) -> None:
+        """Ensure hydrogen atoms have at most 1 covalent bond (keep shortest)."""
+        if not self._has_bonds() or not hasattr(self.u.atoms, "elements") or not hasattr(self.u.atoms, "positions"):
+            return
+
+        import numpy as np
+
+        elements = self.u.atoms.elements
+        positions = self.u.atoms.positions
+        bonds = list(self.u.atoms.bonds.indices)
+
+        h_Editable_bonds: dict[int, list[tuple[float, int, int]]] = {}
+        for bond_idx, (i0, i1) in enumerate(bonds):
+            i0, i1 = int(i0), int(i1)
+            e0 = str(elements[i0]).strip().capitalize()
+            e1 = str(elements[i1]).strip().capitalize()
+            if e0 == "H" or e1 == "H":
+                dist = float(np.linalg.norm(positions[i0] - positions[i1]))
+                if e0 == "H":
+                    h_Editable_bonds.setdefault(i0, []).append((dist, bond_idx, i1))
+                if e1 == "H":
+                    h_Editable_bonds.setdefault(i1, []).append((dist, bond_idx, i0))
+
+        to_remove: set[int] = set()
+        for h_idx, incident in h_Editable_bonds.items():
+            if len(incident) > 1:
+                incident.sort(key=lambda item: item[0])
+                for _, bond_idx, _ in incident[1:]:
+                    to_remove.add(bond_idx)
+
+        if to_remove:
+            kept = [tuple(int(x) for x in b) for idx, b in enumerate(bonds) if idx not in to_remove]
+            self.u.delete_bonds( [tuple(int(x) for x in bonds[idx]) for idx in to_remove] )
+            logger.debug("Pruned %d over-coordinated H-bond bridges", len(to_remove))
+
+    def _repair_truncated_halogens(self) -> None:
+        """Repair right-shifted PDB Cl/Br elements truncated to 'C'/'B' in cols 77-78.
+
+        When a PDB writer formats a 2-letter element like 'Cl' across cols 78-79
+        without right-justifying into cols 77-78, MDAnalysis reads ' C' while
+        adjacent atoms have blank element columns. A terminal 'C' atom bonded
+        exclusively to a single aromatic/aliphatic carbon at a C-Cl bond length
+        (1.68-1.85 A) with zero attached hydrogens in an explicitly protonated
+        molecule is a truncated chlorine atom.
+        """
+        if not self._has_bonds() or not hasattr(self.u.atoms, "elements") or not hasattr(self.u.atoms, "positions"):
+            return
+
+        import numpy as np
+
+        elements = list(self.u.atoms.elements)
+        if not any(str(e).strip().capitalize() == "H" for e in elements):
+            return
+
+        positions = self.u.atoms.positions
+        adj: dict[int, list[int]] = {i: [] for i in range(len(elements))}
+        for b0, b1 in self.u.atoms.bonds.indices:
+            i0, i1 = int(b0), int(b1)
+            adj[i0].append(i1)
+            adj[i1].append(i0)
+
+        modified = False
+        masses = list(self.u.atoms.masses) if hasattr(self.u.atoms, "masses") else None
+        for idx, neighbors in adj.items():
+            if len(neighbors) != 1:
+                continue
+            if str(elements[idx]).strip().capitalize() != "C":
+                continue
+            nb = neighbors[0]
+            if len(adj.get(nb, ())) < 2:
+                continue
+            if str(elements[nb]).strip().capitalize() != "C":
+                continue
+            dist = float(np.linalg.norm(positions[idx] - positions[nb]))
+            if 1.68 <= dist <= 1.85:
+                elements[idx] = "Cl"
+                if masses is not None:
+                    masses[idx] = ATOMTABLE_ELEMENTS_MASSES["Cl"]
+                modified = True
+
+        if modified:
+            self.u.atoms.elements = elements
+            if masses is not None:
+                self.u.atoms.masses = masses
 
     def _deduplicate_segids(self) -> None:
         """Rename duplicate segids so each segment has a unique identifier.

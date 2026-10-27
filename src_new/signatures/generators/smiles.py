@@ -11,7 +11,7 @@ from rdkit import Chem
 from rdkit.Chem import rdDetermineBonds, EditableMol, Mol
 
 from ...config.loader import SignaturesConfig
-from ...molecules.instances import MoleculeInstance
+from ...molecules.instances import MoleculeInstance, MoleculeType
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 from ..base import SignatureGenerator
 
@@ -51,6 +51,14 @@ class SimpleSmilesGenerator(SignatureGenerator):
         # Don't process too large molecules
         if fragment.n_atoms > self.config.smiles_maximum_number_of_atoms:
             return False
+
+        # Oligosaccharides (> 2 residues) are handled by GlycanCompositionGenerator;
+        # running RDKit DetermineBondOrders on large unprotonated glycan graphs can hang.
+        if (
+            getattr(instance, "molecule_type", None) == MoleculeType.CARBOHYDRATE
+            and len(fragment.residues) > 2
+        ):
+            return False
         
         # Check all atoms are interconnected via bonds
         atom_indices = {int(idx): i for i, idx in enumerate(fragment.atoms.indices)}
@@ -59,8 +67,11 @@ class SimpleSmilesGenerator(SignatureGenerator):
         bonded_all = True
         try:
             for atom_idx1, atom_idx2 in fragment.bonds.indices:
-                is_atom_bonded[atom_indices[int(atom_idx1)]] = True
-                is_atom_bonded[atom_indices[int(atom_idx2)]] = True
+                i1 = atom_indices.get(int(atom_idx1))
+                i2 = atom_indices.get(int(atom_idx2))
+                if i1 is not None and i2 is not None:
+                    is_atom_bonded[i1] = True
+                    is_atom_bonded[i2] = True
             bonded_all = all(is_atom_bonded)
         except Exception:
             # No bond records in topology: allow coordinate-based bond
@@ -248,9 +259,10 @@ def _fragment_to_rdkit_bonds(
 ) -> None:
     """Add bonds from fragment to RDKit molecule."""
     for atom_idx1, atom_idx2 in fragment.bonds.indices:
-        atom_idx1_rdkit = atom_idx_to_rdkit_idx[atom_idx1]
-        atom_idx2_rdkit = atom_idx_to_rdkit_idx[atom_idx2]
-        molecule.AddBond(atom_idx1_rdkit, atom_idx2_rdkit, Chem.BondType.SINGLE)
+        if atom_idx1 in atom_idx_to_rdkit_idx and atom_idx2 in atom_idx_to_rdkit_idx:
+            atom_idx1_rdkit = atom_idx_to_rdkit_idx[atom_idx1]
+            atom_idx2_rdkit = atom_idx_to_rdkit_idx[atom_idx2]
+            molecule.AddBond(atom_idx1_rdkit, atom_idx2_rdkit, Chem.BondType.SINGLE)
 
 
 def _fix_bond_orders_rdkit(molecule: Mol, max_attempts: int = 20) -> None:
@@ -258,6 +270,16 @@ def _fix_bond_orders_rdkit(molecule: Mol, max_attempts: int = 20) -> None:
     
     Bug fix: Uses regex to extract charge from error message instead of fragile string parsing.
     """
+    # Guard against combinatorial ILP hang in RDKit DetermineBondOrders on
+    # large hydrogen-depleted fragments (e.g. X-ray oligosaccharides / macrocycles).
+    has_hydrogens = any(atom.GetAtomicNum() == 1 for atom in molecule.GetAtoms())
+    if not has_hydrogens and molecule.GetNumAtoms() > 60:
+        logger.debug(
+            "Skipping DetermineBondOrders on unprotonated molecule with %d atoms (>60)",
+            molecule.GetNumAtoms(),
+        )
+        return
+
     charge = sum(atom.GetFormalCharge() for atom in molecule.GetAtoms())
     
     while max_attempts > 0:

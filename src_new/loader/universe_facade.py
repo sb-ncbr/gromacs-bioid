@@ -227,14 +227,18 @@ class LoadedUniverse:
         else:
             flags[SegmentProperty.HAS_UNIQUE_NAMES.value] = False
         
-        # IS_PROTEIN (use 80% threshold like _is_polymer_segment)
+        # IS_PROTEIN (use 80% threshold like _is_polymer_segment; ignore covalent glycan atoms in denominator)
         if hasattr(selected.atoms, 'resnames'):
             resnames = selected.atoms.resnames
             known_count = sum(
                 1 for rn in resnames if rn.upper() in KNOWN_RESIDUE_CODES
             )
+            non_glycan_count = sum(
+                1 for rn in resnames if rn.strip().upper() not in _KNOWN_GLYCAN_RESNAMES
+            )
+            denom = non_glycan_count if (known_count > 0 and non_glycan_count > 0) else len(resnames)
             flags[SegmentProperty.IS_PROTEIN.value] = (
-                len(resnames) > 0 and known_count / len(resnames) >= 0.8
+                denom > 0 and known_count / denom >= 0.8
             )
         else:
             flags[SegmentProperty.IS_PROTEIN.value] = False
@@ -415,6 +419,89 @@ class LoadedUniverse:
                 props.na_detection = na_meta["na_detection"]
                 props.na_structural_promotions = na_meta["na_structural_promotions"]
                 self._segment_properties[vname] = props
+
+        # Expose covalently attached N-/O-glycan trees inside protein segments
+        # (where glycosidic bonds attach the glycan to ASN/SER/THR so the
+        # glycan shares a connected component with the polypeptide).
+        for segment_name in list(getattr(self, "_segments", ())):
+            seg_props = self._segment_properties.get(segment_name)
+            if not seg_props or not seg_props.flags.get(SegmentProperty.IS_PROTEIN.value):
+                continue
+            selected = self.universe.atoms[self.universe.atoms.segids == segment_name]
+            if not hasattr(selected, "residues"):
+                continue
+            glycan_res = [
+                r for r in selected.residues
+                if r.resname.strip().upper() in _KNOWN_GLYCAN_RESNAMES
+            ]
+            if not glycan_res:
+                continue
+            # Check if any existing virtual segment for this segment already covers these residues
+            existing_v_resids = {
+                int(r.resid)
+                for vn, vf in self._virtual_fragments.items()
+                if vn.startswith(f"{segment_name}__v")
+                for r in vf.residues
+            }
+            unexposed_glycan_res = [r for r in glycan_res if int(r.resid) not in existing_v_resids]
+            if not unexposed_glycan_res:
+                continue
+            # Group covalently connected glycan residues into trees using inter-residue bonds
+            res_by_ix = {int(r.resindex): r for r in unexposed_glycan_res}
+            adj: dict[int, set[int]] = {ix: set() for ix in res_by_ix}
+            if hasattr(selected, "bonds") and len(selected.bonds) > 0:
+                atom_to_resix = {int(a.index): int(a.resindex) for a in selected.atoms}
+                for b0, b1 in selected.bonds.indices:
+                    r0 = atom_to_resix.get(int(b0))
+                    r1 = atom_to_resix.get(int(b1))
+                    if r0 in adj and r1 in adj and r0 != r1:
+                        adj[r0].add(r1)
+                        adj[r1].add(r0)
+            visited: set[int] = set()
+            trees = []
+            for ix in sorted(res_by_ix):
+                if ix in visited:
+                    continue
+                comp = []
+                queue = [ix]
+                visited.add(ix)
+                while queue:
+                    cur = queue.pop(0)
+                    comp.append(res_by_ix[cur])
+                    for nb in sorted(adj[cur]):
+                        if nb not in visited:
+                            visited.add(nb)
+                            queue.append(nb)
+                tree_ag = sum((r.atoms for r in comp), selected.atoms[:0])
+                if len(tree_ag.atoms) > 3:
+                    trees.append(tree_ag)
+            if not trees:
+                continue
+            gly_clusters: dict = {}
+            for tree_ag in trees:
+                gly_clusters.setdefault(self._species_key(tree_ag), []).append(tree_ag)
+            existing_v_count = sum(
+                1 for vn in self._virtual_fragments if vn.startswith(f"{segment_name}__v")
+            )
+            for _, members in sorted(gly_clusters.items(), key=lambda kv: -len(kv[1][0].atoms)):
+                existing_v_count += 1
+                if existing_v_count > self._MAX_VIRTUAL_PER_SEGMENT:
+                    break
+                vname = f"{segment_name}__v{existing_v_count}"
+                frag0 = members[0]
+                self._virtual_fragments[vname] = frag0
+                props = SegmentProperties(
+                    atom_count_total=len(frag0.atoms),
+                    atom_count_fragment=len(frag0.atoms),
+                    bond_count_fragment=len(frag0.bonds) if hasattr(frag0, "bonds") else 0,
+                    molecule_count=len(members),
+                    residue_count=len(frag0.residues),
+                )
+                props.flags, na_meta = self._compute_flags(frag0, frag0)
+                props.na_detection = na_meta["na_detection"]
+                props.na_structural_promotions = na_meta["na_structural_promotions"]
+                self._segment_properties[vname] = props
+
         if self._virtual_fragments:
             logger.info(
                 "Virtual minority segments discovered: %d (e.g. %s)",
@@ -471,7 +558,14 @@ class LoadedUniverse:
         if len(largest.atoms) >= len(selected.atoms) * 0.8:
             return largest
         
-        # If this is a polymer segment, return full segment (broken bonds case)
+        # Multi-chain polymer oligomer sharing a single segid (e.g. SYSTEM):
+        # if the largest connected fragment is already a complete polymer chain
+        # (>= 10 residues), return that representative chain instead of
+        # concatenating all chains into an artificial chimera.
+        if len(largest.residues) >= 10 and self._is_polymer_segment(largest):
+            return largest
+
+        # If this is a polymer segment with broken bonds, return full segment
         if self._is_polymer_segment(selected):
             return selected
         
@@ -532,23 +626,6 @@ class LoadedUniverse:
         atom_c_cnt = composition.get("C", 0)
         atom_o_cnt = composition.get("O", 0)
 
-        if mtype == MoleculeType.UNKNOWN:
-            # Lipid detection: >10 C, >4 O, C/O ratio between 1 and 3
-            if atom_c_cnt > 10 and atom_o_cnt > 4:
-                c_o_ratio = atom_c_cnt / atom_o_cnt if atom_o_cnt > 0 else float('inf')
-                if 1.0 < c_o_ratio < 3.0:
-                    mtype = MoleculeType.LIPID
-
-            # Carbohydrate detection: >5 C, >4 O, C/O ratio > 2
-            elif atom_c_cnt > 5 and atom_o_cnt > 4:
-                c_o_ratio = atom_c_cnt / atom_o_cnt if atom_o_cnt > 0 else float('inf')
-                if c_o_ratio > 2.0:
-                    mtype = MoleculeType.CARBOHYDRATE
-
-            # Small molecule detection: not any of the above, atom_count > 1
-            elif props.atom_count_fragment > 1:
-                mtype = MoleculeType.SMALL_MOLECULE
-        
         # resname-less engines (LAMMPS .data) carry no residue nomenclature:
         # degrade to UNK per residue instead of crashing (NoDataError from
         # MDAnalysis __getattr__); downstream catalog then contains no
@@ -557,6 +634,32 @@ class LoadedUniverse:
             resnames = list(fragment.residues.resnames)
         except Exception:  # NoDataError in MDAnalysis 2.x
             resnames = ["UNK"] * len(fragment.residues)
+
+        if mtype == MoleculeType.UNKNOWN:
+            resnames_upper = {rn.strip().upper() for rn in resnames if rn}
+            c_o_ratio = atom_c_cnt / atom_o_cnt if atom_o_cnt > 0 else float("inf")
+
+            # 1. Explicit force-field / PDB CCD residue name recognition
+            if resnames_upper and resnames_upper.issubset(_KNOWN_GLYCAN_RESNAMES):
+                mtype = MoleculeType.CARBOHYDRATE
+            elif resnames_upper and resnames_upper.issubset(_KNOWN_LIPID_RESNAMES):
+                mtype = MoleculeType.LIPID
+            # 2. Carbohydrate stoichiometry: >=5 C, >=4 O, 0.8 <= C/O < 1.8
+            elif atom_c_cnt >= 5 and atom_o_cnt >= 4 and 0.8 <= c_o_ratio < 1.8:
+                mtype = MoleculeType.CARBOHYDRATE
+            # 3. Lipid stoichiometry: >=12 C, >=4 O, C/O >= 1.8 without halogens
+            #    (covers phospholipids, glycolipids, triglycerides; sterols are in _KNOWN_LIPID_RESNAMES)
+            elif (
+                atom_c_cnt >= 12
+                and atom_o_cnt >= 4
+                and c_o_ratio >= 1.8
+                and not any(h in composition for h in ("F", "Cl", "Br", "I"))
+            ):
+                mtype = MoleculeType.LIPID
+
+            # 4. Small molecule fallback: never shadowed when C/O heuristics do not match
+            if mtype == MoleculeType.UNKNOWN and props.atom_count_fragment > 1:
+                mtype = MoleculeType.SMALL_MOLECULE
 
         return MoleculeInstance(
             instance_id=f"mol_{segment_name}",
@@ -575,3 +678,16 @@ class LoadedUniverse:
     def extract_all_molecule_instances(self) -> list[MoleculeInstance]:
         """Extract MoleculeInstance for all segments."""
         return [self.extract_molecule_instance(seg) for seg in sorted(self._segments)]
+
+
+from ..signatures.forcefield_maps import LIPID_FORCEFIELD_MAPS, GLYCAN_FORCEFIELD_MAPS
+
+_KNOWN_LIPID_RESNAMES: set[str] = {
+    rn.upper() for submap in LIPID_FORCEFIELD_MAPS.values() for rn in submap
+}
+_KNOWN_GLYCAN_RESNAMES: set[str] = {
+    rn.upper() for submap in GLYCAN_FORCEFIELD_MAPS.values() for rn in submap
+} | {
+    "GLC", "BGC", "GAL", "MAN", "BMA", "FUC", "FUL",
+    "NAG", "NDG", "NGA", "A2G", "SIA", "SLB", "XYP", "XYS",
+}

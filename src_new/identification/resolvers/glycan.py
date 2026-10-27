@@ -58,16 +58,19 @@ class GlycanCompositionResolver(IdentifierResolver):
         """
         result: dict[str, int] = {}
         
-        # Regex to match monosaccharide classes: Name(count)
-        pattern = r"([A-Za-z]+)\((\d+)\)"
+        # Regex to match monosaccharide classes: Name(count), including alphanumeric (e.g. Neu5Ac)
+        pattern = r"([A-Za-z0-9]+)\((\d+)\)"
         
         # Mapping from common names to GlyCosmos fields (case-insensitive)
         field_mapping = {
             "hex": "hex",
             "hexnac": "hexnac",
             "dhex": "dhex",
+            "neuac": "neu5ac",
             "neu5ac": "neu5ac",
+            "neugc": "neu5g",
             "neu5g": "neu5g",  # Also handle Neu5Gc
+            "neu5gc": "neu5g",
         }
         
         for match in re.finditer(pattern, composition):
