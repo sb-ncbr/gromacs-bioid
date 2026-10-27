@@ -23,6 +23,10 @@ class MoleculeType(str, Enum):
 WATER_RESNAMES: frozenset[str] = frozenset({
     "SOL", "HOH", "WAT", "TIP3", "TIP3P", "TIP4P", "T4P",
     "SPC", "SPCE", "OPC", "OPC3", "T3P", "T5P",
+    # bughunt BH-001: crystallographic/heavy-water spellings — the water
+    # rule is residue-based (see universe_facade._classify_molecule_type)
+    # so these must be present even though the atoms come without bonds.
+    "H2O", "DOD", "HHO", "OH2", "WAT4", "WAT5", "HO4", "DWQ",
 })
 
 # Canonical lipid resnames — the union of forcefield_maps.LIPID_FORCEFIELD_MAPS

@@ -49,7 +49,7 @@ def _mk_manager():
     return VerificationManager(cfg, registry=reg)
 
 
-def _mk_results(seg="seg_6_SOD", atom_count_fragment=1):
+def _mk_results(seg="seg_6_SOD", atom_count_fragment=1, seg_type="ion"):
     results = MagicMock()
 
     def get_data(path, default=None):
@@ -59,6 +59,11 @@ def _mk_results(seg="seg_6_SOD", atom_count_fragment=1):
             if atom_count_fragment is None:
                 return default
             return {"atom_count_fragment": atom_count_fragment}
+        if path == "fragments/segments":
+            # bughunt BH-001: the ground-truth rule is gated on the
+            # loader's molecule typing (default "ion" keeps the fixture's
+            # historic SOD semantics)
+            return [{"segment": seg, "type": seg_type}]
         return default
     results.get_data.side_effect = get_data
     results.data_exists.side_effect = lambda p: p == f"identifiers/{seg}"
@@ -157,10 +162,34 @@ def test_monoatomic_atom_count(path_value, expected):
 
 
 def test_element_ground_truth_guards():
-    results = MagicMock()
-    results.get_data.side_effect = lambda p, default=None: (
-        {"atom_count_fragment": 1} if p == "universe/segments/X/properties" else default
-    )
-    assert _element_ground_truth(results, "X", "ELEMENT", "identity") is True
-    assert _element_ground_truth(results, "X", "PUBCHEM_CID", "identity") is False
-    assert _element_ground_truth(results, "X", "ELEMENT", "similarity") is False
+    """bughunt BH-001: the rule now ALSO requires the loader to have typed
+    the segment ion and the element to be on the single-atom ion allowlist
+    (metals/halides/noble gases) — a lone O/C from a broken water must not
+    be ground truth. Old assertion (ELEMENT+identity+1 atom -> True)
+    updated to the gated contract."""
+    def _mk(seg_type):
+        results = MagicMock()
+        results.get_data.side_effect = lambda p, default=None: (
+            {"atom_count_fragment": 1}
+            if p == "universe/segments/X/properties"
+            else ([{"segment": "X", "type": seg_type}]
+                  if p == "fragments/segments" else default)
+        )
+        return results
+
+    # allowlisted element in an ion segment: ground truth
+    assert _element_ground_truth(_mk("ion"), "X", "ELEMENT", "identity",
+                                 element="Zn") is True
+    # water/unknown-typed segment: never ground truth (the BH-001 cases)
+    assert _element_ground_truth(_mk("water"), "X", "ELEMENT", "identity",
+                                 element="O") is False
+    assert _element_ground_truth(_mk("unknown"), "X", "ELEMENT", "identity",
+                                 element="C") is False
+    # non-allowlisted element even in an ion segment: refused
+    assert _element_ground_truth(_mk("ion"), "X", "ELEMENT", "identity",
+                                 element="O") is False
+    # ident/hit-type guards unchanged
+    assert _element_ground_truth(_mk("ion"), "X", "PUBCHEM_CID", "identity",
+                                 element="Zn") is False
+    assert _element_ground_truth(_mk("ion"), "X", "ELEMENT", "similarity",
+                                 element="Zn") is False

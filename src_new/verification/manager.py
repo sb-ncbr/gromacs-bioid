@@ -146,6 +146,15 @@ from ..signatures.tier2fp import tier2_fp as _t2fp, tier2_key as _t2key, tier2_t
 from .models import CHEMICAL_IDENT_TYPES, SKELF_VERIFY_THRESHOLD
 from .registry import VerificationRegistry, get_default_registry
 
+# bughunt BH-001: element allowlist for the ELEMENT ground-truth rule —
+# the loader classifier's _SINGLE_ATOM_ION_ELEMENTS (channel-vocab metals
+# and halides + noble gases), mirrored here so verification cannot be
+# talked into ground truth by a rogue signature from a non-ion segment.
+from ..loader.metal_scan import ION_CHANNEL_VOCAB as _ION_VOCAB
+_ION_ELEMENTS: frozenset[str] = frozenset(
+    {s.upper() for s in _ION_VOCAB} | {"HE", "NE", "AR", "KR", "XE", "RN"}
+)
+
 
 def _molecule_skeleton_fp_hex(results, segment: str):
     """Fetch the molecule's skeleton_fp signature hex for a segment, if any."""
@@ -262,7 +271,8 @@ def _water_segment(results, segment: str) -> bool:
     return False
 
 
-def _element_ground_truth(results, segment: str, ident_type: str, hit_type: str) -> bool:
+def _element_ground_truth(results, segment: str, ident_type: str, hit_type: str,
+                          element: str | None = None) -> bool:
     """True only for the documented element ground-truth rule.
 
     User ruling 2026-10-11 ("ion identification is by definition ground
@@ -272,16 +282,40 @@ def _element_ground_truth(results, segment: str, ident_type: str, hit_type: str)
     element, so the weighted aggregate structurally caps at 80; the override
     lifts final_confidence to 100 (recorded via ground_truth_override).
 
-    Hard scope guards (both must hold, else normal weighted path):
+    Hard scope guards (all must hold, else normal weighted path):
       * ident_type == "ELEMENT" — never a chemical ident type, so the F7
         fingerprint gate and all chemistry verification are untouched;
       * hit_type == "identity" — similarity listings are not assertions;
       * molecule atom membership == 1 — polyatomic single-element fragments
-        (S8, carbon clusters) stay on the weighted path.
+        (S8, carbon clusters) stay on the weighted path;
+      * bughunt BH-001: the segment is typed ION by the loader classifier
+        and the element is on the single-atom ion allowlist (metals,
+        halides, noble gases). A lone C/O/N/P atom from a broken water or
+        phosphate is NOT ground truth — it used to verify as "ELEMENT O"
+        at 100 for every crystal water in RCSB inputs.
     """
     if ident_type != "ELEMENT" or hit_type != "identity":
         return False
-    return _monoatomic_atom_count(results, segment) == 1
+    if _monoatomic_atom_count(results, segment) != 1:
+        return False
+    if not _ion_segment(results, segment):
+        return False
+    return element is not None and str(element).upper() in _ION_ELEMENTS
+
+
+def _ion_segment(results, segment: str) -> bool:
+    """True when the analyzed segment is typed ion (fragments/segments
+    record written by analyze_universe). BH-001 gate for the ELEMENT
+    ground-truth rule."""
+    for key in ("fragments/segments",):
+        try:
+            segments = results.get_data(key) or []
+        except Exception:
+            return False
+        for entry in segments:
+            if isinstance(entry, dict) and entry.get("segment") == segment:
+                return entry.get("type") == "ion"
+    return False
 
 
 def _structure_rerank_groups(sorted_groups, skel_map, threshold, t2_map=None):
@@ -1038,7 +1072,8 @@ class VerificationManager:
                     # rule recorded in ground_truth_override. Everything else
                     # keeps the weighted aggregate unchanged.
                     gt_override = None
-                    if _element_ground_truth(results, segment, ident_type, hit_type):
+                    if _element_ground_truth(results, segment, ident_type,
+                                             hit_type, element=normalized_id):
                         final_confidence = 100.0
                         gt_override = "element_monoatomic"
                     # Water ground truth (v3.140): on water segments the first

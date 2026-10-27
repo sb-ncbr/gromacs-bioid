@@ -7,7 +7,7 @@ import logging
 from MDAnalysis import AtomGroup
 
 from ...config.loader import SignaturesConfig
-from ...molecules.instances import MoleculeInstance
+from ...molecules.instances import MoleculeInstance, MoleculeType
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 from ..base import SignatureGenerator
 from ._perceive_cache import _h_deficiency
@@ -51,6 +51,21 @@ class MolecularFormulaGenerator(SignatureGenerator):
                 if elem:
                     composition[elem] = composition.get(elem, 0) + 1
         
+        # bughunt BH-001: heavy-only water. A crystallographic water typed
+        # WATER whose hydrogens were simply not resolved still IS water —
+        # emit the H2O formula instead of "O" so the water identity path
+        # can fire (crystal waters used to answer ELEMENT O at 100).
+        try:
+            _is_water_typed = instance.molecule_type == MoleculeType.WATER
+        except Exception:
+            _is_water_typed = False
+        if (_is_water_typed
+                and set(composition) <= {"O", "H", "D"}
+                and composition.get("O", 0) == 1
+                and composition.get("H", 0) + composition.get("D", 0) <= 2
+                and composition.get("H", 0) + composition.get("D", 0) < 2):
+            return "H2O"
+
         # B-10 (red-team 4.4): united-atom masses carry their implicit H;
         # without this cholesterol queries as "C27O". Mass-less H-less
         # systems (open-valence mode) keep raw counts: an implicit-H count

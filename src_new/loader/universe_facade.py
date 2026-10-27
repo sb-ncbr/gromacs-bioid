@@ -10,6 +10,7 @@ from MDAnalysis import Universe, AtomGroup
 
 from ..config.loader import RunConfig
 from ..input.models import LoadDecision
+from ..loader.metal_scan import ION_CHANNEL_VOCAB
 from ..loader.repair import RepairReport
 from ..molecules.instances import (
     LIPID_RESNAMES,
@@ -79,6 +80,16 @@ class SegmentProperties:
             "na_structural_promotions": self.na_structural_promotions,
             **self.flags,
         }
+
+
+# bughunt BH-001: only these single-atom elements may be typed ION (and
+# thereby reach the ELEMENT ground-truth rule): channel-vocab metals and
+# halides plus the noble gases. A lone C/O/N/P atom is a broken fragment,
+# not an ion. Uppercase to match the classifier's element normalisation.
+_SINGLE_ATOM_ION_ELEMENTS: frozenset[str] = frozenset(
+    {s.upper() for s in ION_CHANNEL_VOCAB}
+    | {"HE", "NE", "AR", "KR", "XE", "RN"}
+)
 
 
 class LoadedUniverse:
@@ -715,8 +726,6 @@ class LoadedUniverse:
             return MoleculeType.PROTEIN
         if props.flags.get(SegmentProperty.IS_NUCLEIC.value):
             return MoleculeType.NUCLEIC
-        if props.atom_count_fragment == 1:
-            return MoleculeType.ION
 
         # v3.143 (A-11/B-13): pseudo atoms out of composition and counts —
         # a TIP4P water (O,H,H + massless MW) is 3 real atoms and H2O.
@@ -726,7 +735,30 @@ class LoadedUniverse:
         except Exception:
             resnames = set()
 
-        # 3. Water
+        # bughunt BH-001: water by RESIDUE, independent of bonds and atom
+        # count. Crystallographic waters carry only their O (H not resolved),
+        # so the old atom_count==1 -> ION rule fired FIRST and every RCSB
+        # water became "ELEMENT O" at confidence 100. A water-named residue
+        # with exactly one O and at most two H/D is water, period.
+        if (resnames & WATER_RESNAMES
+                and set(composition) <= {"O", "H", "D"}
+                and composition.get("O", 0) == 1
+                and composition.get("H", 0) + composition.get("D", 0) <= 2):
+            return MoleculeType.WATER
+
+        # bughunt BH-001: a single atom is an ION only for allowlisted
+        # elements (metals, halides, noble gases). A lone C/O/N/P atom is a
+        # broken fragment (missing bonds or residue table), not an ion — it
+        # falls through to UNKNOWN and emits no ELEMENT identity.
+        if props.atom_count_fragment == 1:
+            try:
+                elem = str(fragment.atoms.elements[0]).strip().upper()
+            except Exception:
+                elem = ""
+            if elem and elem in _SINGLE_ATOM_ION_ELEMENTS:
+                return MoleculeType.ION
+
+        # 3. Water (composition rule, any residue name)
         if real_atom_count == 3 and (
             resnames & WATER_RESNAMES
             or (composition.get("O", 0) == 1 and composition.get("H", 0) == 2

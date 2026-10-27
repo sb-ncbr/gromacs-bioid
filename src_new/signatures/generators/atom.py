@@ -7,7 +7,7 @@ import logging
 from MDAnalysis import AtomGroup
 
 from ...config.loader import SignaturesConfig
-from ...molecules.instances import MoleculeInstance
+from ...molecules.instances import MoleculeInstance, MoleculeType
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 # F-27 (2026-10-05): promoted into src_new (byte-value-identical, md5-verified).
 from ...constants import ATOMTABLE_ELEMENTS_MASSES
@@ -39,7 +39,15 @@ class AtomGenerator(SignatureGenerator):
             return False
         
         # Need exactly one atom
-        return fragment.n_atoms == 1
+        if fragment.n_atoms != 1:
+            return False
+
+        # bughunt BH-001: only ION-typed fragments emit an element
+        # signature. The classifier now types a lone non-allowlisted atom
+        # (C/O/N/P from a broken water/ligand) UNKNOWN — emitting an
+        # ELEMENT signature for it produced "ELEMENT O at 100" identities
+        # for crystal waters and PO4-less phosphorus.
+        return instance.molecule_type == MoleculeType.ION
     
     def _generate(
         self,
