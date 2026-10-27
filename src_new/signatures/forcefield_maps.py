@@ -79,4 +79,26 @@ GLYCAN_FORCEFIELD_MAPS: dict[str, dict[str, str]] = {
         "0LB": "dHex",
         "0YB": "HexNAc",
     },
+    # wave-2 item 8a: PDB CCD codes — what crystallographic deposits (1FC1
+    # class) actually carry; the composition classes follow the GlyCosmos
+    # vocabulary emitted by GlycanCompositionGenerator.
+    "ccd": {
+        # hexoses
+        "GLC": "Hex", "BGC": "Hex", "AGC": "Hex",
+        "GAL": "Hex", "MAN": "Hex", "BMA": "Hex",
+        "FRU": "Hex",
+        # N-acetylhexosamines
+        "NAG": "HexNAc", "NGA": "HexNAc",
+        "BNG": "HexNAc", "NDG": "HexNAc",
+        # deoxyhexoses
+        "FUC": "dHex", "FCA": "dHex", "RAM": "dHex",
+        # sialic acids
+        "SIA": "NeuAc", "NGC": "NeuGc", "NGE": "NeuGc",
+    },
 }
+
+# every residue name any glycan forcefield/CCD table knows — the molecule
+# typing name-table (wave-2 item 8a; names only, never a composition band)
+GLYCAN_RESNAMES: frozenset = frozenset(
+    name for mapping in GLYCAN_FORCEFIELD_MAPS.values() for name in mapping
+)

@@ -87,6 +87,38 @@ class TestClassificationDecisionList:
         assert self._cls(props=_props(atom_count_fragment=40),
                          frag=_fragment(["LIG"], ["C"] * 25 + ["O"] * 10)) == MoleculeType.LIPID
 
+    def test_glycan_polymer_is_carbohydrate_not_lipid(self):
+        # wave-2 item 8a: 1FC1-class glycan polymer (NAG/BMA/MAN/FUC) —
+        # C/O ~1 lands in the O-rich lipid band; the resname table must
+        # claim CARBOHYDRATE first
+        resnames = ["NAG", "NAG", "BMA", "MAN", "MAN", "FUC"]
+        elements = ["C"] * 60 + ["O"] * 30 + ["N"] * 2
+        assert self._cls(props=_props(atom_count_fragment=92),
+                         frag=_fragment(resnames, elements)) == MoleculeType.CARBOHYDRATE
+
+    def test_below_half_glycan_names_not_carbohydrate(self):
+        # only 1 of 4 residues is a glycan name -> not a glycan segment
+        resnames = ["NAG", "LIG", "LIG", "LIG"]
+        elements = ["C"] * 8
+        assert self._cls(props=_props(atom_count_fragment=8),
+                         frag=_fragment(resnames, elements)) == MoleculeType.SMALL_MOLECULE
+
+    def test_glycam_and_ccd_codes_typed(self):
+        # GLYCAM codes only (0GA/4GB/0YB) and mixed CCD (BMA/SIA)
+        assert self._cls(props=_props(atom_count_fragment=60),
+                         frag=_fragment(["0GA", "4GB", "0YB"], ["C"] * 30 + ["O"] * 15)) \
+            == MoleculeType.CARBOHYDRATE
+        assert self._cls(props=_props(atom_count_fragment=60),
+                         frag=_fragment(["BMA", "SIA", "NAG"], ["C"] * 30 + ["O"] * 15)) \
+            == MoleculeType.CARBOHYDRATE
+
+    def test_exactly_half_glycan_is_carbohydrate(self):
+        # >= 50% threshold is inclusive
+        resnames = ["NAG", "UNK"]
+        elements = ["C"] * 10
+        assert self._cls(props=_props(atom_count_fragment=10),
+                         frag=_fragment(resnames, elements)) == MoleculeType.CARBOHYDRATE
+
     def test_phospholipid_band_covers_out_of_legacy_range(self):
         # unknown phospholipid resname: C/O 5 with P => lipid via P-band
         assert self._cls(props=_props(atom_count_fragment=100),

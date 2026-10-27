@@ -738,6 +738,24 @@ class LoadedUniverse:
         if resnames & LIPID_RESNAMES:
             return MoleculeType.LIPID
 
+        # 4b. (wave-2 item 8a) glycan NOMENCLATURE before the composition
+        # bands: a glycan polymer (>= 50% carbohydrate residue names) must
+        # not be claimed by the O-rich lipid band. Names only — the
+        # aborted composition-based sugar band provably misclassified
+        # mid-range non-P molecules (rejected PR-#1 direction), so the
+        # verdict comes from the forcefield/CCD resname tables alone.
+        # (local import: signatures/__init__ -> base -> loader is circular
+        # at module level; forcefield_maps itself is pure data)
+        from ..signatures.forcefield_maps import GLYCAN_RESNAMES
+        try:
+            residue_names = [str(rn).upper() for rn in fragment.residues.resnames]
+        except Exception:
+            residue_names = []
+        if residue_names:
+            glycan_hits = sum(1 for rn in residue_names if rn in GLYCAN_RESNAMES)
+            if glycan_hits * 2 >= len(residue_names):
+                return MoleculeType.CARBOHYDRATE
+
         # 5. Composition bands (flat; every branch yields a verdict or falls
         #    through — no unreachable elif chain)
         c_cnt = composition.get("C", 0)

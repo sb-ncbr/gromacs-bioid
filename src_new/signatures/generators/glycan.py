@@ -39,8 +39,11 @@ class GlycanCompositionGenerator(SignatureGenerator):
         fragment: AtomGroup,
         facade: LoadedUniverse,
     ) -> str:
-        # Use charmm36 as default forcefield
-        ff_maps = GLYCAN_FORCEFIELD_MAPS.get("charmm36", {})
+        # wave-2 item 8b: consult ALL forcefield/CCD maps (union) — the
+        # charmm36-only lookup dropped GLYCAM and CCD codes as 'X'.
+        ff_maps: dict[str, str] = {}
+        for mapping in GLYCAN_FORCEFIELD_MAPS.values():
+            ff_maps.update(mapping)
         
         # Count monosaccharide classes
         class_counts = Counter()

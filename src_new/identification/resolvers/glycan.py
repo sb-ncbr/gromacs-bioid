@@ -58,16 +58,23 @@ class GlycanCompositionResolver(IdentifierResolver):
         """
         result: dict[str, int] = {}
         
-        # Regex to match monosaccharide classes: Name(count)
-        pattern = r"([A-Za-z]+)\((\d+)\)"
+        # Regex to match monosaccharide classes: Name(count) — the name
+        # may carry digits (sialic classes "Neu5Ac"/"Neu5Gc"/"Neu5G").
+        pattern = r"([A-Za-z][A-Za-z0-9]*)\((\d+)\)"
         
-        # Mapping from common names to GlyCosmos fields (case-insensitive)
+        # Mapping from common names to GlyCosmos fields (case-insensitive).
+        # wave-2 item 8c: sialic-acid aliases — "NeuAc" (what the
+        # generator emits) and "Neu5Ac" are the SAME field, likewise
+        # NeuGc/Neu5Gc; the old "neu5g" key silently truncated the class.
         field_mapping = {
             "hex": "hex",
             "hexnac": "hexnac",
             "dhex": "dhex",
+            "neuac": "neu5ac",
             "neu5ac": "neu5ac",
-            "neu5g": "neu5g",  # Also handle Neu5Gc
+            "neugc": "neu5gc",
+            "neu5gc": "neu5gc",
+            "neu5g": "neu5gc",  # legacy truncated spelling
         }
         
         for match in re.finditer(pattern, composition):

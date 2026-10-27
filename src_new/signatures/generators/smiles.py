@@ -11,7 +11,7 @@ from rdkit import Chem
 from rdkit.Chem import rdDetermineBonds, EditableMol, Mol
 
 from ...config.loader import SignaturesConfig
-from ...molecules.instances import MoleculeInstance
+from ...molecules.instances import MoleculeInstance, MoleculeType
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 from ..base import SignatureGenerator
 from ._perceive_cache import (
@@ -41,6 +41,13 @@ class SimpleSmilesGenerator(SignatureGenerator):
         fragment: AtomGroup,
         facade: LoadedUniverse,
     ) -> bool:
+        # wave-2 item 8d: glycan segments are carried by the
+        # glycan_composition signature instead — coordinate bond-order
+        # perception on (H-deficient) glycan polymers was the 1FC1 hang
+        # class (items 2a/7 guard the rest).
+        if instance.molecule_type == MoleculeType.CARBOHYDRATE:
+            return False
+        
         segment_name = fragment.segids[0] if len(fragment.segids) > 0 else ""
         props = facade.get_segment_properties(segment_name)
         
