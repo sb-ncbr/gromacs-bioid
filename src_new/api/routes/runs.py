@@ -174,24 +174,54 @@ async def create_run(
     runs_dir = get_runs_dir()
     run_dir = runs_dir / run_id
     input_dir = run_dir / "input"
+
+    # BH-013 (security): sanitise upload names BEFORE anything touches the
+    # filesystem. A client-controlled filename with "../" (or an absolute
+    # path) wrote outside the run directory; Path(...).name keeps only the
+    # final component. Empty/dot-only names and duplicates are rejected.
+    # Content is read and size-checked up front too, so a rejected upload
+    # (413/422) leaves NO run directory behind.
+    sanitised: dict[str, tuple[UploadFile, bytes]] = {}
+    for file in files:
+        raw_name = file.filename or ""
+        name = Path(raw_name).name
+        if not name or name in {".", ".."}:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid file name: {raw_name!r}"
+            )
+        if name in sanitised:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Duplicate file name after sanitisation: {name!r}"
+            )
+        file_content = await file.read()
+        if len(file_content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File '{name}' exceeds 128 MiB limit"
+            )
+        # BH-017: strip a UTF-8 BOM so the first record (often ATOM) is
+        # not corrupted for downstream parsers.
+        if file_content[:3] == b"\xef\xbb\xbf":
+            file_content = file_content[3:]
+        sanitised[name] = (file, file_content)
+    if not sanitised:
+        raise HTTPException(
+            status_code=422,
+            detail="No files with usable names were uploaded"
+        )
     
-    # Create run directory structure
+    # Create run directory structure (after validation)
     input_dir.mkdir(parents=True, exist_ok=True)
     
-    # Save uploaded files to input directory with size validation
+    # Save uploaded files to input directory
     saved_files = {}
-    for file in files:
-        if file.filename:
-            file_content = await file.read()
-            if len(file_content) > MAX_UPLOAD_BYTES:
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"File '{file.filename}' exceeds 128 MiB limit"
-                )
-            file_path = input_dir / file.filename
-            with open(file_path, "wb") as f:
-                f.write(file_content)
-            saved_files[file.filename] = str(file_path)
+    for name, (file, file_content) in sanitised.items():
+        file_path = input_dir / name
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+        saved_files[name] = str(file_path)
     
     # Handle config: uploaded file, JSON overrides, or default
     config_path: Optional[Path] = None

@@ -548,6 +548,52 @@ class TestVerificationEndpoint:
 class TestPostRunsEndpoint:
     """Tests for the POST /runs endpoint."""
     
+class TestUploadSanitisation:
+    """BH-013 (path traversal) and BH-017 (BOM) upload hardening."""
+
+    PDB = b"ATOM      1  N   ALA A   1      10.000  10.000  10.000  1.00  0.00           N\nEND\n"
+
+    def test_path_traversal_filename_stored_inside_input(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        response = client.post("/runs", files={"files": ("../x.pdb", self.PDB)})
+        assert response.status_code == 200
+        run_id = response.json()["run_id"]
+        saved = tmp_path / run_id / "input" / "x.pdb"
+        assert saved.exists()
+        # nothing escaped the run directory
+        assert not (tmp_path / "x.pdb").exists()
+        assert list((tmp_path / run_id / "input").iterdir()) == [saved]
+
+    def test_absolute_path_filename_sanitised(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        response = client.post("/runs", files={"files": ("/etc/evil.pdb", self.PDB)})
+        assert response.status_code == 200
+        run_id = response.json()["run_id"]
+        assert (tmp_path / run_id / "input" / "evil.pdb").exists()
+
+    def test_invalid_name_rejected_no_directory(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        response = client.post("/runs", files={"files": ("..", self.PDB)})
+        assert response.status_code == 422
+        assert list(tmp_path.iterdir()) == []  # no orphan run directory
+
+    def test_duplicate_sanitised_names_rejected(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        response = client.post(
+            "/runs",
+            files=[("files", ("a.pdb", self.PDB)), ("files", ("../a.pdb", self.PDB))],
+        )
+        assert response.status_code == 422
+
+    def test_bom_stripped_from_upload(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        response = client.post(
+            "/runs", files={"files": ("bom.pdb", b"\xef\xbb\xbf" + self.PDB)})
+        assert response.status_code == 200
+        run_id = response.json()["run_id"]
+        saved = tmp_path / run_id / "input" / "bom.pdb"
+        assert saved.read_bytes() == self.PDB  # BOM gone
+
     def test_post_runs(self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test creating a new run by uploading a file."""
         monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
