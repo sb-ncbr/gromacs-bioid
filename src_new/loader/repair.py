@@ -98,7 +98,10 @@ def element_based_vdwradii(u: Universe) -> dict[str, float]:
         el = ""
         if elements is not None and i < len(elements):
             raw = str(elements[i]).strip()
-            el = raw.capitalize() if raw else ""
+            el = raw.upper() if raw else ""  # BH-021: MDA table keys are
+            # UPPERCASE ('CL','ZN'); the old .capitalize() lookup missed
+            # every two-letter element and fell back to the 1.5 A audit
+            # radius (Zn 1.39, Cl 1.75 in the table).
         radii[t] = float(_Bondi[el]) if el in _Bondi else 1.5
     return radii
 
