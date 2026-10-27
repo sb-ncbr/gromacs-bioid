@@ -69,12 +69,65 @@ def test_sweep_leaves_live_and_terminal_runs_alone(tmp_path):
     assert read_run_status(tmp_path / "gone1" / "results.json") == "cancelled"
 
 
-def test_sweep_queued_run_counts_as_zombie_candidate(tmp_path):
+def test_sweep_queued_run_never_failed(tmp_path):
+    """bughunt BH-005 (inverts the old :72 expectation): a queued run is
+    invisible to celery inspect by construction (broker-held message), so
+    empty inspect data must NEVER fail it."""
     _mk_run(tmp_path, "stuckq", "queued")
     misses = {}
-    sweep(tmp_path, set(), misses)
-    out = sweep(tmp_path, set(), misses)
-    assert out["zombies_failed"] == ["stuckq"]
+    for _ in range(3):
+        out = sweep(tmp_path, set(), misses)
+        assert out["zombies_failed"] == []
+    assert read_run_status(tmp_path / "stuckq" / "results.json") == "queued"
+    assert "stuckq" not in misses
+
+
+def _mk_heartbeat(run_dir, age_s):
+    hb = run_dir / "heartbeat"
+    hb.touch()
+    import os as _os
+    import time as _time
+    _os.utime(hb, (_time.time() - age_s,) * 2)
+
+
+def test_sweep_fresh_heartbeat_kept_even_with_empty_inspect(tmp_path):
+    """running + fresh heartbeat + empty live set -> kept (inspect lies)."""
+    run_dir = _mk_run(tmp_path, "beating", "running")
+    _mk_heartbeat(run_dir, age_s=10)
+    misses = {}
+    for _ in range(3):
+        out = sweep(tmp_path, set(), misses)
+        assert out["zombies_failed"] == []
+    assert read_run_status(run_dir / "results.json") == "running"
+
+
+def test_sweep_stale_heartbeat_failed_in_one_sweep(tmp_path):
+    """running + heartbeat older than 15 min -> failed immediately."""
+    run_dir = _mk_run(tmp_path, "flatline", "running")
+    _mk_heartbeat(run_dir, age_s=3600)
+    out = sweep(tmp_path, live_task_ids=set(), misses={})
+    assert out["zombies_failed"] == ["flatline"]
+    payload = json.loads((run_dir / "results.json").read_text())
+    assert payload["pipeline"]["status"] == "failed"
+    assert any(e["code"] == "worker_lost" for e in payload["critical_errors"])
+    ev = [e for e in payload["events"] if e["kind"] == "worker_lost"][0]
+    assert "stale" in ev["detail"]
+
+
+def test_task_skips_terminal_run_on_redelivery(tmp_path):
+    """bughunt BH-005 (sticky terminal): an acks_late redelivered message
+    must not flip a reaped/completed run back to running."""
+    from src_new.api.tasks import run_pipeline_task
+    run_dir = _mk_run(tmp_path, "donez", "failed")
+    input_dir = run_dir / "input"
+    input_dir.mkdir(exist_ok=True)
+    out = run_pipeline_task(
+        run_id="donez",
+        input_dir=str(input_dir),
+        results_path=str(run_dir / "results.json"),
+    )
+    assert out["status"] == "skipped_terminal"
+    assert read_run_status(run_dir / "results.json") == "failed"
 
 
 def test_sweep_recovery_resets_miss_counter(tmp_path):

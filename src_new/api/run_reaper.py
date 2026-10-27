@@ -18,13 +18,23 @@ Two independent fixes land together (this module is the FAST guarantee):
    auto-redispatch: a poison input could otherwise thrash the fleet with a
    crash/redispatch loop. Operator reruns via the UI (inputs are preserved).
 
-Reaper semantics:
-- Runs with pipeline.status in {"running", "queued"} whose run_id == task_id
-  is absent from the fleet's live task set (active + reserved + scheduled)
-  for TWO CONSECUTIVE sweeps are marked failed with a "worker_lost"
-  critical error and a trailing event. Terminal statuses are untouched.
+Reaper semantics (bughunt BH-005, 2026-10-27):
+- `queued` runs are NEVER failed. Broker-queued messages are invisible to
+  celery inspect (active/reserved/scheduled only shows what workers hold),
+  and inspect itself is unreliable on this deployment — on 27 Oct 127
+  never-started runs were failed as worker_lost while patiently queued.
+- `running` runs are judged primarily by a HEARTBEAT file
+  (run_dir/heartbeat, touched every 30 s by run_pipeline_task): stale
+  beyond 15 min -> failed in ONE sweep. The age is measured against a
+  probe file's mtime (both server-assigned), so worker/API clock skew
+  cannot poison it.
+- `running` runs WITHOUT a heartbeat (legacy, deploy transition) keep the
+  previous inspect-based two-miss rule.
 - Two-miss hysteresis absorbs transient inspection gaps (broker restart,
   inspect timeouts) without flapping runs to failed.
+- Sticky terminal: run_pipeline_task exits with "skipped_terminal" when
+  the run already reached a terminal state, so an acks_late redelivery
+  cannot flip a reaped/failed run back to running.
 - The api runs 4 uvicorn processes (each starts this loop); a Redis
   SET NX PX leader lock ensures only one sweeps. Input: BAT3_RUNS_DIR +
   CELERY_BROKER_URL (shared redis also holds the leader lock).
@@ -44,13 +54,15 @@ import redis as redis_lib
 
 logger = logging.getLogger(__name__)
 
-STATUS_ZOMBIE_CANDIDATES = frozenset({"running", "queued"})
+STATUS_ZOMBIE_CANDIDATES = frozenset({"running"})  # BH-005: queued NEVER
 STATUS_TERMINAL = frozenset(
     {"success", "completed", "failed", "error", "cancelled", "canceled"}
 )
 MISSES_TO_FAIL = 2
 DEFAULT_INTERVAL_S = 300
 LEADER_LOCK_KEY = "bat3:run_reaper:leader"
+HEARTBEAT_NAME = "heartbeat"
+HEARTBEAT_STALE_S = 900.0  # 15 min without a touch -> zombie
 
 
 def read_run_status(results_path: Path) -> str | None:
@@ -65,7 +77,8 @@ def read_run_status(results_path: Path) -> str | None:
     return status if isinstance(status, str) else None
 
 
-def mark_worker_lost(results_path: Path, *, sweep_count: int) -> bool:
+def mark_worker_lost(results_path: Path, *, sweep_count: int,
+                     cause: str | None = None) -> bool:
     """Mark a zombie run failed in-place. Returns True when written.
 
     Uses ResultsManager so the write keeps schema/validation invariants.
@@ -80,7 +93,7 @@ def mark_worker_lost(results_path: Path, *, sweep_count: int) -> bool:
     rm.finish_run("failed")
     rm.add_event(
         "worker_lost",
-        detail=(
+        detail=cause or (
             "pipeline task absent from the celery fleet for "
             f"{sweep_count} consecutive reaper sweeps; marked failed by "
             "zombie-run reconciler (OQ-16). Inputs preserved — rerun the "
@@ -89,12 +102,36 @@ def mark_worker_lost(results_path: Path, *, sweep_count: int) -> bool:
     )
     rm.record_error(
         "worker_lost",
-        "run's celery task vanished (worker hard-kill class; SIGBUS/exit 135 "
-        "incident 2026-10-13). See events.",
+        cause or (
+            "run's celery task vanished (worker hard-kill class; SIGBUS/exit 135 "
+            "incident 2026-10-13). See events."
+        ),
         step_id="pipeline_dispatch",
         critical=True,
     )
     return True
+
+
+def heartbeat_age(results_path: Path) -> float | None:
+    """Age of run_dir/heartbeat in seconds, NFS-skew-safe, or None.
+
+    Both the heartbeat's mtime and the "now" reference come from the file
+    server (the probe file we write this instant), so worker/API host clock
+    skew cannot poison the comparison. None when no heartbeat exists or
+    the filesystem refuses the probe.
+    """
+    hb = results_path.parent / HEARTBEAT_NAME
+    probe = results_path.parent / ".reaper_probe"
+    try:
+        hb_mtime = hb.stat().st_mtime
+        probe.write_bytes(b"")
+        try:
+            now = probe.stat().st_mtime
+        finally:
+            probe.unlink(missing_ok=True)
+        return max(0.0, float(now) - float(hb_mtime))
+    except Exception:
+        return None
 
 
 def sweep(runs_dir: Path, live_task_ids: set[str], misses: dict[str, int]) -> dict:
@@ -122,8 +159,33 @@ def sweep(runs_dir: Path, live_task_ids: set[str], misses: dict[str, int]) -> di
             misses.pop(run_id, None)
             continue
         if status not in STATUS_ZOMBIE_CANDIDATES:
-            continue
+            continue  # unknown/queued statuses: never reaped (BH-005)
         seen_candidates.add(run_id)
+        # BH-005: heartbeat is the PRIMARY liveness signal for running
+        # runs — broker-queued messages are invisible to inspect and
+        # inspect is unreliable on this fleet.
+        hb_age = heartbeat_age(results_path)
+        if hb_age is not None:
+            if hb_age <= HEARTBEAT_STALE_S:
+                misses.pop(run_id, None)
+                continue
+            if mark_worker_lost(
+                results_path,
+                sweep_count=misses.pop(run_id, 0) + 1,
+                cause=(
+                    f"pipeline heartbeat stale for {hb_age:.0f} s "
+                    f"(> {HEARTBEAT_STALE_S:.0f} s); marked failed by "
+                    "zombie-run reconciler. Inputs preserved — rerun the "
+                    "run to retry."
+                ),
+            ):
+                summary["zombies_failed"].append(run_id)
+                logger.error(
+                    "run_reaper: run %s marked failed (stale heartbeat, "
+                    "%.0f s)", run_id, hb_age,
+                )
+            continue
+        # no heartbeat (legacy/transition): previous inspect-based rule
         if run_id in live_task_ids:
             misses.pop(run_id, None)
             continue

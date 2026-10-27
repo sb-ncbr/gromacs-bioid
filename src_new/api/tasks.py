@@ -47,6 +47,45 @@ def run_pipeline_task(
     run_dir = thread_input_dir.parent
     log_handlers = setup_run_log_handlers(str(run_dir))
 
+    # BH-005 (sticky terminal): an acks_late redelivery of this message
+    # (e.g. after the reaper marked the run failed, or after a worker
+    # hard-kill where the run actually completed) must NOT flip a
+    # terminal run back to running — exit without touching results.
+    from src_new.api.run_reaper import STATUS_TERMINAL, read_run_status
+    _prior_status = read_run_status(thread_results_path)
+    if _prior_status in STATUS_TERMINAL:
+        logging.getLogger(f"pipeline_{run_id}").info(
+            "run %s already terminal (%s) — redelivered message skipped",
+            run_id, _prior_status,
+        )
+        return {"status": "skipped_terminal", "run_id": run_id,
+                "prior_status": _prior_status}
+
+    # BH-005 (heartbeat): touch run_dir/heartbeat every 30 s while this
+    # task lives. The reaper judges running runs by this file's mtime
+    # (against a server-assigned probe), NOT by celery inspect — inspect
+    # is unreliable on this fleet and queued messages are invisible to it.
+    from src_new.api.run_reaper import HEARTBEAT_NAME
+    import threading
+    heartbeat_path = run_dir / HEARTBEAT_NAME
+    try:
+        heartbeat_path.touch()
+    except Exception:
+        heartbeat_path = None
+    _hb_stop = threading.Event()
+
+    def _hb_loop() -> None:
+        while not _hb_stop.wait(30.0):
+            try:
+                if heartbeat_path is not None:
+                    heartbeat_path.touch()
+            except Exception:
+                pass
+
+    _hb_thread = threading.Thread(target=_hb_loop, daemon=True,
+                                  name=f"hb_{run_id}")
+    _hb_thread.start()
+
     # SPIN_DEBUG diagnostics (env-gated, no behavior change when unset):
     # every 120s dump ALL thread stacks to stderr so live-spin capture works
     # without ptrace (postmortem instrument for the unbounded-compute class).
@@ -105,6 +144,11 @@ def run_pipeline_task(
         return {"status": "failed", "run_id": run_id, "error": str(e)}
     finally:
         # Clean up log handlers
+        try:
+            _hb_stop.set()
+            _hb_thread.join(timeout=2.0)
+        except Exception:
+            pass
         try:
             teardown_run_log_handlers(log_handlers)
         except Exception:
