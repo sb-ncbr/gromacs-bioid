@@ -755,6 +755,16 @@ class LoadedUniverse:
                 elem = str(fragment.atoms.elements[0]).strip().upper()
             except Exception:
                 elem = ""
+            if not elem:
+                # no elements attribute (raw fixtures / pre-repair
+                # universes): fall back to the atom NAME — repair
+                # normally guesses elements before classification
+                try:
+                    name = str(fragment.atoms.names[0]).strip().upper()
+                    if 1 <= len(name) <= 2 and name.isalpha():
+                        elem = name
+                except Exception:
+                    pass
             if elem and elem in _SINGLE_ATOM_ION_ELEMENTS:
                 return MoleculeType.ION
 
