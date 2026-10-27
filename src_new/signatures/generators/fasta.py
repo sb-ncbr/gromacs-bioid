@@ -471,8 +471,14 @@ def fragment_to_protseq_resname_based(fragment: AtomGroup) -> str:
     """
     try:
         # Bug fix: Sort by residue resnums, not atom indices
+        # bughunt BH-018: mmCIF topologies carry no resnums — fall back to
+        # resids so the resname path survives CIF input (P15)
+        try:
+            _resnums_seq = fragment.residues.resnums
+        except Exception:
+            _resnums_seq = fragment.residues.resids
         residue_data = sorted(
-            zip(fragment.residues.resnums, fragment.residues.resnames,
+            zip(_resnums_seq, fragment.residues.resnames,
                 fragment.residues.resindices),
             key=lambda x: x[0],
         )

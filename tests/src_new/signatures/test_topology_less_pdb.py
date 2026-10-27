@@ -22,6 +22,53 @@ from src_new.config.loader import SignaturesConfig
 from src_new.loader.universe_facade import SegmentProperty
 
 
+def _create_cif_style_universe():
+    """mmCIF-style topology: resids but NO resnums attribute (BH-018)."""
+    u = Universe.empty(
+        9,
+        n_residues=3,
+        n_segments=1,
+        atom_resindex=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+        trajectory=True,
+    )
+    u.add_TopologyAttr('names', ['N', 'CA', 'C'] * 3)
+    u.add_TopologyAttr('resnames', ['ALA', 'ALA', 'GLY'])
+    u.add_TopologyAttr('resids', [10, 11, 12])   # CIF: resids only
+    u.add_TopologyAttr('segids', ['A'])
+    u.add_TopologyAttr('elements', ['N', 'C', 'C'] * 3)
+    u.load_new(np.zeros((9, 3), dtype=np.float32), format='memory')
+    return u
+
+
+class TestCifResnumsFallback:
+    """bughunt BH-018: .resnums access killed three signatures on CIF."""
+
+    def test_no_resnums_attr(self):
+        u = _create_cif_style_universe()
+        with pytest.raises(Exception):
+            _ = u.atoms.resnums
+
+    def test_topology_less_writer_survives_cif(self):
+        u = _create_cif_style_universe()
+        out = fragment_to_pdb_topology_less(u.atoms)
+        assert out.startswith("HEADER")
+        assert out.count("ATOM") == 9
+
+    def test_ca_only_writer_survives_cif(self):
+        u = _create_cif_style_universe()
+        out = fragment_to_pdb_ca_only(u.atoms)
+        assert out.startswith("HEADER")
+        assert out.count("ATOM") == 3  # one CA per residue
+
+    def test_resname_fasta_survives_cif(self):
+        from src_new.signatures.generators.fasta import (
+            fragment_to_protseq_resname_based,
+        )
+        u = _create_cif_style_universe()
+        seq = fragment_to_protseq_resname_based(u.atoms)
+        assert seq == "AAG"
+
+
 def _create_protein_universe(n_atoms=5):
     """Create a minimal protein universe for testing.
     

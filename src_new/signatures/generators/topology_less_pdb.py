@@ -125,12 +125,12 @@ def fragment_to_pdb_topology_less(fragment: AtomGroup) -> str:
     
     serial = 1
     # B-04: clean 1..n residue numbering (resSeq is a 4-column field)
-    resnum_map = _renumber_writer_residues(fragment.atoms.resnums)
+    resnum_map = _renumber_writer_residues(_atom_resnums(fragment.atoms))
 
     # B-07 (red-team 4.3): hoist per-attr materializations out of the loop
     # (each fragment.atoms.<attr> access rebuilds an N-length array).
     _resnames = fragment.atoms.resnames
-    _resnums = fragment.atoms.resnums
+    _resnums = _atom_resnums(fragment.atoms)
     _names = fragment.atoms.names
     _positions = fragment.atoms.positions
     _elements = fragment.atoms.elements
@@ -176,11 +176,11 @@ def fragment_to_pdb_ca_only(fragment: AtomGroup) -> str:
     
     serial = 1
     # B-04: clean 1..n residue numbering (resSeq is a 4-column field)
-    resnum_map = _renumber_writer_residues(fragment.atoms.resnums)
+    resnum_map = _renumber_writer_residues(_atom_resnums(fragment.atoms))
 
     # B-07 (red-team 4.3): same hoisting as the full writer above.
     _resnames = fragment.atoms.resnames
-    _resnums = fragment.atoms.resnums
+    _resnums = _atom_resnums(fragment.atoms)
     _names = fragment.atoms.names
     _positions = fragment.atoms.positions
 
@@ -242,6 +242,18 @@ def _std_resname3(name: str) -> str:
     if n[:3] in _STD_RESNAMES_3:
         return n[:3]
     return n[:3]
+
+
+def _atom_resnums(ag):
+    """bughunt BH-018: resnums, falling back to resids — a PDBx/mmCIF
+    topology carries only resids, so .resnums raised NoDataError and the
+    CA-only / topology-less / resname-FASTA signatures silently died for
+    every CIF input (P15 lost three signatures incl. the Foldseek input).
+    """
+    try:
+        return ag.resnums
+    except Exception:
+        return ag.resids
 
 
 def _renumber_writer_residues(resnums) -> dict:
