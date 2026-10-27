@@ -498,9 +498,19 @@ def _identify_molecules_worker(item: tuple) -> dict[str, Any]:
             pre_flat = _blob_flatten(existing_identifiers) if existing_identifiers else {}
 
             errors = []
+            seen_sig_by_type: dict[tuple[str | None, str], str] = {}
             for generator_name, signature in signatures_dict.items():
                 if not signature:
                     continue
+                sig_type = sig_type_map.get(generator_name) if isinstance(sig_type_map, dict) else None
+                dedup_key = (sig_type, signature)
+                if dedup_key in seen_sig_by_type:
+                    prev_gen = seen_sig_by_type[dedup_key]
+                    prev_data = tmp_mgr.get_data(f"identifiers/{fragment_name}/{prev_gen}")
+                    if prev_data is not None:
+                        tmp_mgr.set_data(f"identifiers/{fragment_name}/{generator_name}", prev_data)
+                    continue
+                seen_sig_by_type[dedup_key] = generator_name
                 if deadline_epoch is not None and _time.time() > deadline_epoch:
                     errors.append({"resolver": "worker", "generator": generator_name,
                                    "error": "stage_time_budget exceeded mid-fragment"})

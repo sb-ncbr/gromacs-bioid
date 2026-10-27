@@ -557,7 +557,17 @@ def _identify_molecules(context):
                 logger.warning(f"identify_molecules: stage time budget exceeded at fragment {fragment_name}; partial output")
                 break
             fragment_result = {"fragment_name": fragment_name, "results": {}, "errors": []}
+            seen_sig_by_type: dict[tuple[str | None, str], str] = {}
             for generator_name, signature in valid_sigs.items():
+                sig_type = sig_type_map.get(generator_name)
+                dedup_key = (sig_type, signature)
+                if dedup_key in seen_sig_by_type:
+                    prev_gen = seen_sig_by_type[dedup_key]
+                    prev_data = context.results.get_data(f"identifiers/{fragment_name}/{prev_gen}")
+                    if prev_data is not None:
+                        context.results.set_data(f"identifiers/{fragment_name}/{generator_name}", prev_data)
+                    continue
+                seen_sig_by_type[dedup_key] = generator_name
                 if _budget_exceeded(context):
                     budget_hit = True
                     logger.warning(f"identify_molecules: stage time budget exceeded at {fragment_name}/{generator_name}; partial output")

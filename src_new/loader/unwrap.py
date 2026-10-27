@@ -101,9 +101,11 @@ class PbcRepair:
         try:
             ag = self.u.select_atoms(self.loader_config.unwrap_selection)
 
-            # Guess bonds if missing and enabled
+            # Guess bonds if missing or insufficient (e.g. partial CONECT) and enabled
             if self.loader_config.unwrap_guess_bonds_if_missing:
-                if not hasattr(self.u.atoms, 'bonds') or len(self.u.atoms.bonds) == 0:
+                from .repair import TopologyRepair
+                repair_helper = TopologyRepair(self.u, self.config)
+                if not repair_helper._has_sufficient_bonds():
                     report.bonds_guessed = self._guess_bonds()
 
             # Try unwrapping with configured reference
@@ -139,20 +141,14 @@ class PbcRepair:
         return report
 
     def _guess_bonds(self) -> int:
-        """Guess bonds using DefaultGuesser. Returns count of bonds guessed."""
+        """Guess bonds using TopologyRepair (merges partial CONECT, prunes H-bridges, repairs halogens)."""
         try:
-            guesser = DefaultGuesser(
-                self.u,
-                vdwradii=None,
-                fudge_factor=self.config.loader.bond_guess_vdw_factor,
-                lower_bound=0.1,
-            )
-            self.u.guess_TopologyAttrs(to_guess=['bonds'], context=guesser)
+            from .repair import TopologyRepair
+            repair_helper = TopologyRepair(self.u, self.config)
+            return repair_helper.guess_bonds()
         except Exception as exc:
             logger.warning(f"Bond guessing for unwrap failed: {exc}")
             return 0
-
-        return len(self.u.atoms.bonds) if hasattr(self.u.atoms, 'bonds') else 0
 
     def detect_jumps(self) -> dict[str, Any]:
         """Detect periodic boundary jumps in the structure.

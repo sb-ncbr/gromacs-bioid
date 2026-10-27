@@ -423,13 +423,13 @@ class BLASTResolver(IdentifierResolver):
 
     def _run_blast_similarity(self, sequence: str, working_directory: str) -> list[tuple[str, float]]:
         """Execute similarity search with BLAST."""
-        hits = self._process_blast_results(
+        all_hits = self._process_blast_results(
             self._run_blast_local(sequence, working_directory)
         )
 
         # Apply filters for similarity matches
         hits = self._filter_blast_results(
-            hits,
+            all_hits,
             lambda hit: hit.evalue <= self.blast_config.similarity_match_max_evalue,
         )
         hits = self._filter_blast_results(
@@ -444,6 +444,19 @@ class BLASTResolver(IdentifierResolver):
             hits,
             lambda hit: hit.coverage_p >= self.blast_config.similarity_match_min_query_cov_p,
         )
+
+        # Short nucleotide duplexes (e.g. TF-binding DNA oligos <= 25 nt such as 1AAY 11-mer)
+        # cannot physically achieve bit scores / E-values below the default protein-tuned
+        # similarity_match_max_evalue (1e-5) in blastn; rescue >=90% identity & coverage hits.
+        query_len = len(sequence.strip()) if sequence else 0
+        if not hits and not self.is_protein and 0 < query_len <= _SHORT_IDENTITY_MAX_QLEN:
+            max_short_eval = max(self.blast_config.similarity_match_max_evalue, 10.0)
+            hits = [
+                hit for hit in all_hits
+                if hit.identity_p >= max(self.blast_config.similarity_match_min_identity_p, 0.9)
+                and hit.coverage_p >= max(self.blast_config.similarity_match_min_query_cov_p, 0.9)
+                and hit.evalue <= max_short_eval
+            ]
         
         # Capture metadata for each hit
         metadata: dict[str, dict] = {}
