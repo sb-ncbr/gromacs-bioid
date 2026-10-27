@@ -102,15 +102,19 @@ class ThreeDiGenerator(SignatureGenerator):
         c_coords = np.array(c_coords, dtype=np.float32)
         cb_coords = np.array(cb_coords, dtype=np.float32)
         
-        # Encode using mini3di
+        # Encode using mini3di (bughunt BH-008: the API is
+        # encode_atoms(ca, cb, n, c) and returns uint8 states — the old
+        # call passed (n, ca, c, cb) and treated the states as strings,
+        # so EVERY protein logged 'mini3di encoding failed' and no 3di
+        # signature was ever produced)
         encoder = mini3di.Encoder()
         try:
-            result = encoder.encode_atoms(n_coords, ca_coords, c_coords, cb_coords)
-            if isinstance(result, np.ma.MaskedArray):
-                result = "".join(result.filled(""))
-            elif isinstance(result, np.ndarray):
-                result = "".join(result)
-            return result.lower()
+            states = encoder.encode_atoms(ca=ca_coords, cb=cb_coords,
+                                           n=n_coords, c=c_coords)
+            # build_sequence consumes the MASKED array (it calls .filled()
+            # internally); pre-filling with .filled(0) would hand it a
+            # plain ndarray and crash
+            return encoder.build_sequence(states).lower()
         except Exception as exc:
             logger.warning(f"mini3di encoding failed: {exc}")
             return ""
