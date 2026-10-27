@@ -149,6 +149,27 @@ def guess_bonds_union(u, vdwradii, fudge_factor: float, logger=logging) -> int:
     guessed: set[tuple[int, int]] = set()
     if hasattr(u.atoms, 'bonds') and len(u.atoms.bonds):
         guessed = {tuple(sorted((int(a), int(b)))) for a, b in u.atoms.bonds.indices}
+    # bughunt BH-020: a GUESSED bond between two different residues is
+    # solvent-solvent contamination, not chemistry — two crystal waters
+    # 1.4 A apart (alternate positions) became O=O and verified as
+    # PubChem 977 (molecular oxygen) at 84. Never guess bonds across a
+    # water residue; authored CONECT bonds (the `existing` set) survive.
+    if guessed:
+        from ..molecules.instances import WATER_RESNAMES
+        try:
+            resindices = u.atoms.resindices
+            resnames = [str(rn).strip().upper() for rn in u.residues.resnames]
+            def _is_water_atom(ai: int) -> bool:
+                ri = int(resindices[ai])
+                return 0 <= ri < len(resnames) and resnames[ri] in WATER_RESNAMES
+
+            guessed = {
+                (a, b) for a, b in guessed
+                if not (_is_water_atom(a) and int(resindices[b]) != int(resindices[a]))
+                and not (_is_water_atom(b) and int(resindices[a]) != int(resindices[b]))
+            }
+        except Exception:
+            pass  # no residue table (LAMMPS .data): unchanged behaviour
     union = sorted(existing | guessed)
     if union:
         # wave-2 item 6b: a guessed proton can sit within fudge of several

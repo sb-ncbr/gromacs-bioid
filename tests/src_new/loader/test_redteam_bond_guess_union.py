@@ -127,3 +127,43 @@ class TestHydrogenPruning:
         repair.guess_bonds()
         found = {tuple(sorted(b)) for b in u.atoms.bonds.indices}
         assert found == {(0, 1)}
+
+
+def _water_pair_universe(o_o_dist: float):
+    """bughunt BH-020: two HOH residues whose O atoms sit o_o_dist apart."""
+    import MDAnalysis as mda
+    u = mda.Universe.empty(4, n_residues=2, n_segments=1,
+                           atom_resindex=[0, 0, 1, 1], trajectory=True)
+    u.add_TopologyAttr("names", ["O", "H", "O", "H"])
+    u.add_TopologyAttr("elements", ["O", "H", "O", "H"])
+    u.add_TopologyAttr("masses", [15.999, 1.008, 15.999, 1.008])
+    u.add_TopologyAttr("resnames", ["HOH", "HOH"])
+    u.add_TopologyAttr("resids", [1, 2])
+    u.add_TopologyAttr("segids", ["S"])
+    pos = np.array([[[0, 0, 0], [0.9, 0, 0],
+                     [o_o_dist, 0, 0], [o_o_dist + 0.9, 0, 0]]],
+                   dtype=np.float32)
+    u.load_new(pos, format="memory")
+    return u
+
+
+class TestWaterSolventIsolation:
+    """bughunt BH-020: guessed solvent-solvent bonds make O2 (PubChem 977
+    at 84 in P06/S31). Guessed bonds between different water residues are
+    dropped; intra-water O-H bonds survive."""
+
+    def test_close_crystal_waters_stay_separate(self):
+        u = _water_pair_universe(1.4)
+        repair = TopologyRepair(u, RunConfig())
+        repair.guess_bonds()
+        found = {tuple(sorted(b)) for b in u.atoms.bonds.indices}
+        assert (0, 2) not in found        # no inter-water O-O bond
+        assert (0, 1) in found           # intra-water O-H kept
+        assert (2, 3) in found
+
+    def test_far_waters_unchanged(self):
+        u = _water_pair_universe(4.0)
+        repair = TopologyRepair(u, RunConfig())
+        repair.guess_bonds()
+        found = {tuple(sorted(b)) for b in u.atoms.bonds.indices}
+        assert found == {(0, 1), (2, 3)}
