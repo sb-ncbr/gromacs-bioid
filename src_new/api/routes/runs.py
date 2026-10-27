@@ -1585,12 +1585,19 @@ def _queue_state_for(run_data: Dict[str, Any]) -> str:
     status endpoint uses via pipeline.status/started_at). Once started,
     "running" while pipeline.status == "running"; terminal statuses
     (success/failed/cancelled/...) map to "done".
+
+    bughunt BH-006: TERMINAL status wins over a missing started_at —
+    a failed run that never started (e.g. reaped worker_lost) was
+    reported "queued" and counted in other runs' `ahead`.
     """
     pipeline = run_data.get("pipeline", {})
-    if not pipeline.get("started_at"):
-        return "queued"
+    status = pipeline.get("status")
+    if status and status not in ("queued", "pending", "running", "created"):
+        return "done"  # terminal: failed/success/cancelled/timeout/...
     if pipeline.get("status") == "running":
         return "running"
+    if not pipeline.get("started_at"):
+        return "queued"
     return "done"
 
 
