@@ -288,12 +288,24 @@ def determine_bond_orders_safely(mol, net_charge: int = 0,
 # --- B-10 (red-team 4.4): united-atom / H-less correction ---------------------
 
 _NOMINAL_MASSES = {
+    # keys TITLE-CASE to match the els normalisation below (bughunt
+    # BH-022: the table used UPPERCASE keys, so every two-letter element
+    # looked up as None and was silently skipped)
     "C": 12.011, "N": 14.007, "O": 15.999, "H": 1.008, "S": 32.06,
-    "P": 30.974, "F": 18.998, "CL": 35.45, "BR": 79.904, "I": 126.904,
-    "SE": 78.971, "NA": 22.990, "MG": 24.305, "K": 39.098, "CA": 40.078,
-    "FE": 55.845, "ZN": 65.38, "MN": 54.938, "CU": 63.546, "B": 10.81,
-    "SI": 28.085,
+    "P": 30.974, "F": 18.998, "Cl": 35.45, "Br": 79.904, "I": 126.904,
+    "Se": 78.971, "Na": 22.990, "Mg": 24.305, "K": 39.098, "Ca": 40.078,
+    "Fe": 55.845, "Zn": 65.38, "Mn": 54.938, "Cu": 63.546, "B": 10.81,
+    "Si": 28.085,
 }
+
+# bughunt BH-022: maximum implicit hydrogens a united-atom mass residual may
+# encode, per element. A mass residual larger than the element's valence is
+# NOT implicit hydrogen — it is a wrong element assignment (CLA->C with
+# mass 35.45 computed h=23 -> "CH23"; FE->F in GRO -> "FH37"; NA->N ->
+# "H9N"). Elements without a united-atom form (metals, halogens) are never
+# H-injected from mass alone.
+_MAX_UA_H = {"C": 4, "N": 4, "O": 3, "S": 2, "P": 3, "Si": 4, "B": 4, "Se": 2}
+_MASS_RESIDUAL_TOL = 0.15  # |m - nominal - h*1.008| must fit, else not H
 
 
 def _h_deficiency(fragment):
@@ -324,9 +336,20 @@ def _h_deficiency(fragment):
         m = float(m) if m else 0.0
         if not nominal or not m:
             continue
+        max_h = _MAX_UA_H.get(e)
+        if max_h is None:
+            # element has no united-atom form (metal, halogen): a mass
+            # residual is never implicit hydrogen (bughunt BH-022)
+            continue
         h = int(round((m - nominal) / 1.008))
-        if h > 0:
-            counts[pos] = h
+        if not (0 < h <= max_h):
+            # beyond the element's valence — wrong element assignment,
+            # not a united-atom count (CH23/FH37/H8P/H9N class)
+            continue
+        if abs(m - nominal - h * 1.008) > _MASS_RESIDUAL_TOL:
+            # residual does not decompose into whole hydrogens
+            continue
+        counts[pos] = h
     if counts:
         return counts
     heavy = [e for e in els if e in _NOMINAL_MASSES and e != "H"]
