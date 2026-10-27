@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +28,31 @@ def _convert_paths_to_strings(obj):
     return obj
 
 
+def _code_version() -> str:
+    """Code version stamp for results.json (bughunt verify §5).
+
+    Precedence: BAT3_CODE_VERSION env (baked into deployments at rollout
+    time, e.g. the git commit the image was built from), then the git
+    commit of a source checkout, then 'unknown'. Recorded as
+    pipeline.code_version in every results.json so a run can always be
+    traced back to the code that produced it.
+    """
+    env = os.environ.get("BAT3_CODE_VERSION")
+    if env:
+        return env
+    try:
+        out = subprocess.run(
+            ["git", "log", "-1", "--format=%h"],
+            cwd=str(Path(__file__).resolve().parent),
+            capture_output=True, timeout=5,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return "git-" + out.stdout.strip().decode()
+    except Exception:
+        pass
+    return "unknown"
+
+
 class ResultsManager:
     def __init__(self, path: Union[Path, str], pipeline_name: str = ""):
         self.path = Path(path)
@@ -40,6 +67,7 @@ class ResultsManager:
                 "pipeline": {
                     "name": pipeline_name,
                     "status": "created",
+                    "code_version": _code_version(),
                     "metadata": {}
                 },
                 "tasks": {},
