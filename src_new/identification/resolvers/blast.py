@@ -65,6 +65,20 @@ _SHORT_IDENTITY_MAX_QLEN = 25
 EXACT_MATCH_MAX_TERMINAL_OVERHANG_AA = 25
 EXACT_MATCH_MAX_INTERNAL_GAP_AA = 5
 
+# D-14 (reviewer 2026-10-27, pre-full-corpus rule): UniProt/Swiss-Prot
+# references routinely extend well past the deposited MD construct
+# (expression constructs are truncation products of the full-length protein:
+# about half of the covered GT references overhang the construct by >60 aa).
+# The C-03/D-13 subject-coverage machinery exists to reject short domain
+# hits inside larger PDB fusions — but for UniProt/Swiss-Prot accession
+# spaces it has no such risk (the accession IS the full-length protein) and
+# it demotes correct matches to Medium confidence. For those two sources,
+# the identity rule is: identity >= 0.99 AND query coverage >= 0.99 AND
+# aligned length >= 50 aa, with NO subject-coverage requirement. PDB-family
+# resolvers keep the D-13 terminal-overhang rule. NR keeps it as well
+# (mixed-domain accessions are the same-risk class as PDB fusions).
+D14_MIN_ALIGNED_LEN_AA = 50
+
 
 class BLASTResolver(IdentifierResolver):
     """
@@ -73,6 +87,11 @@ class BLASTResolver(IdentifierResolver):
 
     # Common BLAST database file extensions (including nucleotide alias and multi-volume)
     _DB_FILE_EXTENSIONS = [".pal", ".nal", ".pin", ".nin", ".phr", ".psq", ".nhr", ".nsq", ".p00", ".n00"]
+
+    # D-14: subject-coverage gate policy for protein identity. "terminal_override"
+    # = D-13 rule (PDB fusions, NR). "drop" = no subject-coverage requirement,
+    # replaced by the aligned-length floor (UniProt/Swiss-Prot — see D14 comment).
+    D14_SCOV_DROPPED = False
 
     def __init__(self, config: RunConfig, db_path: str, is_protein: bool, 
                  resolver_name: str, identifier_type: str) -> None:
@@ -480,14 +499,27 @@ class BLASTResolver(IdentifierResolver):
             and internal_gap <= EXACT_MATCH_MAX_INTERNAL_GAP_AA
         )
 
-    def _identity_gate_fail(self, hit: BlastHit) -> str | None:
+    def _identity_gate_fail(self, hit: BlastHit, query_len: int = 0) -> str | None:
         """None if the hit passes the protein C-03 identity gate, else the
-        first failing gate name: 'identity' | 'qcov' | 'scov'."""
+        first failing gate name: 'identity' | 'qcov' | 'scov' | 'alen'.
+        D-14: resolvers with D14_SCOV_DROPPED (UniProt/Swiss-Prot) skip the
+        subject-coverage gate and instead require an aligned length of at
+        least D14_MIN_ALIGNED_LEN_AA — the subject is the full-length
+        protein by accession definition, so construct-vs-reference overhang
+        is biology, not a fusion artefact."""
         id_min, qcov_min = self._identity_thresholds()
         if hit.identity_p < id_min:
             return "identity"
         if hit.coverage_p < qcov_min:
             return "qcov"
+        if self.D14_SCOV_DROPPED:
+            if hit.subject_span is not None:
+                aligned = hit.subject_span[1] - hit.subject_span[0] + 1
+            else:
+                aligned = round(hit.coverage_p * query_len)
+            if aligned < D14_MIN_ALIGNED_LEN_AA:
+                return "alen"
+            return None
         if not self._subject_cov_ok(hit):
             return "scov"
         return None
@@ -511,8 +543,11 @@ class BLASTResolver(IdentifierResolver):
             # and subject coverage >= 0.9 (a 58-aa exact alignment inside a
             # 580-aa fusion protein is not the same molecule). The F-N1c
             # nucleotide rule below already worked this way; evalue/bits keep
-            # gating the SIMILARITY path unchanged.
-            strict_hits = [h for h in hits if self._identity_gate_fail(h) is None]
+            # gating the SIMILARITY path unchanged. D-14: UniProt/Swiss-Prot
+            # resolvers (D14_SCOV_DROPPED) replace the subject-coverage gate
+            # with the aligned-length floor (see module comment).
+            query_len_prot = len(sequence.strip()) if sequence else 0
+            strict_hits = [h for h in hits if self._identity_gate_fail(h, query_len_prot) is None]
         else:
             strict_hits = self._filter_blast_results(
                 hits,
@@ -542,9 +577,13 @@ class BLASTResolver(IdentifierResolver):
                 "subject_cov_p": hit.subject_cov_p,  # additive (C-21)
             }
             if hit.subject_cov_p is not None and hit.subject_cov_p < 0.9:
-                # passed only via the D-13 terminal-overhang override —
-                # tag it so the ablation can attribute Fix B's contribution
-                meta["scov_gate"] = "terminal_override"
+                # D-14: UniProt/Swiss-Prot — subject coverage was not
+                # consulted; tag for attribution (pre-D-14 this row would
+                # have been demoted/failed by the scov gate).
+                # D-13: PDB/NR — passed only via the terminal-overhang
+                # override; tag so the ablation can attribute Fix B.
+                meta["scov_gate"] = ("d14_scov_dropped" if self.D14_SCOV_DROPPED
+                                     else "terminal_override")
             for accession in hit.accessions:
                 metadata[accession] = meta
 
@@ -664,6 +703,8 @@ class BLASTResolverPDBNT(BLASTResolver):
 
 class BLASTResolverUNIPROT(BLASTResolver):
     """BLAST resolver for UniProt database."""
+
+    D14_SCOV_DROPPED = True
     
     def __init__(self, config: RunConfig) -> None:
         """Initialize BLAST resolver for UniProt sequences."""
@@ -696,6 +737,8 @@ class BLASTResolverNR(BLASTResolver):
 
 class BLASTResolverSWISSPROT(BLASTResolver):
     """BLAST resolver for Swiss-Prot (curated protein) database."""
+
+    D14_SCOV_DROPPED = True
     
     def __init__(self, config: RunConfig) -> None:
         """Initialize BLAST resolver for Swiss-Prot protein sequences."""
