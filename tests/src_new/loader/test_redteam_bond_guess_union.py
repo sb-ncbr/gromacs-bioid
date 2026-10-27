@@ -12,6 +12,7 @@ from MDAnalysis.core.topology import Topology
 from MDAnalysis.core.topologyattrs import (
     Atomnames,
     Bonds,
+    Elements,
     Masses,
     Resids,
     Resnames,
@@ -87,3 +88,42 @@ class TestPartialConectUnion:
         found = {tuple(sorted(b)) for b in u.atoms.bonds.indices}
         assert (0, 1) in found  # authored long bond survives
         assert (1, 2) in found  # and the real chain bonds got guessed
+
+
+class TestHydrogenPruning:
+    """wave-2 item 6b: at most one bond per guessed hydrogen (shortest)."""
+
+    def _nho_universe(self, h_o_dist: float):
+        # cetirizine N-H...O geometry: N-(1.02)-H-(h_o_dist)-O collinear
+        top = Topology(3, 1, 1, attrs=None)
+        u = Universe(top)
+        u.add_TopologyAttr(Atomnames(["N1", "H1", "O1"]))
+        u.add_TopologyAttr(Elements(["N", "H", "O"]))
+        u.add_TopologyAttr(Masses([14.007, 1.008, 15.999]))
+        u.add_TopologyAttr(Resnames(["LIG"]))
+        u.add_TopologyAttr(Resids([1]))
+        u.add_TopologyAttr(Segids(["S"]))
+        pos = np.array([[[0.0, 0, 0], [1.02, 0, 0], [1.02 + h_o_dist, 0, 0]]],
+                       dtype=np.float32)
+        u.load_new(pos, format="memory")
+        return u
+
+    def test_multi_bonded_hydrogen_keeps_only_shortest(self):
+        # H-O = 1.40 A: within fudge of both N and O -> guesser bonds H to
+        # BOTH donors; prune must keep only N-H (1.02 < 1.40).
+        u = self._nho_universe(1.40)
+        repair = TopologyRepair(u, RunConfig())
+        repair.guess_bonds()
+        found = {tuple(sorted(b)) for b in u.atoms.bonds.indices}
+        assert (0, 1) in found      # N-H survives (shortest)
+        assert (1, 2) not in found  # H...O contact pruned
+        h_bonds = [b for b in found if 1 in b]
+        assert len(h_bonds) == 1
+
+    def test_single_bonded_hydrogen_untouched(self):
+        # H-O = 2.20 A: outside fudge -> H bonds only to N; prune is a no-op
+        u = self._nho_universe(2.20)
+        repair = TopologyRepair(u, RunConfig())
+        repair.guess_bonds()
+        found = {tuple(sorted(b)) for b in u.atoms.bonds.indices}
+        assert found == {(0, 1)}

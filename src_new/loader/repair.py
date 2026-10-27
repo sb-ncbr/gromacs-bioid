@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import MDAnalysis
+import numpy as np
 from MDAnalysis import Universe
 from MDAnalysis.guesser.default_guesser import DefaultGuesser
 
@@ -147,8 +148,40 @@ def guess_bonds_union(u, vdwradii, fudge_factor: float, logger=logging) -> int:
         guessed = {tuple(sorted((int(a), int(b)))) for a, b in u.atoms.bonds.indices}
     union = sorted(existing | guessed)
     if union:
-        u.add_TopologyAttr(Bonds(union))
-    return len(union)
+        # wave-2 item 6b: a guessed proton can sit within fudge of several
+        # donors (cetirizine N-H...O class) — keep only the shortest bond
+        # per hydrogen. Skipped when elements are unknown.
+        pruned = _prune_multi_bonded_hydrogens(u, set(union))
+        u.add_TopologyAttr(Bonds(sorted(pruned)))
+        return len(pruned)
+    return 0
+
+
+def _prune_multi_bonded_hydrogens(u, bond_pairs: set) -> set:
+    """wave-2 item 6b: the radius guesser can bond one hydrogen to several
+    donors (the proton lies within the vdw fudge of both N and O, e.g.
+    cetirizine's N-H...O). Keep at most ONE bond per hydrogen — the
+    shortest. Applies uniformly to authored+guessed bonds; atoms without
+    element info are left untouched."""
+    if not hasattr(u.atoms, 'elements') or u.atoms.n_atoms == 0:
+        return bond_pairs
+    try:
+        elements = [str(e).capitalize() for e in u.atoms.elements]
+    except Exception:
+        return bond_pairs
+    pos = u.atoms.positions
+    drop: set[tuple[int, int]] = set()
+    by_h: dict[int, list[tuple[float, tuple[int, int]]]] = {}
+    for a, b in bond_pairs:
+        for h, o in ((a, b), (b, a)):
+            if elements[h] == 'H' and elements[o] != 'H':
+                d = float(np.linalg.norm(pos[h] - pos[o]))
+                by_h.setdefault(h, []).append((d, tuple(sorted((h, o)))))
+    for h, cands in by_h.items():
+        if len(cands) > 1:
+            keep = min(cands)[1]
+            drop.update(bp for _d, bp in cands if bp != keep)
+    return bond_pairs - drop
 
 
 @dataclass
