@@ -9,7 +9,59 @@ from MDAnalysis import Universe
 from MDAnalysis.guesser.default_guesser import DefaultGuesser
 
 from ..config.loader import RunConfig
+from ..constants import KNOWN_RESIDUE_CODES
+from ..molecules.nucleic_acid import normalize_nucleic_resname
 from .repair_constants import ATOMTABLE_ELEMENTS_MASSES, ATOMTABLE_ELEMENT_MASS_CONFIDENCE_THRESHOLD
+
+# --- wave-2 item 5 (GitHub #2): element guessing order + ion residue names --
+# CHARMM / AMBER / GROMACS single-atom ion RESIDUE names. These are only
+# consulted for single-atom residues (an ion floating in solvent), so a ligand
+# carbon legitimately named "CD" can never be hit by 'CD': 'Cd'.
+_ION_RESNAME_ELEMENTS = {
+    # CHARMM
+    'SOD': 'Na', 'POT': 'K', 'CLA': 'Cl', 'CAL': 'Ca', 'CES': 'Cs',
+    'RUB': 'Rb', 'LIT': 'Li',
+    # AMBER style (charged suffix)
+    'NA+': 'Na', 'CL-': 'Cl', 'K+': 'K', 'BR-': 'Br', 'I-': 'I',
+    'CS+': 'Cs', 'RB+': 'Rb', 'MG+': 'Mg', 'CA+': 'Ca', 'ZN+': 'Zn',
+    # AMBER style (halide suffix)
+    'NAI': 'Na', 'CLI': 'Cl', 'KI': 'K', 'BRI': 'Br',
+    # GROMACS / common bare ion resnames (single-atom residues only)
+    'ZN': 'Zn', 'ZN1': 'Zn', 'ZN2': 'Zn', 'MG': 'Mg', 'CA': 'Ca',
+    'K': 'K', 'NA': 'Na', 'CL': 'Cl', 'BR': 'Br', 'IOD': 'I',
+    'FE': 'Fe', 'FE1': 'Fe', 'FE2': 'Fe',
+    'MN': 'Mn', 'MN3': 'Mn', 'CU': 'Cu', 'CU1': 'Cu',
+    'NI': 'Ni', 'NI2': 'Ni', 'CO': 'Co', 'CD': 'Cd', 'HG': 'Hg',
+    'PB': 'Pb', 'AG': 'Ag', 'AU': 'Au',
+}
+
+# Mass-match tolerance: force-field masses are isotope/rounding variants of
+# the table (Cl 35.45 vs 35.453); anything further away is not a mass match.
+_MASS_MATCH_TOLERANCE = 0.5
+
+
+def _element_from_mass(mass: float) -> str | None:
+    """Nearest element by mass (wave-2 item 5): unambiguous for Cl/C, Na/N
+    and Ca/C — Ca (40.078) beats K (39.098) by ~1 u, so accurate force-field
+    masses resolve correctly."""
+    best, best_delta = None, None
+    for elem, elem_mass in ATOMTABLE_ELEMENTS_MASSES.items():
+        delta = abs(mass - elem_mass)
+        if best_delta is None or delta < best_delta:
+            best, best_delta = elem, delta
+    if best is not None and best_delta <= _MASS_MATCH_TOLERANCE:
+        return best
+    return None
+
+
+def _is_polymer_resname(resname: str | None) -> bool:
+    """Protein (KNOWN_RESIDUE_CODES) or nucleic (tier-1 normalizer) residue."""
+    if not resname:
+        return False
+    rn = str(resname).strip()
+    if rn.upper() in KNOWN_RESIDUE_CODES:
+        return True
+    return normalize_nucleic_resname(rn) is not None
 
 logger = logging.getLogger("base")
 
@@ -173,15 +225,32 @@ class TopologyRepair:
         names = list(self.u.atoms.names) if hasattr(self.u.atoms, 'names') else [None] * n_atoms
         types = list(self.u.atoms.types) if hasattr(self.u.atoms, 'types') else [None] * n_atoms
         masses = list(self.u.atoms.masses) if hasattr(self.u.atoms, 'masses') else [None] * n_atoms
+        resnames_arr = list(self.u.atoms.resnames) if hasattr(self.u.atoms, 'resnames') else [None] * n_atoms
+
+        # wave-2 item 5: residue context for element guessing — single-atom
+        # (ion) vs polymer residues decide the name-prefix strategy. Group by
+        # resindex (true residue identity, v3.143 A-02).
+        resindex_arr = self.u.atoms.resindices if hasattr(self.u.atoms, 'resindices') else None
+        if resindex_arr is not None:
+            residue_sizes: dict[int, int] = {}
+            for ri in resindex_arr:
+                ri = int(ri)
+                residue_sizes[ri] = residue_sizes.get(ri, 0) + 1
+        else:
+            residue_sizes = {}
 
         for i in range(n_atoms):
             # Only guess if element is blank or invalid
             if not self._is_valid_element(elements[i]):
+                resname = resnames_arr[i] if resnames_arr else None
+                ri = int(resindex_arr[i]) if resindex_arr is not None else None
                 element = self._guess_single_element(
                     existing="",
                     name=names[i] if names else None,
                     mass=masses[i] if masses else None,
                     atom_type=types[i] if types else None,
+                    resname=str(resname) if resname is not None else None,
+                    residue_atom_count=residue_sizes.get(ri, 0) if ri is not None else 0,
                 )
                 if element:
                     elements[i] = element
@@ -205,14 +274,32 @@ class TopologyRepair:
             return False
         return elem.strip().capitalize() in ATOMTABLE_ELEMENTS_MASSES
 
-    def _guess_single_element(self, existing: str, name: str | None, mass: float | None, atom_type: str | None) -> str:
-        """Guess element for a single atom from multiple sources."""
+    def _guess_single_element(self, existing: str, name: str | None, mass: float | None,
+                              atom_type: str | None,
+                              resname: str | None = None,
+                              residue_atom_count: int = 0) -> str:
+        """Guess element for a single atom from multiple sources.
+
+        Wave-2 item 5 (GitHub #2): the old order (1-letter name prefix first,
+        then a 2-letter lookup that compared ``.upper()`` against title-case
+        keys — i.e. NEVER matched — then atom type, mass LAST) turned CHARMM
+        ions into wrong elements: SOD → S, CLA → C, NA → N, CL → C even with
+        mass 35.45 present. New priority order:
+          1. exact name guards (water, virtual sites);
+          2. MASS when present and > 0.5 (unambiguous for Cl/C, Na/N, Ca/C);
+          3. single-atom ion RESIDUE names (SOD, POT, CLA, NA+, ...);
+          4. name prefixes — 2-letter (properly capitalised) BEFORE 1-letter
+             for single-atom and non-polymer residues (ligand CL1/BR1);
+             inside protein/NA residues the 1-letter prefix stays first
+             (protein CA must remain carbon, not calcium);
+          5. atom type prefix (unchanged);
+          6. mass fallback (unchanged behaviour for pathological masses).
+        """
         # Note: existing is intentionally ignored here - caller passes "" for invalid elements
 
-        # From atom name prefix - try multiple strategies
         if name:
             name_upper = name.upper().strip()
-            
+
             # Special handling for water atoms (common in GROMACS)
             if name_upper.startswith('OW') or name_upper.startswith('OH2'):
                 return 'O'
@@ -226,30 +313,54 @@ class TopologyRepair:
             # keeps them out of composition and completeness checks.
             if name_upper.startswith(('MW', 'EPW', 'EP', 'LP', 'DP', 'VS', 'DUM')):
                 return ''
-            
-            # Try single-letter prefix first (most reliable)
+
+        # 2. Mass first: when the topology carries a real mass, it is the
+        # most reliable signal (force-field masses are element masses).
+        if mass is not None and mass > 0.5:
+            elem = _element_from_mass(float(mass))
+            if elem:
+                return elem
+
+        # 3. Single-atom ion residues (CHARMM/AMBER/GROMACS ion names)
+        if residue_atom_count == 1 and name:
+            ion = _ION_RESNAME_ELEMENTS.get(name.upper().strip())
+            if ion:
+                return ion
+
+        # 4. Name prefixes, residue-context aware
+        if name:
+            name_upper = name.upper().strip()
+            single_atom = residue_atom_count == 1
+            non_polymer = not _is_polymer_resname(resname)
+            two_letter_first = single_atom or non_polymer
+
+            if two_letter_first and len(name) >= 2:
+                two_char = name[:2].capitalize()
+                if two_char in ATOMTABLE_ELEMENTS_MASSES:
+                    return two_char
+
             first_char = name[0].upper()
             if first_char in ATOMTABLE_ELEMENTS_MASSES:
                 return first_char
-            
-            # Try two-letter prefix
-            if len(name) >= 2:
-                two_char = name[:2].upper()
+
+            if not two_letter_first and len(name) >= 2:
+                # polymer path: 2-letter only after 1-letter failed
+                two_char = name[:2].capitalize()
                 if two_char in ATOMTABLE_ELEMENTS_MASSES:
                     return two_char
-            
-            # Try full alpha prefix
+
+            # Full alpha prefix (properly capitalised this time)
             prefix = ""
             for c in name:
                 if c.isalpha():
                     prefix += c
                 else:
                     break
-            prefix = prefix.upper()
+            prefix = prefix.capitalize()
             if prefix in ATOMTABLE_ELEMENTS_MASSES:
                 return prefix
 
-        # From atom type prefix
+        # 5. From atom type prefix
         if atom_type:
             t = atom_type.strip().upper()
             if t.startswith("C"): return "C"
@@ -263,7 +374,7 @@ class TopologyRepair:
             if "K" in t: return "K"
             if "ZN" in t: return "Zn"
 
-        # From mass
+        # 6. From mass
         if mass is not None:
             for elem, elem_mass in ATOMTABLE_ELEMENTS_MASSES.items():
                 if abs(elem_mass - mass) <= ATOMTABLE_ELEMENT_MASS_CONFIDENCE_THRESHOLD:
