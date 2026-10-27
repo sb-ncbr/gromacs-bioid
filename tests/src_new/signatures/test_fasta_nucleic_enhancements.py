@@ -179,6 +179,7 @@ class TestEnoughBondsGate:
         seq = gen._generate(inst, fragment, facade)
         assert len(seq) == 47  # one sequence per residue, 1XJR-style
 
+
     def test_full_connectivity_47nt_map_on_resname_off(self):
         bonds = _chain_bonds(47, 6, [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)], (0, 5))
         facade, fragment, inst = _mk_facade(
@@ -269,3 +270,43 @@ class TestAnchorParameterization:
         seq_legacy = fragment_to_protseq_map_based(self._na_u().atoms, cfg)  # anchor="M", dead for NA
         assert seq_none == seq_legacy
         assert seq_none in {"ACGT", "TGCA"}  # strand orientation is unconstrained
+
+
+class TestDuplicateChainLabel:
+    """bughunt BH-023: a duplicate chainID was relabelled to ITSELF
+    (guard started pos at 0), and _emit_chains is a dict — the leftover
+    singleton (metal) overwrote the 597-aa protein sequence with 'X'."""
+
+    def _universe(self):
+        # two peptide-linked residues + one ZN leftover, ALL chainID "A"
+        import MDAnalysis.core.topologyattrs as ta
+        u = _mk_universe(["ALA", "GLY", "ZN"],
+                         [["N", "CA", "C"], ["N", "CA", "C"], ["ZN"]],
+                         bonds=[(2, 3)])  # C(ALA)-N(GLY) peptide link
+        u.add_TopologyAttr(ta.ChainIDs(["A"] * 7))
+        return u
+
+    def test_duplicate_label_does_not_overwrite(self):
+        from src_new.signatures.generators.fasta import (
+            fragment_to_protseq_resname_based_chains,
+        )
+        u = self._universe()
+        chains = fragment_to_protseq_resname_based_chains(u.atoms)
+        # multi-chain output: the protein chain AND the leftover both
+        # survive with DISTINCT labels (was: single ("A", "X") overwrite)
+        assert len(chains) == 2
+        labels = [lab for lab, _ in chains]
+        assert len(set(labels)) == len(labels)
+        seqs = dict(chains)
+        protein = [s for s in seqs.values() if set(s) <= {"A", "G", "C", "D", "E", "F", "I", "H", "K", "M", "L", "N", "P", "Q", "R", "S", "T", "V", "W", "Y"} and len(s) == 2]
+        assert protein, f"protein sequence lost in {seqs}"
+
+    def test_triple_duplicate_labels_unique(self):
+        from src_new.signatures.generators.fasta import _chain_groups_and_labels
+        import types
+        # labels [A, A, B] via chainIDs; second A must not become B
+        u = self._universe()
+        frag = u.atoms
+        labelled = _chain_groups_and_labels(frag, [[0, 1]])
+        labels = [lab for lab, _ in labelled]
+        assert len(set(labels)) == len(labels)

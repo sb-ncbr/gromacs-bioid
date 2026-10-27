@@ -360,14 +360,24 @@ def _chain_groups_and_labels(fragment, ordered_chains):
                     break
             id_of[ci] = cid
         labels = [id_of.get(ci) or chr(ord("A") + ci) for ci in range(len(chains))]
-        # collision guard: fall back to positional labels for duplicates
-        pos = 0
+        # collision guard: relabel duplicates to the next letter that is
+        # unused ANYWHERE (bughunt BH-023: the old guard started pos at 0,
+        # so a duplicate "A" was relabelled to "A" again — _emit_chains is
+        # a dict, the second chain silently overwrote the first (M03:
+        # 597-aa sequence replaced by the leftover's "X"))
+        label_set = set(labels)
         seen = set()
         fixed = []
         for lab in labels:
             if lab in seen:
-                fixed.append(chr(ord("A") + pos))
-                pos += 1
+                cand = lab
+                n = 0
+                while cand in seen or cand in label_set:
+                    n += 1
+                    cand = chr(ord("A") + n)
+                label_set.add(cand)
+                fixed.append(cand)
+                seen.add(cand)
             else:
                 fixed.append(lab)
                 seen.add(lab)
