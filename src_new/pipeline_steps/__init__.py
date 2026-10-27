@@ -362,6 +362,16 @@ def _pinned_props_facade(facade: Any, segment_name: str) -> Any:
     return _PinnedPropsFacade(facade, props)
 
 
+def _chemistry_size_skipped(atom_count, generated_keys, cap):
+    """bughunt BH-032: True when a molecule above the chemistry atom cap
+    produced no SMILES signature (the skip used to be completely silent —
+    M12 enramycin, 309 atoms vs the 250 cap, no message anywhere)."""
+    if not atom_count or atom_count <= cap:
+        return False
+    return not any(k.split("[")[0] in ("smiles", "smiles_not_sanitized")
+                   for k in generated_keys)
+
+
 def _generate_signatures(context):
     """Generate signatures for all segments with optional parallelism."""
     from ..signatures.registry import get_default_generators
@@ -512,6 +522,26 @@ def _generate_signatures(context):
 
         if result.get("flags"):
             context.results.set_data(f"signatures/{segment_name}/flags", result["flags"])
+
+        # bughunt BH-032: a molecule above the chemistry atom cap got no
+        # SMILES/InChI SILENTLY (M12 enramycin, 309 atoms vs the 250 cap:
+        # no message at all). Make the skip visible; formula and
+        # residue-name signatures still run (their own gates).
+        _inst = segment_to_instance.get(segment_name)
+        _atom_cap = context.config.signatures.smiles_maximum_number_of_atoms
+        if _chemistry_size_skipped(
+                getattr(_inst, "atom_count", None),
+                list(result["generated"]),
+                _atom_cap):
+            context.add_warning(
+                "chemistry_skipped_size",
+                f"{segment_name}: {_inst.atom_count} atoms exceeds the chemistry "
+                f"atom limit ({_atom_cap}); SMILES/InChI signatures skipped "
+                "(formula and residue-name signatures still generated)",
+                details={"segment": segment_name,
+                         "atom_count": _inst.atom_count,
+                         "limit": _atom_cap},
+            )
 
         # F-N1e: persist (bounded) generation errors for postmortem visibility
         _sig_errs = bounded_stage_errors(result.get("errors", []))
