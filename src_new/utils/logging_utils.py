@@ -79,3 +79,23 @@ def teardown_run_log_handlers(handlers: List[Tuple[logging.Handler, str]]) -> No
             handler.close()
         except Exception:
             pass  # Handler may already be closed
+
+
+def detach_inherited_root_handlers() -> int:
+    """Forked-child hygiene (bughunt W3 A4 / BH-007).
+
+    A multiprocessing-fork child inherits every handler the parent had
+    attached to the ROOT logger (in the Celery pool that includes OTHER
+    runs' file handlers -> cross-talk) and any leftover handler for this
+    run (-> duplicated lines). Strip them ALL, using removeHandler ONLY:
+    never flush()/close() here - the underlying file descriptors belong to
+    the parent's handler objects and must stay usable there.
+
+    Returns the number of handlers removed.
+    """
+    root = logging.getLogger()
+    removed = 0
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+        removed += 1
+    return removed
