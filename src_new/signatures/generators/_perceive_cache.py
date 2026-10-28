@@ -24,7 +24,10 @@ from __future__ import annotations
 
 import logging
 import os
+import pickle
 import signal
+import subprocess
+import sys
 import threading
 import weakref
 
@@ -172,16 +175,6 @@ def _is_hless(mol) -> bool:
     return not any(a.GetAtomicNum() == 1 for a in mol.GetAtoms())
 
 
-def _is_polymeric_coordinate_mol(mol) -> bool:
-    """Residue-tagged atoms from a coordinate format (PDB/mmCIF) — a polymer
-    whose ground truth is the sequence, not a ligand needing bond orders."""
-    n = mol.GetNumAtoms()
-    if n == 0:
-        return False
-    tagged = sum(1 for a in mol.GetAtoms() if a.GetMonomerInfo() is not None)
-    return tagged * 2 >= n
-
-
 def _net_charge(fragment) -> int:
     """Net molecular charge from topology partial charges (prmtop/tpr/psf/
     itp carry them; PDB/GRO typically do not -> 0, unchanged behavior)."""
@@ -228,10 +221,16 @@ def determine_bond_orders_safely(mol, net_charge: int = 0,
     failures propagate (smiles semantics); callers that historically
     swallow exceptions keep doing so. Returns True when accepted.
 
-    Wave-2 (item 2a): the charge ladder is SKIPPED for (a) H-less
-    fragments above max_heavy_atoms_hless and (b) coordinate-described
-    polymer fragments — the uninterruptible exponential-spin class; the
-    all-single state is kept for similarity-tier chemistry.
+    Wave-2 (item 2a): the charge ladder is SKIPPED for H-less
+    fragments above max_heavy_atoms_hless — the uninterruptible
+    exponential-spin class; the all-single state is kept for
+    similarity-tier chemistry.
+
+    W3 A5 (BH-049): explicit-H multi-carboxylate peptides explode the same
+    way (M13: >20 min in the first ladder attempt). Two guards below:
+    Fix B runs the carboxylate-capped single-shot DBO first (ms), Fix C
+    runs the whole ladder in a killable subprocess with one shared budget
+    (BAT3_BOND_ORDER_TIMEOUT_S, default 120 s).
 
     Wave-2 (item 7): the H-less test must reflect the PRE-INJECTION
     fragment — the B-10 counts-mode injection materialises the inferred
@@ -240,7 +239,6 @@ def determine_bond_orders_safely(mol, net_charge: int = 0,
     (united-atom glycan prompts, 1FC1 110-atom class). Callers pass the
     source fragment; heavy-atom counting is robust because injection only
     ever adds H."""
-    from rdkit.Chem import rdDetermineBonds as _rdb
     n_heavy = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() > 1)
     if fragment is not None:
         try:
@@ -258,12 +256,28 @@ def determine_bond_orders_safely(mol, net_charge: int = 0,
             "bonds for similarity-tier chemistry",
             n_heavy, max_heavy_atoms_hless)
         return False
-    if _is_polymeric_coordinate_mol(mol):
-        logger.warning(
-            "bond-order ladder skipped: coordinate-described polymer "
-            "fragment (%d atoms; sequence is the ground truth of record)",
-            mol.GetNumAtoms())
-        return False
+    # W3 A5 (BH-049) Fix B: carboxylate-capped single-shot DBO BEFORE the
+    # ladder. Every odd UA {C,O,O} carboxylate component gets a temporary H
+    # on a copy -> every UA component even -> RDKit's first matching is
+    # perfect (ms, no enumeration); orders/charges copy back, capped O's
+    # restored to -1. Skipped via BAT3_DBO_NO_CAP=1 (tests/rollback).
+    if os.environ.get("BAT3_DBO_NO_CAP", "0") != "1":
+        q_used = _dbo_capped_carboxylate(mol, net_charge=net_charge)
+        if q_used is not None:
+            logger.debug(
+                "bond orders perceived via carboxylate-capped single-shot "
+                "at charge %d (BH-049 fast path)", q_used)
+            return True
+    # W3 A5 (BH-049) Fix C: the whole ladder in a hard-killed subprocess
+    # with ONE shared budget. SIGALRM cannot interrupt RDKit C++ (M13 spun
+    # >20 min inside DetermineBondOrders); a killable child can.
+    return _dbo_ladder_subprocess(mol, net_charge)
+
+
+def _dbo_ladder_core(mol, net_charge: int) -> bool:
+    """The historical B-01 ladder, extracted so it can run inside the
+    Fix-C child interpreter (ONE budget shared across all charges)."""
+    from rdkit.Chem import rdDetermineBonds as _rdb
     order = [net_charge] + [q for q in _TRIAL_CHARGES if q != net_charge]
     for q in order:
         try:
@@ -283,6 +297,183 @@ def determine_bond_orders_safely(mol, net_charge: int = 0,
             "bond-order solution at charge %d rejected (%s)",
             q, "bare [H+] fragment" if _has_bare else "charge mismatch")
     return False
+
+
+_DBO_CHILD_BOOTSTRAP = """
+import sys, pickle, importlib.util
+spec = importlib.util.spec_from_file_location("dbo_worker", sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+blob, q = pickle.loads(sys.stdin.buffer.read())
+from rdkit import Chem
+mol = Chem.Mol(blob)
+ok = m._dbo_ladder_core(mol, q)
+sys.stdout.buffer.write(pickle.dumps((ok, mol.ToBinary() if ok else None)))
+"""
+
+
+def _bond_order_timeout_s() -> float:
+    try:
+        return float(os.environ.get("BAT3_BOND_ORDER_TIMEOUT_S", "120"))
+    except ValueError:
+        return 120.0
+
+
+def _dbo_ladder_subprocess(mol, net_charge: int) -> bool:
+    """W3 A5 Fix C: run the charge ladder in a fresh interpreter with ONE
+    shared hard budget (BAT3_BOND_ORDER_TIMEOUT_S, default 120 s); kill it
+    and continue without bond orders when the budget expires (RDKit C++ is
+    uninterruptible in-process; a child is killable). The parent mol is
+    only overlaid on success, so a kill leaves the all-single pre-state."""
+    budget = _bond_order_timeout_s()
+    cmd = [sys.executable, "-c", _DBO_CHILD_BOOTSTRAP,
+           os.path.abspath(__file__)]
+    try:
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL)
+    except Exception as exc:
+        logger.warning(
+            "bond-order subprocess spawn failed (%s); continuing without "
+            "bond orders", exc)
+        return False
+    try:
+        out, _ = proc.communicate(
+            pickle.dumps((mol.ToBinary(), int(net_charge))), timeout=budget)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        logger.warning(
+            "bond_order_timeout: DetermineBondOrders ladder exceeded the "
+            "shared %.1fs budget; child killed, continuing without bond "
+            "orders", budget)
+        return False
+    if proc.returncode != 0 or not out:
+        logger.warning(
+            "bond-order subprocess failed (rc=%s); continuing without "
+            "bond orders", proc.returncode)
+        return False
+    try:
+        accepted, blob = pickle.loads(out)
+    except Exception:
+        return False
+    if not accepted or not blob:
+        return False
+    solved = Chem.Mol(blob)
+    for b in mol.GetBonds():
+        sb = solved.GetBondBetweenAtoms(b.GetBeginAtomIdx(),
+                                        b.GetEndAtomIdx())
+        b.SetBondType(sb.GetBondType())
+    for a in mol.GetAtoms():
+        sa = solved.GetAtomWithIdx(a.GetIdx())
+        a.SetFormalCharge(sa.GetFormalCharge())
+        a.SetNoImplicit(True)
+    return True
+
+
+# --- W3 A5 (BH-049) Fix B: carboxylate-capped single-shot DBO -------------
+
+_COO_STD_VALENCE = {6: 4, 7: 3, 8: 2, 16: 2}
+
+
+def _ua_odd_carboxylate_os(mol) -> list:
+    """One carboxylate O index per ODD unsaturated-atom component holding a
+    COO- motif (transplant of logs/final_wo/m13/scripts/m13_fix.py)."""
+    ua = set()
+    for a in mol.GetAtoms():
+        z = a.GetAtomicNum()
+        if z in _COO_STD_VALENCE and \
+                _COO_STD_VALENCE[z] - a.GetDegree() > 0:
+            ua.add(a.GetIdx())
+    seen, picks = set(), []
+    for s0 in sorted(ua):
+        if s0 in seen:
+            continue
+        comp, st = [], [s0]
+        seen.add(s0)
+        while st:
+            x = st.pop()
+            comp.append(x)
+            for n in mol.GetAtomWithIdx(x).GetNeighbors():
+                y = n.GetIdx()
+                if y in ua and y not in seen:
+                    seen.add(y)
+                    st.append(y)
+        if len(comp) % 2 == 0:
+            continue
+        # cap only the carboxylate motif: a degree-1 O whose carbon carries
+        # a second degree-1 O (excludes enolates / nitro / N-oxides)
+        for i in sorted(comp):
+            at = mol.GetAtomWithIdx(i)
+            if at.GetAtomicNum() != 8 or at.GetDegree() != 1:
+                continue
+            c = at.GetNeighbors()[0]
+            if c.GetAtomicNum() != 6:
+                continue
+            if sum(1 for n in c.GetNeighbors() if n.GetAtomicNum() == 8
+                   and n.GetDegree() == 1) == 2:
+                picks.append(i)
+                break
+    return picks
+
+
+def _derived_charge(mol, picks) -> int:
+    """Graph-derived net charge: +1 per 4-connected N, -1 per capped O."""
+    npos = sum(1 for a in mol.GetAtoms()
+               if a.GetAtomicNum() == 7 and a.GetDegree() == 4)
+    return npos - len(picks)
+
+
+def _dbo_capped_carboxylate(mol, net_charge: int = 0):
+    """Protonate one O of every odd UA carboxylate component on a COPY,
+    run DBO once at (q + n_capped), copy orders back, restore -1 on the
+    capped oxygens. Returns the charge used, or None when not applicable /
+    failed -- on failure the mol is left in its all-single pre-state
+    (hardened vs the prototype, whose charge-mismatch path mutated mol).
+    A non-zero topology net charge wins; otherwise the charge is
+    graph-derived."""
+    from rdkit.Chem import rdDetermineBonds as _rdb
+    from rdkit.Geometry import Point3D
+    if _is_hless(mol):
+        return None  # capping assumes explicit hydrogens
+    picks = _ua_odd_carboxylate_os(mol)
+    if not picks:
+        return None  # nothing odd -> historical path is already fast
+    q = int(net_charge) if net_charge else _derived_charge(mol, picks)
+    rw = Chem.RWMol(mol)
+    conf = rw.GetConformer() if rw.GetNumConformers() else None
+    for oi in picks:
+        h = Chem.Atom(1)
+        h.SetNoImplicit(True)
+        hi = rw.AddAtom(h)
+        rw.AddBond(oi, hi, Chem.BondType.SINGLE)
+        if conf is not None:
+            pt = conf.GetAtomPosition(oi)
+            conf.SetAtomPosition(hi, Point3D(pt.x + 0.97, pt.y, pt.z))
+    capped = rw.GetMol()
+    if capped.GetNumConformers() == 0:
+        c = Chem.Conformer(capped.GetNumAtoms())
+        capped.AddConformer(c, assignId=True)
+    try:
+        _rdb.DetermineBondOrders(
+            capped, charge=q + len(picks), allowChargedFragments=True,
+            embedChiral=False)
+    except ValueError:
+        return None  # original mol not yet touched
+    for b in mol.GetBonds():
+        cb = capped.GetBondBetweenAtoms(b.GetBeginAtomIdx(),
+                                        b.GetEndAtomIdx())
+        b.SetBondType(cb.GetBondType())
+    for a in mol.GetAtoms():
+        a.SetFormalCharge(capped.GetAtomWithIdx(a.GetIdx()).GetFormalCharge())
+        a.SetNoImplicit(True)
+    for oi in picks:
+        at = mol.GetAtomWithIdx(oi)
+        at.SetFormalCharge(at.GetFormalCharge() - 1)
+    if sum(a.GetFormalCharge() for a in mol.GetAtoms()) != q:
+        _reset_to_single_bonds(mol)  # never hand back a half-rewritten mol
+        return None
+    return q
 
 
 # --- B-10 (red-team 4.4): united-atom / H-less correction ---------------------

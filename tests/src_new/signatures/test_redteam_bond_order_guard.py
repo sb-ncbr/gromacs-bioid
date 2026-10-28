@@ -4,9 +4,17 @@ DetermineBondOrders is an exponential valence search in RDKit C++ that CANNOT
 be interrupted by the perceive timeout (demonstrated in wave-1 with a
 36-residue backbone-only peptide: >20 min of uninterruptible CPU; the d13
 75-minute signature entry was the same class). The ladder is skipped for
-H-less fragments above 60 heavy atoms and for residue-tagged (polymer,
-sequence-described) coordinate fragments. Drug-like molecules below the size
+H-less fragments above 60 heavy atoms. Drug-like molecules below the size
 keep the full ladder — unchanged.
+
+W3 A5 (BH-049): the dead `_is_polymeric_coordinate_mol` guard (no builder
+ever set MonomerInfo; it never fired in production) was REMOVED per the
+task set, and the whole ladder now runs in a killable subprocess with one
+shared budget (Fix C) — that subprocess, not an in-process guard, is the
+protection for the spin shapes. These tests pin THAT contract: in-process
+`rdDetermineBonds` mocks can no longer observe the ladder (it runs in the
+child), so the observable contract is "the ladder ran in the subprocess
+vehicle".
 
 Wave-2 (item 7): the H-less test is fragment-based — evaluated AFTER the
 B-10/B-08 hydrogen injection materialises the inferred H as explicit atoms.
@@ -35,6 +43,20 @@ def _hless_mol(n_heavy: int) -> Chem.Mol:
     return Chem.MolFromSmiles("C" * n_heavy)
 
 
+def _popen_recorder():
+    """Record subprocess spawns while delegating to the real Popen —
+    W3 A5 Fix C runs the ladder in a child interpreter."""
+    import subprocess as _sp
+    real = _sp.Popen
+    calls = []
+
+    def rec(*a, **kw):
+        calls.append((a, kw))
+        return real(*a, **kw)
+
+    return calls, rec
+
+
 def _polymer_mol() -> Chem.Mol:
     # 2-residue glycine peptide from a PDB block: atoms carry residue info
     pdb = (
@@ -61,35 +83,35 @@ class TestBondOrderLadderSpinGuard:
             assert determine_bond_orders_safely(mol) is False
             assert spy.call_count == 0  # not even one exponential attempt
 
-    def test_residue_tagged_polymer_skips_ladder(self):
-        with mock.patch.object(
-            rdDetermineBonds, "DetermineBondOrders",
-            side_effect=ValueError("nope"),
-        ) as spy:
-            mol = _polymer_mol()
-            assert mol.GetAtomWithIdx(0).GetMonomerInfo() is not None
-            assert determine_bond_orders_safely(mol) is False
-            assert spy.call_count == 0
+    def test_residue_tagged_polymer_uses_subprocess_ladder(self):
+        # W3 A5: the MonomerInfo-based skip was provably dead (none of the
+        # mol builders set it); residue-tagged mols now go through the
+        # Fix-C subprocess ladder, whose hard kill is the spin protection.
+        mol = _polymer_mol()
+        assert mol.GetAtomWithIdx(0).GetMonomerInfo() is not None
+        calls, rec = _popen_recorder()
+        with mock.patch("subprocess.Popen", side_effect=rec):
+            result = determine_bond_orders_safely(mol)
+        assert calls, ("ladder must run in the subprocess kill-vehicle "
+                       "(W3 A5 Fix C), not a dead in-process guard")
+        assert isinstance(result, bool)
 
     def test_small_hless_fragment_keeps_full_ladder(self):
-        # below the size cap: ladder proceeds (all attempts fail -> False,
-        # but it TRYING is the contract for drug-like fragments)
-        with mock.patch.object(
-            rdDetermineBonds, "DetermineBondOrders",
-            side_effect=ValueError("nope"),
-        ) as spy:
-            mol = _hless_mol(10)
-            assert determine_bond_orders_safely(mol) is False
-            assert spy.call_count == 13
+        # below the size cap: the ladder RUNS (in the Fix-C subprocess —
+        # in-process RDKit mocks cannot observe it any more).
+        mol = _hless_mol(10)
+        calls, rec = _popen_recorder()
+        with mock.patch("subprocess.Popen", side_effect=rec):
+            determine_bond_orders_safely(mol)
+        assert calls, "subcap H-less fragments must still get the ladder"
 
     def test_explicit_hydrogens_above_cap_still_run_ladder(self):
-        with mock.patch.object(
-            rdDetermineBonds, "DetermineBondOrders",
-            side_effect=ValueError("nope"),
-        ) as spy:
-            mol = Chem.AddHs(_hless_mol(_BOND_ORDER_LADDER_MAX_HEAVY_ATOMS_HLESS + 10))
-            assert determine_bond_orders_safely(mol) is False
-            assert spy.call_count == 13
+        mol = Chem.AddHs(_hless_mol(_BOND_ORDER_LADDER_MAX_HEAVY_ATOMS_HLESS + 10))
+        calls, rec = _popen_recorder()
+        with mock.patch("subprocess.Popen", side_effect=rec):
+            determine_bond_orders_safely(mol)
+        assert calls, ("explicit-H above the cap still gets the ladder "
+                       "(H-less guard counts PRE-injection atoms only)")
 
     def test_accepted_solution_path_unchanged(self):
         with mock.patch.object(rdDetermineBonds, "DetermineBondOrders"):
@@ -172,12 +194,13 @@ class TestHydrogenInjectionAwareGuard:
         build = Chem.EditableMol(Chem.Mol())
         _atoms_into(fragment, atom_idx_to_index, build)
         mol = build.GetMol()
-        with mock.patch.object(
-            rdDetermineBonds, "DetermineBondOrders",
-            side_effect=ValueError("nope"),
-        ) as spy:
-            assert determine_bond_orders_safely(mol) is False
-            assert spy.call_count == 13  # pre-item-7 behavior, mol-side only
+        calls, rec = _popen_recorder()
+        with mock.patch("subprocess.Popen", side_effect=rec):
+            result = determine_bond_orders_safely(mol)
+        assert calls, ("no-fragment mol-side call still reaches the ladder "
+                       "(pre-item-7 behavior, mol-side only; W3 A5: in "
+                       "the subprocess kill-vehicle)")
+        assert isinstance(result, bool)
 
     def test_small_hless_fragment_unaffected(self):
         # heme/NAD/FAD size: 44 heavy atoms, counts-mode injection — the
@@ -189,13 +212,12 @@ class TestHydrogenInjectionAwareGuard:
         build = Chem.EditableMol(Chem.Mol())
         _atoms_into(fragment, atom_idx_to_index, build)
         mol = build.GetMol()
-        with mock.patch.object(
-            rdDetermineBonds, "DetermineBondOrders",
-            side_effect=ValueError("nope"),
-        ) as spy:
-            assert determine_bond_orders_safely(
-                mol, fragment=fragment) is False
-            assert spy.call_count == 13  # drug-like sizes keep the ladder
+        calls, rec = _popen_recorder()
+        with mock.patch("subprocess.Popen", side_effect=rec):
+            result = determine_bond_orders_safely(mol, fragment=fragment)
+        assert calls, ("heme/NAD-size subcap fragments must still get the "
+                       "ladder (via the Fix-C subprocess since W3 A5)")
+        assert isinstance(result, bool)
 
     def test_smiles_builder_path_skips_big_injected_fragment(self):
         # end-to-end through the smiles builder (the 1FC1 prompt path)
