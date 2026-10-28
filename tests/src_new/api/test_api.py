@@ -130,6 +130,47 @@ class TestRunNotFound:
         assert response.status_code == 404
 
 
+class TestRunNameSummary:
+    """BACKEND_GAPS G1: run_name in the run summary (additive passthrough
+    of pipeline.run_name, already persisted at creation)."""
+
+    def _write_run(self, tmp_path: Path, run_id: str, pipeline: dict) -> None:
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        (run_dir / "results.json").write_text(json.dumps({
+            "pipeline": pipeline, "data": {},
+        }))
+
+    def test_run_name_in_summary(self, client: TestClient, tmp_path: Path,
+                                 monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        self._write_run(tmp_path, "abc12", {
+            "name": "BAT3", "status": "finished", "input_kind": "pdb",
+            "run_name": "My first run", "started_at": "2026-10-21T08:10:51Z",
+            "finished_at": "2026-10-21T08:23:45Z",
+        })
+        response = client.get("/runs/abc12")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["run_name"] == "My first run"
+        # unnamed existing fields untouched (additive-only)
+        assert body["run_id"] == "abc12"
+        assert body["status"] == "finished"
+
+    def test_run_name_null_for_older_runs(self, client: TestClient,
+                                          tmp_path: Path,
+                                          monkeypatch: pytest.MonkeyPatch) -> None:
+        """Old results.json payloads have no pipeline.run_name — the
+        response must still be valid with run_name = null."""
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        self._write_run(tmp_path, "old9x", {
+            "name": "BAT3", "status": "finished", "input_kind": "pdb",
+        })
+        response = client.get("/runs/old9x")
+        assert response.status_code == 200
+        assert response.json()["run_name"] is None
+
+
 class TestRunStatusEndpoint:
     """Tests for the GET /runs/{run_id}/status endpoint."""
     

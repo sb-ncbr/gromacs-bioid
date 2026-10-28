@@ -307,6 +307,9 @@ class RunSummaryResponse(BaseModel):
     started_at: Optional[str] = Field(None, description="ISO 8601 timestamp when pipeline started")
     finished_at: Optional[str] = Field(None, description="ISO 8601 timestamp when pipeline finished")
     input_kind: Optional[str] = Field(None, description="Type of input data")
+    # v3.143 (BACKEND_GAPS G1): additive — passthrough of the custom run
+    # name persisted in results.json since v3.137; null for older runs.
+    run_name: Optional[str] = Field(None, description="Custom run name provided at submission")
     task_count: int = Field(..., description="Number of tasks in the pipeline")
     warning_count: int = Field(..., description="Number of warnings")
     error_count: int = Field(..., description="Number of errors")

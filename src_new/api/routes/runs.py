@@ -511,6 +511,7 @@ async def get_run_summary(run_id: str) -> RunSummaryResponse:
         started_at=pipeline_data.get("started_at"),
         finished_at=pipeline_data.get("finished_at"),
         input_kind=pipeline_data.get("input_kind"),
+        run_name=pipeline_data.get("run_name"),
         task_count=len(tasks_data),
         warning_count=len(warnings_data),
         error_count=len(errors_data),
