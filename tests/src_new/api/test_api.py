@@ -646,6 +646,126 @@ class TestSegmentMetaCopies:
         assert meta["L"]["chain"] is None
 
 
+class TestResultsCsv:
+    """BACKEND_GAPS G6: GET /runs/{id}/download/results.csv — one clean
+    row per leaderboard molecule; no internal segment ids or resolver
+    churn in the values the user sees (segment key kept as first column
+    for cross-referencing the UI rows)."""
+
+    def _write_run(self, tmp_path: Path, run_id: str) -> None:
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        results_data = {
+            "pipeline": {"name": "BAT3", "status": "finished"},
+            "data": {
+                "fragments": {
+                    "unique": {}, "type_counts": {}, "total_count": 3,
+                    "segments": [
+                        {"segment": "Protein_chain_A", "type": "protein",
+                         "copies": 1, "atoms_per_copy": 602},
+                        {"segment": "seg_0_SOD", "type": "ion",
+                         "copies": 12, "atoms_per_copy": 1},
+                        {"segment": "L", "type": "small_molecule",
+                         "copies": 1, "atoms_per_copy": 21},
+                    ],
+                },
+                "universe": {
+                    "segment_list": ["Protein_chain_A", "seg_0_SOD", "L"],
+                    "segments": {
+                        "Protein_chain_A": {"properties": {
+                            "atom_count_fragment": 602, "residue_count": 76}},
+                        "seg_0_SOD": {"properties": {
+                            "atom_count_fragment": 1, "residue_count": 12}},
+                        "L": {"properties": {
+                            "atom_count_fragment": 21, "residue_count": 1}},
+                    },
+                },
+                "signatures": {
+                    "Protein_chain_A": {"generated": {"sequence|md5|64": {}}},
+                    "seg_0_SOD": {"generated": {"atom|element|1": {}}},
+                    "L": {"generated": {"graph|bliss|3|default|noncon|minfreq|rmol|neutral|cansmi|3": {}}},
+                },
+                "verification": {
+                    "Protein_chain_A": {
+                        "status": "complete",
+                        "verified_hits": [
+                            {"identifier": "1UBQ", "ident_type": "PDB_ID",
+                             "database": "pdb", "final_confidence": 92.0,
+                             "is_verified": True},
+                            {"identifier": "3AUB", "ident_type": "PDB_ID",
+                             "database": "pdb", "final_confidence": 61.0,
+                             "is_verified": True},
+                            {"identifier": "P0CG48", "ident_type": "UNIPROT_ID",
+                             "database": "uniprot", "final_confidence": 88.0,
+                             "is_verified": True},
+                            {"identifier": "XYZ9", "ident_type": "PDB_ID",
+                             "database": "pdb", "final_confidence": 30.0,
+                             "is_verified": True},
+                        ],
+                    },
+                    "seg_0_SOD": {
+                        "status": "complete",
+                        "verified_hits": [
+                            {"identifier": "NA", "ident_type": "PUBCHEM_ATOM",
+                             "database": "element", "final_confidence": None,
+                             "is_verified": True},
+                        ],
+                    },
+                    "L": {"status": "no_candidates", "verified_hits": []},
+                },
+            },
+        }
+        (run_dir / "results.json").write_text(json.dumps(results_data))
+
+    def test_csv_columns_and_rows(self, client: TestClient, tmp_path: Path,
+                                  monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        self._write_run(tmp_path, "csvr")
+        response = client.get("/runs/csvr/download/results.csv")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/csv")
+        assert "attachment" in response.headers["content-disposition"]
+        lines = response.text.replace("\r\n", "\n").strip().split("\n")
+        assert lines[0] == (
+            "Segment,Display Name,Kind,Copies,Atoms,Identified Name,"
+            "Best Database,Best Identifier,Confidence,Confidence Label,"
+            "Alternatives"
+        )
+        assert len(lines) == 4
+
+        protein = lines[1].split(",")
+        assert protein[0] == "Protein_chain_A"
+        assert protein[1] == "Chain A"
+        assert protein[2] == "protein"
+        assert protein[3] == "1"
+        assert protein[5] == ""              # identified name — lands with G5
+        assert protein[6] == "pdb" and protein[7] == "1UBQ"
+        assert protein[8] == "92.0" and protein[9] == "high"
+        # top-3 alternatives excluding the best, db:id label form
+        assert protein[10] == "pdb:3AUB uniprot:P0CG48 pdb:XYZ9"
+
+        ion = lines[2].split(",")
+        assert ion[0] == "seg_0_SOD" and ion[1] == "SOD"
+        assert ion[3] == "12"
+        assert ion[6] == "element" and ion[7] == "NA"
+        assert ion[8] == "" and ion[9] == ""   # legacy null confidence
+
+        unknown = lines[3].split(",")
+        assert unknown[0] == "L" and unknown[1] == "L"
+        assert unknown[6] == "" and unknown[7] == "" and unknown[8] == ""
+
+        # no internal names in values
+        body = "\n".join(lines)
+        assert "__v" not in body
+
+    def test_csv_404_for_missing_run(self, client: TestClient,
+                                     tmp_path: Path,
+                                     monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        response = client.get("/runs/nope0/download/results.csv")
+        assert response.status_code == 404
+
+
 class TestRenderEndpoint:
     """Tests for the GET /runs/{run_id}/render endpoint."""
     

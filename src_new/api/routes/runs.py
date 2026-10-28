@@ -17,6 +17,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, Query
 from fastapi.responses import PlainTextResponse
+import csv
+import io
 
 from ..models import (
     RerunAllResponse,
@@ -925,6 +927,79 @@ async def get_molecules(run_id: str) -> MoleculeSummaryResponse:
         total_fragment_count=total_fragment_count,
         segments=segments,
         segment_meta=segment_meta,
+    )
+
+
+@router.get("/{run_id}/download/results.csv")
+async def download_results_csv(run_id: str) -> PlainTextResponse:
+    """v3.143 (BACKEND_GAPS G6): run-level CSV export — one clean row per
+    leaderboard molecule (every fragments/segments entry). Confidence
+    label thresholds match the UI exactly (>=80 high, >=50 medium);
+    Alternatives = top-3 verified hits after the best, as db:id. Empty
+    cells (never resolver names or internal chains) for unverified
+    molecules; `identified_name` fills in once G5 lands server-side.
+    """
+    data = load_results_json(run_id)
+    payload_data = data.get("data", {}) or {}
+    fragments_data = payload_data.get("fragments", {}) or {}
+    fragments_segments = fragments_data.get("segments") or []
+    verification_data = payload_data.get("verification", {}) or {}
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "Segment", "Display Name", "Kind", "Copies", "Atoms",
+        "Identified Name", "Best Database", "Best Identifier",
+        "Confidence", "Confidence Label", "Alternatives",
+    ])
+
+    for entry in fragments_segments:
+        if not isinstance(entry, dict):
+            continue
+        seg = entry.get("segment")
+        if not seg:
+            continue
+        copies = entry.get("copies")
+        try:
+            copies = int(copies) if copies is not None else 1
+        except (TypeError, ValueError):
+            copies = 1
+        atoms = entry.get("atoms_per_copy", 0) or 0
+
+        seg_ver = verification_data.get(seg) or {}
+        hits = seg_ver.get("verified_hits") or []
+        verified = [h for h in hits if isinstance(h, dict) and h.get("is_verified")]
+        best = verified[0] if verified else {}
+        confidence = best.get("final_confidence")
+        if confidence is None:
+            conf_text, conf_label = "", ""
+        else:
+            conf_text = str(round(float(confidence), 1))
+            conf_label = ("high" if confidence >= 80
+                          else "medium" if confidence >= 50 else "low")
+        alternatives = " ".join(
+            f"{h.get('database', '')}:{h.get('identifier', '')}"
+            for h in verified[1:4]
+        )
+
+        writer.writerow([
+            seg,
+            segment_display_name(seg),
+            entry.get("type") or "unknown",
+            copies,
+            atoms,
+            best.get("name") or "",
+            best.get("database") or "",
+            best.get("identifier") or "",
+            conf_text,
+            conf_label,
+            alternatives,
+        ])
+
+    return PlainTextResponse(
+        buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{run_id}_results.csv"'},
     )
 
 
