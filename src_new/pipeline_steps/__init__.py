@@ -511,7 +511,8 @@ def _generate_signatures(context):
             gen_name = error.get("generator", "unknown")
             error_msg = error.get("error", "unknown error")
             context.add_warning("signature_generator_failed", f"{gen_name}: {error_msg}",
-                                details={"segment": segment_name, "generator": gen_name})
+                                details={"segment": segment_name, "generator": gen_name,
+                                         "service": gen_name})
         
         for gen_name, sig in result["generated"].items():
             context.results.set_data(f"signatures/{segment_name}/generated/{gen_name}", sig)
@@ -690,7 +691,9 @@ def _identify_molecules(context):
             resolver_name = error.get("resolver", "unknown")
             gen_name = error.get("generator", "unknown")
             error_msg = error.get("error", "unknown error")
-            context.add_warning("identifier_resolver_failed", f"{resolver_name} ({gen_name}): {error_msg}")
+            context.add_warning("identifier_resolver_failed", f"{resolver_name} ({gen_name}): {error_msg}",
+                                details={"segment": fragment_name, "service": resolver_name,
+                                         "generator": gen_name})
 
         # F-N1e: persist (bounded) resolution errors for postmortem visibility
         _ident_errs = bounded_stage_errors(result.get("errors", []))
@@ -787,7 +790,8 @@ def _verify_results(context):
         # Record warnings from errors
         for error in result.get("errors", []):
             error_msg = error.get("error", "unknown error")
-            context.add_warning("verification_failed", f"{segment}: {error_msg}")
+            context.add_warning("verification_failed", f"{segment}: {error_msg}",
+                                details={"segment": segment})
         
         context.results.set_data(f"verification/{segment}/verified_hits", verified_hits)
         # v3.142 (Phase 4): per-segment class sizes. The parallel worker path

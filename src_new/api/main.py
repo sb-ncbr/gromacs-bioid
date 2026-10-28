@@ -80,6 +80,7 @@ API_ADDITIONS = [
     "segment_meta_copies",       # G3 — copies/display_name/chain per segment
     "segment_progress",          # G2 — /status progress block
     "results_csv",               # G6 — run-level CSV download
+    "warning_details_segment_service",  # G4 — segment/service in warning details
     "capabilities",              # this endpoint
 ]
 
