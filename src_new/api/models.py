@@ -322,6 +322,21 @@ class RunListResponse(BaseModel):
     runs: List[RunListItem] = Field(default_factory=list, description="List of runs")
 
 
+class CapabilitiesResponse(BaseModel):
+    """API capability advertisement (v3.143, BACKEND_GAPS contract §2).
+
+    Lets the redesigned UI feature-detect landed backend additions
+    instead of payload-shape sniffing. `api_version_marker` increments
+    once per additive wave; `additions` lists every landed feature key.
+    """
+
+    api_version_marker: int = Field(..., description="Additive-wave marker (>=1, bumps per wave)")
+    additions: List[str] = Field(default_factory=list, description="Landed additive feature keys")
+    typical_duration_minutes: Optional[Dict[str, int]] = Field(
+        None, description="Deployment-level typical wall-clock range; null when unset")
+    code_version: str = Field(..., description="Deployment code marker (BAT3_CODE_VERSION / git)")
+
+
 class RunSummaryResponse(BaseModel):
     """Response model for run summary."""
 

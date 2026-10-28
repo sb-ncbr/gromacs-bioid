@@ -5,7 +5,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker, Session
 
 from . import tasks
 from .routes.runs import router as runs_router, get_runs_dir
+from .models import CapabilitiesResponse
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,48 @@ app.include_router(runs_router, prefix="/api/v1/runs", tags=["runs"])
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+# --- Capabilities advertisement (v3.143, BACKEND_GAPS contract) -----------
+# Marker bumps once per additive wave; wave B1 (G1/G2/G3/G6/G8) = 1.
+# Keep API_ADDITIONS in sync with test_api_contract.py's registered table.
+API_ADDITIONS = [
+    "api_v1",
+    "run_name_summary",          # G1 — run_name on the run summary
+    "segment_meta_copies",       # G3 — copies/display_name/chain per segment
+    "segment_progress",          # G2 — /status progress block
+    "results_csv",               # G6 — run-level CSV download
+    "capabilities",              # this endpoint
+]
+
+
+def _api_capabilities() -> CapabilitiesResponse:
+    """Capabilities payload; typical-duration range comes from
+    deployment env (BAT3_TYPICAL_DURATION_MIN/_MAX — BACKEND_GAPS G8),
+    null when either is unset or malformed (UI shows its own estimate)."""
+    from ..results.results_manager import _code_version
+
+    duration: Optional[Dict[str, int]] = None
+    try:
+        dmin = os.environ.get("BAT3_TYPICAL_DURATION_MIN")
+        dmax = os.environ.get("BAT3_TYPICAL_DURATION_MAX")
+        if dmin is not None and dmax is not None:
+            duration = {"min": int(dmin), "max": int(dmax)}
+    except (TypeError, ValueError):
+        duration = None
+
+    return CapabilitiesResponse(
+        api_version_marker=1,
+        additions=list(API_ADDITIONS),
+        typical_duration_minutes=duration,
+        code_version=_code_version(),
+    )
+
+
+@app.get("/capabilities", response_model=CapabilitiesResponse)
+@app.get("/api/v1/capabilities", response_model=CapabilitiesResponse)
+async def get_capabilities():
+    return _api_capabilities()
 
 
 # --- Validation-runs file serving (F-N1a) ---------------------------------

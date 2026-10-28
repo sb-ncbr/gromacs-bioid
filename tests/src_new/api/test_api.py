@@ -130,6 +130,45 @@ class TestRunNotFound:
         assert response.status_code == 404
 
 
+class TestCapabilities:
+    """BACKEND_GAPS contract §2 + G8: /api/v1/capabilities advertises
+    landed additive features (the UI feature-detects) and the
+    deployment-level typical-duration range."""
+
+    def test_capabilities_defaults(self, client: TestClient,
+                                   monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("BAT3_TYPICAL_DURATION_MIN", raising=False)
+        monkeypatch.delenv("BAT3_TYPICAL_DURATION_MAX", raising=False)
+        response = client.get("/api/v1/capabilities")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["api_version_marker"] >= 1
+        additions = set(body["additions"])
+        # every B1-wave feature must be advertised
+        assert {"run_name_summary", "segment_meta_copies",
+                "segment_progress", "results_csv",
+                "capabilities"} <= additions
+        assert body["typical_duration_minutes"] is None
+        assert isinstance(body["code_version"], str) and body["code_version"]
+
+    def test_capabilities_duration_env(self, client: TestClient,
+                                       monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("BAT3_TYPICAL_DURATION_MIN", "30")
+        monkeypatch.setenv("BAT3_TYPICAL_DURATION_MAX", "120")
+        response = client.get("/api/v1/capabilities")
+        assert response.status_code == 200
+        assert response.json()["typical_duration_minutes"] == {
+            "min": 30, "max": 120}
+
+    def test_capabilities_duration_malformed_env(self, client: TestClient,
+                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("BAT3_TYPICAL_DURATION_MIN", "soon")
+        monkeypatch.setenv("BAT3_TYPICAL_DURATION_MAX", "120")
+        response = client.get("/api/v1/capabilities")
+        assert response.status_code == 200
+        assert response.json()["typical_duration_minutes"] is None
+
+
 class TestRunNameSummary:
     """BACKEND_GAPS G1: run_name in the run summary (additive passthrough
     of pipeline.run_name, already persisted at creation)."""
