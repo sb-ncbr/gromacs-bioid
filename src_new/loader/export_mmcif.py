@@ -106,6 +106,77 @@ def _build_biopython_structure(universe: MDAnalysis.Universe, filter_segment: st
     return structure
 
 
+def _indices_to_ranges(indices: list[int]) -> list[list[int]]:
+    """Collapse sorted atom indices into [start, end_exclusive) ranges."""
+    ranges: list[list[int]] = []
+    start = prev = indices[0]
+    for idx in indices[1:]:
+        if idx == prev + 1:
+            prev = idx
+            continue
+        ranges.append([start, prev + 1])
+        start = prev = idx
+    ranges.append([start, prev + 1])
+    return ranges
+
+
+def _segment_selectors(facade: LoadedUniverse) -> dict[str, dict]:
+    """Per-segment selectors into the exported system mmCIF (BACKEND_GAPS G9).
+
+    ``_build_biopython_structure`` groups atoms into chains by segid
+    (first-seen order), and Biopython's MMCIFIO renumbers
+    ``_atom_site.id`` as the 1-based row position in write order
+    (``preserve_atom_numbering`` is not used). The selector contract is
+    therefore defined in FILE-ROW terms:
+
+    - ``chains``: the ``auth_asym_id`` value(s) the segment's atoms land
+      in. Virtual minority segments (``X__vN``) carry the PARENT segid,
+      so chain-based highlighting alone cannot isolate them (the UI's
+      documented fallback); the atom ranges below can.
+    - ``atom_index_ranges``: sorted, merged ``[start, end_exclusive)``
+      ranges of the segment's atom rows in the written atom_site loop,
+      0-based (``_atom_site.id`` = row + 1). Exact even when a virtual
+      segment's atoms interleave with its siblings' in the universe.
+    """
+    # Replicate the writer's row assignment: chains appear in first-seen
+    # segid order; atoms within a chain in universe iteration order.
+    universe = facade.universe
+    row_of_atom: dict[int, int] = {}
+    chain_order: list[str] = []
+    per_chain_atoms: dict[str, list[int]] = {}
+    for atom in universe.atoms:
+        seg = str(atom.segid)
+        if seg not in per_chain_atoms:
+            chain_order.append(seg)
+            per_chain_atoms[seg] = []
+        per_chain_atoms[seg].append(int(atom.index))
+    row = 0
+    for seg in chain_order:
+        for aidx in per_chain_atoms[seg]:
+            row_of_atom[aidx] = row
+            row += 1
+
+    selectors: dict[str, dict] = {}
+    universe_segids = {str(s) for s in universe.atoms.segids}
+    for segment in sorted(facade.get_segments()):
+        if segment in universe_segids:
+            atoms = universe.atoms[universe.atoms.segids == segment]
+        else:
+            # Virtual minority segment: the facade's merged AtomGroup
+            # covers ALL instances of the species (full entity).
+            atoms = facade.get_fragment(segment).atoms
+        rows = sorted(row_of_atom[int(i)] for i in atoms.indices)
+        if not rows:
+            continue
+        chains = sorted({str(s) for s in atoms.segids})
+        selectors[segment] = {
+            "chains": chains,
+            "atom_index_ranges": _indices_to_ranges(rows),
+            "atom_count": len(rows),
+        }
+    return selectors
+
+
 def export_system_mmcif(facade: LoadedUniverse, output_path: Path, results: ResultsManager | None = None) -> Path:
     """Export the whole system to mmCIF."""
     if not BIOPYTHON_AVAILABLE:
@@ -129,6 +200,14 @@ def export_system_mmcif(facade: LoadedUniverse, output_path: Path, results: Resu
     if results is not None:
         results.add_artifact("SYSTEM", output_path, description="Whole-system mmCIF export", kind="mmcif")
         results.set_data("exports/system_mmcif", str(output_path))
+        # v3.143 (BACKEND_GAPS G9, additive): per-segment selectors into the
+        # system mmCIF (auth chain + exact atom-index ranges; 0-based
+        # universe atom id = _atom_site.id). Best-effort: selector failure
+        # must not fail the export.
+        try:
+            results.set_data("render/segment_selectors", _segment_selectors(facade))
+        except Exception as exc:
+            logger.warning(f"Segment-selector computation failed: {exc}")
     
     logger.info(f"Exported whole-system mmCIF to {output_path}")
     return output_path
