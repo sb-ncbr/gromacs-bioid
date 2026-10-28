@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -35,6 +36,23 @@ _ION_RESNAME_ELEMENTS = {
     'NI': 'Ni', 'NI2': 'Ni', 'CO': 'Co', 'CD': 'Cd', 'HG': 'Hg',
     'PB': 'Pb', 'AG': 'Ag', 'AU': 'Au',
 }
+
+# W3 A3 (BH-038/BH-045): element symbols that may come from a multi-atom
+# residue's atom NAME only when the name IS the symbol (plus optional
+# digits/prime), e.g. CL, CL1, BR2, FE, FE1. Deliberately EXCLUDED
+# (ambiguous with organic names): CA, CD, CE, NA, NB, NE, HG, HO, OS, PO,
+# SC, CO (B12 cobalt is collateral; topology mass rescues it).
+EXACT_NAME_ELEMENTS = {"CL": "Cl", "BR": "Br", "FE": "Fe", "ZN": "Zn",
+                       "MG": "Mg", "MN": "Mn", "CU": "Cu", "NI": "Ni",
+                       "SE": "Se"}
+_EXACT_NAME_RE = re.compile(r"^(CL|BR|FE|ZN|MG|MN|CU|NI|SE)\d*['*]?$")
+# Organic first letters: after any leading digits, this first letter IS
+# the element on element-less atomistic inputs.
+_ORGANIC_FIRST = set("CNOSPHFI")
+# Martini/coarse-grained bead names for CG detection.
+_MARTINI_NAMES = {"BB", "SC1", "SC2", "SC3", "SC4", "SC5", "PO4", "NC3",
+                  "NH3", "CNO", "GL1", "GL2", "ROH", "W", "WF", "PW",
+                  "BAS", "TP1", "C1", "R1"}
 
 # Mass-match tolerance: force-field masses are isotope/rounding variants of
 # the table (Cl 35.45 vs 35.453); anything further away is not a mass match.
@@ -333,6 +351,20 @@ class TopologyRepair:
         masses = list(self.u.atoms.masses) if hasattr(self.u.atoms, 'masses') else [None] * n_atoms
         resnames_arr = list(self.u.atoms.resnames) if hasattr(self.u.atoms, 'resnames') else [None] * n_atoms
 
+        # W3 A3 (BH-038/BH-045): mass provenance + once-per-universe
+        # coarse-grained detection. MDAnalysis name-derives guessed masses
+        # on element-less PDB/GRO (`topology.masses.is_guessed`); those are
+        # not evidence. CG systems keep elements blank entirely.
+        masses_attr = getattr(self.u._topology, 'masses', None)
+        masses_trusted = bool(
+            masses_attr is not None and not getattr(masses_attr, 'is_guessed', False))
+        coarse_grained, _cg_why = self._looks_coarse_grained(masses_trusted)
+        if coarse_grained:
+            self.report.warnings.append(
+                f"Coarse-grained topology detected ({_cg_why}) - "
+                "elements left blank (no atomistic chemistry to guess)")
+            logger.warning("coarse-grained topology detected (%s); elements left blank", _cg_why)
+
         # wave-2 item 5: residue context for element guessing — single-atom
         # (ion) vs polymer residues decide the name-prefix strategy. Group by
         # resindex (true residue identity, v3.143 A-02).
@@ -357,6 +389,8 @@ class TopologyRepair:
                     atom_type=types[i] if types else None,
                     resname=str(resname) if resname is not None else None,
                     residue_atom_count=residue_sizes.get(ri, 0) if ri is not None else 0,
+                    mass_trusted=masses_trusted,
+                    coarse_grained=coarse_grained,
                 )
                 if element:
                     elements[i] = element
@@ -380,10 +414,46 @@ class TopologyRepair:
             return False
         return elem.strip().capitalize() in ATOMTABLE_ELEMENTS_MASSES
 
+    def _looks_coarse_grained(self, masses_trusted: bool) -> tuple[bool, str]:
+        """W3 A3 (BH-038): once-per-universe coarse-grained detection.
+
+        True when ANY holds:
+         - trusted topology masses match an element for < 50% of atoms
+           (Martini bead masses 45/54/56/72 are not element masses);
+         - polymer residues average < 5 atoms and > 50% carry a BB bead;
+         - > 50% of atom names are Martini bead names.
+        """
+        n = self.u.atoms.n_atoms
+        if masses_trusted:
+            real = [m for m in self.u.atoms.masses if m > 0.5]
+            if real:
+                matched = sum(1 for m in real if _element_from_mass(float(m)))
+                if matched / len(real) < 0.5:
+                    return True, (f"topology masses: {matched}/{len(real)} "
+                                  f"match an element")
+        # name/shape heuristic (element-less PDB/GRO CG)
+        if (hasattr(self.u, 'residues') and len(self.u.residues)
+                and hasattr(self.u.atoms, 'resnames')):
+            prot = [r for r in self.u.residues if _is_polymer_resname(r.resname)]
+            if prot:
+                mean = sum(r.atoms.n_atoms for r in prot) / len(prot)
+                has_bb = sum(1 for r in prot if "BB" in set(r.atoms.names))
+                if mean < 5 and has_bb > 0.5 * len(prot):
+                    return True, (f"polymer residues avg {mean:.1f} atoms, "
+                                  f"BB in {has_bb}/{len(prot)}")
+        names = list(getattr(self.u.atoms, 'names', []))
+        if names:
+            frac = sum(1 for nm in names if str(nm).upper() in _MARTINI_NAMES) / max(n, 1)
+            if frac > 0.5:
+                return True, f"martini bead names {frac:.0%}"
+        return False, ""
+
     def _guess_single_element(self, existing: str, name: str | None, mass: float | None,
                               atom_type: str | None,
                               resname: str | None = None,
-                              residue_atom_count: int = 0) -> str:
+                              residue_atom_count: int = 0,
+                              mass_trusted: bool = True,
+                              coarse_grained: bool = False) -> str:
         """Guess element for a single atom from multiple sources.
 
         Wave-2 item 5 (GitHub #2): the old order (1-letter name prefix first,
@@ -420,38 +490,60 @@ class TopologyRepair:
             if name_upper.startswith(('MW', 'EPW', 'EP', 'LP', 'DP', 'VS', 'DUM')):
                 return ''
 
-        # 2. Mass first: when the topology carries a real mass, it is the
-        # most reliable signal (force-field masses are element masses).
-        if mass is not None and mass > 0.5:
+        # W3 A3: coarse-grained systems keep elements blank upstream.
+        if coarse_grained:
+            return ''
+
+        # 2. Mass first — but ONLY when the mass came from the topology
+        # (mass_trusted). MDAnalysis name-derives guessed masses on
+        # element-less PDB/GRO: trusting them inverted every ambiguity
+        # (IRE CAL -> Ca, HEM NA -> Na, Martini -> Sc/Po).
+        if mass_trusted and mass is not None and mass > 0.5:
             elem = _element_from_mass(float(mass))
             if elem:
                 return elem
 
-        # 3. Single-atom ion residues (CHARMM/AMBER/GROMACS ion names)
-        if residue_atom_count == 1 and name:
-            ion = _ION_RESNAME_ELEMENTS.get(name.upper().strip())
+        single_atom = residue_atom_count == 1
+        non_polymer = not _is_polymer_resname(resname)
+
+        # 3. Single-atom NON-polymer residues: ion table by RESNAME first,
+        # then atom name (the old code keyed on the name only), then the
+        # existing residue-aware logic WITHOUT the mass hop again.
+        if single_atom and non_polymer and name:
+            ion = _ION_RESNAME_ELEMENTS.get((resname or "").upper().strip())
+            if not ion:
+                ion = _ION_RESNAME_ELEMENTS.get(name.upper().strip())
             if ion:
                 return ion
 
-        # 4. Name prefixes, residue-context aware
+        # 4. Name prefixes, residue-context aware (W3 A3 restructure):
+        #    4a. exact-name allowlist ^(CL|BR|FE|ZN|MG|MN|CU|NI|SE)digit*'?$;
+        #    4b. organic first letter (C N O S P H F I) after leading digits;
+        #    4c. the legacy residue-capitalisation ladder — but NEVER a
+        #        two-letter element from: CA CD CE NA NB NE HG OS SC PO CO.
         if name:
             name_upper = name.upper().strip()
-            single_atom = residue_atom_count == 1
-            non_polymer = not _is_polymer_resname(resname)
+            stripped = name_upper.lstrip("0123456789")
+            m = _EXACT_NAME_RE.match(stripped)
+            if m:
+                return EXACT_NAME_ELEMENTS[m.group(1)]
+            if stripped and stripped[0] in _ORGANIC_FIRST:
+                return stripped[0]
+
             two_letter_first = single_atom or non_polymer
 
-            if two_letter_first and len(name) >= 2:
-                two_char = name[:2].capitalize()
+            if two_letter_first and len(stripped) >= 2:
+                two_char = stripped[:2].capitalize()
                 if two_char in ATOMTABLE_ELEMENTS_MASSES:
                     return two_char
 
-            first_char = name[0].upper()
-            if first_char in ATOMTABLE_ELEMENTS_MASSES:
+            first_char = stripped[:1].upper() if stripped else ""
+            if first_char and first_char in ATOMTABLE_ELEMENTS_MASSES:
                 return first_char
 
-            if not two_letter_first and len(name) >= 2:
+            if not two_letter_first and len(stripped) >= 2:
                 # polymer path: 2-letter only after 1-letter failed
-                two_char = name[:2].capitalize()
+                two_char = stripped[:2].capitalize()
                 if two_char in ATOMTABLE_ELEMENTS_MASSES:
                     return two_char
 
@@ -480,8 +572,9 @@ class TopologyRepair:
             if "K" in t: return "K"
             if "ZN" in t: return "Zn"
 
-        # 6. From mass
-        if mass is not None:
+        # 6. From mass (only when topology-trusted; name-derived masses on
+        # element-less PDB/GRO are not evidence - W3 A3).
+        if mass_trusted and mass is not None:
             for elem, elem_mass in ATOMTABLE_ELEMENTS_MASSES.items():
                 if abs(elem_mass - mass) <= ATOMTABLE_ELEMENT_MASS_CONFIDENCE_THRESHOLD:
                     return elem

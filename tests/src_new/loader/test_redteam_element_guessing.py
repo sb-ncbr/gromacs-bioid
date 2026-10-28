@@ -88,12 +88,14 @@ class TestGuessSingleElementOrder:
         assert g("", "CL1", None, None, resname="LIG", residue_atom_count=30) == "Cl"
         assert g("", "BR1", None, None, resname="LIG", residue_atom_count=30) == "Br"
 
-    def test_ligand_ca_maps_to_calcium(self):
-        # wave-2 item 5 contract: non-polymer residues try the 2-letter
-        # (capitalised) prefix first — CA in a ligand is ambiguous, the rule
-        # resolves it to calcium; mass-carrying topologies never reach here.
+    def test_ligand_ca_maps_to_carbon(self):
+        # W3 A3 (BH-038): contract corrected 2026-10-28. The wave-2 rule
+        # turned a LIGAND's `CA` atom into calcium — wrong on element-less
+        # PDB/GRO: on ligands, CA/CD/CE/NA/NB/... are organic names, never
+        # two-letter elements (the proposed-fix "never from a name" list).
+        # Trusted topology masses still resolve real calcium (mass-first).
         r = _repair(_universe([(0, "CA")], resname="LIG"))
-        assert r._guess_single_element("", "CA", None, None, resname="LIG", residue_atom_count=20) == "Ca"
+        assert r._guess_single_element("", "CA", None, None, resname="LIG", residue_atom_count=20) == "C"
 
     def test_water_and_virtual_site_guards_unchanged(self):
         r = _repair(_universe([(0, "OW"), (1, "HW1"), (2, "MW")]))
