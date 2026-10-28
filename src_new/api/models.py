@@ -64,6 +64,26 @@ class EventItem(BaseModel):
     task_id: Optional[str] = Field(None, description="Associated task ID")
 
 
+class RunStageProgress(BaseModel):
+    """Per-molecule identification progress (v3.143, BACKEND_GAPS G2).
+
+    Computed read-side from persisted state: a segment is "searched"
+    once its identifiers block exists, "searching" while the
+    identify_molecules stage is running for a segment that already has
+    signatures, and "waiting" otherwise. Only segments the pipeline
+    decided to identify (fragments/segments ∪ signature-bearing universe
+    segments) participate — checking-only and signature-less molecules
+    are excluded and keep the UI's own not_searched rendering.
+    """
+
+    molecules_done: int = Field(..., description="Segments with identifiers recorded")
+    molecules_total: int = Field(..., description="Segments the pipeline identified")
+    per_segment: Dict[str, str] = Field(
+        default_factory=dict,
+        description="waiting|searching|searched per segment name",
+    )
+
+
 class RunStatusResponse(BaseModel):
     """Full run status response."""
 
@@ -74,6 +94,10 @@ class RunStatusResponse(BaseModel):
     critical_errors: List[ErrorItem] = Field(default_factory=list, description="List of critical errors")
     events: List[EventItem] = Field(default_factory=list, description="List of events")
     updated_at: Optional[str] = Field(None, description="ISO 8601 timestamp when results were last updated")
+    # v3.143 (BACKEND_GAPS G2): additive — null while identification has
+    # no segments planned yet (pre-analysis / no identifiable molecules).
+    progress: Optional[RunStageProgress] = Field(
+        None, description="Per-segment identification progress")
 
 
 class LoadingAttemptInfo(BaseModel):

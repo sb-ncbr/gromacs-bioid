@@ -48,6 +48,7 @@ from ..models import (
     RunListItem,
     RunListResponse,
     RunQueueResponse,
+    RunStageProgress,
     RunSummaryResponse,
 )
 from ..names import chain_of, segment_display_name, strip_seg
@@ -667,6 +668,55 @@ async def get_run_status(run_id: str, since: Optional[str] = None) -> RunStatusR
         critical_errors=errors,
         events=events,
         updated_at=updated_at,
+        progress=_segment_progress(data, tasks_data),
+    )
+
+
+def _segment_progress(data: Dict[str, Any],
+                      tasks_data: Dict[str, Any]) -> Optional[RunStageProgress]:
+    """v3.143 (BACKEND_GAPS G2): read-side identification progress.
+
+    Mirrors the identify stage's own enumeration (pipeline_steps
+    _identify_molecules iterates signatures keys with non-empty
+    `generated`): a segment participates iff it has generated
+    signatures — fragments-mode runs (one entry per instance) and
+    universe-mode runs (chain segments + virtual water rows) alike;
+    checking-only molecules without signatures are excluded. A segment
+    is "searched" once its identifiers block is persisted,
+    "searching" while identify_molecules is running, otherwise
+    "waiting". Null when nothing is identifiable yet (pre-analysis /
+    no identifiable molecules). For terminal runs the block reflects
+    the last recorded state; live views should only consume it while
+    the run is in progress.
+    """
+    payload_data = data.get("data", {}) or {}
+    signatures = payload_data.get("signatures") or {}
+    identifiers = payload_data.get("identifiers") or {}
+    identify_running = (
+        (tasks_data.get("identify_molecules") or {}).get("status") == "running"
+    )
+
+    identified = sorted(
+        seg for seg, seg_data in signatures.items()
+        if isinstance(seg_data, dict) and seg_data.get("generated")
+    )
+    if not identified:
+        return None
+
+    per_segment: Dict[str, str] = {}
+    done = 0
+    for seg in identified:
+        if seg in identifiers:
+            per_segment[seg] = "searched"
+            done += 1
+        elif identify_running:
+            per_segment[seg] = "searching"
+        else:
+            per_segment[seg] = "waiting"
+    return RunStageProgress(
+        molecules_done=done,
+        molecules_total=len(identified),
+        per_segment=per_segment,
     )
 
 

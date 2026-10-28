@@ -54,6 +54,7 @@ BASELINE: dict[str, set[str]] = {
 # gap item -> {model: fields added by that item}
 REGISTERED_ADDITIONS: dict[str, dict[str, set[str]]] = {
     "g1_run_name": {"RunSummaryResponse": {"run_name"}},
+    "g2_segment_progress": {"RunStatusResponse": {"progress"}},
 }
 
 _MODELS = {

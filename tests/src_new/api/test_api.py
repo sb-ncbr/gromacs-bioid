@@ -275,6 +275,96 @@ class TestRunStatusEndpoint:
         assert len(validated.critical_errors) == 1
 
 
+class TestSegmentProgress:
+    """BACKEND_GAPS G2: additive `progress` block on /status, computed
+    read-side from persisted state (segments the pipeline identified =
+    signature-bearing universe segments ∪ single-copy fragments segments;
+    searched iff identifiers/<seg> exists)."""
+
+    def _write_run(self, tmp_path: Path, run_id: str, *, pipeline_status: str,
+                   identify_status: str | None, with_fragments: bool,
+                   identified_segs: list[str]) -> None:
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        tasks: dict = {}
+        if identify_status is not None:
+            tasks["generate_signatures"] = {"status": "success"}
+            tasks["identify_molecules"] = {"status": identify_status}
+        data_section: dict = {}
+        if with_fragments:
+            data_section = {
+                "fragments": {
+                    "unique": {}, "type_counts": {}, "total_count": 3,
+                    "segments": [
+                        {"segment": "A", "type": "protein", "copies": 1},
+                        {"segment": "B", "type": "protein", "copies": 1},
+                        # virtual/copies>1 — must NOT participate in progress
+                        {"segment": "A__v1", "type": "water", "copies": 58},
+                        # checking-only (no signatures) — must NOT participate
+                        {"segment": "HOH", "type": "water", "copies": 1},
+                    ],
+                },
+                "universe": {
+                    "segment_list": ["A", "B", "A__v1", "HOH"],
+                    "segments": {
+                        "A": {"properties": {"is_protein": True}},
+                        "B": {"properties": {"is_protein": True}},
+                        "A__v1": {"properties": {}},
+                        "HOH": {"properties": {}},
+                    },
+                },
+                "signatures": {"A": {"generated": {"sequence|md5|64": {}}, "errors": []},
+                               "B": {"generated": {"sequence|md5|64": {}}, "errors": []}},
+                "identifiers": {seg: {"sequence|md5|64": {}} for seg in identified_segs},
+            }
+        (run_dir / "results.json").write_text(json.dumps({
+            "pipeline": {"name": "BAT3", "status": pipeline_status,
+                         "started_at": "2026-10-21T08:10:51Z"},
+            "tasks": tasks,
+            "data": data_section,
+        }))
+
+    def test_running_mid_identification(self, client: TestClient,
+                                        tmp_path: Path,
+                                        monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        self._write_run(tmp_path, "runA", pipeline_status="running",
+                        identify_status="running", with_fragments=True,
+                        identified_segs=["A"])
+        response = client.get("/runs/runA/status")
+        assert response.status_code == 200
+        progress = response.json()["progress"]
+        assert progress["molecules_done"] == 1
+        assert progress["molecules_total"] == 2
+        assert progress["per_segment"] == {"A": "searched", "B": "searching"}
+
+    def test_pre_analysis_progress_absent(self, client: TestClient,
+                                          tmp_path: Path,
+                                          monkeypatch: pytest.MonkeyPatch) -> None:
+        """Before analysis there is no fragments block — progress is null."""
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        self._write_run(tmp_path, "runB", pipeline_status="running",
+                        identify_status=None, with_fragments=False,
+                        identified_segs=[])
+        response = client.get("/runs/runB/status")
+        assert response.status_code == 200
+        assert response.json()["progress"] is None
+
+    def test_terminal_run_all_searched(self, client: TestClient,
+                                       tmp_path: Path,
+                                       monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        self._write_run(tmp_path, "runC", pipeline_status="success",
+                        identify_status="success", with_fragments=True,
+                        identified_segs=["A", "B"])
+        response = client.get("/runs/runC/status")
+        assert response.status_code == 200
+        progress = response.json()["progress"]
+        assert progress["molecules_done"] == 2
+        assert progress["molecules_total"] == 2
+        assert progress["per_segment"] == {"A": "searched", "B": "searched"}
+
+
 class TestLoadingEndpoint:
     """Tests for the GET /runs/{run_id}/loading endpoint."""
     
