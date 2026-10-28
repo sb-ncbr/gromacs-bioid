@@ -174,7 +174,8 @@ class TestUiGapsE2E:
         assert rows["A"][2] == "protein" and rows["B"][2] == "small_molecule"
 
         # --- seeded verification (d14-observed verified_hits shape, see
-        # bughunt_verify offline dumps / d14 run 2656) --------------------
+        # bughunt_verify offline dumps / d14 run 2656); name/organism are
+        # the G5 fields the scorers thread onto verified hits ----------
         results_path = runs_root / "cytcE2E" / "results.json"
         payload = json.loads(results_path.read_text())
         payload["data"]["verification"] = {
@@ -183,7 +184,8 @@ class TestUiGapsE2E:
                 "verified_hits": [
                     {"identifier": "HEM", "ident_type": "PUBCHEM_NAME",
                      "database": "pdb_ligand", "final_confidence": 95.0,
-                     "is_verified": True, "rejection_reason": None},
+                     "is_verified": True, "rejection_reason": None,
+                     "name": "Heme"},
                     {"identifier": "5181", "ident_type": "PUBCHEM_LIGAND",
                      "database": "pubchem", "final_confidence": 62.5,
                      "is_verified": True, "rejection_reason": None},
@@ -196,6 +198,7 @@ class TestUiGapsE2E:
         rows = {line.split(",")[0]: line.split(",")
                 for line in response.text.replace("\r\n", "\n").strip().split("\n")[1:]}
         best_row = rows["B"]
+        assert best_row[5] == "Heme"  # G5 identified-name lands in the CSV
         assert best_row[6] == "pdb_ligand" and best_row[7] == "HEM"
         assert best_row[8] == "95.0" and best_row[9] == "high"
         assert best_row[10] == "pubchem:5181"
