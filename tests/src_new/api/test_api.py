@@ -445,6 +445,117 @@ class TestMoleculesEndpoint:
         assert validated.segments == ["PROA"]
 
 
+class TestSegmentMetaCopies:
+    """BACKEND_GAPS G3: copies + display_name + chain in segment_meta.
+
+    display_name mirrors the UI's client-side baseName() exactly
+    (ui/src/features/results/viewmodel/derive.ts): strip `seg_N_`
+    prefix and `__vN` suffix, `_chain_X` suffix → "Chain X", else the
+    (stripped) segment source name. Existing segment_meta keys
+    (type/atom_count/residue_count) must be unchanged.
+    """
+
+    def _write_run(self, tmp_path: Path, run_id: str) -> None:
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        results_data = {
+            "pipeline": {"name": "BAT3", "status": "finished"},
+            "data": {
+                "fragments": {
+                    "unique": {},
+                    "type_counts": {"protein": 1, "water": 1, "lipid": 1},
+                    "total_count": 3,
+                    "segments": [
+                        {"segment": "seg_0_TOCL2", "type": "lipid",
+                         "copies": 5, "atoms_per_copy": 130},
+                        {"segment": "A__v1", "type": "water",
+                         "copies": 58, "atoms_per_copy": 1},
+                        {"segment": "Protein_chain_A", "type": "protein",
+                         "copies": 1, "atoms_per_copy": 602},
+                    ],
+                },
+                "universe": {
+                    "segment_list": ["seg_0_TOCL2", "A__v1", "Protein_chain_A"],
+                    "segments": {
+                        "seg_0_TOCL2": {"properties": {
+                            "atom_count_fragment": 130,
+                            "atom_count_total": 650,
+                            "residue_count": 5,
+                        }},
+                        "A__v1": {"properties": {
+                            "atom_count_fragment": 1,
+                            "atom_count_total": 58,
+                            "residue_count": 58,
+                        }},
+                        "Protein_chain_A": {"properties": {
+                            "is_protein": True,
+                            "atom_count_fragment": 602,
+                            "atom_count_total": 602,
+                            "residue_count": 76,
+                        }},
+                    },
+                },
+            },
+        }
+        (run_dir / "results.json").write_text(json.dumps(results_data))
+
+    def test_copies_display_name_and_chain(self, client: TestClient,
+                                           tmp_path: Path,
+                                           monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        self._write_run(tmp_path, "g3mix")
+        response = client.get("/runs/g3mix/molecules")
+        assert response.status_code == 200
+        meta = response.json()["segment_meta"]
+
+        # lipid: seg_N_ prefix stripped, copies from fragments entry
+        assert meta["seg_0_TOCL2"]["copies"] == 5
+        assert meta["seg_0_TOCL2"]["display_name"] == "TOCL2"
+        assert meta["seg_0_TOCL2"]["chain"] is None
+
+        # water virtual sub-segment: __v1 stripped, many copies
+        assert meta["A__v1"]["copies"] == 58
+        assert meta["A__v1"]["display_name"] == "A"
+        assert meta["A__v1"]["chain"] is None
+
+        # chain-suffixed: human name + chain field
+        assert meta["Protein_chain_A"]["copies"] == 1
+        assert meta["Protein_chain_A"]["display_name"] == "Chain A"
+        assert meta["Protein_chain_A"]["chain"] == "A"
+
+        # additive-only: existing keys untouched
+        assert meta["A__v1"]["type"] == "water"
+        assert meta["A__v1"]["atom_count"] == 1
+        assert meta["A__v1"]["residue_count"] == 58
+
+    def test_copies_default_one_for_older_results(self, client: TestClient,
+                                                  tmp_path: Path,
+                                                  monkeypatch: pytest.MonkeyPatch) -> None:
+        """Pre-v3.143 results with no fragments/segments copies field
+        still yield copies=1 and a display_name derived from the name."""
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        run_dir = tmp_path / "g3old"
+        run_dir.mkdir(parents=True)
+        (run_dir / "results.json").write_text(json.dumps({
+            "pipeline": {"name": "BAT3", "status": "finished"},
+            "data": {
+                "fragments": {"unique": {}, "type_counts": {},
+                              "total_count": 0},
+                "universe": {
+                    "segment_list": ["L"],
+                    "segments": {"L": {"properties": {
+                        "atom_count_total": 21, "residue_count": 1}}},
+                },
+            },
+        }))
+        response = client.get("/runs/g3old/molecules")
+        assert response.status_code == 200
+        meta = response.json()["segment_meta"]
+        assert meta["L"]["copies"] == 1
+        assert meta["L"]["display_name"] == "L"
+        assert meta["L"]["chain"] is None
+
+
 class TestRenderEndpoint:
     """Tests for the GET /runs/{run_id}/render endpoint."""
     

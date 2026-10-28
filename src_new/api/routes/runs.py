@@ -50,6 +50,7 @@ from ..models import (
     RunQueueResponse,
     RunSummaryResponse,
 )
+from ..names import chain_of, segment_display_name, strip_seg
 from ..utils import build_database_url, normalize_identifier
 from ..tasks import run_pipeline_task
 
@@ -857,6 +858,14 @@ async def get_molecules(run_id: str) -> MoleculeSummaryResponse:
                 seg_props["type"] = "unknown"
                 seg_props["atom_count"] = 0
                 seg_props["residue_count"] = 0
+        # v3.143 (BACKEND_GAPS G3): additive — per-instance copy count
+        # plus the server-side mirror of the UI's display-name derivation.
+        try:
+            seg_props["copies"] = int(seg_from_fragments.get("copies") or 1)
+        except (TypeError, ValueError):
+            seg_props["copies"] = 1
+        seg_props["display_name"] = segment_display_name(seg_name)
+        seg_props["chain"] = chain_of(strip_seg(seg_name))
         segment_meta[seg_name] = seg_props
     
     return MoleculeSummaryResponse(
