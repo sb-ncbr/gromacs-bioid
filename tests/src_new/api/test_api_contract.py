@@ -21,6 +21,7 @@ from src_new.api.models import (
     MoleculeInstanceInfo,
     MoleculeSummaryResponse,
     RenderPathsResponse,
+    RenderSegmentSelector,
     RunStatusResponse,
     RunSummaryResponse,
     VerifiedHitItem,
@@ -54,6 +55,11 @@ BASELINE: dict[str, set[str]] = {
         "geometry", "run_id", "segment_pngs", "segments", "system_mmcif",
         "system_png", "total_atom_count",
     },
+    # Added wholesale by G9 (nested selector model); its fields are their
+    # own baseline from the moment the model exists.
+    "RenderSegmentSelector": {
+        "chains", "atom_index_ranges", "atom_count",
+    },
 }
 
 # gap item -> {model: fields added by that item}
@@ -62,6 +68,7 @@ REGISTERED_ADDITIONS: dict[str, dict[str, set[str]]] = {
     "g2_segment_progress": {"RunStatusResponse": {"progress"}},
     "g5_hit_name_organism": {"VerifiedHitItem": {"name", "organism"}},
     "g7_unique_segment_names": {"MoleculeInstanceInfo": {"segment_names"}},
+    "g9_render_selectors": {"RenderPathsResponse": {"segment_selectors"}},
 }
 
 _MODELS = {
@@ -71,6 +78,7 @@ _MODELS = {
     "VerifiedHitItem": VerifiedHitItem,
     "MoleculeInstanceInfo": MoleculeInstanceInfo,
     "RenderPathsResponse": RenderPathsResponse,
+    "RenderSegmentSelector": RenderSegmentSelector,
 }
 
 

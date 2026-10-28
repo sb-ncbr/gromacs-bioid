@@ -83,6 +83,7 @@ API_ADDITIONS = [
     "warning_details_segment_service",  # G4 — segment/service in warning details
     "hit_name_organism",       # G5 — name/organism on verified hits
     "unique_segment_names",    # G7 — full unique-group segments
+    "segment_selectors",       # G9 — per-segment selectors on /render
     "capabilities",              # this endpoint
 ]
 

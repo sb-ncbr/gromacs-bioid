@@ -917,6 +917,58 @@ class TestRenderEndpoint:
         assert len(validated.segments) == 2
         assert validated.segments["PROA"] == "/path/to/segments/PROA.cif"
 
+    def test_render_segment_selectors_additive(self, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """BACKEND_GAPS G9 (2/2): /render surfaces render/segment_selectors
+        persisted at export (export-side commit) as typed per-segment
+        selectors; absent on older runs (empty dict, additive)."""
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+
+        # --- new run: selectors persisted -------------------------------
+        run_dir = tmp_path / "g9run"
+        run_dir.mkdir(parents=True)
+        (run_dir / "results.json").write_text(json.dumps({
+            "pipeline": {"name": "BAT3", "status": "success"},
+            "data": {
+                "render": {
+                    "system_mmcif": "out/system.mmcif",
+                    "segments": {"A": {"mmcif": "out/segments/A.mmcif"}},
+                    "segment_selectors": {
+                        "A": {"chains": ["A"],
+                              "atom_index_ranges": [[0, 265]],
+                              "atom_count": 265},
+                        "A__v1": {"chains": ["A"],
+                                  "atom_index_ranges": [[265, 266], [300, 358]],
+                                  "atom_count": 59},
+                    },
+                },
+            },
+        }))
+
+        response = client.get("/runs/g9run/render")
+        assert response.status_code == 200
+        body = response.json()
+        sel = body["segment_selectors"]
+        assert set(sel) == {"A", "A__v1"}
+        # typed, passthrough from the persisted export record
+        assert sel["A"] == {"chains": ["A"], "atom_index_ranges": [[0, 265]],
+                            "atom_count": 265}
+        # virtual segment: parent chain + exact (non-contiguous) ranges
+        assert sel["A__v1"]["chains"] == ["A"]
+        assert sel["A__v1"]["atom_index_ranges"] == [[265, 266], [300, 358]]
+        assert sel["A__v1"]["atom_count"] == 59
+
+        # --- older run without selectors: additive empty ------------------
+        old_dir = tmp_path / "g9old"
+        old_dir.mkdir(parents=True)
+        (old_dir / "results.json").write_text(json.dumps({
+            "pipeline": {"name": "BAT3", "status": "success"},
+            "data": {"render": {"system_mmcif": "out/system.mmcif",
+                                "segments": {}}},
+        }))
+        response = client.get("/runs/g9old/render")
+        assert response.status_code == 200
+        assert response.json()["segment_selectors"] == {}
+
 
 class TestSignaturesEndpoint:
     """Tests for the GET /runs/{run_id}/signatures endpoint."""

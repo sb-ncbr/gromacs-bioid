@@ -37,6 +37,7 @@ from ..models import (
     MoleculeInstanceInfo,
     MoleculeInfoResponse,
     RenderPathsResponse,
+    RenderSegmentSelector,
     ExampleRun,
     ExamplesResponse,
     SignaturesResponse,
@@ -1115,6 +1116,20 @@ async def get_render_paths(run_id: str) -> RenderPathsResponse:
                 mmcif_path = str(Path(mmcif_path).relative_to(run_dir))
             segments[segment_name] = mmcif_path
     
+    # v3.143 (BACKEND_GAPS G9, additive): typed passthrough of the
+    # export-side render/segment_selectors record; empty on older runs.
+    segment_selectors = {}
+    selectors_raw = render_data.get("segment_selectors")
+    if isinstance(selectors_raw, dict):
+        for name, info in selectors_raw.items():
+            if not isinstance(info, dict):
+                continue
+            segment_selectors[name] = RenderSegmentSelector(
+                chains=list(info.get("chains") or []),
+                atom_index_ranges=[list(r) for r in (info.get("atom_index_ranges") or [])],
+                atom_count=int(info.get("atom_count") or 0),
+            )
+
     return RenderPathsResponse(
         run_id=run_id,
         system_mmcif=system_mmcif,
@@ -1123,6 +1138,7 @@ async def get_render_paths(run_id: str) -> RenderPathsResponse:
         segment_pngs=_extract_segment_pngs(render_data.get("segments", {}), run_id),
         total_atom_count=(data.get("data", {}).get("simulation", {}) or {}).get("n_atoms"),
         geometry=render_data.get("geometry") if isinstance(render_data.get("geometry"), dict) else None,
+        segment_selectors=segment_selectors,
     )
 
 

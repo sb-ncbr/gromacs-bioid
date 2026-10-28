@@ -154,6 +154,21 @@ class MoleculeSummaryResponse(BaseModel):
     )
 
 
+class RenderSegmentSelector(BaseModel):
+    """Per-segment selector into the system mmCIF (BACKEND_GAPS G9, additive).
+
+    Persisted at export under ``render/segment_selectors``.
+    ``atom_index_ranges`` are merged ``[start, end_exclusive)`` ranges of
+    the segment's rows in the exported file's atom_site loop (0-based;
+    ``_atom_site.id`` = row + 1, MMCIFIO numbering). Exact even for
+    virtual minority segments whose atoms share the parent
+    ``auth_asym_id`` chain (``chains``)."""
+
+    chains: List[str] = Field(default_factory=list, description="auth_asym_id value(s) the segment's atoms landed in")
+    atom_index_ranges: List[List[int]] = Field(default_factory=list, description="Merged [start, end) atom_site row ranges (0-based; id = row+1)")
+    atom_count: int = Field(0, description="Total atoms addressed by the ranges")
+
+
 class RenderPathsResponse(BaseModel):
     """Response model for render paths (v3.137: static PNG + atom-count gate)."""
 
@@ -179,6 +194,12 @@ class RenderPathsResponse(BaseModel):
             "Absent for runs predating the scale-guard wave — the UI falls back "
             "to its client-side probe."
         ),
+    )
+    # v3.143 (BACKEND_GAPS G9, additive): per-segment selectors into the
+    # system mmCIF, persisted at export. Empty for runs predating the
+    # selector export — the UI keeps its chain-id highlight fallback.
+    segment_selectors: Dict[str, RenderSegmentSelector] = Field(
+        default_factory=dict, description="Per-segment selectors into the system mmCIF"
     )
 
 
