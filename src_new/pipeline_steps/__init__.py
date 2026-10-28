@@ -680,6 +680,91 @@ def _generate_signatures(context):
     )
 
 
+# --- W3 A7 (BH-046): content-key grouping for identification --------------
+
+def _identify_group_key(fragment_name: str, generated: dict):
+    """Group key for identical-segment identification (W3 A7).
+
+    polymer       -> ("polymer", canonical fasta sequence)
+    small molecule-> ("small", inchi_key), else ("small_formula", formula|fp)
+    ion           -> ("ion", element/name)
+    water         -> None (skipped: nothing worth resolving)
+    unknown       -> ("all_other", fragment_name) singleton
+    """
+    from ..molecules.instances import WATER_RESNAMES
+    nm = str(generated.get("name_molecule")
+             or generated.get("name_segment") or "").strip()
+    if nm and nm.upper() in WATER_RESNAMES:
+        return None
+    for g in ("fasta_map_protein", "fasta_map_nucleic",
+              "fasta_resname_protein", "fasta_resname_nucleic"):
+        seq = generated.get(g)
+        if seq and isinstance(seq, str) and len(seq) >= 3:
+            return ("polymer", seq)
+    ik = generated.get("inchi_key")
+    if ik:
+        return ("small", str(ik))
+    hf = generated.get("molecular_formula_heavy")
+    if hf:
+        return ("small_formula", f"{hf}|{generated.get('fingerprint', '')}")
+    atom = (generated.get("atom") or generated.get("name_molecule")
+            or generated.get("name_segment"))
+    if atom:
+        return ("ion", str(atom))
+    return ("all_other", fragment_name)
+
+
+def _identify_group_order(kind: str, key: str) -> tuple:
+    """Polymers first (longest sequence first), then small molecules,
+    then ions, then unclassified singletons (W3 A7 step 3)."""
+    rank = {"polymer": 0, "small": 1, "small_formula": 2, "ion": 3}.get(kind, 4)
+    return (rank, -len(key), key)
+
+
+def _group_segments(items_fragments: list) -> tuple:
+    """Split fragments into resolution groups (W3 A7 steps 1-2).
+
+    Returns (reps, member_to_rep, rep_to_group): reps = ordered
+    representative fragment names; member_to_rep = skipped members ->
+    rep; rep_to_group = list of (rep, members, group_key).
+    """
+    groups: dict = {}
+    for fragment_name, generated in items_fragments:
+        gk = _identify_group_key(fragment_name, generated)
+        if gk is None:
+            continue  # water: skipped entirely, never unresolved-reported
+        groups.setdefault(gk, []).append(fragment_name)
+    ordered = sorted(groups.items(),
+                     key=lambda kv: _identify_group_order(kv[0][0], kv[0][1]))
+    reps, member_to_rep, rep_to_group = [], {}, []
+    for gk, members in ordered:
+        members = sorted(members)
+        rep = members[0]
+        reps.append(rep)
+        rep_to_group.append((rep, members, gk))
+        for m in members[1:]:
+            member_to_rep[m] = rep
+    return reps, member_to_rep, rep_to_group
+
+
+def _propagate_group_identifiers(results, rep_to_group) -> int:
+    """Copy each group's rep identifiers payload to its members, with a
+    _shared_with marker (W3 A7 step 2)."""
+    copied = 0
+    for rep, members, _gk in rep_to_group:
+        if len(members) < 2:
+            continue
+        blob = results.get_data(f"identifiers/{rep}")
+        if not blob:
+            continue
+        shared = dict(blob)
+        shared["_shared_with"] = rep
+        for member in members[1:]:
+            results.set_data(f"identifiers/{member}", shared)
+            copied += 1
+    return copied
+
+
 def _identify_molecules(context):
     """Identify molecules from generated signatures with optional parallelism."""
     from ..signatures.registry import get_signature_type_map
@@ -715,6 +800,7 @@ def _identify_molecules(context):
     #   serial:   (fragment_name, valid_sigs)
     items_parallel = []
     items_serial = []
+    items_fragments = []   # A7: (fragment, generated) for grouping
     for fragment_name in sorted(signatures_data.keys()):
         generated = signatures_data[fragment_name].get("generated", {})
         if not generated:
@@ -725,15 +811,30 @@ def _identify_molecules(context):
         if not valid_sigs:
             continue
 
+        items_fragments.append((fragment_name, generated))
         # F-15: pass the fragment's already-persisted identifiers blob so the
         # parallel worker (which resolves into a temp ResultsManager) can skip
         # present resolvers exactly like the serial path does.
         existing_ids = context.results.get_data(f"identifiers/{fragment_name}") or {}
         items_parallel.append((fragment_name, valid_sigs, context.config.to_dict(), sig_type_map, existing_ids))
         items_serial.append((fragment_name, valid_sigs))
-    
+
     if not items_parallel:
         return StepResult(summary={"identified": True})
+
+    # A7 (BH-046): resolve IDENTICAL segments once (P23: identical GroEL
+    # chains got three DIFFERENT assignments per-copy; F14: 2952 segments
+    # resolved per-copy in a projected 17 h). Group by content key, keep
+    # the representative; members inherit after resolution.
+    group_reps, member_to_rep, rep_to_group = _group_segments(items_fragments)
+    if member_to_rep:
+        logger.info(
+            "identify_molecules: %d segments -> %d resolution groups",
+            len(items_fragments), len(group_reps))
+        group_reps_set = set(group_reps)
+        items_parallel = [it for it in items_parallel
+                          if it[0] in group_reps_set]
+        items_serial = [it for it in items_serial if it[0] in group_reps_set]
     
     # Decide whether to use parallel execution
     use_parallel = (
@@ -837,13 +938,38 @@ def _identify_molecules(context):
             for path, value in result["results"].items():
                 context.results.set_data(path, value)
     
+    # A7 (BH-046): members inherit the group's identifiers (one payload
+    # per group; _shared_with records the representative name).
+    _propagate_group_identifiers(context.results, rep_to_group)
+
+    # A7 (BH-046): report budget-cut/dropped GROUPS, not fragments — a
+    # budget cut can never split a group (reps resolve atomically, members
+    # only inherit).
+    unresolved_groups = []
+    for rep, members, gk in rep_to_group:
+        if context.results.get_data(f"identifiers/{rep}") is None:
+            unresolved_groups.append({
+                "representative": rep,
+                "members": members,
+                "kind": gk[0],
+            })
+    if unresolved_groups:
+        context.results.set_data("identification/unresolved_groups",
+                                 unresolved_groups)
+        context.add_warning(
+            "identification_groups_unresolved",
+            f"{len(unresolved_groups)} identification group(s) unresolved "
+            f"({sum(len(g['members']) for g in unresolved_groups)} segment(s))",
+        )
+
     if budget_hit:
         context.add_warning(
             "stage_time_budget",
             "identify_molecules exceeded its time budget; proceeding with partial identifications",
         )
     return StepResult(
-        summary={"identified": True, "partial": budget_hit}
+        summary={"identified": True, "partial": budget_hit,
+                 "groups": len(rep_to_group)}
     )
 
 

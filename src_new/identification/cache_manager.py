@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -127,10 +128,31 @@ class ResolverCache:
         if self._disabled:
             raise OSError("cache disabled after prior initialization failure")
         if self._conn is None:
-            cache_directory: str = self._config.identifiers_cache.directory
+            # BH-048 (W3 A7): an empty directory resolved as
+            # "./resolver_cache.sqlite3" in the container's UNWRITABLE cwd,
+            # silently disabling the cache in ~80% of production runs.
+            # Fall back to a writable location instead of dying open.
+            cache_directory: str = (self._config.identifiers_cache.directory
+                                    or os.environ.get(
+                                        "BAT3_IDENTIFIERS_CACHE_DIR", ""))
+            if not cache_directory:
+                cache_directory = os.path.join(
+                    tempfile.gettempdir(), "bat3_resolver_cache")
+                logger.info(
+                    "[Cache] identifiers_cache.directory empty; using "
+                    "writable fallback %s", cache_directory)
+            if not cache_directory.startswith("/"):  # relative = cwd roulette
+                fallback = os.path.join(
+                    tempfile.gettempdir(), "bat3_resolver_cache")
+                logger.warning(
+                    "[Cache] relative identifiers_cache.directory %r is not "
+                    "portable across workers; using %s",
+                    cache_directory, fallback)
+                cache_directory = fallback
+            os.makedirs(cache_directory, exist_ok=True)
             cache_file: str = self._config.identifiers_cache.file
             self._cache_path = os.path.join(cache_directory, cache_file)
-            
+
             _quarantine_if_corrupt(self._cache_path)
             create_empty_cache_if_not_exists(self._cache_path)
             self._conn = sqlite3.connect(self._cache_path, timeout=30.0)
