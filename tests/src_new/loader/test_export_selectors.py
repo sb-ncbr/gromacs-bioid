@@ -92,6 +92,31 @@ class TestSegmentSelectors:
         assert sel["A"]["atom_count"] == 2
         assert sel["B"]["atom_index_ranges"] == [[2, 3]]
 
+    def test_normal_segment_selector_uses_fragment_not_whole_segid(self):
+        """W3 A2/B4 (BH-002): when a segid holds several species (chain +
+        a stray single-atom ion), the CHAIN's selector must cover only its
+        own fragment's rows — the virtual sibling's atom must not overlap
+        (cytc: HEM Fe atom 1676 became B__v1 inside seg B)."""
+        u = _tiny_universe()  # A: atoms 0-1, B: atom 2
+        chain = SimpleNamespace(indices=np.array([0]), segids=np.array(["A"]))
+        virt = SimpleNamespace(indices=np.array([1]), segids=np.array(["A"]))
+        frags = {"A": SimpleNamespace(atoms=chain),
+                 "A__v1": SimpleNamespace(atoms=virt),
+                 "B": None}
+        facade = SimpleNamespace(
+            universe=u,
+            get_segments=lambda: {"A", "A__v1", "B"},
+            get_fragment=lambda name: frags.get(name),
+        )
+        sel = _segment_selectors(facade)
+        assert sel["A"]["atom_index_ranges"] == [[0, 1]], sel["A"]
+        assert sel["A__v1"]["atom_index_ranges"] == [[1, 2]]
+        a_rows = set(range(sel["A"]["atom_index_ranges"][0][0],
+                           sel["A"]["atom_index_ranges"][0][1]))
+        v_rows = set(range(sel["A__v1"]["atom_index_ranges"][0][0],
+                           sel["A__v1"]["atom_index_ranges"][0][1]))
+        assert not (a_rows & v_rows)
+
     def test_virtual_segment_uses_parent_chain_and_exact_ranges(self):
         """A virtual species (interleaved with its sibling) carries the
         parent segid in the file; only atom ranges isolate it."""

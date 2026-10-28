@@ -159,12 +159,19 @@ def _segment_selectors(facade: LoadedUniverse) -> dict[str, dict]:
     selectors: dict[str, dict] = {}
     universe_segids = {str(s) for s in universe.atoms.segids}
     for segment in sorted(facade.get_segments()):
-        if segment in universe_segids:
+        # W3 A2/B4 (BH-002): isolate the segment's OWN fragment rows — a
+        # segid can hold several species (chain + stray atom); selecting by
+        # segid would leak a virtual sibling's atoms into the parent's
+        # ranges (cytc: HEM Fe -> B__v1 inside seg B).
+        frag = facade.get_fragment(segment) if hasattr(
+            facade, "get_fragment") else None
+        if frag is not None:
+            atoms = frag.atoms
+        elif segment in universe_segids:
             atoms = universe.atoms[universe.atoms.segids == segment]
         else:
-            # Virtual minority segment: the facade's merged AtomGroup
-            # covers ALL instances of the species (full entity).
-            atoms = facade.get_fragment(segment).atoms
+            # Virtual minority segment (no fragment handle): skip.
+            continue
         rows = sorted(row_of_atom[int(i)] for i in atoms.indices)
         if not rows:
             continue

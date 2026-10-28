@@ -133,13 +133,13 @@ class TestUiGapsE2E:
         assert response.status_code == 200
         body = response.json()
         meta = body["segment_meta"]
-        assert set(body["segments"]) == {"A", "B", "C", "D"}
+        assert set(body["segments"]) == {"A", "B", "B__v1", "C", "D"}
 
         assert meta["A"]["type"] == "protein"
         assert meta["B"]["type"] == "small_molecule"
         assert meta["C"]["type"] == "nucleic"
         assert meta["D"]["type"] == "nucleic"
-        for seg in ("A", "B", "C", "D"):
+        for seg in ("A", "B", "B__v1", "C", "D"):
             entry = meta[seg]
             assert isinstance(entry["copies"], int) and entry["copies"] >= 1
             assert entry["display_name"] == segment_display_name(seg)
@@ -156,10 +156,11 @@ class TestUiGapsE2E:
         assert response.status_code == 200
         progress = response.json()["progress"]
         assert progress is not None
-        assert progress["molecules_total"] == 4
+        assert progress["molecules_total"] == 5
         assert progress["molecules_done"] == 0
         assert progress["per_segment"] == {
-            "A": "waiting", "B": "waiting", "C": "waiting", "D": "waiting",
+            "A": "waiting", "B": "waiting", "B__v1": "waiting",
+            "C": "waiting", "D": "waiting",
         }
 
     def test_results_csv_from_real_run(self, client: TestClient,
@@ -179,7 +180,7 @@ class TestUiGapsE2E:
             "Alternatives"
         )
         rows = {line.split(",")[0]: line.split(",") for line in lines[1:]}
-        assert set(rows) == {"A", "B", "C", "D"}
+        assert set(rows) == {"A", "B", "B__v1", "C", "D"}
         for seg, cols in rows.items():
             assert cols[1] == segment_display_name(seg)
             assert cols[5] == cols[6] == cols[7] == ""  # nothing searched
