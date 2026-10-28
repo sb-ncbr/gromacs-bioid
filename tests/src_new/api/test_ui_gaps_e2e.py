@@ -1,15 +1,17 @@
-"""Wave-B1 e2e grounding (BACKEND_GAPS G1/G2/G3/G6/G8 + capabilities).
+"""Wave-B1/B3 e2e grounding (BACKEND_GAPS G1/G2/G3/G6/G8/G9 + capabilities).
 
-Runs the REAL pipeline (stages 1-6: discover -> load -> repair -> unwrap
--> analyze universe -> generate signatures) on the committed
-tests/fixtures/nucleic/cytc_full.pdb fixture into a temp run dir, points
-the FastAPI test app at it, and asserts every B1 additive field from
-actual pipeline output (not synthetic shapes):
+Runs the REAL pipeline (stages 1-6 hermetic: discover -> load -> repair
+-> unwrap -> analyze -> generate signatures, PLUS stage 8 export_results,
+which is pure-local: mmCIF export + G9 segment selectors) on the
+committed tests/fixtures/nucleic/cytc_full.pdb fixture into a temp run
+dir, points the FastAPI test app at it, and asserts every B1/B3 additive
+field from actual pipeline output (not synthetic shapes):
 
   fragments/segments  -> A (protein), B (small_molecule), C/D (nucleic)
   signatures          -> all four segments (all single-copy)
+  render              -> per-segment G9 selectors into the system mmCIF
 
-Stage 7+ (identification/verification) needs database access and is out
+Stage 8+ (identification/verification) needs database access and is out
 of scope for a hermetic test; the one place the CSV shows hit values is
 explicitly SEEDED with a verification record using the exact
 d14-observed verified_hits shape (documented at the seed site).
@@ -38,8 +40,18 @@ pytestmark = pytest.mark.skipif(
     reason="pipeline e2e needs MDAnalysis + rdkit",
 )
 
-# Stage 6 = Generate Signatures (stages 7+ need databases).
-N_STAGES = 6
+# Stage list indices: 0-5 = discover..generate_signatures (hermetic),
+# 6 = identify_molecules, 7 = verify_results (need databases — out of
+# scope hermetically), 8 = export_results (pure local: mmCIF + selectors),
+# 9 = render_png. Run 0-5 plus export_results only.
+
+
+def _stage_steps():
+    from src_new.pipeline_steps import build_load_and_export_tasks
+    tasks = build_load_and_export_tasks()
+    export = [t for t in tasks if t.task_id == "export_results"]
+    assert len(export) == 1, "export_results task must exist exactly once"
+    return tasks[:6] + export
 
 
 def _run_real_pipeline(runs_root: Path) -> Path:
@@ -55,7 +67,7 @@ def _run_real_pipeline(runs_root: Path) -> Path:
     results_path = run_dir / "results.json"
     manager = ResultsManager(str(results_path), pipeline_name="ui-gaps-e2e")
     executor = PipelineExecutor(
-        steps=build_load_and_export_tasks()[:N_STAGES],
+        steps=_stage_steps(),
         results_manager=manager,
         pipeline_name="ui-gaps-e2e",
     )
@@ -215,3 +227,38 @@ class TestUiGapsE2E:
                 "segment_progress", "results_csv",
                 "capabilities"} <= set(body["additions"])
         assert body["code_version"]
+
+    def test_render_segment_selectors_real(self, client: TestClient,
+                                           runs_root: Path) -> None:
+        """G9: the real export stage persisted per-segment selectors and
+        /render serves them typed. Ranges must address distinct atoms —
+        the sum of range lengths equals the summed atom_count, and every
+        segment's chains list is a subset of the exported file's
+        auth_asym values (validated file-side in the loader tests)."""
+        payload = json.loads((runs_root / "cytcE2E" / "results.json").read_text())
+        sel = payload["data"]["render"]["segment_selectors"]
+        assert {"A", "B", "C", "D"} <= set(sel)
+        for name, entry in sel.items():
+            assert entry["atom_count"] > 0, name
+            assert entry["chains"], name
+            covered = sum(end - start for start, end in entry["atom_index_ranges"])
+            assert covered == entry["atom_count"], name
+        # selectors partition the universe: no atom addressed twice
+        all_ranges = [r for entry in sel.values() for r in entry["atom_index_ranges"]]
+        all_ranges.sort()
+        for (s1, e1), (s2, _e2) in zip(all_ranges, all_ranges[1:]):
+            assert s2 >= e1, f"overlapping selector ranges: {all_ranges}"
+
+        body = client.get("/runs/cytcE2E/render").json()
+        api_sel = body["segment_selectors"]
+        assert set(api_sel) >= {"A", "B", "C", "D"}
+        assert api_sel["A"] == sel["A"]  # typed passthrough, unchanged
+        # cytc A is a full protein chain
+        assert api_sel["A"]["atom_count"] > 500
+        assert api_sel["A"]["chains"] == ["A"]
+
+    def test_capabilities_e2e_b3_additions(self, client: TestClient) -> None:
+        response = client.get("/api/v1/capabilities")
+        body = response.json()
+        assert "segment_selectors" in body["additions"]
+        assert body["api_version_marker"] >= 2
