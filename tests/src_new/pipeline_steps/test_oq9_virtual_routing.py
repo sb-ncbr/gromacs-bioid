@@ -47,8 +47,11 @@ def _props(is_protein: bool, is_nucleic: bool) -> SegmentProperties:
 
 
 def _fragment():
+    # n_atoms: real AtomGroups carry it; the item-6c nucleotide gate reads
+    # it for the bonds-per-atom threshold (1 bond vs 4 atoms = 0.25 >= 0.25).
     return types.SimpleNamespace(
         segids=["SYSTEM"],  # parent segid even for virtual fragments
+        n_atoms=4,
         bonds=types.SimpleNamespace(indices=[(0, 1)]),
     )
 

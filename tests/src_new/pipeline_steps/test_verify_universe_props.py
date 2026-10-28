@@ -49,9 +49,12 @@ def _cfg_dict():
     return RunConfig().to_dict()
 
 
-def _run_worker(sig_data=None, props=None):
+def _run_worker(sig_data=None, props=None, segments_summary=None):
+    # 6-tuple shape per workers._verify_results_worker; segments_summary is
+    # fragments/segments (BH-001: the ELEMENT ground-truth rule now requires
+    # the segment to be typed "ion" there — production always threads it).
     return _verify_results_worker(
-        (SEG, ATOM_IDENTIFIERS, _cfg_dict(), sig_data, props)
+        (SEG, ATOM_IDENTIFIERS, _cfg_dict(), sig_data, props, segments_summary)
     )
 
 
@@ -67,13 +70,42 @@ def _hit(result, identifier="NA"):
 
 # --- worker-level end-to-end ------------------------------------------------
 
+# fragments/segments entry typing this segment as an ion (BH-001 contract:
+# the loader classifier's type record; the ELEMENT ground-truth rule reads it)
+ION_SEGMENTS = [{"segment": SEG, "type": "ion", "copies": 1, "atoms_per_copy": 1}]
+
+
 def test_worker_e2e_element_ground_truth_with_props():
-    """Atom facts present -> monoatomic ELEMENT identity lifts to conf 100."""
-    result = _run_worker(props={"atom_count_fragment": 1})
+    """Atom facts + ion typing -> monoatomic ELEMENT identity lifts to conf 100."""
+    result = _run_worker(props={"atom_count_fragment": 1},
+                         segments_summary=ION_SEGMENTS)
     h = _hit(result)
     assert h["is_verified"] is True
     assert h["final_confidence"] == 100.0
     assert h["ground_truth_override"] == "element_monoatomic"
+
+
+def test_worker_e2e_without_ion_typing_no_override():
+    """BH-001 guard: same single atom, but the segment is NOT typed ion
+    (e.g. a lone O from a broken water) -> the ground-truth override must
+    NOT fire; the weighted path (75) applies. This is the exact regression
+    the report's crystal-water ELEMENT-at-100 evidence describes."""
+    not_ion = [{"segment": SEG, "type": "water", "copies": 1, "atoms_per_copy": 1}]
+    result = _run_worker(props={"atom_count_fragment": 1},
+                         segments_summary=not_ion)
+    h = _hit(result)
+    assert h["is_verified"] is True
+    assert h["final_confidence"] == 75.0
+    assert h["ground_truth_override"] is None
+
+
+def test_worker_e2e_without_segments_record_no_override():
+    """BH-001 guard: no fragments/segments record at all (pre-v3.140 payload)
+    -> conservative weighted path, no override."""
+    result = _run_worker(props={"atom_count_fragment": 1}, segments_summary=None)
+    h = _hit(result)
+    assert h["final_confidence"] == 75.0
+    assert h["ground_truth_override"] is None
 
 
 def test_worker_e2e_without_props_stays_conservative():
@@ -115,7 +147,7 @@ class _FakeContext:
         self.warnings.append((code, msg))
 
 
-def _results_manager(tmp_path, with_props):
+def _results_manager(tmp_path, with_props, with_segments=False):
     path = tmp_path / "results.json"
     path.write_text(json.dumps({"pipeline_name": "t", "data": {}}))
     rm = ResultsManager(str(path), pipeline_name="t")
@@ -123,6 +155,8 @@ def _results_manager(tmp_path, with_props):
         rm.set_data(f"identifiers/{SEG}/{gen}", gen_data)
     if with_props is not None:
         rm.set_data(f"universe/segments/{SEG}/properties", with_props)
+    if with_segments:
+        rm.set_data("fragments/segments", ION_SEGMENTS)
     return rm
 
 
@@ -135,8 +169,10 @@ def _stored_hit(ctx):
 
 def test_verify_results_step_wires_universe_properties(tmp_path):
     """Full step: context.payload -> worker items -> stored verification has
-    the ground-truth override (the production regression path)."""
-    ctx = _FakeContext(_results_manager(tmp_path, {"atom_count_fragment": 1}), RunConfig())
+    the ground-truth override (the production regression path; BH-001: the
+    orchestrator threads fragments/segments so the ion gate can fire)."""
+    ctx = _FakeContext(_results_manager(tmp_path, {"atom_count_fragment": 1},
+                                         with_segments=True), RunConfig())
     out = _verify_results(ctx)
     h = _stored_hit(ctx)
     assert h["final_confidence"] == 100.0
