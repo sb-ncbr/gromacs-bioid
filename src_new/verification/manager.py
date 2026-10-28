@@ -940,11 +940,18 @@ class VerificationManager:
                 scorer = (self._registry.get_scorer(ident_type)
                           if cfg.enable_annotation_quality else None)
                 annotation_score: float | None = None
+                # v3.143 (BACKEND_GAPS G5): display metadata threaded from the
+                # scorer's already-fetched payloads onto the hit (None =
+                # unavailable; metadata absence never gates verification).
+                annotation_name: str | None = None
+                annotation_organism: str | None = None
                 if scorer:
                     try:
                         quality = scorer.score(normalized_id, ident_type)
                         if quality is not None:
                             annotation_score = quality.normalized_score if hasattr(quality, 'normalized_score') else quality.score
+                            annotation_name = getattr(quality, "name", None)
+                            annotation_organism = getattr(quality, "organism", None)
                     except Exception as exc:
                         # Red-team wave-2 (item 1c): a scorer failure leaves
                         # the annotation UNKNOWN (None) — never silently
@@ -1117,6 +1124,8 @@ class VerificationManager:
                         similarity_details=(similarity_score.details or None
                                             if similarity_score else None),
                         hit_type=hit_type,
+                        name=annotation_name,
+                        organism=annotation_organism,
                     )
                 else:
                     # Create unverified hit (workers may still have run for it)

@@ -72,6 +72,12 @@ class AnnotationQuality:
     database: str
     score: float  # 0-100
     signals: list[str] = field(default_factory=list)  # list of quality signal names found
+    # v3.143 (BACKEND_GAPS G5): display metadata surfaced from payloads the
+    # scorers already fetch (UniProt protein_name/organism_name fields;
+    # RCSB struct.title + entity organism). None when unavailable — never
+    # a failure.
+    name: str | None = None
+    organism: str | None = None
 
 
 @dataclass
@@ -134,6 +140,12 @@ class VerifiedHit:
     # caps at 80. VerificationManager lifts such hits to final_confidence=100
     # and records the rule id here for auditability. None = normal weighted path.
     ground_truth_override: str | None = None
+    # v3.143 (BACKEND_GAPS G5): display metadata threaded from the annotation
+    # scorer's already-fetched payloads (name = protein title, organism =
+    # source organism). None for older runs / unsupported ident types /
+    # fetch failures — the UI falls back to "DB id" rendering.
+    name: str | None = None
+    organism: str | None = None
     
     @classmethod
     def unverified(

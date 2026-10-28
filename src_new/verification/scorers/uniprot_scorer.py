@@ -53,14 +53,28 @@ class UniProtAnnotationScorer(AnnotationQualityScorer):
             # ask only for the fields the scorer reads (live-validated field
             # names: accession, reviewed, protein_existence, annotation_score,
             # gene_names, go).
+            # v3.143 (BACKEND_GAPS G5): + protein_name,organism_name on the
+            # SAME single request — display metadata at zero extra fetches.
             url = (f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.json"
                    f"?fields=reviewed,protein_existence,annotation_score,"
-                   f"gene_names,go")
+                   f"gene_names,go,protein_name,organism_name")
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             entry = response.json()
         except Exception:
             return AnnotationQuality(database="uniprot", score=0.0, signals=[])
+
+        # G5 display metadata (best-effort; absent/{} payloads -> None).
+        name: str | None = None
+        organism: str | None = None
+        try:
+            name = (((entry.get("proteinDescription") or {})
+                     .get("recommendedName") or {})
+                    .get("fullName") or {}).get("value") or None
+            organism = (entry.get("organism") or {}).get("scientificName") or None
+        except Exception:
+            name = None
+            organism = None
         
         signals = []
         score = 10.0  # Base points for having the entry
@@ -107,4 +121,6 @@ class UniProtAnnotationScorer(AnnotationQualityScorer):
             database="uniprot",
             score=min(score, 100.0),
             signals=signals,
+            name=name,
+            organism=organism,
         )

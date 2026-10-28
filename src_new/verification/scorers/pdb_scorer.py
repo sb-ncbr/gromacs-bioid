@@ -52,6 +52,26 @@ class PDBAnnotationScorer(AnnotationQualityScorer):
             if not isinstance(data, dict):
                 raise ValueError(f"unexpected payload root: {type(data).__name__}")
 
+            # v3.143 (BACKEND_GAPS G5): display metadata. struct.title rides
+            # the SAME cached entry payload (no extra request); the organism
+            # lives on the polymer-entity payload — one best-effort shared-
+            # cache fetch (same URL family the sequence fetcher warms),
+            # failure/{} -> None. Never gates the score.
+            name = (data.get("struct") or {}).get("title") or None
+            organism = None
+            try:
+                entity_url = (f"https://data.rcsb.org/rest/v1/core/"
+                              f"polymer_entity/{pdb_id}/1")
+                entity_resp = rcsb_cache.get_cached(entity_url, timeout=10)
+                if entity_resp is not None:
+                    entity_data = entity_resp.json()
+                    if isinstance(entity_data, dict):
+                        orgs = entity_data.get("rcsb_entity_source_organism")
+                        if isinstance(orgs, list) and orgs and isinstance(orgs[0], dict):
+                            organism = orgs[0].get("scientific_name") or None
+            except Exception:
+                organism = None
+
             signals = []
             score = 20.0  # Base points for having the entry
 
@@ -109,6 +129,8 @@ class PDBAnnotationScorer(AnnotationQualityScorer):
                 database="pdb",
                 score=min(score, 100.0),
                 signals=signals,
+                name=name,
+                organism=organism,
             )
         except Exception:
             # Fetch failure, JSON decode error, or a payload shape the parser
