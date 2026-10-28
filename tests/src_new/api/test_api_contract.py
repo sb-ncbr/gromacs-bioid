@@ -55,6 +55,7 @@ BASELINE: dict[str, set[str]] = {
 REGISTERED_ADDITIONS: dict[str, dict[str, set[str]]] = {
     "g1_run_name": {"RunSummaryResponse": {"run_name"}},
     "g2_segment_progress": {"RunStatusResponse": {"progress"}},
+    "g5_hit_name_organism": {"VerifiedHitItem": {"name", "organism"}},
 }
 
 _MODELS = {

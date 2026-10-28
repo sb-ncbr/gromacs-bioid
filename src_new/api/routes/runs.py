@@ -1384,6 +1384,10 @@ async def get_verification(run_id: str, segment: Optional[str] = None) -> Verifi
                 supporting_evidence_count=hit.get("supporting_evidence_count", 0),
                 database_url=db_url,
                 ground_truth_override=hit.get("ground_truth_override"),
+                # v3.143 (BACKEND_GAPS G5): additive — display metadata the
+                # scorers thread onto the hit; null for older runs.
+                name=hit.get("name"),
+                organism=hit.get("organism"),
             ))
     
     # Use first segment name or "unknown"

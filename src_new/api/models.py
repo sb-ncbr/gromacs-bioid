@@ -264,6 +264,11 @@ class VerifiedHitItem(BaseModel):
     segment: Optional[str] = Field(None, description="Segment this hit belongs to")
     is_verified: bool = Field(..., description="Whether the hit passed verification")
     rejection_reason: Optional[str] = Field(None, description="Reason for rejection if not verified")
+    # v3.143 (BACKEND_GAPS G5): additive — display metadata threaded by the
+    # verification manager from already-fetched annotation payloads; null
+    # for older runs and unsupported ident types (UI falls back to db+id).
+    name: Optional[str] = Field(None, description="Hit display name (e.g. protein title)")
+    organism: Optional[str] = Field(None, description="Source organism scientific name")
     supporting_evidence_count: int = Field(default=0, description="Number of supporting evidence")
     database_url: Optional[str] = Field(None, description="URL to the database entry")
     ground_truth_override: Optional[str] = Field(

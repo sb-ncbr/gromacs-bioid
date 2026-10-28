@@ -81,6 +81,7 @@ API_ADDITIONS = [
     "segment_progress",          # G2 — /status progress block
     "results_csv",               # G6 — run-level CSV download
     "warning_details_segment_service",  # G4 — segment/service in warning details
+    "hit_name_organism",       # G5 — name/organism on verified hits
     "capabilities",              # this endpoint
 ]
 

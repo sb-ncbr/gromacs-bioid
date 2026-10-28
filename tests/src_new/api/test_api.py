@@ -999,6 +999,55 @@ class TestVerificationEndpoint:
         assert validated.hits[0].final_confidence == 80.0
 
 
+class TestHitNameOrganism:
+    """BACKEND_GAPS G5 (API side): additive name/organism on verified
+    hits — passthrough of the fields the scorers thread onto the hit.
+
+    Older runs have neither key (the scorers only fill them for
+    macromolecular ident types, macromolecular payload permitting);
+    the endpoint must then return null and the UI keeps its
+    "PDB 1UBQ"-style fallback."""
+
+    def _write_run(self, tmp_path: Path, run_id: str, hits: list) -> None:
+        run_dir = tmp_path / run_id
+        run_dir.mkdir(parents=True)
+        (run_dir / "results.json").write_text(json.dumps({
+            "pipeline": {"name": "BAT3", "status": "finished"},
+            "data": {"verification": {"PROA": {
+                "status": "complete", "verified_hits": hits}}},
+        }))
+
+    def test_hit_name_organism_passthrough(self, client: TestClient,
+                                           tmp_path: Path,
+                                           monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        self._write_run(tmp_path, "g5yes", [{
+            "identifier": "1UBQ", "ident_type": "PDB_ID", "database": "pdb",
+            "final_confidence": 92.0, "is_verified": True,
+            "name": "Ubiquitin", "organism": "Homo sapiens",
+        }])
+        response = client.get("/runs/g5yes/verification")
+        assert response.status_code == 200
+        hit = response.json()["hits"][0]
+        assert hit["name"] == "Ubiquitin"
+        assert hit["organism"] == "Homo sapiens"
+        assert hit["identifier"] == "1UBQ"  # existing fields untouched
+
+    def test_hit_name_organism_null_on_older_runs(self, client: TestClient,
+                                                  tmp_path: Path,
+                                                  monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        self._write_run(tmp_path, "g5old", [{
+            "identifier": "1UBQ", "ident_type": "PDB_ID", "database": "pdb",
+            "final_confidence": 92.0, "is_verified": True,
+        }])
+        response = client.get("/runs/g5old/verification")
+        assert response.status_code == 200
+        hit = response.json()["hits"][0]
+        assert hit["name"] is None
+        assert hit["organism"] is None
+
+
 class TestPostRunsEndpoint:
     """Tests for the POST /runs endpoint."""
     
