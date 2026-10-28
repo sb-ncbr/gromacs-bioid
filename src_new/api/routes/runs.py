@@ -856,6 +856,8 @@ async def get_molecules(run_id: str) -> MoleculeSummaryResponse:
     for key, mol_info in fragments_data.get("unique", {}).items():
         unique_molecules[key] = MoleculeInstanceInfo(
             segment_ids=mol_info.get("segment_ids", []),
+            # v3.143 (BACKEND_GAPS G7 additive): full unique-group segments
+            segment_names=mol_info.get("segment_names", []),
             molecule_type=mol_info.get("molecule_type"),
             atom_count=mol_info.get("atom_count", 0),
             residue_count=mol_info.get("residue_count", 0),

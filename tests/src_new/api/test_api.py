@@ -805,6 +805,74 @@ class TestResultsCsv:
         assert response.status_code == 404
 
 
+class TestUniqueMoleculesAdmission:
+    """BACKEND_GAPS G7: unique_molecules — the store separates the
+    representative instance's segment_ids (single segment) from the full
+    group's segment_names (all identical segments, e.g. chains A–D in
+    run 9d90d777). The API must surface BOTH; segment_ids keeps its
+    documented instance semantics."""
+
+    def test_segment_names_full_group_additive(self, client: TestClient,
+                                               tmp_path: Path,
+                                               monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+        run_dir = tmp_path / "g7run"
+        run_dir.mkdir(parents=True)
+        results_data = {
+            "pipeline": {"name": "BAT3", "status": "finished"},
+            "data": {
+                "fragments": {
+                    "unique": {
+                        "type:protein|atoms:4260|residues:264": {
+                            "segment_ids": ["seg_0_Protein_chain_A"],
+                            "segment_names": ["seg_0_Protein_chain_A",
+                                              "seg_1_Protein_chain_B",
+                                              "seg_2_Protein_chain_C",
+                                              "seg_3_Protein_chain_D"],
+                            "molecule_type": "protein",
+                            "atom_count": 4260,
+                            "residue_count": 264,
+                        },
+                        "type:ion|atoms:1|residues:1|elements:Na=1": {
+                            "segment_ids": ["seg_6_SOD"],
+                            # older runs have no segment_names at all
+                            "molecule_type": "ion",
+                            "atom_count": 1,
+                            "residue_count": 1,
+                        },
+                    },
+                    "type_counts": {"protein": 1, "ion": 1},
+                    "total_count": 2,
+                    "segments": [
+                        {"segment": "seg_0_Protein_chain_A", "type": "protein",
+                         "copies": 1, "atoms_per_copy": 4260},
+                        {"segment": "seg_6_SOD", "type": "ion",
+                         "copies": 132, "atoms_per_copy": 1},
+                    ],
+                },
+                "universe": {"segment_list": ["seg_0_Protein_chain_A",
+                                              "seg_6_SOD"],
+                             "segments": {}},
+            },
+        }
+        (run_dir / "results.json").write_text(json.dumps(results_data))
+
+        response = client.get("/runs/g7run/molecules")
+        assert response.status_code == 200
+        unique = response.json()["unique_molecules"]
+
+        protein = unique["type:protein|atoms:4260|residues:264"]
+        # the full group (chains A–D) is now visible
+        assert protein["segment_names"] == [
+            "seg_0_Protein_chain_A", "seg_1_Protein_chain_B",
+            "seg_2_Protein_chain_C", "seg_3_Protein_chain_D"]
+        # representative-instance semantics kept for legacy consumers
+        assert protein["segment_ids"] == ["seg_0_Protein_chain_A"]
+
+        ion = unique["type:ion|atoms:1|residues:1|elements:Na=1"]
+        assert ion["segment_names"] == []  # older runs: key present, empty
+
+
 class TestRenderEndpoint:
     """Tests for the GET /runs/{run_id}/render endpoint."""
     

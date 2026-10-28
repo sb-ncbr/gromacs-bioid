@@ -18,6 +18,7 @@ Registered additions so far:
 from __future__ import annotations
 
 from src_new.api.models import (
+    MoleculeInstanceInfo,
     MoleculeSummaryResponse,
     RenderPathsResponse,
     RunStatusResponse,
@@ -45,6 +46,10 @@ BASELINE: dict[str, set[str]] = {
         "resolver_score", "segment", "similarity_score", "skeleton_sim",
         "supporting_evidence_count",
     },
+    "MoleculeInstanceInfo": {
+        "segment_ids", "molecule_type", "atom_count", "residue_count",
+        "smiles",
+    },
     "RenderPathsResponse": {
         "geometry", "run_id", "segment_pngs", "segments", "system_mmcif",
         "system_png", "total_atom_count",
@@ -56,6 +61,7 @@ REGISTERED_ADDITIONS: dict[str, dict[str, set[str]]] = {
     "g1_run_name": {"RunSummaryResponse": {"run_name"}},
     "g2_segment_progress": {"RunStatusResponse": {"progress"}},
     "g5_hit_name_organism": {"VerifiedHitItem": {"name", "organism"}},
+    "g7_unique_segment_names": {"MoleculeInstanceInfo": {"segment_names"}},
 }
 
 _MODELS = {
@@ -63,6 +69,7 @@ _MODELS = {
     "MoleculeSummaryResponse": MoleculeSummaryResponse,
     "RunStatusResponse": RunStatusResponse,
     "VerifiedHitItem": VerifiedHitItem,
+    "MoleculeInstanceInfo": MoleculeInstanceInfo,
     "RenderPathsResponse": RenderPathsResponse,
 }
 

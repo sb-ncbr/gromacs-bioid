@@ -82,6 +82,7 @@ API_ADDITIONS = [
     "results_csv",               # G6 — run-level CSV download
     "warning_details_segment_service",  # G4 — segment/service in warning details
     "hit_name_organism",       # G5 — name/organism on verified hits
+    "unique_segment_names",    # G7 — full unique-group segments
     "capabilities",              # this endpoint
 ]
 
@@ -102,7 +103,7 @@ def _api_capabilities() -> CapabilitiesResponse:
         duration = None
 
     return CapabilitiesResponse(
-        api_version_marker=1,
+        api_version_marker=2,
         additions=list(API_ADDITIONS),
         typical_duration_minutes=duration,
         code_version=_code_version(),

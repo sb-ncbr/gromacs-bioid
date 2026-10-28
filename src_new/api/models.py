@@ -127,6 +127,12 @@ class MoleculeInstanceInfo(BaseModel):
     """Information about a molecule instance."""
 
     segment_ids: List[str] = Field(default_factory=list, description="Segment IDs")
+    # v3.143 (BACKEND_GAPS G7): additive — the full segment list of the
+    # unique group (all identical instances, e.g. chains A–D), as stored
+    # under fragments/unique/<key>/segment_names. segment_ids remains the
+    # representative instance's segments for legacy consumers; empty on
+    # runs written before the store recorded the group.
+    segment_names: List[str] = Field(default_factory=list, description="All identical segments in the unique group")
     molecule_type: Optional[str] = Field(None, description="Molecule type")
     atom_count: int = Field(..., description="Number of atoms")
     residue_count: int = Field(..., description="Number of residues")
