@@ -181,17 +181,17 @@ class LoadedUniverse:
                 props.atom_count_fragment = len(selected.atoms)
                 props.bond_count_fragment = len(selected.bonds) if hasattr(selected.atoms, "bonds") else 0
                 try:
-                    fragments = selected.fragments
+                    fragments = self._seg_fragments(selected)
                 except MDAnalysis.exceptions.NoDataError:
                     fragments = []
-                props.molecule_count = len(fragments) if fragments else 1
+                props.molecule_count = 1 if segment_name in getattr(self, '_chain_union', set()) else (len(fragments) if fragments else 1)
                 props.residue_count = len(selected.residues)
             else:
                 # Real connected sub-fragment
                 props.atom_count_fragment = len(fragment.atoms)
                 props.bond_count_fragment = len(fragment.bonds) if hasattr(fragment.atoms, 'bonds') else 0
                 try:
-                    fragments = selected.fragments
+                    fragments = self._seg_fragments(selected)
                 except MDAnalysis.exceptions.NoDataError:
                     fragments = []
                 # A-09 (red-team 3.6): copies = size of the representative's
@@ -455,7 +455,7 @@ class LoadedUniverse:
                 selected = self.universe.atoms[self.universe.atoms.segids == segment_name]
                 self._selected_cache[segment_name] = selected
             try:
-                fragments = selected.fragments
+                fragments = self._seg_fragments(selected)
             except Exception:
                 continue
             if not fragments or len(fragments) < 2:
@@ -529,6 +529,37 @@ class LoadedUniverse:
         segs |= set(getattr(self, "_virtual_fragments", {}).keys())
         return segs
     
+    def _seg_fragments(self, selected):
+        """Connected components of the segment using ONLY bonds whose
+        both endpoints lie in the segment (cross-segid coordination/glycan/
+        disulfide bonds do not merge fragments with other segments).
+        """
+        import numpy as _np
+        from scipy.sparse import coo_matrix
+        from scipy.sparse.csgraph import connected_components
+        idx = selected.indices
+        if len(idx) == 0:
+            return []
+        try:
+            bidx = selected.bonds.indices
+        except MDAnalysis.exceptions.NoDataError:
+            raise
+        pos = {int(i): k for k, i in enumerate(idx)}
+        rows, cols = [], []
+        for a, b in bidx:
+            ka = pos.get(int(a)); kb = pos.get(int(b))
+            if ka is not None and kb is not None:
+                rows.append(ka); cols.append(kb)
+        n = len(idx)
+        g = coo_matrix((_np.ones(len(rows)), (rows, cols)), shape=(n, n))
+        nc, lab = connected_components(g, directed=False)
+        groups = {}
+        for k, l in enumerate(lab):
+            groups.setdefault(int(l), []).append(int(idx[k]))
+        out = [self.universe.atoms[_np.array(v, dtype=_np.int64)] for v in groups.values()]
+        out.sort(key=lambda f: int(f.indices[0]))
+        return out
+
     def _polymer_fragments(self, selected: AtomGroup, seg: str) -> list:
         """A-09 (red-team 3.6): fragments that are polymer by resname content.
 
@@ -540,7 +571,7 @@ class LoadedUniverse:
         composition and the copy number).
         """
         try:
-            fragments = selected.fragments
+            fragments = self._seg_fragments(selected)
         except MDAnalysis.exceptions.NoDataError:
             return []
         out = []
@@ -602,16 +633,9 @@ class LoadedUniverse:
             self._selected_cache[segment_name] = selected
         
         try:
-            fragments = selected.fragments
+            fragments = self._seg_fragments(selected)
         except MDAnalysis.exceptions.NoDataError:
             fragments = []
-        
-        # Filter out fragments that span multiple segments (e.g., cross-segment disulfide bonds)
-        if fragments:
-            fragments = [
-                f for f in fragments
-                if len(set(f.atoms.segids)) == 1 and f.atoms.segids[0] == segment_name
-            ]
         
         if not fragments:
             self._rep_cache[segment_name] = selected
@@ -619,6 +643,22 @@ class LoadedUniverse:
         
         # Get largest fragment
         largest = max(fragments, key=lambda f: len(f.atoms))
+
+        # F2 (BH-037): polymer chain broken into pieces (the bond guesser
+        # misses long bonds in low-quality geometry) -> union of the
+        # polymer pieces when they are ONE chain (no (resid, icode)
+        # repeated across different residues = not separate copies).
+        _poly = self._polymer_fragments(selected, segment_name)
+        if len(_poly) > 1:
+            _res = {int(r.resindex): (int(r.resid), str(getattr(r, 'icode', ''))) for f in _poly for r in f.residues}
+            if len(set(_res.values())) == len(_res):
+                import numpy as _np
+                idx = _np.array(sorted({int(i) for f in _poly for i in f.atoms.indices}), dtype=_np.int64)
+                rep = self.universe.atoms[idx]
+                self._rep_cache[segment_name] = rep
+                self._chain_union = getattr(self, '_chain_union', set())
+                self._chain_union.add(segment_name)
+                return rep
 
         # If largest fragment is most of the segment, return it
         if len(largest.atoms) >= len(selected.atoms) * 0.8:
