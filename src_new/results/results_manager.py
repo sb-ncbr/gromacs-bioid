@@ -4,7 +4,10 @@ import copy
 import json
 import os
 import subprocess
+import threading
+import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Union
@@ -54,9 +57,18 @@ def _code_version() -> str:
 
 
 class ResultsManager:
+    # W3 A6 (BH-047): minimum wall-clock spacing between real writes
+    # while a deferred-save window is active (bounded O(1) saves/stage).
+    _MIN_SAVE_INTERVAL_S = 10.0
+
     def __init__(self, path: Union[Path, str], pipeline_name: str = ""):
         self.path = Path(path)
         self._payload = None
+        self._save_lock = threading.RLock()
+        self._defer_depth = 0
+        self._defer_interval_s = self._MIN_SAVE_INTERVAL_S
+        self._save_dirty = False
+        self._last_save_mono = 0.0
         
         if not self.path.exists():
             # Create new file with default payload
@@ -194,11 +206,54 @@ class ResultsManager:
                     self._payload[key] = []
     
     def _save(self) -> None:
-        """Save the payload atomically."""
-        self._payload["updated_at"] = _now_iso()
-        # Convert any Path objects to strings before saving
-        clean_payload = _convert_paths_to_strings(copy.deepcopy(self._payload))
-        atomic_write_json(self.path, clean_payload)
+        """Save the payload atomically.
+
+        W3 A6 (BH-047): inside a deferred_saves() window writes are
+        throttled to at most one per interval (the payload mutation stays
+        in memory; F14's merge loop otherwise rewrote a 10 MB file 41.6k
+        times). Outside a window the write is synchronous - the API/UI
+        and the duplicate-execution guard read results.json promptly.
+        atomic_write_json sanitizes+copies the trailer itself, so no
+        extra deepcopy here (that copy was the other half of the O(N^2)).
+        """
+        with self._save_lock:
+            if self._defer_depth > 0:
+                self._save_dirty = True
+                if time.monotonic() - self._last_save_mono < self._defer_interval_s:
+                    return
+            self._payload["updated_at"] = _now_iso()
+            # Path->str converter rebuilds the container layers as it
+            # walks (and atomic_write_json re-sanitizes); the previous
+            # extra copy.deepcopy of a 10 MB payload was half of BH-047.
+            atomic_write_json(self.path, _convert_paths_to_strings(self._payload))
+            self._last_save_mono = time.monotonic()
+            self._save_dirty = False
+
+    @contextmanager
+    def deferred_saves(self, min_interval_s: float | None = None):
+        """Batch mode for stage merge loops (analyze/signatures/identify/
+        verify, W3 A6): flush at most once per `min_interval_s`
+        (default 10 s) and once more at window exit. Nest-safe; each exit
+        flushes pending changes.
+        """
+        with self._save_lock:
+            self._defer_depth += 1
+            previous_interval = self._defer_interval_s
+            if min_interval_s is not None:
+                self._defer_interval_s = float(min_interval_s)
+        try:
+            yield self
+        finally:
+            with self._save_lock:
+                self._defer_depth -= 1
+                self._defer_interval_s = previous_interval
+            self.flush()
+
+    def flush(self) -> None:
+        """Persist immediately when a deferred window deferred a write."""
+        with self._save_lock:
+            if self._save_dirty:
+                self._save()
     
     def start_run(self, step_definitions=None, task_definitions=None, metadata=None,
                   input_kind=None, input_files=None, working_directory=None, 

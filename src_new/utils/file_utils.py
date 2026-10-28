@@ -33,21 +33,22 @@ def _sanitize_for_json(obj):
         return obj
 
 
-def atomic_write_json(path: Path, data: dict) -> None:
+def atomic_write_json(path: Path, data: dict, indent: int | None = None) -> None:
     """Write JSON data atomically using a temp file and os.replace.
-    
+
     Creates parent directories if missing.
-    Writes JSON with indent=4 to a temp file in the same directory.
+    Writes compact JSON (indent=None) to a temp file in the same directory
+    unless `indent` is given explicitly.
     Cleans up temp file on failure.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Create temp file in the same directory
     fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(_sanitize_for_json(data), f, indent=4, allow_nan=False)
+            json.dump(_sanitize_for_json(data), f, indent=indent, allow_nan=False)
         os.replace(tmp_path, path)
     except Exception:
         # Clean up temp file on failure

@@ -292,21 +292,24 @@ def _analyze_universe(context):
     if not universe:
         context.fail("missing_universe", "No universe loaded for analysis")
 
-    facade = LoadedUniverse(
-        universe=universe,
-        decision=decision,
-        repair_report=report,
-        results=context.results,
-        enhanced_nucleic_recognition=(
-            context.config.signatures.enhanced_nucleic_acid_recognition
-        ),
-    )
+    # W3 A6 (BH-047): facade/store construction records one results.json
+    # write per segment fragment; defer to <= 1 per 10 s + final flush.
+    with _deferred_writes(context.results):
+        facade = LoadedUniverse(
+            universe=universe,
+            decision=decision,
+            repair_report=report,
+            results=context.results,
+            enhanced_nucleic_recognition=(
+                context.config.signatures.enhanced_nucleic_acid_recognition
+            ),
+        )
 
-    store = FragmentStore(facade, context.results)
+        store = FragmentStore(facade, context.results)
 
-    context.record_data("molecules/count", len(store.get_all_instances()))
-    context.record_data("molecules/unique_count", len(store.get_unique_molecules()))
-    context.record_data("molecules/type_counts", store.get_unique_counts_by_type())
+        context.record_data("molecules/count", len(store.get_all_instances()))
+        context.record_data("molecules/unique_count", len(store.get_unique_molecules()))
+        context.record_data("molecules/type_counts", store.get_unique_counts_by_type())
 
     # Record whole-system info
     system = store.get_whole_system_instance()
@@ -372,6 +375,47 @@ def _chemistry_size_skipped(atom_count, generated_keys, cap):
                    for k in generated_keys)
 
 
+
+def _deferred_writes(results):
+    """Deferred-save window (W3 A6) when the results store supports it;
+    a null context otherwise (test fakes / lightweight contexts)."""
+    cm = getattr(results, "deferred_saves", None)
+    if callable(cm):
+        return cm()
+    import contextlib
+    return contextlib.nullcontext()
+
+
+# W3 A6 (BH-047): generators whose output is per-copy by construction
+# (they embed the segment/chain identity). Everything else is shared
+# across copies of the same molecule.
+_PER_COPY_GENERATORS = {"mmcif", "name_chain", "name_segment"}
+
+
+def _base_generator_name(out_key: str) -> str:
+    """'fasta_map_protein[A]' -> 'fasta_map_protein'."""
+    return out_key.split("[", 1)[0]
+
+
+def _snapshot_group_key(snapshot) -> tuple:
+    """Strengthened per-unique key for signature generation (W3 A6):
+    bond topology + atom names + elements + residue names. Two copies of
+    the same molecule differ only in placement, never in these."""
+    try:
+        bonds = tuple(sorted((int(a), int(b)) for a, b in (snapshot.bonds or [])))
+    except Exception:
+        bonds = ()
+    return (
+        getattr(snapshot, "molecule_type", None),
+        getattr(snapshot, "atom_count", None),
+        getattr(snapshot, "residue_count", None),
+        tuple(getattr(snapshot, "names", ())),
+        tuple(getattr(snapshot, "elements", ())),
+        bonds,
+        tuple(getattr(snapshot, "resnames", ())),
+    )
+
+
 def _generate_signatures(context):
     """Generate signatures for all segments with optional parallelism."""
     from ..signatures.registry import get_default_generators
@@ -387,32 +431,55 @@ def _generate_signatures(context):
     
     # Get all instances from store
     all_instances = store.get_all_instances()
-    
-    # Create a mapping from segment_name to instance
+
+    # Create a mapping from segment_name to instance (EVERY member
+    # segment, not just the representative - copies need it at merge).
     segment_to_instance = {}
     for inst in all_instances:
-        if inst.segment_ids:
-            segment_to_instance[inst.segment_ids[0]] = inst
-    
+        for seg_name in (inst.segment_ids or []):
+            segment_to_instance.setdefault(seg_name, inst)
+
     # Build snapshots for all segments
     snapshots = []
+    snapshot_by_segment = {}
     for segment_name in sorted(facade.get_segments()):
         fragment = facade.get_fragment(segment_name)
         instance = segment_to_instance.get(segment_name)
-        
+
         if instance is None:
             logger.warning(f"No MoleculeInstance found for segment {segment_name}, skipping signatures")
             continue
-        
+
         try:
             snapshot = build_signature_snapshot(segment_name, fragment, instance, facade)
             snapshots.append(snapshot)
+            snapshot_by_segment[segment_name] = snapshot
         except Exception as e:
             logger.warning(f"Failed to build snapshot for {segment_name}: {e}")
             continue
-    
+
     if not snapshots:
         return StepResult(summary={"generated": True, "segments": 0, "signatures": 0})
+
+    # W3 A6 (BH-047): group segments by the strengthened uniqueness key
+    # and generate ONCE per unique fragment group (F14: 4x instead of
+    # 2952x), then copy results to the copies. Only mmcif/name_chain/
+    # name_segment differ per copy and are recomputed at merge time.
+    groups = {}
+    ordered_keys = []
+    for snapshot in snapshots:
+        key = _snapshot_group_key(snapshot)
+        if key not in groups:
+            groups[key] = []
+            ordered_keys.append(key)
+        groups[key].append(snapshot.segment_name)
+    reps = []
+    group_members = {}
+    for key in ordered_keys:
+        members = groups[key]
+        rep = members[0]
+        reps.append(snapshot_by_segment[rep])
+        group_members[rep] = members
     
     # Convert config to dict for workers
     config_dict = context.config.to_dict()
@@ -420,10 +487,12 @@ def _generate_signatures(context):
     if deadline is not None:
         config_dict["_stage_deadline_epoch"] = deadline
 
-    # Decide whether to use parallel execution
+    generators = get_default_generators(context.config.signatures)
+
+    # Decide whether to use parallel execution (representatives only)
     use_parallel = (
         context.config.executor.signatures_parallel and
-        len(snapshots) > 1
+        len(reps) > 1
     )
 
     max_workers = context.config.executor.n_threads
@@ -432,15 +501,14 @@ def _generate_signatures(context):
     budget_hit = False
     if use_parallel:
         # Run in process pool
-        items = [(s.__dict__, config_dict) for s in snapshots]
+        items = [(s.__dict__, config_dict) for s in reps]
         results = run_with_process_pool(max_workers, _generate_signatures_worker, items)
     else:
         # Direct serial execution: use real objects, skip snapshot reconstruction
-        from ..signatures.registry import get_default_generators
-        generators = get_default_generators(context.config.signatures)
         results = []
         _spin_dbg = os.environ.get("SPIN_DEBUG") == "1"
-        for segment_name in sorted(facade.get_segments()):
+        rep_names = [s.segment_name for s in reps]
+        for segment_name in rep_names:
             if _budget_exceeded(context):
                 budget_hit = True
                 logger.warning(f"generate_signatures: stage time budget exceeded at segment {segment_name}; partial output")
@@ -498,57 +566,109 @@ def _generate_signatures(context):
                 "flags": _segment_flags(fragment),
             })
     
-    # Merge results into context.results in main thread
+    # Merge results into context.results in main thread.
+    # W3 A6 (BH-047): each representative expands to its whole unique
+    # group; per-copy generators (mmcif/name_chain/name_segment) are
+    # recomputed per member; all writes go through a deferred-save
+    # window (<= 1 write / 10 s + final flush - F14 wrote 41.6k times,
+    # 6146 s for 4.2 s of chemistry), and the stage budget is checked
+    # INSIDE the merge loop (the generation loop ends long before the
+    # unbounded merge used to).
     generated_count = 0
-    for result in results:
-        if result is None:
-            continue
-        
-        segment_name = result["segment_name"]
-        
-        # Record warnings from errors
-        for error in result.get("errors", []):
-            gen_name = error.get("generator", "unknown")
-            error_msg = error.get("error", "unknown error")
-            context.add_warning("signature_generator_failed", f"{gen_name}: {error_msg}",
-                                details={"segment": segment_name, "generator": gen_name,
-                                         "service": gen_name})
-        
-        for gen_name, sig in result["generated"].items():
-            context.results.set_data(f"signatures/{segment_name}/generated/{gen_name}", sig)
-            generated_count += 1
-        
-        if result.get("attempted"):
-            context.results.set_data(f"signatures/{segment_name}/attempted", result["attempted"])
+    _atom_cap = context.config.signatures.smiles_maximum_number_of_atoms
+    _per_copy_gens = [g for g in generators if g.name in _PER_COPY_GENERATORS]
+    with _deferred_writes(context.results):
+        for result in results:
+            if result is None:
+                continue
 
-        if result.get("flags"):
-            context.results.set_data(f"signatures/{segment_name}/flags", result["flags"])
+            rep_name = result["segment_name"]
 
-        # bughunt BH-032: a molecule above the chemistry atom cap got no
-        # SMILES/InChI SILENTLY (M12 enramycin, 309 atoms vs the 250 cap:
-        # no message at all). Make the skip visible; formula and
-        # residue-name signatures still run (their own gates).
-        _inst = segment_to_instance.get(segment_name)
-        _atom_cap = context.config.signatures.smiles_maximum_number_of_atoms
-        if _chemistry_size_skipped(
-                getattr(_inst, "atom_count", None),
-                list(result["generated"]),
-                _atom_cap):
-            context.add_warning(
-                "chemistry_skipped_size",
-                f"{segment_name}: {_inst.atom_count} atoms exceeds the chemistry "
-                f"atom limit ({_atom_cap}); SMILES/InChI signatures skipped "
-                "(formula and residue-name signatures still generated)",
-                details={"segment": segment_name,
-                         "atom_count": _inst.atom_count,
-                         "limit": _atom_cap},
-            )
+            # Record warnings from errors (once per representative)
+            for error in result.get("errors", []):
+                gen_name = error.get("generator", "unknown")
+                error_msg = error.get("error", "unknown error")
+                context.add_warning("signature_generator_failed", f"{gen_name}: {error_msg}",
+                                    details={"segment": rep_name, "generator": gen_name,
+                                             "service": gen_name})
 
-        # F-N1e: persist (bounded) generation errors for postmortem visibility
-        _sig_errs = bounded_stage_errors(result.get("errors", []))
-        if _sig_errs:
-            context.results.set_data(f"stage_errors/signatures/{segment_name}", _sig_errs)
-    
+            for member_name in group_members.get(rep_name, [rep_name]):
+                if _budget_exceeded(context):
+                    budget_hit = True
+                    logger.warning(
+                        f"generate_signatures: stage time budget exceeded during merge "
+                        f"at {member_name}; partial output")
+                    break
+
+                instance = segment_to_instance.get(member_name)
+                fragment = facade.get_fragment(member_name)
+
+                if member_name == rep_name:
+                    gen_map = dict(result.get("generated", {}))
+                    attempted = list(result.get("attempted") or [])
+                    errors = list(result.get("errors", []))
+                else:
+                    # shared chemistry from the representative
+                    gen_map = {
+                        k: v for k, v in result.get("generated", {}).items()
+                        if _base_generator_name(k) not in _PER_COPY_GENERATORS
+                    }
+                    attempted = [a for a in (result.get("attempted") or [])
+                                 if a not in _PER_COPY_GENERATORS]
+                    errors = list(result.get("errors", []))
+                    # per-copy outputs recomputed for THIS member
+                    if instance is not None and fragment is not None:
+                        member_facade = _pinned_props_facade(facade, member_name)
+                        for gen_obj in _per_copy_gens:
+                            try:
+                                if gen_obj.is_applicable(instance, fragment, member_facade):
+                                    attempted.append(gen_obj.name)
+                                    sig = gen_obj.generate(instance, fragment, member_facade)
+                                    if isinstance(sig, dict):
+                                        for _label, _val in sig.items():
+                                            if _val:
+                                                gen_map[f"{gen_obj.name}[{_label}]"] = _val
+                                    elif sig is not None:
+                                        gen_map[gen_obj.name] = sig
+                            except Exception:
+                                continue
+
+                for gen_name, sig in gen_map.items():
+                    context.results.set_data(f"signatures/{member_name}/generated/{gen_name}", sig)
+                    generated_count += 1
+
+                if attempted:
+                    context.results.set_data(f"signatures/{member_name}/attempted", attempted)
+
+                flags = _segment_flags(fragment) if fragment is not None else result.get("flags")
+                if flags:
+                    context.results.set_data(f"signatures/{member_name}/flags", flags)
+
+                # bughunt BH-032: a molecule above the chemistry atom cap
+                # got no SMILES/InChI SILENTLY - make the skip visible.
+                _inst = segment_to_instance.get(member_name)
+                if _inst is not None and _chemistry_size_skipped(
+                        getattr(_inst, "atom_count", None),
+                        list(gen_map),
+                        _atom_cap):
+                    context.add_warning(
+                        "chemistry_skipped_size",
+                        f"{member_name}: {_inst.atom_count} atoms exceeds the chemistry "
+                        f"atom limit ({_atom_cap}); SMILES/InChI signatures skipped "
+                        "(formula and residue-name signatures still generated)",
+                        details={"segment": member_name,
+                                 "atom_count": _inst.atom_count,
+                                 "limit": _atom_cap},
+                    )
+
+                # F-N1e: persist (bounded) generation errors for postmortem visibility
+                _sig_errs = bounded_stage_errors(errors)
+                if _sig_errs:
+                    context.results.set_data(f"stage_errors/signatures/{member_name}", _sig_errs)
+
+            if budget_hit:
+                break
+
     if budget_hit:
         context.add_warning(
             "stage_time_budget",
@@ -649,59 +769,73 @@ def _identify_molecules(context):
         cache = ResolverCache(context.config)
         manager = IdentifierResolutionManager(registry, context.config, signature_type_map=sig_type_map)
 
+        # W3 A6 (BH-047): resolve() writes per (segment, generator, hit) -
+        # defer saves across the serial resolve loop.
         results = []
-        for fragment_name, valid_sigs in items_serial:
-            if _budget_exceeded(context):
-                budget_hit = True
-                logger.warning(f"identify_molecules: stage time budget exceeded at fragment {fragment_name}; partial output")
-                break
-            fragment_result = {"fragment_name": fragment_name, "results": {}, "errors": []}
-            for generator_name, signature in valid_sigs.items():
+        with _deferred_writes(context.results):
+            for fragment_name, valid_sigs in items_serial:
                 if _budget_exceeded(context):
                     budget_hit = True
-                    logger.warning(f"identify_molecules: stage time budget exceeded at {fragment_name}/{generator_name}; partial output")
+                    logger.warning(f"identify_molecules: stage time budget exceeded at fragment {fragment_name}; partial output")
                     break
-                # Collect errors from this resolution
-                resolver_errors = []
-                hits_found = manager.resolve(
-                    results=context.results,
-                    segment=fragment_name,
-                    signature_generator_name=generator_name,
-                    signature=signature,
-                    cache=cache,
-                    working_directory=str(context.working_directory),
-                    errors=resolver_errors,
-                    deadline_epoch=budget_deadline(context),
-                )
-                # Add resolver errors to fragment_result
-                fragment_result["errors"].extend(resolver_errors)
-            # In serial mode, manager.resolve() writes directly to context.results
-            # so we just return an empty results dict and errors
-            results.append(fragment_result)
-    
+                fragment_result = {"fragment_name": fragment_name, "results": {}, "errors": []}
+                for generator_name, signature in valid_sigs.items():
+                    if _budget_exceeded(context):
+                        budget_hit = True
+                        logger.warning(f"identify_molecules: stage time budget exceeded at {fragment_name}/{generator_name}; partial output")
+                        break
+                    # Collect errors from this resolution
+                    resolver_errors = []
+                    hits_found = manager.resolve(
+                        results=context.results,
+                        segment=fragment_name,
+                        signature_generator_name=generator_name,
+                        signature=signature,
+                        cache=cache,
+                        working_directory=str(context.working_directory),
+                        errors=resolver_errors,
+                        deadline_epoch=budget_deadline(context),
+                    )
+                    # Add resolver errors to fragment_result
+                    fragment_result["errors"].extend(resolver_errors)
+                # In serial mode, manager.resolve() writes directly to context.results
+                # so we just return an empty results dict and errors
+                results.append(fragment_result)
+
     # Merge results into context.results in main thread
-    for result in results:
-        if result is None:
-            continue
-        
-        fragment_name = result["fragment_name"]
-        
-        # Record warnings from errors
-        for error in result.get("errors", []):
-            resolver_name = error.get("resolver", "unknown")
-            gen_name = error.get("generator", "unknown")
-            error_msg = error.get("error", "unknown error")
-            context.add_warning("identifier_resolver_failed", f"{resolver_name} ({gen_name}): {error_msg}",
-                                details={"segment": fragment_name, "service": resolver_name,
-                                         "generator": gen_name})
+    # W3 A6 (BH-047): deferred-save window (parallel workers return one
+    # entry per segment per generator here).
+    with _deferred_writes(context.results):
+        for result in results:
+            if result is None:
+                continue
+            if _budget_exceeded(context):
+                budget_hit = True
+                logger.warning("verify_results: stage time budget exceeded during merge; partial output")
+                break
+            if _budget_exceeded(context):
+                budget_hit = True
+                logger.warning("identify_molecules: stage time budget exceeded during merge; partial output")
+                break
 
-        # F-N1e: persist (bounded) resolution errors for postmortem visibility
-        _ident_errs = bounded_stage_errors(result.get("errors", []))
-        if _ident_errs:
-            context.results.set_data(f"stage_errors/identifiers/{fragment_name}", _ident_errs)
+            fragment_name = result["fragment_name"]
 
-        for path, value in result["results"].items():
-            context.results.set_data(path, value)
+            # Record warnings from errors
+            for error in result.get("errors", []):
+                resolver_name = error.get("resolver", "unknown")
+                gen_name = error.get("generator", "unknown")
+                error_msg = error.get("error", "unknown error")
+                context.add_warning("identifier_resolver_failed", f"{resolver_name} ({gen_name}): {error_msg}",
+                                    details={"segment": fragment_name, "service": resolver_name,
+                                             "generator": gen_name})
+
+            # F-N1e: persist (bounded) resolution errors for postmortem visibility
+            _ident_errs = bounded_stage_errors(result.get("errors", []))
+            if _ident_errs:
+                context.results.set_data(f"stage_errors/identifiers/{fragment_name}", _ident_errs)
+
+            for path, value in result["results"].items():
+                context.results.set_data(path, value)
     
     if budget_hit:
         context.add_warning(
@@ -776,38 +910,40 @@ def _verify_results(context):
             results.append(result)
     
     # Merge results into context.results in main thread
-    for result in results:
-        if result is None:
-            continue
+    # W3 A6 (BH-047): deferred-save window around per-segment writes.
+    with _deferred_writes(context.results):
+        for result in results:
+            if result is None:
+                continue
         
-        segment = result["segment"]
-        verified_hits = result["verified_hits"]
-        # v3.143 (red-team E-01/D-04): the worker surfaces budget cuts on the
-        # parallel path as partial=True; fold into the step-level flag.
-        if result.get("partial"):
-            budget_hit = True
+            segment = result["segment"]
+            verified_hits = result["verified_hits"]
+            # v3.143 (red-team E-01/D-04): the worker surfaces budget cuts on the
+            # parallel path as partial=True; fold into the step-level flag.
+            if result.get("partial"):
+                budget_hit = True
         
-        # Record warnings from errors
-        for error in result.get("errors", []):
-            error_msg = error.get("error", "unknown error")
-            context.add_warning("verification_failed", f"{segment}: {error_msg}",
-                                details={"segment": segment})
+            # Record warnings from errors
+            for error in result.get("errors", []):
+                error_msg = error.get("error", "unknown error")
+                context.add_warning("verification_failed", f"{segment}: {error_msg}",
+                                    details={"segment": segment})
         
-        context.results.set_data(f"verification/{segment}/verified_hits", verified_hits)
-        # v3.142 (Phase 4): per-segment class sizes. The parallel worker path
-        # discards the per-segment temp ResultsManager (only hits return), so
-        # verify_all's own additive writes never reach the final results.json —
-        # the step must persist them itself from the returned hit dicts.
-        try:
-            class_sizes: dict[str, int] = {}
-            for h in verified_hits:
-                cid = h.get("equivalence_class_id")
-                if h.get("is_verified") and cid:
-                    class_sizes[cid] = class_sizes.get(cid, 0) + 1
-            context.results.set_data(f"verification/{segment}/class_sizes", class_sizes)
-        except Exception:
-            logger.warning("verify_results: class_sizes persist failed (additive only)",
-                           exc_info=True)
+            context.results.set_data(f"verification/{segment}/verified_hits", verified_hits)
+            # v3.142 (Phase 4): per-segment class sizes. The parallel worker path
+            # discards the per-segment temp ResultsManager (only hits return), so
+            # verify_all's own additive writes never reach the final results.json —
+            # the step must persist them itself from the returned hit dicts.
+            try:
+                class_sizes: dict[str, int] = {}
+                for h in verified_hits:
+                    cid = h.get("equivalence_class_id")
+                    if h.get("is_verified") and cid:
+                        class_sizes[cid] = class_sizes.get(cid, 0) + 1
+                context.results.set_data(f"verification/{segment}/class_sizes", class_sizes)
+            except Exception:
+                logger.warning("verify_results: class_sizes persist failed (additive only)",
+                               exc_info=True)
 
     # v3.142 (Phase 3): composition provenance — identical dict verify_all
     # writes; the step re-persists it on the REAL results manager because the
