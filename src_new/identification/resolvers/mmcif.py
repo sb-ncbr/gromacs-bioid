@@ -176,6 +176,9 @@ class MmCifResolver(IdentifierResolver):
             results = self._mmcif_similarity_search(cif_path)
             return results
         except Exception as exc:
+            # A9 (BH-044): never fail silently — the manager's not-result
+            # path records _last_error as a stage error/warning.
+            self._last_error = str(exc)
             logger.warning(f"MmCif structure resolution failed: {exc}")
             return []
         finally:
@@ -298,9 +301,15 @@ class MmCifResolver(IdentifierResolver):
             response_json: dict = response.json()
             return response_json
         except requests.exceptions.Timeout:
-            raise IdentifierResolutionError("RCSB API request timed out")
+            raise IdentifierResolutionError(
+                "structure_search_unavailable: RCSB API request timed out")
         except requests.exceptions.RequestException as exc:
-            raise IdentifierResolutionError(f"RCSB API request failed: {exc}")
+            # A9 (BH-044): countable, status-carrying failure (the ~100
+            # silent 404s for Celery-dispatched runs)
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            detail = f"HTTP {status}" if status is not None else str(exc)
+            raise IdentifierResolutionError(
+                f"structure_search_unavailable: {detail}")
 
     def _parse_mmcif_response(self, response: dict) -> list[tuple[str, float]]:
         """
@@ -323,6 +332,33 @@ class MmCifResolver(IdentifierResolver):
         
         return results
 
+    def _stage_adhoc_url(self, cif_path: str) -> str | None:
+        """A9 (BH-044): write the segment mmCIF to the shared adhoc
+        directory as <sha256>.cif and return its run-independent public
+        URL. Returns None when adhoc staging is not configured/possible;
+        callers then keep the legacy per-run URL path."""
+        adhoc_dir = getattr(self.config.pdb, "adhoc_files_dir", "") or \
+            os.environ.get("BAT3_ADHOC_DIR", "")
+        if not adhoc_dir:
+            return None
+        try:
+            import hashlib
+            from pathlib import Path
+            root = Path(adhoc_dir)
+            root.mkdir(parents=True, exist_ok=True)
+            content = Path(cif_path).read_bytes()
+            sha = hashlib.sha256(content).hexdigest()
+            target = root / f"{sha}.cif"
+            if not target.exists():
+                tmp = root / f".{sha}.tmp"
+                tmp.write_bytes(content)
+                os.replace(tmp, target)  # atomic publish
+            base = self.config.pdb.deployment_file_url.rstrip('/')
+            return f"{base}/files/adhoc/{sha}.cif"
+        except Exception as exc:
+            logger.warning(f"mmCIF adhoc staging failed: {exc}")
+            return None
+
     def _mmcif_similarity_search(self, cif_path: str) -> list[tuple[str, float]]:
         """
         Execute complete mmCIF similarity search workflow.
@@ -337,13 +373,18 @@ class MmCifResolver(IdentifierResolver):
         
         # Check if deployment file access is enabled
         if self.config.pdb.use_deployment_file_access:
-            filename = os.path.basename(cif_path)
-            uuid = self.config.pdb.curr_uuid
-            if not uuid:
-                logger.warning("mmCIF query skipped: curr_uuid is empty")
-                return []
-            base = self.config.pdb.deployment_file_url.rstrip('/')
-            remote_path = f"{base}/files/{uuid}/input/{filename}"
+            # A9 (BH-044): prefer the run-independent adhoc URL — Celery
+            # runs are not in the API registry, so /files/{uuid}/...
+            # returned 404 for ALL of them (structure search silently off).
+            remote_path = self._stage_adhoc_url(cif_path)
+            if remote_path is None:
+                filename = os.path.basename(cif_path)
+                uuid = self.config.pdb.curr_uuid
+                if not uuid:
+                    logger.warning("mmCIF query skipped: curr_uuid is empty")
+                    return []
+                base = self.config.pdb.deployment_file_url.rstrip('/')
+                remote_path = f"{base}/files/{uuid}/input/{filename}"
             logger.info(f"mmCIF query remote_path: {remote_path}")
             
             # Fetch similar structures

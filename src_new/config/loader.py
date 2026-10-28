@@ -22,6 +22,9 @@ def _apply_deployment_env_overrides(config: "RunConfig") -> None:
     url = os.environ.get("DEPLOYMENT_FILE_URL")
     if url:
         config.pdb.deployment_file_url = url.rstrip("/")
+    adhoc = os.environ.get("BAT3_ADHOC_DIR")
+    if adhoc:
+        config.pdb.adhoc_files_dir = adhoc
 
 
 @dataclass
@@ -267,6 +270,11 @@ class PDBConfig:
     use_deployment_file_access: bool = True
     deployment_file_url: str = "https://bioid.dyn.cloud.e-infra.cz"
     curr_uuid: str = ""  # runtime field, set by API/Celery
+    # A9 (BH-044): shared directory where the worker stages segment mmCIFs
+    # as run-independent URLs (/files/adhoc/<sha256>.cif) for RCSB
+    # structure search. Celery-dispatched runs are NOT in the API registry,
+    # so /files/{uuid}/... 404s for them. Empty = legacy uuid URL fallback.
+    adhoc_files_dir: str = ""
     # SSH upload configuration (for local/validation runs)
     ssh_host: str = ""
     ssh_user: str = ""

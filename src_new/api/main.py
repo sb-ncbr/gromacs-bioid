@@ -1,6 +1,7 @@
 """FastAPI application for BAT3 Pipeline API."""
 
 import os
+import re
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -115,6 +116,26 @@ def _api_capabilities() -> CapabilitiesResponse:
 @app.get("/api/v1/capabilities", response_model=CapabilitiesResponse)
 async def get_capabilities():
     return _api_capabilities()
+
+
+# --- Adhoc (run-independent) file serving (W3 A9, BH-044) -----------------
+# Workers stage segment mmCIFs as <adhoc_root>/<sha256>.cif; RCSB structure
+# search is pointed at /files/adhoc/<sha256>.cif — no run registry lookup,
+# so Celery-dispatched runs get working structure search. Strict
+# sha256 filename guard keeps the route read-only-safe.
+ADHOC_FILES_ROOT = Path(os.environ.get("BAT3_ADHOC_DIR", ""))
+_ADHOC_NAME_RE = re.compile(r"^[0-9a-f]{64}\.cif$")
+
+
+@app.get("/files/adhoc/{filename}", include_in_schema=False)
+async def serve_adhoc_file(filename: str):
+    """Serve a worker-staged adhoc mmCIF by content sha256 (404 on miss)."""
+    if not ADHOC_FILES_ROOT or not _ADHOC_NAME_RE.match(filename):
+        raise HTTPException(status_code=404, detail="Not Found")
+    target = ADHOC_FILES_ROOT / filename
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="Not Found")
+    return FileResponse(str(target))
 
 
 # --- Validation-runs file serving (F-N1a) ---------------------------------
