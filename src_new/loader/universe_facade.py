@@ -91,6 +91,14 @@ _SINGLE_ATOM_ION_ELEMENTS: frozenset[str] = frozenset(
     | {"HE", "NE", "AR", "KR", "XE", "RN"}
 )
 
+# B4 (BH-002): free-ion coordination edge vocabulary for the segmentation
+# cut — the ion-channel METALS only. Halides are covalent substituents on
+# small molecules (gefitinib C-Cl/C-F) and must never be cut; noble gases
+# never coordinate.
+_COORDINATION_METALS: frozenset[str] = frozenset(
+    {s.upper() for s in ION_CHANNEL_VOCAB} - {"CL", "F", "I", "BR"}
+)
+
 
 class LoadedUniverse:
     """Facade wrapping a loaded+repaired MDAnalysis Universe.
@@ -534,6 +542,7 @@ class LoadedUniverse:
         both endpoints lie in the segment (cross-segid coordination/glycan/
         disulfide bonds do not merge fragments with other segments).
         """
+        import collections
         import numpy as _np
         from scipy.sparse import coo_matrix
         from scipy.sparse.csgraph import connected_components
@@ -545,11 +554,44 @@ class LoadedUniverse:
         except MDAnalysis.exceptions.NoDataError:
             raise
         pos = {int(i): k for k, i in enumerate(idx)}
+        # B4 (BH-002): metal/ion coordination edges (a CONECT-authored
+        # Na..GLN-OE1 / Na..HOH) are NOT covalent chain material — cutting
+        # them from the SEGMENTATION graph lets the ion be its own
+        # segment instead of being absorbed into the chain (P10/S02 Na,
+        # P04/S20 Ca). Universe bonds are untouched (export/mmCIF keeps
+        # them), same treatment as A2's cross-segment bonds.
+        try:
+            elems = [str(e or "").strip().upper() for e in selected.elements]
+        except MDAnalysis.exceptions.NoDataError:
+            elems = [""] * len(idx)
+        # B4 (BH-002): a coordination edge is cut only when the metal
+        # endpoint is a FREE ion (single-atom residue). Metals inside a
+        # multi-atom residue (heme Fe, [Fe-S] clusters) stay bonded —
+        # their bonds define the cofactor species, they are not free ion
+        # absorption.
+        res_sizes: collections.Counter | None = None
+        try:
+            res_sizes = collections.Counter(
+                int(r) for r in selected.resindices)
+        except MDAnalysis.exceptions.NoDataError:
+            res_sizes = None
+
+        def _free_metal(k: int) -> bool:
+            ea = elems[k] if k < len(elems) else ""
+            if ea not in _COORDINATION_METALS:
+                return False
+            if res_sizes is None:
+                return False
+            return res_sizes.get(int(selected.resindices[k]), 2) == 1
+
         rows, cols = [], []
         for a, b in bidx:
             ka = pos.get(int(a)); kb = pos.get(int(b))
-            if ka is not None and kb is not None:
-                rows.append(ka); cols.append(kb)
+            if ka is None or kb is None:
+                continue
+            if _free_metal(ka) != _free_metal(kb):
+                continue  # coordination cut: free ion <-> non-ion
+            rows.append(ka); cols.append(kb)
         n = len(idx)
         g = coo_matrix((_np.ones(len(rows)), (rows, cols)), shape=(n, n))
         nc, lab = connected_components(g, directed=False)
@@ -587,12 +629,23 @@ class LoadedUniverse:
             for res in residues:
                 try:
                     rn = str(res.resname or "").strip().upper()
-                    names = list(res.atoms.names)
                 except MDAnalysis.exceptions.NoDataError:
                     # universes carrying neither resname nor name attrs (raw
                     # LAMMPS data loads) — residue cannot be table-polymer
                     continue
-                n = len(res.atoms)
+                # B4 (BH-002): MDAnalysis Residue.atoms spans the WHOLE
+                # residue — a coordination CONECT (Na..GLN-OE1) made a
+                # 1-of-9-atom GLN count as 9 polymer atoms and absorbed
+                # the ion cluster into the chain. Count only atoms that
+                # are actually IN this fragment.
+                present = res.atoms.intersection(f.atoms)
+                n = len(present)
+                if n == 0:
+                    continue
+                try:
+                    names = list(present.names)
+                except MDAnalysis.exceptions.NoDataError:
+                    continue
                 total += n
                 if (rn in KNOWN_RESIDUE_CODES or rn in KNOWN_NUCLEIC_ACIDS_CODES
                         or normalize_nucleic_resname(rn) is not None):
