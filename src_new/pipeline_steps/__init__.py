@@ -142,6 +142,22 @@ def _budget_exceeded(context) -> bool:
     return dl is not None and time.time() > dl
 
 
+# W3.1-3 (A6): grace granted to the MERGE phase after a generation cut
+_MERGE_GRACE_S = 60
+
+
+def _grant_merge_grace(context) -> None:
+    """W3.1-3 (A6): a budget cut during generation must still MERGE what
+    was already computed. Re-checking the exhausted generation deadline
+    in the merge loop discarded every partial (M05 with a 2 s budget: 2 s
+    of chemistry computed, 0 signatures persisted). Grant the merge a
+    fresh, bounded grace so partials survive — slow merges still cut."""
+    try:
+        context.set_value(_STAGE_BUDGET_STATE_KEY, time.time() + _MERGE_GRACE_S)
+    except Exception:
+        pass
+
+
 def _discover_input(context):
     """Discover input files and determine loading strategy."""
     bundle = inspect_directory(context.working_directory)
@@ -425,7 +441,15 @@ def _snapshot_group_key(snapshot) -> tuple:
     bond topology + atom names + elements + residue names. Two copies of
     the same molecule differ only in placement, never in these."""
     try:
-        bonds = tuple(sorted((int(a), int(b)) for a, b in (snapshot.bonds or [])))
+        # W3.1-3 (A6): remap universe-level bond indices to FRAGMENT-LOCAL
+        # positions — two physical copies of one molecule must share the
+        # key (universe-level indices made the dedup inert).
+        pos_of = {int(ix): i for i, ix in
+                  enumerate(snapshot.atom_indices or [])}
+        bonds = tuple(sorted(
+            tuple(sorted((pos_of[int(a)], pos_of[int(b)])))
+            for a, b in (snapshot.bonds or [])
+            if int(a) in pos_of and int(b) in pos_of))
     except Exception:
         bonds = ()
     return (
@@ -436,6 +460,9 @@ def _snapshot_group_key(snapshot) -> tuple:
         tuple(getattr(snapshot, "elements", ())),
         bonds,
         tuple(getattr(snapshot, "resnames", ())),
+        # W3.1-3 (A6): stereo signature — R vs S split into different
+        # unique groups; copies of one enantiomer share the key.
+        tuple(getattr(snapshot, "stereo_tags", ()) or ()),
     )
 
 
@@ -602,6 +629,9 @@ def _generate_signatures(context):
     # 6146 s for 4.2 s of chemistry), and the stage budget is checked
     # INSIDE the merge loop (the generation loop ends long before the
     # unbounded merge used to).
+    if budget_hit:
+        _grant_merge_grace(context)  # W3.1-3: keep the partials we paid for
+
     generated_count = 0
     _atom_cap = context.config.signatures.smiles_maximum_number_of_atoms
     _per_copy_gens = [g for g in generators if g.name in _PER_COPY_GENERATORS]
@@ -960,14 +990,13 @@ def _identify_molecules(context):
     # Merge results into context.results in main thread
     # W3 A6 (BH-047): deferred-save window (parallel workers return one
     # entry per segment per generator here).
+    if budget_hit:
+        _grant_merge_grace(context)  # W3.1-3: keep the partials we paid for
+
     with _deferred_writes(context.results):
         for result in results:
             if result is None:
                 continue
-            if _budget_exceeded(context):
-                budget_hit = True
-                logger.warning("verify_results: stage time budget exceeded during merge; partial output")
-                break
             if _budget_exceeded(context):
                 budget_hit = True
                 logger.warning("identify_molecules: stage time budget exceeded during merge; partial output")
@@ -992,9 +1021,12 @@ def _identify_molecules(context):
             for path, value in result["results"].items():
                 context.results.set_data(path, value)
     
-    # A7 (BH-046): members inherit the group's identifiers (one payload
-    # per group; _shared_with records the representative name).
-    _propagate_group_identifiers(context.results, rep_to_group)
+    # A7 (BH-046) / W3.1-3: members inherit the group's identifiers (one
+    # payload per group; _shared_with records the representative name).
+    # Runs INSIDE the deferred-writes window — per-member flushes were the
+    # slow path (F14 propagation target < 5 s).
+    with _deferred_writes(context.results):
+        _propagate_group_identifiers(context.results, rep_to_group)
 
     # A7 (BH-046): report budget-cut/dropped GROUPS, not fragments — a
     # budget cut can never split a group (reps resolve atomically, members
