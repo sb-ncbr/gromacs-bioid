@@ -438,7 +438,10 @@ def _generate_signatures_worker(item: tuple) -> dict[str, Any]:
         attempted = []
         errors = []
         
+        from . import _polymer_chemistry_suppressed  # B1 (BH-042)
         for generator in generators:
+            if _polymer_chemistry_suppressed(mock_instance, generator.name):
+                continue
             if deadline_epoch is not None and __import__("time").time() > deadline_epoch:
                 errors.append({"generator": generator.name, "error": "stage_time_budget exceeded mid-segment"})
                 break

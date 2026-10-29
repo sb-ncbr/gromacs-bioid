@@ -365,6 +365,29 @@ def _pinned_props_facade(facade: Any, segment_name: str) -> Any:
     return _PinnedPropsFacade(facade, props)
 
 
+# B1 (BH-042): polymer-typed segments route to SEQUENCE/STRUCTURE
+# resolvers only — chemistry signatures on protein/nucleic fragments
+# waste the whole identify stage on impossible lookups.
+_POLYMER_TYPES = frozenset({"protein", "nucleic"})
+_POLYMER_SUPPRESSED_GENERATORS = frozenset({
+    "smiles", "smiles_not_sanitized", "selfies", "inchi_key"})
+
+
+def _molecule_type_value(instance) -> str:
+    """MoleculeType-safe text: str(Enum) is 'MoleculeType.X', not the
+    payload, so unwrap .value when present."""
+    m = getattr(instance, "molecule_type", "") or ""
+    m = getattr(m, "value", m)
+    return str(m)
+
+
+def _polymer_chemistry_suppressed(instance, generator_name) -> bool:
+    """True when generator_name must not run for a POLYMER-typed segment
+    (B1/BH-042)."""
+    return (_molecule_type_value(instance) in _POLYMER_TYPES
+            and generator_name in _POLYMER_SUPPRESSED_GENERATORS)
+
+
 def _chemistry_size_skipped(atom_count, generated_keys, cap):
     """bughunt BH-032: True when a molecule above the chemistry atom cap
     produced no SMILES signature (the skip used to be completely silent —
@@ -524,6 +547,11 @@ def _generate_signatures(context):
             attempted = []
             errors = []
             for generator in generators:
+                # B1 (BH-042): polymers route to sequence/structure
+                # resolvers only — never run chemistry generators on them.
+                if generator.name in _POLYMER_SUPPRESSED_GENERATORS and \
+                        _polymer_chemistry_suppressed(instance, generator.name):
+                    continue
                 # B-07 (red-team 4.3): budget gate INSIDE the segment as well —
                 # previously checked only between segments, so one heavy
                 # segment ran unbounded. Generators that already STARTED still
@@ -577,6 +605,7 @@ def _generate_signatures(context):
     generated_count = 0
     _atom_cap = context.config.signatures.smiles_maximum_number_of_atoms
     _per_copy_gens = [g for g in generators if g.name in _PER_COPY_GENERATORS]
+    _size_skip_warned: set = set()
     with _deferred_writes(context.results):
         for result in results:
             if result is None:
@@ -646,11 +675,18 @@ def _generate_signatures(context):
 
                 # bughunt BH-032: a molecule above the chemistry atom cap
                 # got no SMILES/InChI SILENTLY - make the skip visible.
+                # B2 (BH-043): only meaningful for NON-polymers (polymers
+                # have no chemistry signatures by design, B1) and at most
+                # once per segment.
                 _inst = segment_to_instance.get(member_name)
-                if _inst is not None and _chemistry_size_skipped(
-                        getattr(_inst, "atom_count", None),
-                        list(gen_map),
-                        _atom_cap):
+                if (_inst is not None
+                        and _molecule_type_value(_inst) not in _POLYMER_TYPES
+                        and member_name not in _size_skip_warned
+                        and _chemistry_size_skipped(
+                            getattr(_inst, "atom_count", None),
+                            list(gen_map),
+                            _atom_cap)):
+                    _size_skip_warned.add(member_name)
                     context.add_warning(
                         "chemistry_skipped_size",
                         f"{member_name}: {_inst.atom_count} atoms exceeds the chemistry "
