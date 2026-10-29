@@ -82,26 +82,50 @@ def _type_copies(data: dict) -> dict:
     return out
 
 
+def _chain_counts(data: dict, kind: str) -> int:
+    """Reviewer-updated structural_gate semantics (W3.1): count polymer
+    chains of one kind ("protein" | "nucleic") by CHAIN SEQUENCES —
+    a union representative with per-chain fasta_map_<kind>[X] keys
+    counts each chain, whatever the segment layout."""
+    segs = (data.get("universe", {}) or {}).get("segments", {}) or {}
+    sigs = data.get("signatures", {}) or {}
+    n = 0
+    for s, gen in sigs.items():
+        g = (gen or {}).get("generated", {}) or {}
+        ks = [k for k, v in g.items()
+              if k.startswith(f"fasta_map_{kind}") and v]
+        chains = {k[k.index("["):] for k in ks if "[" in k}
+        if ks:
+            copies = int(((segs.get(s) or {}).get("properties") or {})
+                         .get("molecule_count") or 1)
+            n += max(1, len(chains)) * copies
+    return n
+
+
 class TestChainlessTopologyRealDeposits:
     def test_m01_protein_dna_chains_split(self, tmp_path):
         data = _run_results(CORPUS / "M01_1p71_protein_dna_amber" / "input",
                             tmp_path)
-        c = _type_copies(data)
-        assert c["protein"] >= 2, f"M01 protein copies collapsed: {c}"
-        assert c["nucleic"] >= 2, f"M01 DNA strands collapsed: {c}"
+        # W3.1-1b: class-union representative -> acceptance mirrors the
+        # UPDATED structural_gate (per-chain sequence counting).
+        assert _chain_counts(data, "protein") >= 2, (
+            f"M01 protein chains collapsed: {_chain_counts(data, 'protein')}")
+        assert _chain_counts(data, "nucleic") >= 2, (
+            f"M01 DNA strands collapsed: {_chain_counts(data, 'nucleic')}")
 
     def test_m05_nucleosome_chains_split(self, tmp_path):
         data = _run_results(CORPUS / "M05_nucleosome_ligand_amber" / "input",
                             tmp_path)
-        c = _type_copies(data)
-        assert c["protein"] >= 8, f"M05 histone copies collapsed: {c}"
-        assert c["nucleic"] >= 2, f"M05 DNA strands collapsed: {c}"
+        assert _chain_counts(data, "protein") >= 8, (
+            f"M05 histone chains collapsed: {_chain_counts(data, 'protein')}")
+        assert _chain_counts(data, "nucleic") >= 2, (
+            f"M05 DNA strands collapsed: {_chain_counts(data, 'nucleic')}")
 
     def test_m07_rna_duplex_two_strands(self, tmp_path):
         data = _run_results(CORPUS / "M07_rna_2l8f_amber" / "input",
                             tmp_path)
-        c = _type_copies(data)
-        assert c["nucleic"] >= 2, f"M07 RNA strands collapsed: {c}"
+        assert _chain_counts(data, "nucleic") >= 2, (
+            f"M07 RNA strands collapsed: {_chain_counts(data, 'nucleic')}")
 
 
 class TestBrokenChainUnionGuards:
@@ -145,10 +169,18 @@ class TestBrokenChainUnionGuards:
             }
         return segs
 
-    def test_two_distinct_chains_one_segid_give_two_segments(self):
+    def test_two_distinct_chains_one_segid_union_rep(self):
+        """W3.1-1b: distinct chains of ONE polymer class share the
+        class-union representative; they remain distinct MOLECULES via
+        molecule_count (gate counts the per-chain fasta_map_*[X] keys),
+        and no fake minority segment is created."""
         u = self._duplex_universe(same_sequence=False)
         segs = self._segments(u)
-        assert len(segs) == 2, f"expected 2 segments (rep + virtual), got {segs}"
+        assert len(segs) == 1, f"one class-union segment expected: {segs}"
+        total_copies = sum(sv["copies"] or 1 for sv in segs.values())
+        assert total_copies == 2, f"distinct chains must count 2: {segs}"
+        only = next(iter(segs.values()))
+        assert (only["atoms"] or 0) >= 6, f"union rep covers both chains: {segs}"
 
     def test_identical_copies_not_unioned_to_one_molecule(self):
         u = self._duplex_universe(same_sequence=True)

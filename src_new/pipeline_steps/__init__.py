@@ -732,11 +732,29 @@ def _identify_group_key(fragment_name: str, generated: dict):
              or generated.get("name_segment") or "").strip()
     if nm and nm.upper() in WATER_RESNAMES:
         return None
+    seqs = []
     for g in ("fasta_map_protein", "fasta_map_nucleic",
               "fasta_resname_protein", "fasta_resname_nucleic"):
         seq = generated.get(g)
-        if seq and isinstance(seq, str) and len(seq) >= 3:
-            return ("polymer", seq)
+        if isinstance(seq, str) and len(seq) >= 3:
+            seqs.append(seq)
+        elif isinstance(seq, dict):
+            seqs.extend(v for _l, v in sorted(seq.items())
+                        if isinstance(v, str) and len(v) >= 3)
+    if not seqs:
+        # W3.1-1b / item 9 (A7 bracket keys): a union representative
+        # carries per-chain FLATTENED keys (fasta_map_protein[A], ...) —
+        # match them; a union rep must never fall through to
+        # ("ion", name).
+        import re as _re
+        seqs.extend(v for _k, v in sorted(generated.items())
+                    if isinstance(v, str) and len(v) >= 3 and _re.fullmatch(
+                        r"fasta_(map|resname)_(protein|nucleic)\[.+\]", _k))
+    if seqs:
+        uniq = sorted(set(seqs))
+        if len(seqs) == 1:
+            return ("polymer", seqs[0])
+        return ("polymer", "|".join(uniq))
     ik = generated.get("inchi_key")
     if ik:
         return ("small", str(ik))

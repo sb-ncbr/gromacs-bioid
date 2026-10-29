@@ -565,7 +565,15 @@ class LoadedUniverse:
             if poly and len(poly) > 1 and self._are_broken_chain_pieces(poly):
                 rep_pool = poly
             elif poly:
-                rep_pool = [max(poly, key=lambda f: len(f.atoms))]
+                # W3.1-1b: the representative is the UNION of the largest
+                # polymer class (get_fragment); skip exactly that class's
+                # species — the other class becomes virtual segments, so
+                # a protein representative never swallows the DNA (M05's
+                # second DNA strand vanished when only the single largest
+                # MOLECULE was skipped).
+                _bc = self._polymer_fragments_by_class(selected, segment_name)
+                _cls = max(_bc, key=lambda c: sum(len(f.atoms) for f in _bc[c]))
+                rep_pool = _bc[_cls]
             else:
                 rep_pool = [max(fragments, key=lambda f: len(f.atoms))]
             rep_keys = {self._species_key(f) for f in rep_pool}
@@ -746,6 +754,41 @@ class LoadedUniverse:
                 out.append(f)
         return out
 
+    def _polymer_fragments_by_class(self, selected: AtomGroup,
+                                    seg: str) -> dict[str, list]:
+        """W3.1-1b: polymer fragments of a segment grouped by class
+        ('protein' | 'nucleic'). Membership follows the bond graph —
+        fragments are connected components, so both strands of a duplex,
+        strand copies and covalently attached partners ride with their
+        chain; a fragment's class is its dominant atom content."""
+
+        def _fclass(f) -> str:
+            prot = nuc = 0
+            try:
+                residues = list(f.residues)
+            except Exception:
+                residues = []
+            for r in residues:
+                try:
+                    rn = str(r.resname or "").strip().upper()
+                except Exception:
+                    continue
+                present = r.atoms.intersection(f.atoms)
+                n = len(present)
+                if not n:
+                    continue
+                if rn in KNOWN_RESIDUE_CODES:
+                    prot += n
+                elif (rn in KNOWN_NUCLEIC_ACIDS_CODES
+                      or normalize_nucleic_resname(rn)):
+                    nuc += n
+            return "nucleic" if nuc > prot else "protein"
+
+        out: dict[str, list] = {}
+        for f in self._polymer_fragments(selected, seg):
+            out.setdefault(_fclass(f), []).append(f)
+        return out
+
     def get_fragment(self, segment_name: str) -> AtomGroup:
         """Get the representative fragment for a segment.
         
@@ -800,13 +843,22 @@ class LoadedUniverse:
             return rep
 
         if poly:
-            # Representative = the largest polymer MOLECULE (one chain).
-            # Copies of the same species are counted by _analyze; other
-            # polymer species become virtual minority segments (never
-            # unioned into a chimeric representative, never swept into
-            # the composition with ions/ligands/waters — A-09's intent,
-            # now species-correct for multi-species segments).
-            rep = max(poly, key=lambda f: len(f.atoms))
+            # W3.1-1b: union per polymer CLASS (protein | nucleic).
+            # Membership follows the BOND GRAPH: fragments are connected
+            # components, so both strands of a duplex, strand copies and
+            # covalently attached partners ride with their chain (A-09).
+            # The representative is the union of the LARGEST class only —
+            # never protein+nucleic (the M01/M05/M07 SYSTEM-segid
+            # collapse); the other class is covered by virtual segments
+            # (W3.1-1's _discover_virtual_segments, nothing dropped).
+            by_class = self._polymer_fragments_by_class(selected, segment_name)
+            cls = max(by_class,
+                      key=lambda c: sum(len(f.atoms) for f in by_class[c]))
+            import numpy as _np
+            idx = _np.array(sorted({int(i) for f in by_class[cls]
+                                    for i in f.atoms.indices}),
+                            dtype=_np.int64)
+            rep = self.universe.atoms[idx]
             self._rep_cache[segment_name] = rep
             return rep
 
