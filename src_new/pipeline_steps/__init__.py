@@ -446,11 +446,39 @@ def _molecule_type_value(instance) -> str:
     return str(m)
 
 
+def _instance_residue_count(instance) -> int | None:
+    """Residue count for a MoleculeInstance (best effort)."""
+    resids = getattr(instance, "resids", None)
+    if resids:
+        try:
+            return len(set(resids))
+        except TypeError:
+            pass
+    ri = getattr(instance, "residue_indices", None)
+    if ri:
+        try:
+            return len(set(ri))
+        except TypeError:
+            pass
+    return None
+
+
 def _polymer_chemistry_suppressed(instance, generator_name) -> bool:
     """True when generator_name must not run for a POLYMER-typed segment
-    (B1/BH-042)."""
-    return (_molecule_type_value(instance) in _POLYMER_TYPES
-            and generator_name in _POLYMER_SUPPRESSED_GENERATORS)
+    (B1/BH-042).
+
+    W3.1 item 6: SHORT polymer-typed segments (<= 5 residues — e.g. a
+    ligand glycine zwitterion, C19, or a small peptide) keep their
+    chemistry signatures; the suppression targets real polymers, whose
+    sequence/structure resolvers are the right tool."""
+    if generator_name not in _POLYMER_SUPPRESSED_GENERATORS:
+        return False
+    if _molecule_type_value(instance) not in _POLYMER_TYPES:
+        return False
+    rc = _instance_residue_count(instance)
+    if rc is not None and rc <= 5:
+        return False  # short polymer: amino-acid/small-peptide ligand
+    return True
 
 
 def _chemistry_size_skipped(atom_count, generated_keys, cap):

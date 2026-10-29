@@ -98,11 +98,12 @@ def _ctx(tmp_path, universe, instances, warnings_sink):
     return ctx, results
 
 
-def _inst(seg, mtype, atom_count):
+def _inst(seg, mtype, atom_count, resids=None):
     from src_new.molecules.instances import MoleculeInstance, MoleculeType
     return MoleculeInstance(
         instance_id=f"inst-{seg}", segment_ids=[seg],
-        molecule_type=MoleculeType(mtype), atom_count=atom_count)
+        molecule_type=MoleculeType(mtype), atom_count=atom_count,
+        resids=list(resids) if resids else [])
 
 
 class TestPolymerChemistrySuppression:
@@ -112,7 +113,8 @@ class TestPolymerChemistrySuppression:
         u = _tiny_two_segment_universe()
         warns: list = []
         ctx, results = _ctx(tmp_path, u, [
-            _inst("A", MoleculeType.PROTEIN, 14),
+            _inst("A", MoleculeType.PROTEIN, 14,
+                  resids=[1, 2, 3, 4, 5, 6]),  # real polymer (>5 res)
             _inst("L", MoleculeType.SMALL_MOLECULE, 10),
         ], warns)
         _generate_signatures(ctx)
@@ -140,7 +142,8 @@ class TestPolymerChemistrySuppression:
         u = _tiny_two_segment_universe()
         warns: list = []
         ctx, results = _ctx(tmp_path, u, [
-            _inst("A", MoleculeType.PROTEIN, 14),
+            _inst("A", MoleculeType.PROTEIN, 14,
+                  resids=[1, 2, 3, 4, 5, 6]),  # real polymer (>5 res)
             _inst("L", MoleculeType.SMALL_MOLECULE, 10),
         ], warns)
         ctx.config.signatures.smiles_maximum_number_of_atoms = 3  # both over
