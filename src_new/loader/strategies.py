@@ -569,14 +569,25 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.AMBER_PARM7_NC,
             ]
         elif strategy == "PRMTOP_PDB":
-            # A8 (BH-016): {prmtop, pdb} — topology + static structure step
+            # A8 (BH-016): {prmtop, pdb} — topology + static structure step.
+            # W3.1 item 10: RST7/MDCRD in the chain — a {prmtop, rst7,
+            # pdb} bundle previously never tried the restart file (the
+            # restart is the physical frame; the PDB is the fallback).
             base_strategies = [
+                LoadStrategy.AMBER_PRMTOP_RST7,
+                LoadStrategy.AMBER_PRMTOP_MDCRD,
                 LoadStrategy.AMBER_PRMTOP_PDB,
+                LoadStrategy.AMBER_PARM7_RST7,
+                LoadStrategy.AMBER_PARM7_MDCRD,
                 LoadStrategy.AMBER_PARM7_PDB,
             ]
         elif strategy == "PARM7_PDB":
             base_strategies = [
+                LoadStrategy.AMBER_PARM7_RST7,
+                LoadStrategy.AMBER_PARM7_MDCRD,
                 LoadStrategy.AMBER_PARM7_PDB,
+                LoadStrategy.AMBER_PRMTOP_RST7,
+                LoadStrategy.AMBER_PRMTOP_MDCRD,
                 LoadStrategy.AMBER_PRMTOP_PDB,
             ]
         else:  # PRMTOP_NC / PRMTOP_XTC (existing decisions, order preserved)
@@ -784,20 +795,25 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
             return Universe(str(files["parm7"]), str(files["xtc"]))
         case LoadStrategy.AMBER_PRMTOP_PDB | LoadStrategy.AMBER_PARM7_PDB:
             # A8 (BH-016): topology + static structure (prmtop carries
-            # charges/types/bonds; pdb provides frame-0 coordinates)
+            # charges/types/bonds; pdb provides frame-0 coordinates).
+            # W3.1 item 10: solvent-stripped prefix fallback inside.
             key = "prmtop" if "prmtop" in files else "parm7"
-            return Universe(str(files[key]), str(files["pdb"]),
-                            topology_format="PRMTOP", format="PDB")
+            return _topology_structure_universe(
+                files[key], files["pdb"],
+                dict(topology_format="PRMTOP", format="PDB"))
         case LoadStrategy.GROMACS_TOP_PDB:
-            return Universe(str(files["top"]), str(files["pdb"]),
-                            topology_format="ITP", tpr_resid_from_one=True,
-                            in_memory=True)
+            return _topology_structure_universe(
+                files["top"], files["pdb"],
+                dict(topology_format="ITP", tpr_resid_from_one=True,
+                     in_memory=True))
         case LoadStrategy.GROMACS_ITP_PDB:
-            return Universe(str(files["itp"]), str(files["pdb"]),
-                            topology_format="ITP", tpr_resid_from_one=True,
-                            in_memory=True, infer_system=True)
+            return _topology_structure_universe(
+                files["itp"], files["pdb"],
+                dict(topology_format="ITP", tpr_resid_from_one=True,
+                     in_memory=True, infer_system=True))
         case LoadStrategy.CHARMM_PSF_PDB:
-            return Universe(str(files["psf"]), str(files["pdb"]), in_memory=True)
+            return _topology_structure_universe(
+                files["psf"], files["pdb"], dict(in_memory=True))
         case LoadStrategy.CHARMM_PSF_CRD:
             return Universe(str(files["psf"]), str(files["crd"]), in_memory=True)
         case LoadStrategy.CHARMM_PSF_DCD:
@@ -897,6 +913,89 @@ def _topology_n_atoms(path: Path) -> int | None:
         return Universe(str(path)).atoms.n_atoms
     except Exception:
         return None
+
+
+def _normalise_atom_name(name) -> str:
+    """H-name-normalised atom name for topology/structure comparison:
+    PDB writes leading digits after the element ('1HB'), topologies
+    usually append them ('HB1')."""
+    s = str(name).strip().upper()
+    if s and s[0].isdigit():
+        s = s[1:] + s[0]
+    return s
+
+
+def _topology_structure_universe(top_path, pdb_path, build_kwargs):
+    """W3.1 item 10 (A8): topology + static-structure build with the
+    SOLVENT-STRIPPED PREFIX fallback.
+
+    A structure file with FEWER atoms than the topology used to kill
+    the whole pairing (M03: its PDB is exactly the first 9,519 of
+    66,999 topology atoms — solvent stripped for deposition). When
+    the structure's atoms are exactly the topology's first k atoms
+    (per-index, H-name-normalised names), the topology prefix is
+    merged with the structure's coordinates: bonds/charges/types/
+    masses are kept for everything the deposit still describes."""
+    u_str = Universe(str(pdb_path), in_memory=True)
+    try:
+        return Universe(str(top_path), str(pdb_path), **build_kwargs)
+    except Exception as direct_exc:
+        standalone_kwargs = {
+            k: v for k, v in build_kwargs.items()
+            if k in ("topology_format", "tpr_resid_from_one",
+                     "infer_system")}
+        try:
+            u_top = Universe(str(top_path), **standalone_kwargs)
+        except Exception:
+            raise direct_exc
+        k, n = len(u_str.atoms), len(u_top.atoms)
+        if not (0 < k < n):
+            raise direct_exc
+        names_match = all(
+            _normalise_atom_name(a) == _normalise_atom_name(b)
+            for a, b in zip(u_top.atoms[:k].names, u_str.atoms.names))
+        if not names_match:
+            raise direct_exc
+        from MDAnalysis import Merge
+        import numpy as np
+        merged = Merge(u_top.atoms[:k])
+        merged.load_new(
+            np.asarray(u_str.atoms.positions)[np.newaxis, :, :])
+        return merged
+
+
+def _check_topology_structure_names(universe, pdb_path) -> None:
+    """W3.1 item 10 (A8): per-index atom-name check (H-name
+    normalised) for topology+structure loads — the prmtop/pdb atom
+    order was never checked, and a swapped residue loaded silently
+    with wrong 3D/stereo. A mismatch raises a structured gate
+    failure so the ladder falls on loudly instead."""
+    try:
+        u_str = Universe(str(pdb_path))
+    except Exception:
+        return  # structure unreadable on its own: nothing to check
+    n = len(u_str.atoms)
+    if n == 0 or n != universe.atoms.n_atoms:
+        return
+    for i, (a, b) in enumerate(
+            zip(universe.atoms.names, u_str.atoms.names)):
+        if _normalise_atom_name(a) != _normalise_atom_name(b):
+            raise _GateFailure(
+                "structure_name_mismatch",
+                f"topology/structure atom order mismatch at index {i}: "
+                f"topology '{a}' vs structure '{b}' — loading would "
+                f"attach wrong 3D/stereo coordinates")
+
+
+# W3.1 item 10 (A8): topology + static-structure loads that get the
+# per-index name check after the build.
+_TOPOLOGY_STRUCTURE_NAME_CHECK = frozenset({
+    LoadStrategy.GROMACS_TOP_PDB,
+    LoadStrategy.GROMACS_ITP_PDB,
+    LoadStrategy.AMBER_PRMTOP_PDB,
+    LoadStrategy.AMBER_PARM7_PDB,
+    LoadStrategy.CHARMM_PSF_PDB,
+})
 
 
 def _record_attempts(results: ResultsManager, attempts: list[LoadAttempt]) -> None:
@@ -1110,6 +1209,12 @@ def load_simulation(
             # deposits are a valid success.
             if universe.atoms.n_atoms == 0:
                 raise _GateFailure("empty_universe", "Universe built with zero atoms")
+            # W3.1 item 10 (A8): per-index atom-name check (H-name
+            # normalised) on topology+structure loads — a swapped
+            # residue used to load silently with wrong 3D/stereo.
+            if strategy in _TOPOLOGY_STRUCTURE_NAME_CHECK:
+                _check_topology_structure_names(
+                    universe, validation.selected_files["pdb"])
             try:
                 positions = universe.atoms.positions
             except Exception as no_coords:  # NoDataError in MDAnalysis 2.x
