@@ -445,6 +445,84 @@ class LoadedUniverse:
             bond_pairs = ()
         return (len(frag.atoms), len(frag.residues), comp, resnames, bond_pairs)
 
+    def _are_broken_chain_pieces(self, poly: list) -> bool:
+        """F2 (A2) / W3.1-1: True only when the polymer fragments are
+        pieces of ONE broken chain — same polymer type, unique
+        (resid, icode), consecutive-in-sequence ranges with gaps
+        plausible for missing residues — while never mistaking
+        DIFFERENT molecules for pieces of one chain:
+
+        * a single chain-meaningless segid (prmtop/GRO "SYSTEM") holds
+          the whole system, so its polymer fragments are separate
+          molecules (W3 regression: M01/M05/M07 collapsed);
+        * chainIDs or topology molecule numbers (prmtop
+          ATOMS_PER_MOLECULE) spanning > 1 chain/molecule mean
+          different chains;
+        * repeated (resid, icode) means copies (homo-oligomers), and
+          copies are counted by species cluster — never unioned into
+          molecule_count 1.
+
+        Identical species keys alone do NOT veto the union: pieces of
+        one broken homopolymer chain share their composition key
+        (A2's mol1 contract).
+        """
+        try:
+            universe_segids = {str(g).strip().upper()
+                               for g in set(self.universe.atoms.segids)}
+        except MDAnalysis.exceptions.NoDataError:
+            universe_segids = set()
+        if len(universe_segids) <= 1 and (
+                not universe_segids
+                or universe_segids <= {"SYSTEM", "SYS", "0", "1", ""}):
+            return False
+        try:
+            cids = {str(c) for f in poly for c in set(f.atoms.chainIDs)}
+            if len(cids) > 1:
+                return False
+        except MDAnalysis.exceptions.NoDataError:
+            pass
+        try:
+            molnums = {int(m) for f in poly for m in set(f.atoms.molnums)}
+            if len(molnums) > 1:
+                return False
+        except MDAnalysis.exceptions.NoDataError:
+            pass
+
+        def _ptype(f) -> str:
+            prot = nuc = 0
+            for r in f.residues:
+                rn = str(getattr(r, "resname", "") or "").strip().upper()
+                if rn in KNOWN_RESIDUE_CODES:
+                    prot += 1
+                elif rn in KNOWN_NUCLEIC_ACIDS_CODES:
+                    nuc += 1
+            if prot > 0 and prot >= nuc:
+                return "protein"
+            if nuc > 0:
+                return "nucleic"
+            return "other"
+
+        if len({_ptype(f) for f in poly}) != 1:
+            return False
+
+        seen: set = set()
+        ranges: list = []
+        for f in poly:
+            ids = []
+            for r in f.residues:
+                k = (int(r.resid), str(getattr(r, "icode", "") or ""))
+                if k in seen:
+                    return False  # copies share residue ids
+                seen.add(k)
+                ids.append(int(r.resid))
+            if ids:
+                ranges.append((min(ids), max(ids)))
+        ranges.sort()
+        for (_, hi), (lo, _) in zip(ranges, ranges[1:]):
+            if not (1 <= lo - hi <= 25):  # broken bond vs. separate chain
+                return False
+        return True
+
     def _discover_virtual_segments(self) -> None:
         """Expose minority molecular species inside segid-coarse topologies.
 
@@ -480,7 +558,16 @@ class LoadedUniverse:
             # fragments when present, else the largest fragment's kind);
             # ligands/ions/waters now form their OWN virtual segments.
             poly = self._polymer_fragments(selected, segment_name)
-            rep_pool = poly if poly else [max(fragments, key=lambda f: len(f.atoms))]
+            # W3.1-1: only the REPRESENTATIVE species is skipped — other
+            # polymer species in the same segid (AMBER SYSTEM holds
+            # protein + DNA of several species) become virtual segments
+            # of their own instead of vanishing into the rep.
+            if poly and len(poly) > 1 and self._are_broken_chain_pieces(poly):
+                rep_pool = poly
+            elif poly:
+                rep_pool = [max(poly, key=lambda f: len(f.atoms))]
+            else:
+                rep_pool = [max(fragments, key=lambda f: len(f.atoms))]
             rep_keys = {self._species_key(f) for f in rep_pool}
             rep_key = next(iter(rep_keys))  # kept for key-compat below
             n = 0
@@ -697,39 +784,36 @@ class LoadedUniverse:
         # Get largest fragment
         largest = max(fragments, key=lambda f: len(f.atoms))
 
-        # F2 (BH-037): polymer chain broken into pieces (the bond guesser
-        # misses long bonds in low-quality geometry) -> union of the
-        # polymer pieces when they are ONE chain (no (resid, icode)
-        # repeated across different residues = not separate copies).
-        _poly = self._polymer_fragments(selected, segment_name)
-        if len(_poly) > 1:
-            _res = {int(r.resindex): (int(r.resid), str(getattr(r, 'icode', ''))) for f in _poly for r in f.residues}
-            if len(set(_res.values())) == len(_res):
-                import numpy as _np
-                idx = _np.array(sorted({int(i) for f in _poly for i in f.atoms.indices}), dtype=_np.int64)
-                rep = self.universe.atoms[idx]
-                self._rep_cache[segment_name] = rep
-                self._chain_union = getattr(self, '_chain_union', set())
-                self._chain_union.add(segment_name)
-                return rep
+        # F2 (BH-037) / W3.1-1: union ONLY pieces of ONE broken chain
+        # (the bond guesser misses long bonds in low-quality geometry).
+        # Identical species keys = copies; different species = distinct
+        # molecules — never unioned (W3 regression: M01/M05/M07 AMBER
+        # SYSTEM collapse; F08/F09 homo-oligomers forced to copies=1).
+        poly = self._polymer_fragments(selected, segment_name)
+        if len(poly) > 1 and self._are_broken_chain_pieces(poly):
+            import numpy as _np
+            idx = _np.array(sorted({int(i) for f in poly for i in f.atoms.indices}), dtype=_np.int64)
+            rep = self.universe.atoms[idx]
+            self._rep_cache[segment_name] = rep
+            self._chain_union = getattr(self, '_chain_union', set())
+            self._chain_union.add(segment_name)
+            return rep
+
+        if poly:
+            # Representative = the largest polymer MOLECULE (one chain).
+            # Copies of the same species are counted by _analyze; other
+            # polymer species become virtual minority segments (never
+            # unioned into a chimeric representative, never swept into
+            # the composition with ions/ligands/waters — A-09's intent,
+            # now species-correct for multi-species segments).
+            rep = max(poly, key=lambda f: len(f.atoms))
+            self._rep_cache[segment_name] = rep
+            return rep
 
         # If largest fragment is most of the segment, return it
         if len(largest.atoms) >= len(selected.atoms) * 0.8:
             self._rep_cache[segment_name] = largest
             return largest
-
-        # A-09 (red-team 3.6): polymer representative = union of polymer
-        # fragments ONLY (both strands, covalently attached partners) — never
-        # the whole segment with ions/ligands/waters swept into composition
-        # and signatures (fixture 1602's chimeric duplex+92-atom ligand).
-        poly = self._polymer_fragments(selected, segment_name)
-        if poly:
-            import numpy as _np
-            idx = _np.array(sorted({int(i) for f in poly for i in f.atoms.indices}),
-                            dtype=_np.int64)
-            rep = self.universe.atoms[idx]
-            self._rep_cache[segment_name] = rep
-            return rep
 
         # If this is a polymer segment, return full segment (broken bonds case)
         if self._is_polymer_segment(selected):
