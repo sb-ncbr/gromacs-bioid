@@ -48,6 +48,8 @@ import asyncio
 import json
 import logging
 import os
+import re
+import time
 from pathlib import Path
 
 import redis as redis_lib
@@ -134,6 +136,60 @@ def heartbeat_age(results_path: Path) -> float | None:
         return None
 
 
+# W3.1 item 4 (A9): the adhoc staging dir lives under the runs dir in the
+# deployment (/app/runs/_adhoc) — never treat it as a run directory.
+ADHOC_DIR_NAME = "_adhoc"
+_ADHOC_CIF_RE = re.compile(r"^[0-9a-f]{64}\.cif$")
+
+
+def adhoc_retention_s() -> float:
+    """Adhoc retention window in seconds (env BAT3_ADHOC_RETENTION_DAYS,
+    default 7). Staged mmCIFs are content-addressed (deduplicated across
+# runs), so they only need to outlive the longest run + RCSB caching."""
+    raw = os.environ.get("BAT3_ADHOC_RETENTION_DAYS", "7")
+    try:
+        days = float(raw)
+    except (TypeError, ValueError):
+        days = 7.0
+    return max(days, 0.0) * 86400.0
+
+
+def sweep_adhoc(adhoc_dir: Path, retention_s: float | None = None) -> dict:
+    """Delete stale adhoc staging files (W3.1 item 4 retention).
+
+    Touches ONLY <64-hex>.cif files and abandoned ``.*.tmp`` staging
+    files whose mtime is older than the retention window; everything
+    else in the directory is left alone."""
+    summary = {"adhoc_scanned": 0, "adhoc_deleted": 0, "adhoc_errors": 0}
+    if retention_s is None:
+        retention_s = adhoc_retention_s()
+    if not adhoc_dir.is_dir():
+        return summary
+    try:
+        entries = list(adhoc_dir.iterdir())
+    except OSError as exc:
+        logger.warning("run_reaper: adhoc dir %s unreadable: %s",
+                       adhoc_dir, exc)
+        summary["adhoc_errors"] += 1
+        return summary
+    now = time.time()
+    for f in entries:
+        name = f.name
+        is_staging_tmp = name.startswith(".") and name.endswith(".tmp")
+        if not (is_staging_tmp or _ADHOC_CIF_RE.match(name)):
+            continue  # foreign file: not ours to touch
+        summary["adhoc_scanned"] += 1
+        try:
+            if now - f.stat().st_mtime > retention_s:
+                f.unlink()
+                summary["adhoc_deleted"] += 1
+        except OSError:
+            summary["adhoc_errors"] += 1
+    if summary["adhoc_deleted"] or summary["adhoc_errors"]:
+        logger.info("run_reaper adhoc sweep: %s", summary)
+    return summary
+
+
 def sweep(runs_dir: Path, live_task_ids: set[str], misses: dict[str, int]) -> dict:
     """Reconcile one sweep. Pure w.r.t. its inputs; returns a small summary.
 
@@ -146,6 +202,8 @@ def sweep(runs_dir: Path, live_task_ids: set[str], misses: dict[str, int]) -> di
 
     seen_candidates: set[str] = set()
     for run_dir in runs_dir.iterdir():
+        if run_dir.name == ADHOC_DIR_NAME:
+            continue  # W3.1 item 4 (A9): staging dir, not a run
         results_path = run_dir / "results.json"
         if not results_path.is_file():
             continue
@@ -242,6 +300,12 @@ async def reaper_loop(celery_app, runs_dir: Path, redis_url: str,
                 summary = await asyncio.to_thread(sweep, runs_dir, live, misses)
                 if summary["zombies_failed"]:
                     logger.error("run_reaper sweep: %s", summary)
+                # W3.1 item 4 (A9): adhoc retention (no-op when the dir
+                # does not exist; env BAT3_ADHOC_DIR wins over the default
+                # <runs>/_adhoc location)
+                adhoc = os.environ.get("BAT3_ADHOC_DIR", "").strip()
+                adhoc_dir = Path(adhoc) if adhoc else runs_dir / ADHOC_DIR_NAME
+                await asyncio.to_thread(sweep_adhoc, adhoc_dir)
         except Exception as exc:
             logger.warning("run_reaper sweep failed: %s", exc)
         await asyncio.sleep(interval_s)

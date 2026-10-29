@@ -146,6 +146,55 @@ def _budget_exceeded(context) -> bool:
 _MERGE_GRACE_S = 60
 
 
+def structure_search_unavailable_reason(config) -> str | None:
+    """W3.1 item 4 (A9): why RCSB structure similarity search will be
+    skipped for EVERY segment in this run, or None when it works.
+
+    Silent-skip defect: Celery-dispatched runs have no registry uuid
+    (config.pdb.curr_uuid empty), so both structure-search resolvers
+    skipped every query with only a log line ("curr_uuid is empty") —
+    the results payload never said structure search was off. Adhoc
+    staging (BAT3_ADHOC_DIR) is the fix for those runs; when it is
+    unset or unwritable the run now says so, loudly, once."""
+    pdb = getattr(config, "pdb", None)
+    if pdb is None or not getattr(pdb, "use_deployment_file_access", False):
+        return None  # upload mode: no API URL dependency
+    if getattr(pdb, "curr_uuid", ""):
+        return None  # registry runs use /files/{uuid}/input/ — works
+    adhoc = (getattr(pdb, "adhoc_files_dir", "") or "").strip()
+    if not adhoc:
+        return ("structure search unavailable: BAT3_ADHOC_DIR is not set "
+                "and this run has no registry uuid (Celery-dispatched); "
+                "every RCSB similarity query would be skipped")
+    try:
+        root = Path(adhoc)
+        root.mkdir(parents=True, exist_ok=True)
+        probe = root / ".w31_adhoc_probe"
+        probe.write_text("")
+        probe.unlink()
+    except Exception as exc:
+        return (f"structure search unavailable: adhoc dir {adhoc!r} is "
+                f"not writable ({exc}); RCSB similarity queries would "
+                f"fail to stage")
+    return None
+
+
+def _maybe_warn_structure_search(context, config) -> None:
+    """Emit the structure_search_unavailable warning once per run."""
+    reason = structure_search_unavailable_reason(config)
+    if not reason:
+        return
+    try:
+        results = context.results
+        if results.get_data("identification/structure_search_unavailable"):
+            return  # already warned for this run
+        results.set_data("identification/structure_search_unavailable",
+                         {"reason": reason})
+    except Exception:
+        pass
+    context.add_warning("structure_search_unavailable", reason)
+
+
 def _grant_merge_grace(context) -> None:
     """W3.1-3 (A6): a budget cut during generation must still MERGE what
     was already computed. Re-checking the exhausted generation deadline
@@ -858,7 +907,11 @@ def _identify_molecules(context):
     facade = context.get_value("facade")
     if not facade:
         context.fail("missing_facade", "No facade available for identification")
-    
+
+    # W3.1 item 4 (A9): loud once-per-run notice when structure search
+    # will be silently skipped (no adhoc dir + no registry uuid).
+    _maybe_warn_structure_search(context, context.config)
+
     # Get signature type map
     sig_type_map = get_signature_type_map(context.config.signatures)
     

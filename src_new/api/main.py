@@ -123,16 +123,25 @@ async def get_capabilities():
 # search is pointed at /files/adhoc/<sha256>.cif — no run registry lookup,
 # so Celery-dispatched runs get working structure search. Strict
 # sha256 filename guard keeps the route read-only-safe.
-ADHOC_FILES_ROOT = Path(os.environ.get("BAT3_ADHOC_DIR", ""))
 _ADHOC_NAME_RE = re.compile(r"^[0-9a-f]{64}\.cif$")
+
+
+def _adhoc_files_root() -> Path | None:
+    """W3.1 item 4 (A9): the RAW env string is checked BEFORE Path() —
+    ``Path("")`` is ``"."`` (truthy), which left the unset-env 404 guard
+    dead and served sha-named files from the container CWD. Read per
+    request so late/test-time env changes take effect."""
+    raw = os.environ.get("BAT3_ADHOC_DIR", "").strip()
+    return Path(raw) if raw else None
 
 
 @app.get("/files/adhoc/{filename}", include_in_schema=False)
 async def serve_adhoc_file(filename: str):
     """Serve a worker-staged adhoc mmCIF by content sha256 (404 on miss)."""
-    if not ADHOC_FILES_ROOT or not _ADHOC_NAME_RE.match(filename):
+    root = _adhoc_files_root()
+    if root is None or not _ADHOC_NAME_RE.match(filename):
         raise HTTPException(status_code=404, detail="Not Found")
-    target = ADHOC_FILES_ROOT / filename
+    target = root / filename
     if not target.is_file():
         raise HTTPException(status_code=404, detail="Not Found")
     return FileResponse(str(target))
