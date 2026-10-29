@@ -632,6 +632,25 @@ class LoadedUniverse:
         segs |= set(getattr(self, "_virtual_fragments", {}).keys())
         return segs
     
+    def _coordination_cut_enabled(self) -> bool:
+        """W3.1 item 7 (B4): the free-ion coordination cut applies only
+        to STRUCTURE-authored bonds — PDB/mmCIF loads, where CONECT
+        records and distance guessing are the only bond sources. A
+        topology-backed load (GROMACS/AMBER/CHARMM/LAMMPS: TPR, ITP/TOP,
+        PRMTOP, PSF, LAMMPS data) carries parametrization-authored bonds:
+        an MCPB-style heme has its Fe in a single-atom residue covalently
+        bonded to the porphyrin N atoms (M14: six FE2P residues, 6 bonds
+        each to LIG nitrogens) — cutting those bonds produced a Fe-free
+        porphyrin plus a stray Fe ion. Unknown provenance keeps the W3
+        behavior (the B4 pins ride on it)."""
+        try:
+            kind = self.decision.input_kind
+        except Exception:
+            return True
+        if kind is None:
+            return True
+        return str(getattr(kind, "value", kind)) in ("pdb", "mmcif")
+
     def _seg_fragments(self, selected):
         """Connected components of the segment using ONLY bonds whose
         both endpoints lie in the segment (cross-segid coordination/glycan/
@@ -679,12 +698,13 @@ class LoadedUniverse:
                 return False
             return res_sizes.get(int(selected.resindices[k]), 2) == 1
 
+        cut_coordination = self._coordination_cut_enabled()
         rows, cols = [], []
         for a, b in bidx:
             ka = pos.get(int(a)); kb = pos.get(int(b))
             if ka is None or kb is None:
                 continue
-            if _free_metal(ka) != _free_metal(kb):
+            if cut_coordination and _free_metal(ka) != _free_metal(kb):
                 continue  # coordination cut: free ion <-> non-ion
             rows.append(ka); cols.append(kb)
         n = len(idx)

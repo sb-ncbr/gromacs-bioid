@@ -44,7 +44,8 @@ def _stage_steps():
     return build_load_and_export_tasks()[:6]  # 0-5: hermetic stages
 
 
-def _run_results(case_dir: Path, tmp_path: Path) -> dict:
+def _run_results(case_dir: Path, tmp_path: Path,
+                 input_kind: str = "pdb") -> dict:
     """Run stages 0-5 on a corpus deposit; return the results data."""
     from src_new.executor.executor import PipelineExecutor
     from src_new.results.results_manager import ResultsManager
@@ -59,7 +60,7 @@ def _run_results(case_dir: Path, tmp_path: Path) -> dict:
                                 pipeline_name="w31")
     executor.run(working_directory=work,
                  output_directory=tmp_path / "out",
-                 input_kind="pdb",
+                 input_kind=input_kind,
                  input_files={p.name: p for p in work.iterdir()})
     payload = json.loads(results_path.read_text())
     assert payload["pipeline"]["status"] == "success", (
