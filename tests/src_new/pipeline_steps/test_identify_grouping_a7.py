@@ -12,8 +12,10 @@ container cwd.
 Fix contract pinned here:
 1. Group key per segment from its signatures: polymer ->
    ("polymer", canonical fasta sequence); small molecule ->
-   ("small", inchi_key), else ("small_formula", heavy formula +
-   fingerprint); ion -> ("ion", atom signature); water -> skipped.
+   ("small", inchi_key|canonical SMILES, tautomer-safe — W3.1 item 9),
+   else ("small_formula", heavy formula + fingerprint); no chemistry ->
+   ("all_other", fragment_name) singleton (W3.1 item 9); water ->
+   skipped (name/resname/formula — W3.1 item 9).
 2. Only the group's representative is resolved; members copy the rep's
    identifiers payload with an ``_shared_with`` marker (resolver call
    count == group count).
@@ -77,7 +79,12 @@ def _formula_only_sigs(formula: str) -> dict:
 
 
 def _ion_sigs(elem: str) -> dict:
-    return {"generated": {"atom": elem}}
+    # W3.1 item 9: real ions carry molecular_formula_heavy (C13/C16/C17
+    # corpus evidence) and group through the formula branch; the bare
+    # name-based fallback is now a singleton per fragment.
+    return {"generated": {"atom": elem,
+                          "molecular_formula_heavy": elem,
+                          "fingerprint": "fp-" + elem}}
 
 
 _MGR_PATCHES = [

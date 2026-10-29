@@ -829,15 +829,26 @@ def _identify_group_key(fragment_name: str, generated: dict):
     """Group key for identical-segment identification (W3 A7).
 
     polymer       -> ("polymer", canonical fasta sequence)
-    small molecule-> ("small", inchi_key), else ("small_formula", formula|fp)
-    ion           -> ("ion", element/name)
+    small molecule-> ("small", inchi_key|canonical SMILES — tautomer-safe)
+    formula-only  -> ("small_formula", formula|fp)
     water         -> None (skipped: nothing worth resolving)
-    unknown       -> ("all_other", fragment_name) singleton
+    no chemistry  -> ("all_other", fragment_name) SINGLETON (W3.1 item 9:
+                      the name-based fallback merged unrelated species)
     """
     from ..molecules.instances import WATER_RESNAMES
+    # W3.1 item 9 (A7): the water skip must fire on the REAL water
+    # signatures — name_molecule carries the common name ("water"),
+    # the resname carries HOH/SOL/TIP3/..., and the formula is H2O
+    # (the heavy formula alone, "O", is never enough). The old check
+    # matched only resnames through name_molecule/name_segment, so the
+    # skip never fired (C05/P04 water was resolved as a small molecule).
     nm = str(generated.get("name_molecule")
              or generated.get("name_segment") or "").strip()
-    if nm and nm.upper() in WATER_RESNAMES:
+    rn = str(generated.get("resname") or "").strip()
+    formula = str(generated.get("molecular_formula") or "").strip()
+    if ((nm and (nm.upper() in WATER_RESNAMES or nm.upper() == "WATER"))
+            or (rn and rn.upper() in WATER_RESNAMES)
+            or formula in ("H2O", "D2O")):
         return None
     seqs = []
     for g in ("fasta_map_protein", "fasta_map_nucleic",
@@ -864,14 +875,24 @@ def _identify_group_key(fragment_name: str, generated: dict):
         return ("polymer", "|".join(uniq))
     ik = generated.get("inchi_key")
     if ik:
-        return ("small", str(ik))
+        # W3.1 item 9 (A7): tautomer-safe key — the standard InChIKey
+        # MERGES tautomers (C18: 2-pyridone vs 2-hydroxypyridine share
+        # UBQKCCHYAOITMY-UHFFFAOYSA-N but had different top-1 hits
+        # pre-W3); the canonical SMILES disambiguates them. True copies
+        # (identical payloads) still share the key.
+        smi = str(generated.get("smiles")
+                  or generated.get("smiles_not_sanitized")
+                  or "").strip()
+        return ("small", f"{ik}|{smi}" if smi else str(ik))
     hf = generated.get("molecular_formula_heavy")
     if hf:
         return ("small_formula", f"{hf}|{generated.get('fingerprint', '')}")
-    atom = (generated.get("atom") or generated.get("name_molecule")
-            or generated.get("name_segment"))
-    if atom:
-        return ("ion", str(atom))
+    # W3.1 item 9 (A7): the name-based fallback merged unrelated species
+    # that happen to share a display name — the fallback is now a
+    # SINGLETON per fragment. Real ions carry molecular_formula_heavy
+    # (C13/C16/C17) and still merge through the formula branch above;
+    # only species with NO chemistry and NO formula land here, and
+    # merging those by name was the hazard.
     return ("all_other", fragment_name)
 
 
@@ -966,6 +987,7 @@ def _identify_molecules(context):
     items_parallel = []
     items_serial = []
     items_fragments = []   # A7: (fragment, generated) for grouping
+    valid_sigs_by_name: dict = {}
     for fragment_name in sorted(signatures_data.keys()):
         generated = signatures_data[fragment_name].get("generated", {})
         if not generated:
@@ -977,6 +999,10 @@ def _identify_molecules(context):
             continue
 
         items_fragments.append((fragment_name, generated))
+        # W3.1 item 9 (A7): keep every fragment's valid signatures for
+        # the member-retry path (items_serial below is filtered to
+        # group representatives).
+        valid_sigs_by_name[fragment_name] = valid_sigs
         # F-15: pass the fragment's already-persisted identifiers blob so the
         # parallel worker (which resolves into a temp ResultsManager) can skip
         # present resolvers exactly like the serial path does.
@@ -1000,6 +1026,17 @@ def _identify_molecules(context):
         items_parallel = [it for it in items_parallel
                           if it[0] in group_reps_set]
         items_serial = [it for it in items_serial if it[0] in group_reps_set]
+    # W3.1 item 9 (A7): APPLY the group ordering — polymers first
+    # (longest sequence first), then small molecules, then formula-keyed
+    # species, then singletons. The ordering was computed in
+    # _group_segments but never applied: the resolution order stayed
+    # alphabetical, so a stage budget cut could starve polymers while
+    # ions resolved first.
+    if group_reps:
+        _rep_rank = {name: i for i, name in enumerate(group_reps)}
+        _tail = len(_rep_rank)
+        items_parallel.sort(key=lambda it: _rep_rank.get(it[0], _tail))
+        items_serial.sort(key=lambda it: _rep_rank.get(it[0], _tail))
     
     # Decide whether to use parallel execution
     use_parallel = (
@@ -1108,6 +1145,72 @@ def _identify_molecules(context):
     # slow path (F14 propagation target < 5 s).
     with _deferred_writes(context.results):
         _propagate_group_identifiers(context.results, rep_to_group)
+
+    # W3.1 item 9 (A7): retry with the next member when the
+    # representative fails — a transient resolver failure on one copy
+    # must not unresolve its whole group (audit: "nothing retries with
+    # another member when the representative fails"). Bounded by the
+    # stage budget; the first member whose resolution produces
+    # identifiers is promoted to the group's source.
+    if (not _budget_exceeded(context)
+            and any(
+                len(members) > 1
+                and context.results.get_data(f"identifiers/{rep}") is None
+                for rep, members, _gk in rep_to_group)):
+        from ..identification.registry import get_default_resolvers, IdentifierRegistry
+        from ..identification.cache_manager import ResolverCache
+        from ..identification.resolution_manager import IdentifierResolutionManager
+        from ..signatures.registry import get_signature_type_map as _gstm
+        _retry_mgr = IdentifierResolutionManager(
+            IdentifierRegistry(get_default_resolvers(context.config)),
+            context.config,
+            signature_type_map=_gstm(context.config.signatures))
+        _retry_cache = ResolverCache(context.config)
+        promoted = []
+        with _deferred_writes(context.results):
+            for rep, members, _gk in rep_to_group:
+                if len(members) < 2:
+                    continue
+                if _budget_exceeded(context):
+                    budget_hit = True
+                    logger.warning(
+                        "identify_molecules: retry abandoned at group of "
+                        f"{rep}; stage time budget exceeded")
+                    break
+                if context.results.get_data(f"identifiers/{rep}") is not None:
+                    continue  # representative succeeded after all
+                src = None
+                for member in members[1:]:
+                    vs = valid_sigs_by_name.get(member) or {}
+                    if not vs:
+                        continue
+                    for gen_name, sig_value in vs.items():
+                        if _budget_exceeded(context):
+                            budget_hit = True
+                            break
+                        _retry_errs: list = []
+                        _retry_mgr.resolve(
+                            results=context.results,
+                            segment=member,
+                            signature_generator_name=gen_name,
+                            signature=sig_value,
+                            cache=_retry_cache,
+                            working_directory=str(context.working_directory),
+                            errors=_retry_errs,
+                            deadline_epoch=budget_deadline(context),
+                        )
+                    if context.results.get_data(
+                            f"identifiers/{member}") is not None:
+                        src = member
+                        break
+                if src is not None:
+                    logger.info(
+                        "identify_molecules: representative %s failed; "
+                        "promoted member %s for its group", rep, src)
+                    promoted.append(
+                        (src, [src] + [m for m in members if m != src], _gk))
+            if promoted:
+                _propagate_group_identifiers(context.results, promoted)
 
     # A7 (BH-046): report budget-cut/dropped GROUPS, not fragments — a
     # budget cut can never split a group (reps resolve atomically, members
