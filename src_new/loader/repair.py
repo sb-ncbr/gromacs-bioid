@@ -73,6 +73,53 @@ def _element_from_mass(mass: float) -> str | None:
     return None
 
 
+def _mass_candidates(mass: float) -> list[str]:
+    """W3.1-2: element candidates allowing united-atom masses
+    (``m ≈ M(E) + k·1.008``) and HMR heavy atoms (``−2.016`` per
+    repartitioned hydrogen). Plain force-field masses match at k=0.
+    Returns candidate symbols sorted by closeness."""
+    out = []
+    for elem, m0 in ATOMTABLE_ELEMENTS_MASSES.items():
+        for k in range(-8, 5):
+            if abs(mass - (m0 + k * 1.008)) <= _MASS_MATCH_TOLERANCE:
+                out.append((elem, abs(mass - (m0 + k * 1.008))))
+                break
+    out.sort(key=lambda t: t[1])
+    return [e for e, _ in out]
+
+
+def _element_from_mass_name(mass: float, name: str | None) -> str | None:
+    """HMR/united-atom-aware mass match with the atom NAME's leading
+    letter as the tie-breaker between candidates (AMBER Trp 'NE1' at
+    HMR mass 11.99 is N, not C). Only the LEADING letter is used —
+    two-letter prefixes would collide with elements (HE1->He, NE2->Ne,
+    the audit's `never-from-name` class)."""
+    cands = _mass_candidates(mass)
+    if not cands:
+        return None
+    if len(cands) == 1:
+        return cands[0]
+    if name:
+        stripped = str(name).upper().strip().lstrip("0123456789")
+        one = stripped[:1].capitalize()
+        if one in cands:
+            return one
+    return cands[0]
+
+
+# W3.1-2: atom TYPE to element decodes only exact ion-style types —
+# never substrings (amber aromatic nitrogen 'NA'/'NB' is not sodium;
+# OPLS 'opls_135' is not oxygen).
+_EXACT_TYPE_IONS = {
+    "NA": "Na", "NA+": "Na", "SOD": "Na",
+    "K": "K", "K+": "K", "POT": "K",
+    "CL": "Cl", "CL-": "Cl", "CLA": "Cl",
+    "ZN": "Zn", "ZN2": "Zn", "MG": "Mg", "MG2": "Mg",
+    "CA": "Ca", "CAL": "Ca", "FE": "Fe", "FE2": "Fe",
+    "CU": "Cu", "MN": "Mn", "LI": "Li", "RB": "Rb", "CS": "Cs",
+}
+
+
 def _is_polymer_resname(resname: str | None) -> bool:
     """Protein (KNOWN_RESIDUE_CODES) or nucleic (tier-1 normalizer) residue."""
     if not resname:
@@ -229,6 +276,11 @@ def _prune_multi_bonded_hydrogens(u, bond_pairs: set) -> set:
 @dataclass
 class RepairReport:
     elements_guessed: int = 0
+    # W3.1-2: provenance of the element assignment — "topology" (real
+    # topology/PDB element data), "repaired" (re-derived by us from
+    # names/masses because the source was missing or parser-guessed),
+    # or "coarse_grained_blank".
+    elements_source: str = ""
     masses_guessed: int = 0
     names_fixed: int = 0
     bonds_guessed: int = 0
@@ -237,6 +289,7 @@ class RepairReport:
     def to_dict(self) -> dict:
         return {
             "elements_guessed": self.elements_guessed,
+            "elements_source": self.elements_source,
             "masses_guessed": self.masses_guessed,
             "names_fixed": self.names_fixed,
             "bonds_guessed": self.bonds_guessed,
@@ -302,8 +355,15 @@ class TopologyRepair:
 
     def guess_elements(self) -> int:
         """Guess missing elements. Returns count of atoms guessed."""
-        if self._has_elements():
+        # W3.1-2: parser-GUESSED elements (ITP atom-type guessing etc.)
+        # are untrusted — re-derive them from names/masses below.
+        attr = getattr(self.u._topology, 'elements', None)
+        self._elements_were_guessed = bool(
+            attr is not None and getattr(attr, 'is_guessed', False))
+        if self._has_elements() and not self._elements_were_guessed:
+            self.report.elements_source = "topology"
             return 0
+        self.report.elements_source = "repaired"
 
         count_before = sum(1 for e in self.u.atoms.elements if self._is_valid_element(e)) if hasattr(self.u.atoms, 'elements') else 0
 
@@ -313,10 +373,14 @@ class TopologyRepair:
         has_invalid = has_elements_attr and any(not self._is_valid_element(e) for e in self.u.atoms.elements)
         has_blanks = has_elements_attr and any(not e or not e.strip() for e in self.u.atoms.elements)
         
-        if not has_elements_attr or has_blanks or has_invalid:
-            # Use custom fallback to fill in blanks/invalid without disturbing valid ones
-            logger.debug("Elements missing/blank/invalid, using custom fallback")
-            self._guess_elements_fallback()
+        if (self._elements_were_guessed or not has_elements_attr
+                or has_blanks or has_invalid):
+            # Use custom fallback to fill in blanks/invalid — and to
+            # RE-DERIVE parser-guessed elements (W3.1-2: ITP atom-type
+            # guessing is not evidence).
+            logger.debug("Elements missing/blank/invalid/guessed, using custom fallback")
+            self._guess_elements_fallback(
+                force_all=self._elements_were_guessed)
         else:
             try:
                 self.u.guess_TopologyAttrs(to_guess=['elements'])
@@ -334,10 +398,12 @@ class TopologyRepair:
         logger.info(f"Guessed elements for {guessed} atoms")
         return guessed
 
-    def _guess_elements_fallback(self) -> None:
+    def _guess_elements_fallback(self, force_all: bool = False) -> None:
         """Custom element guessing when MDAnalysis fails.
         Tries: atom name prefix → atom type prefix → mass match.
-        Only fills in blank/invalid elements, preserves valid ones."""
+        Only fills in blank/invalid elements, preserves valid ones —
+        unless ``force_all`` (W3.1-2: parser-guessed elements are
+        untrusted, re-derive every atom)."""
         n_atoms = self.u.atoms.n_atoms
         
         # Get current elements (may have some filled)
@@ -360,6 +426,7 @@ class TopologyRepair:
             masses_attr is not None and not getattr(masses_attr, 'is_guessed', False))
         coarse_grained, _cg_why = self._looks_coarse_grained(masses_trusted)
         if coarse_grained:
+            self.report.elements_source = "coarse_grained_blank"
             self.report.warnings.append(
                 f"Coarse-grained topology detected ({_cg_why}) - "
                 "elements left blank (no atomistic chemistry to guess)")
@@ -378,8 +445,9 @@ class TopologyRepair:
             residue_sizes = {}
 
         for i in range(n_atoms):
-            # Only guess if element is blank or invalid
-            if not self._is_valid_element(elements[i]):
+            # Only guess if element is blank or invalid (or we are
+            # re-deriving parser-guessed elements).
+            if force_all or not self._is_valid_element(elements[i]):
                 resname = resnames_arr[i] if resnames_arr else None
                 ri = int(resindex_arr[i]) if resindex_arr is not None else None
                 element = self._guess_single_element(
@@ -424,10 +492,29 @@ class TopologyRepair:
          - > 50% of atom names are Martini bead names.
         """
         n = self.u.atoms.n_atoms
+        try:
+            names0 = list(self.u.atoms.names)
+        except Exception:
+            names0 = []
+        try:
+            resnames0 = {str(r).strip().upper() for r in self.u.atoms.resnames}
+        except Exception:
+            resnames0 = set()
+        # W3.1-2: all-atom systems (incl. HMR — heavy masses shifted by
+        # −2.016/H) are NOT coarse-grained when their atom names are
+        # organic and the residues are standard biomolecule residues.
+        if names0:
+            organic = sum(1 for nm in names0
+                          if str(nm).strip()[:1].upper() in _ORGANIC_FIRST) / len(names0)
+            standard = any(_is_polymer_resname(r) for r in resnames0)
+            martini = sum(1 for nm in names0
+                          if str(nm).upper() in _MARTINI_NAMES) / len(names0)
+            if organic >= 0.6 and martini <= 0.2 and (standard or not resnames0):
+                return False, ""
         if masses_trusted:
             real = [m for m in self.u.atoms.masses if m > 0.5]
             if real:
-                matched = sum(1 for m in real if _element_from_mass(float(m)))
+                matched = sum(1 for m in real if _mass_candidates(float(m)))
                 if matched / len(real) < 0.5:
                     return True, (f"topology masses: {matched}/{len(real)} "
                                   f"match an element")
@@ -499,7 +586,8 @@ class TopologyRepair:
         # element-less PDB/GRO: trusting them inverted every ambiguity
         # (IRE CAL -> Ca, HEM NA -> Na, Martini -> Sc/Po).
         if mass_trusted and mass is not None and mass > 0.5:
-            elem = _element_from_mass(float(mass))
+            # W3.1-2: united-atom/HMR-aware mass rule, name breaks ties.
+            elem = _element_from_mass_name(float(mass), name)
             if elem:
                 return elem
 
@@ -558,19 +646,15 @@ class TopologyRepair:
             if prefix in ATOMTABLE_ELEMENTS_MASSES:
                 return prefix
 
-        # 5. From atom type prefix
+        # 5. From atom type: exact ion-style types only — never
+        # substrings (W3.1-2: amber 'NA' is aromatic N, not sodium;
+        # SDS/OPLS 'opls_*' says nothing reliable) then first letter.
         if atom_type:
             t = atom_type.strip().upper()
-            if t.startswith("C"): return "C"
-            if t.startswith("N"): return "N"
-            if t.startswith("O"): return "O"
-            if t.startswith("H"): return "H"
-            if t.startswith("P") or "P5" in t or "QA" in t: return "P"
-            if t.startswith("S") or "SC" in t: return "S"
-            if "NA" in t: return "Na"
-            if "CL" in t: return "Cl"
-            if "K" in t: return "K"
-            if "ZN" in t: return "Zn"
+            if t in _EXACT_TYPE_IONS:
+                return _EXACT_TYPE_IONS[t]
+            if t[:1] in ("C", "N", "O", "H", "S", "P"):
+                return t[0]
 
         # 6. From mass (only when topology-trusted; name-derived masses on
         # element-less PDB/GRO are not evidence - W3 A3).
