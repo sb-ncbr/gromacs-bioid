@@ -38,6 +38,11 @@ class LoadStrategy(str, Enum):
     AMBER_PARM7_RST7 = "amber_parm7_rst7"
     AMBER_PRMTOP_MDCRD = "amber_prmtop_mdcrd"
     AMBER_PARM7_MDCRD = "amber_parm7_mdcrd"
+    # A8 (BH-016): topology + static structure steps (new for prmtop/top)
+    AMBER_PRMTOP_PDB = "amber_prmtop_pdb"
+    AMBER_PARM7_PDB = "amber_parm7_pdb"
+    GROMACS_TOP_PDB = "gromacs_top_pdb"
+    GROMACS_ITP_PDB = "gromacs_itp_pdb"
     GROMACS_TPR_TRR = "gromacs_tpr_trr"
     GROMACS_GRO = "gromacs_gro"  # A-07 (3.3): topology-free GRO fallback
     LAMMPS_DATA = "lammps_data"
@@ -397,6 +402,32 @@ def validate_for_strategy(bundle: InputBundle, strategy: LoadStrategy) -> FileVa
                 sorted_cif = sorted(cif_files, key=lambda p: p.name)
                 selected_files["cif"] = sorted_cif[0]
 
+        case LoadStrategy.AMBER_PRMTOP_PDB | LoadStrategy.AMBER_PARM7_PDB:
+            key = ".prmtop" if strategy == LoadStrategy.AMBER_PRMTOP_PDB else ".parm7"
+            prmtop_files = _get_files_by_ext(bundle, key)
+            pdb_files = _get_files_by_ext(bundle, ".pdb")
+            if len(prmtop_files) == 0:
+                errors.append(f"No {key} files found")
+            else:
+                selected_files[key.strip(".")] = sorted(prmtop_files, key=lambda p: p.name)[0]
+            if len(pdb_files) == 0:
+                errors.append("No .pdb files found")
+            else:
+                selected_files["pdb"] = sorted(pdb_files, key=lambda p: p.name)[0]
+
+        case LoadStrategy.GROMACS_TOP_PDB | LoadStrategy.GROMACS_ITP_PDB:
+            key = ".top" if strategy == LoadStrategy.GROMACS_TOP_PDB else ".itp"
+            top_files = _get_files_by_ext(bundle, key)
+            pdb_files = _get_files_by_ext(bundle, ".pdb")
+            if len(top_files) == 0:
+                errors.append(f"No {key} files found")
+            else:
+                selected_files[key.strip(".")] = sorted(top_files, key=lambda p: p.name)[0]
+            if len(pdb_files) == 0:
+                errors.append("No .pdb files found")
+            else:
+                selected_files["pdb"] = sorted(pdb_files, key=lambda p: p.name)[0]
+
         case LoadStrategy.CHARMM_PSF_PDB | LoadStrategy.CHARMM_PSF_CRD | LoadStrategy.CHARMM_PSF_DCD:
             psf_files = _get_files_by_ext(bundle, ".psf")
             if len(psf_files) == 0:
@@ -444,6 +475,8 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_TOP_GRO,
                 LoadStrategy.GROMACS_ITP_GRO,
                 LoadStrategy.GROMACS_TPR_TRR,
+                LoadStrategy.GROMACS_TOP_PDB,   # A8: topology + structure
+                LoadStrategy.GROMACS_ITP_PDB,   # A8: topology + structure
             ]
         elif strategy == "TPR_GRO":
             base_strategies = [
@@ -452,6 +485,23 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_TOP_GRO,
                 LoadStrategy.GROMACS_ITP_GRO,
                 LoadStrategy.GROMACS_TPR_TRR,
+                LoadStrategy.GROMACS_TOP_PDB,   # A8: topology + structure
+                LoadStrategy.GROMACS_ITP_PDB,   # A8: topology + structure
+            ]
+        elif strategy == "TOP_PDB":
+            # A8 (BH-016): {top, pdb} without .gro — topology + structure
+            base_strategies = [
+                LoadStrategy.GROMACS_TOP_PDB,
+                LoadStrategy.GROMACS_ITP_PDB,
+                LoadStrategy.GROMACS_GRO,   # step 4: structure-alone tail
+                LoadStrategy.PDB,           # (broken-include pins cross-kind)
+            ]
+        elif strategy == "ITP_PDB":
+            base_strategies = [
+                LoadStrategy.GROMACS_ITP_PDB,
+                LoadStrategy.GROMACS_TOP_PDB,
+                LoadStrategy.GROMACS_GRO,   # step 4: structure-alone tail
+                LoadStrategy.PDB,
             ]
         elif strategy == "TOP_GRO":
             base_strategies = [
@@ -459,6 +509,8 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_ITP_GRO,
                 LoadStrategy.GROMACS_TPR_GRO,
                 LoadStrategy.GROMACS_TPR,
+                LoadStrategy.GROMACS_TOP_PDB,   # A8: topology + structure
+                LoadStrategy.GROMACS_ITP_PDB,   # A8: topology + structure
                 LoadStrategy.GROMACS_GRO,  # A-07 topology-free tail
                 LoadStrategy.PDB,          # A-07 cross-kind tail
             ]
@@ -469,6 +521,8 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_TPR_GRO,
                 LoadStrategy.GROMACS_TPR,
                 LoadStrategy.GROMACS_TPR_TRR,
+                LoadStrategy.GROMACS_TOP_PDB,   # A8: topology + structure
+                LoadStrategy.GROMACS_ITP_PDB,   # A8: topology + structure
                 LoadStrategy.GROMACS_GRO,  # A-07 topology-free tail
                 LoadStrategy.PDB,          # A-07 cross-kind tail
             ]
@@ -480,6 +534,8 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_TOP_GRO,
                 LoadStrategy.GROMACS_ITP_GRO,
                 LoadStrategy.GROMACS_TPR_TRR,
+                LoadStrategy.GROMACS_TOP_PDB,   # A8: topology + structure
+                LoadStrategy.GROMACS_ITP_PDB,   # A8: topology + structure
                 LoadStrategy.GROMACS_GRO,  # A-07 topology-free tail
                 LoadStrategy.PDB,          # A-07 cross-kind tail
             ]
@@ -492,10 +548,12 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.AMBER_PRMTOP_RST7,
                 LoadStrategy.AMBER_PRMTOP_XTC,
                 LoadStrategy.AMBER_PRMTOP_NC,
+                LoadStrategy.AMBER_PRMTOP_PDB,   # A8: structure step
                 LoadStrategy.AMBER_PARM7_MDCRD,
                 LoadStrategy.AMBER_PARM7_RST7,
                 LoadStrategy.AMBER_PARM7_XTC,
                 LoadStrategy.AMBER_PARM7_NC,
+                LoadStrategy.AMBER_PARM7_PDB,    # A8: structure step
             ]
         elif strategy == "PRMTOP_RST7":
             base_strategies = [
@@ -508,16 +566,29 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.AMBER_PARM7_XTC,
                 LoadStrategy.AMBER_PARM7_NC,
             ]
+        elif strategy == "PRMTOP_PDB":
+            # A8 (BH-016): {prmtop, pdb} — topology + static structure step
+            base_strategies = [
+                LoadStrategy.AMBER_PRMTOP_PDB,
+                LoadStrategy.AMBER_PARM7_PDB,
+            ]
+        elif strategy == "PARM7_PDB":
+            base_strategies = [
+                LoadStrategy.AMBER_PARM7_PDB,
+                LoadStrategy.AMBER_PRMTOP_PDB,
+            ]
         else:  # PRMTOP_NC / PRMTOP_XTC (existing decisions, order preserved)
             base_strategies = [
                 LoadStrategy.AMBER_PRMTOP_XTC,
                 LoadStrategy.AMBER_PRMTOP_NC,
                 LoadStrategy.AMBER_PRMTOP_MDCRD,
                 LoadStrategy.AMBER_PRMTOP_RST7,
+                LoadStrategy.AMBER_PRMTOP_PDB,   # A8: structure step
                 LoadStrategy.AMBER_PARM7_XTC,
                 LoadStrategy.AMBER_PARM7_NC,
                 LoadStrategy.AMBER_PARM7_MDCRD,
                 LoadStrategy.AMBER_PARM7_RST7,
+                LoadStrategy.AMBER_PARM7_PDB,    # A8: structure step
             ]
     elif input_kind == InputKind.LAMMPS:
         base_strategies = [LoadStrategy.LAMMPS_DATA]
@@ -530,6 +601,10 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
             base_strategies = [LoadStrategy.CHARMM_PSF_DCD, LoadStrategy.CHARMM_PSF_PDB, LoadStrategy.CHARMM_PSF_CRD]
         else:  # PSF_PDB (and PSF_ONLY honest-failure path)
             base_strategies = [LoadStrategy.CHARMM_PSF_PDB, LoadStrategy.CHARMM_PSF_CRD, LoadStrategy.CHARMM_PSF_DCD]
+        # A8 follow-up (user condition): same structure-file-alone tail as
+        # AMBER — a PSF that cannot parse must not sink a deposit whose
+        # .pdb loads fine; the topology_ignored warning records the reason.
+        base_strategies.append(LoadStrategy.PDB)
     elif input_kind == InputKind.PDB:
         if strategy == "PDB_SINGLE":
             base_strategies = [LoadStrategy.PDB]
@@ -564,6 +639,12 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
             LoadStrategy.PDB,
             LoadStrategy.MMCIF_GEMMI,
         ]
+
+    # A8 (BH-016): AMBER families keep a flat-PDB last resort — the
+    # pre-A8 deposit path was flat PDB and silently lost the topology;
+    # step 4 of the ladder keeps that floor but records topology_ignored.
+    if input_kind == InputKind.AMBER:
+        base_strategies.append(LoadStrategy.PDB)
 
     # For GROMACS, AMBER and CHARMM, filter to only include strategies that
     # have validation ok=True (files may be absent; fallbacks try alternates)
@@ -699,6 +780,20 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
             return Universe(str(files["prmtop"]), str(files["xtc"]))
         case LoadStrategy.AMBER_PARM7_XTC:
             return Universe(str(files["parm7"]), str(files["xtc"]))
+        case LoadStrategy.AMBER_PRMTOP_PDB | LoadStrategy.AMBER_PARM7_PDB:
+            # A8 (BH-016): topology + static structure (prmtop carries
+            # charges/types/bonds; pdb provides frame-0 coordinates)
+            key = "prmtop" if "prmtop" in files else "parm7"
+            return Universe(str(files[key]), str(files["pdb"]),
+                            topology_format="PRMTOP", format="PDB")
+        case LoadStrategy.GROMACS_TOP_PDB:
+            return Universe(str(files["top"]), str(files["pdb"]),
+                            topology_format="ITP", tpr_resid_from_one=True,
+                            in_memory=True)
+        case LoadStrategy.GROMACS_ITP_PDB:
+            return Universe(str(files["itp"]), str(files["pdb"]),
+                            topology_format="ITP", tpr_resid_from_one=True,
+                            in_memory=True, infer_system=True)
         case LoadStrategy.CHARMM_PSF_PDB:
             return Universe(str(files["psf"]), str(files["pdb"]), in_memory=True)
         case LoadStrategy.CHARMM_PSF_CRD:
@@ -766,6 +861,25 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
             raise ValueError(f"Unknown strategy: {strategy}")
 
 
+# A8 (BH-041): topology + static-structure pairings whose abandonment on
+# load failure earns a coordinate_source_ignored warning (S27 class).
+_STATIC_PAIR_STRATEGIES = frozenset({
+    LoadStrategy.GROMACS_TPR_GRO,
+    LoadStrategy.GROMACS_TOP_GRO,
+    LoadStrategy.GROMACS_ITP_GRO,
+    LoadStrategy.AMBER_PRMTOP_RST7,
+    LoadStrategy.AMBER_PARM7_RST7,
+    LoadStrategy.AMBER_PRMTOP_MDCRD,
+    LoadStrategy.AMBER_PARM7_MDCRD,
+    LoadStrategy.AMBER_PRMTOP_PDB,
+    LoadStrategy.AMBER_PARM7_PDB,
+    LoadStrategy.GROMACS_TOP_PDB,
+    LoadStrategy.GROMACS_ITP_PDB,
+    LoadStrategy.CHARMM_PSF_PDB,
+    LoadStrategy.CHARMM_PSF_CRD,
+})
+
+
 def _topology_n_atoms(path: Path) -> int | None:
     """Parse a (binary) topology to get its declared atom count; None on failure.
 
@@ -794,6 +908,17 @@ def _record_attempts(results: ResultsManager, attempts: list[LoadAttempt]) -> No
             ad["error_message"] = a.error_message
         attempt_dicts.append(ad)
     results.set_data("loading/attempts", attempt_dicts)
+    # A8 (BH-016/BH-041): the ladder record — strategy, outcome, reason
+    # per step, directly readable in triage dumps.
+    results.set_data("loading/ladder", [
+        {
+            "strategy": getattr(a.strategy, "value", a.strategy),
+            "outcome": a.status,
+            "reason": a.error_code or ("success" if a.status == "success"
+                                       else ""),
+            **({"error_message": a.error_message[:200]}
+               if getattr(a, "error_message", None) else {}),
+        } for a in attempts])
 
 
 def summarize_load_failure(attempts: list) -> dict:
@@ -915,6 +1040,11 @@ def load_simulation(
                     attempt.error_code = probe.error_code
                     attempt.error_message = probe.error_message
                     attempts.append(attempt)
+                    # A8 (BH-016): trajectory atom-count mismatch must NEVER
+                    # abort the run — warn and fall on to the structure
+                    # step instead of silently dropping the trajectory.
+                    all_warnings.append(
+                        f"trajectory_ignored: {probe.error_message}")
                     _record_attempts(results, attempts)
                     continue
                 if probe.error_code == "probe_failed":
@@ -949,6 +1079,23 @@ def load_simulation(
             
             attempts.append(attempt)
             
+            # A8 (step 4 of the ladder): the usable system came from a
+            # structure file ALONE while the bundle shipped a topology —
+            # the run must carry the reason explicitly.
+            if (strategy in (LoadStrategy.PDB, LoadStrategy.GROMACS_GRO)
+                    and decision.input_kind in (InputKind.AMBER,
+                                                InputKind.GROMACS,
+                                                InputKind.CHARMM)):
+                prev_fail = next((a for a in reversed(attempts)
+                                  if a.status != "success"), None)
+                reason = (prev_fail.error_message
+                          if prev_fail is not None and
+                          getattr(prev_fail, "error_message", None)
+                          else "topology strategies exhausted")
+                all_warnings.append(
+                    f"topology_ignored: falling back to {strategy.value} "
+                    f"without topology metadata ({reason[:160]})")
+
             # Record final results
             results.set_data("loading/success", True)
             results.set_data("loading/final_strategy", strategy.value)
@@ -984,9 +1131,19 @@ def load_simulation(
             attempt.error_code = "load_exception"
             attempt.error_message = str(exc)
             attempt.traceback = traceback.format_exc()
-            
+
             logger.exception(f"Strategy {strategy} failed: {exc}")
-            
+
+            # A8 (BH-041/S27): a topology+structure pair whose load fails
+            # (e.g. TPR/GRO atom-count mismatch) was previously dropped
+            # SILENTLY with the system continuing from the topology's own
+            # coordinates. Record the abandonment as a warning.
+            if strategy in _STATIC_PAIR_STRATEGIES:
+                all_warnings.append(
+                    f"coordinate_source_ignored: {strategy.value} failed "
+                    f"({str(exc)[:160]}); continuing without that "
+                    "coordinate source")
+
             attempts.append(attempt)
             
             # Record attempt to results

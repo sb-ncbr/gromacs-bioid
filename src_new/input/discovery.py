@@ -152,6 +152,25 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             topology_files=tpr_files[:1],  # Take first tpr
         )
     
+    # 3b. A8 (BH-016): .top + .pdb (no .gro) -> "TOP_PDB", GROMACS —
+    # topology + structure step instead of degrading to PDB_SINGLE
+    if ".top" in exts and ".gro" not in exts and ".pdb" in exts:
+        top_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".top"]
+        return LoadDecision(
+            input_kind=InputKind.GROMACS,
+            selected_strategy="TOP_PDB",
+            topology_files=[top_files[0]] if top_files else [],
+        )
+
+    # 3c. A8 (BH-016): .itp + .pdb (no .gro/.top) -> "ITP_PDB", GROMACS
+    if ".itp" in exts and ".gro" not in exts and ".top" not in exts and ".pdb" in exts:
+        itp_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".itp"]
+        return LoadDecision(
+            input_kind=InputKind.GROMACS,
+            selected_strategy="ITP_PDB",
+            topology_files=[itp_files[0]] if itp_files else [],
+        )
+
     # 3. .top + .gro -> "TOP_GRO", GROMACS
     if ".top" in exts and ".gro" in exts:
         top_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".top"]
@@ -189,6 +208,19 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
         return LoadDecision(
             input_kind=InputKind.AMBER,
             selected_strategy="PRMTOP_NC",
+            topology_files=[prmtop_files[0]] if prmtop_files else [],
+        )
+
+    # 5d. A8 (BH-016): .prmtop/.parm7 + .pdb as static structure step
+    # (loses to real trajectories above; saves {topology, pdb} deposits
+    # from the flat PDB_SINGLE path that lost charges/types)
+    if (".prmtop" in exts or ".parm7" in exts) and ".pdb" in exts:
+        prmtop_files = [f.path for f in bundle.files
+                        if f.path.suffix.lower() in (".prmtop", ".parm7")]
+        strat = "PRMTOP_PDB" if ".prmtop" in exts else "PARM7_PDB"
+        return LoadDecision(
+            input_kind=InputKind.AMBER,
+            selected_strategy=strat,
             topology_files=[prmtop_files[0]] if prmtop_files else [],
         )
 
