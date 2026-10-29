@@ -373,7 +373,9 @@ def validate_for_strategy(bundle: InputBundle, strategy: LoadStrategy) -> FileVa
                     warnings.append("multiple_trr_files")
 
         case LoadStrategy.PDB:
-            pdb_files = _get_files_by_ext(bundle, ".pdb")
+            # B3 (BH-014 rest): .ent is PDB-format content (X03)
+            pdb_files = (_get_files_by_ext(bundle, ".pdb")
+                         + _get_files_by_ext(bundle, ".ent"))
             if len(pdb_files) == 0:
                 errors.append("No .pdb files found")
             elif len(pdb_files) == 1:
@@ -854,7 +856,12 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
                     # A-05: this used to be a silent `except: pass`.
                     logging.getLogger(__name__).warning(
                         "pdb_xtc_pairing failed, falling back to static PDB: %s", exc)
-            return Universe(str(files["pdb"]), in_memory=True)
+            pdb_path = files["pdb"]
+            if str(pdb_path).lower().endswith(".ent"):
+                # B3 (X03): .ent carries PDB-format content but the suffix
+                # defeats MDAnalysis' format inference
+                return Universe(str(pdb_path), format="PDB", in_memory=True)
+            return Universe(str(pdb_path), in_memory=True)
         case LoadStrategy.MMCIF_GEMMI:
             return _load_mmcif_via_gemmi(files["cif"])
         case _:
@@ -921,7 +928,8 @@ def _record_attempts(results: ResultsManager, attempts: list[LoadAttempt]) -> No
         } for a in attempts])
 
 
-def summarize_load_failure(attempts: list) -> dict:
+def summarize_load_failure(attempts: list, decision=None,
+                           bundle=None) -> dict:
     """bughunt BH-014: user-facing reason from the attempt table.
 
     The pipeline's generic message ("No loading strategy succeeded after N
@@ -931,6 +939,49 @@ def summarize_load_failure(attempts: list) -> dict:
     then content gates, then the first real exception with a note about how
     many other strategies also failed.
     """
+    # B3 (BH-014 rest): an UNKNOWN-kind deposit must name its REAL
+    # problem instead of the first strategy's validation noise
+    # ("No .tpr files found" for a dcd-only/xyz/gz deposit — F06/X07/S26).
+    if (decision is not None and getattr(decision, "input_kind", None) is None
+            and bundle is not None):
+        recs = list(getattr(bundle, "files", []) or [])
+        gz = [f.path.name for f in recs
+              if f.path.name.lower().endswith(".gz")]
+        if gz:
+            return {
+                "reason": "compressed_input",
+                "message": (f"compressed input cannot be loaded directly "
+                            f"({', '.join(gz)}); decompress and deposit "
+                            f"the plain file"),
+                "details": {"attempt_count": len(attempts),
+                            "compressed_files": gz},
+            }
+        coords = [f.path.name for f in recs
+                  if getattr(f, "role", "") in ("trajectory", "coordinate")]
+        topologies = [f for f in recs
+                      if getattr(f, "role", "") in ("topology", "structure")]
+        if coords and not topologies:
+            return {
+                "reason": "missing_topology",
+                "message": (f"found coordinate/trajectory file(s) "
+                            f"({', '.join(coords)}) but no topology to "
+                            f"interpret them — pair with .tpr, .psf, "
+                            f".prmtop/.parm7 or .top + structure"),
+                "details": {"attempt_count": len(attempts),
+                            "unpaired_files": coords},
+            }
+        unknown_exts = sorted({f.path.suffix.lower() for f in recs
+                               if getattr(f, "file_type", "") == "UNKNOWN"})
+        if unknown_exts:
+            return {
+                "reason": "unsupported_extension",
+                "message": (f"unsupported input extension(s) "
+                            f"{', '.join(unknown_exts)} (files: "
+                            f"{', '.join(f.path.name for f in recs)})"),
+                "details": {"attempt_count": len(attempts),
+                            "unsupported_extensions": unknown_exts},
+            }
+
     failed = [a for a in attempts if getattr(a, "status", None) != "success"]
     if not attempts:
         return {
@@ -1158,7 +1209,8 @@ def load_simulation(
     # bughunt BH-014: persist the structured failure summary (reason,
     # message, which strategies failed) next to the attempt table
     results.set_data("loading/failure_summary",
-                     summarize_load_failure(attempts))
+                     summarize_load_failure(attempts, decision=decision,
+                                            bundle=bundle))
     
     # Record all attempts
     _record_attempts(results, attempts)

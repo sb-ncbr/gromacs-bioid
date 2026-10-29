@@ -31,6 +31,8 @@ _CANONICAL_SUFFIX_TABLE: dict[str, tuple[str, str]] = {
     ".data": ("LAMMPS_DATA", "structure"),
     # generic
     ".pdb": ("PDB", "structure"),
+    # B3 (BH-014 rest): .ent IS PDB-format content (X03) — load as PDB.
+    ".ent": ("PDB", "structure"),
     ".cif": ("MMCIF", "structure"),
     # engine-neutral trajectories (.xtc pairs with gromacs OR amber prmtop;
     # the old duplicated dict let AMBER_XTC silently overwrite GROMACS_XTC)
@@ -276,13 +278,16 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             warnings=warnings,
         )
 
-    # 6. .pdb -> "PDB_SINGLE", PDB
-    if ".pdb" in exts:
-        pdb_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".pdb"]
+    # 6. .pdb -> "PDB_SINGLE", PDB; .ent carries the same format (B3, X03)
+    if ".pdb" in exts or ".ent" in exts:
+        pdb_files = [f.path for f in bundle.files
+                     if f.path.suffix.lower() in (".pdb", ".ent")]
         return LoadDecision(
             input_kind=InputKind.PDB,
             selected_strategy="PDB_SINGLE",
             topology_files=pdb_files[:1],
+            warnings=(["ent_extension_loaded_as_pdb"] if ".ent" in exts
+                      and ".pdb" not in exts else []),
         )
     
     # 7. .cif -> "MMCIF_SINGLE", MMCIF
