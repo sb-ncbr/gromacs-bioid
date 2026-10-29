@@ -29,6 +29,17 @@ _REFRESH_LOCK_LUA = (
     "return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end")
 
 
+def _execution_token() -> str:
+    """W3.1 item 5 (A1): hostname:pid:thread-ident. The fleet runs
+    Celery with --pool=threads --concurrency=2, where hostname:pid alone
+    is IDENTICAL for two duplicate executions inside one worker process
+    — the token check could not tell them apart (a refresh by either
+    thread would validate the other's lock, and either could release
+    the other's lock)."""
+    return (f"{socket.gethostname()}:{os.getpid()}:"
+            f"{threading.get_ident()}")
+
+
 def _run_lock_client():
     """Redis client for the per-run execution lock (CELERY_BROKER_URL).
 
@@ -180,7 +191,7 @@ def run_pipeline_task(
     # refresh/release). Lock held => a duplicate execution is running
     # elsewhere: ACK (return) with skipped_running.
     lock_client = None
-    lock_token = f"{socket.gethostname()}:{os.getpid()}"
+    lock_token = _execution_token()
     try:
         lock_client = _run_lock_client()
         got = lock_client.set(_LOCK_PREFIX + run_id, lock_token,
@@ -210,6 +221,9 @@ def run_pipeline_task(
     # reaper judges running runs by this file's mtime. A1: only AFTER
     # the lock decision. The loop also refreshes the lock TTL.
     _hb_stop = threading.Event()
+    # W3.1 item 5 (A1): set when the lock was lost mid-run to a re-took
+    # duplicate execution — aborts the child, acks aborted_lock_lost.
+    _lock_lost = threading.Event()
 
     def _hb_loop() -> None:
         while not _hb_stop.wait(_LOCK_HEARTBEAT_S):
@@ -219,11 +233,34 @@ def run_pipeline_task(
                 pass
             if lock_client is not None:
                 try:
-                    lock_client.eval(_REFRESH_LOCK_LUA, 1,
-                                     _LOCK_PREFIX + run_id,
-                                     lock_token, _LOCK_TTL_S)
+                    ok = lock_client.eval(_REFRESH_LOCK_LUA, 1,
+                                          _LOCK_PREFIX + run_id,
+                                          lock_token, _LOCK_TTL_S)
+                    if not ok:
+                        # W3.1 item 5 (A1): the key vanished mid-run
+                        # (Redis restart without persistence / eviction /
+                        # failover — any outage > _LOCK_TTL_S). RE-TAKE
+                        # it; if a redelivered duplicate already did, WE
+                        # must stop: the duplicate owns the run now.
+                        got = lock_client.set(
+                            _LOCK_PREFIX + run_id, lock_token,
+                            nx=True, ex=_LOCK_TTL_S)
+                        if not got:
+                            holder = None
+                            try:
+                                holder = lock_client.get(
+                                    _LOCK_PREFIX + run_id)
+                            except Exception:
+                                pass
+                            logger.error(
+                                "[%s] execution lock lost mid-run (now "
+                                "held by %r); aborting this execution — "
+                                "the duplicate owns the run",
+                                run_id, holder)
+                            _lock_lost.set()
+                            return
                 except Exception:
-                    pass
+                    pass  # backend down: retry on the next beat
 
     _hb_thread = threading.Thread(target=_hb_loop, daemon=True,
                                   name=f"hb_{run_id}")
@@ -241,8 +278,13 @@ def run_pipeline_task(
             print(f"[SPIN_DEBUG] failed to arm: {_spin_exc}", flush=True)
 
     try:
-        return _spawn_pipeline_child(run_id, input_dir,
-                                     thread_results_path, config_path)
+        outcome = _spawn_pipeline_child(run_id, input_dir,
+                                        thread_results_path, config_path,
+                                        abort_event=_lock_lost)
+        if _lock_lost.is_set() and isinstance(outcome, dict):
+            # keep the ack truthful even if the child raced to finish
+            outcome.setdefault("status", "aborted_lock_lost")
+        return outcome
     finally:
         _hb_stop.set()
         try:
@@ -259,7 +301,8 @@ def run_pipeline_task(
 
 def _spawn_pipeline_child(run_id: str, input_dir: str,
                           results_path: Path,
-                          config_path: Optional[str]) -> dict:
+                          config_path: Optional[str],
+                          abort_event: Optional[threading.Event] = None) -> dict:
     """BH-004 process isolation: run the pipeline in a CHILD process with
     a wall-clock limit. The threads pool cannot kill a C-level spin per
     task (the bond-order ladder hung R01/P24/M13/F13 forever); the child
@@ -284,7 +327,40 @@ def _spawn_pipeline_child(run_id: str, input_dir: str,
 
     child.start()
     child_conn.close()
-    child.join(limit_s)
+    # W3.1 item 5 (A1): poll instead of one blocking join so a mid-run
+    # lock loss (duplicate re-took the key) can abort the child. Same
+    # wall-clock semantics for the timeout path as the old join().
+    deadline = time.monotonic() + limit_s
+    while child.is_alive():
+        if abort_event is not None and abort_event.is_set():
+            child.terminate()
+            child.join(30.0)
+            if child.is_alive():
+                child.kill()
+                child.join(10.0)
+            logger.error(
+                "pipeline child for %s aborted: execution lock lost "
+                "mid-run to a duplicate execution", run_id,
+            )
+            try:
+                rm = ResultsManager(str(results_path))
+                rm.add_event(
+                    "execution_lock_lost",
+                    detail=(
+                        "the per-run execution lock vanished mid-run "
+                        "(Redis outage longer than the lock TTL) and a "
+                        "redelivered duplicate execution re-took it; "
+                        "this execution was aborted. The duplicate "
+                        "owns the run."
+                    ),
+                )
+            except Exception:
+                pass
+            return {"status": "aborted_lock_lost", "run_id": run_id,
+                    "error": "execution_lock_lost"}
+        if time.monotonic() >= deadline:
+            break
+        child.join(0.2)
     if child.is_alive():
         child.terminate()
         child.join(30.0)

@@ -190,6 +190,46 @@ def sweep_adhoc(adhoc_dir: Path, retention_s: float | None = None) -> dict:
     return summary
 
 
+def reaper_run_dirs(runs_dir: Path) -> list[Path]:
+    """W3.1 item 5 (A1): all run roots the reaper sweeps. The default
+    extra dir is /data/validation — validation runs there with a stale
+    heartbeat were invisible to the reaper (it only scanned /app/runs),
+    so a run whose duplicate was acked-and-died stayed "running"
+    forever. Env BAT3_REAPER_EXTRA_RUN_DIRS (colon-separated) overrides;
+    an empty value disables the extension."""
+    raw = os.environ.get("BAT3_REAPER_EXTRA_RUN_DIRS", "/data/validation")
+    dirs = [runs_dir]
+    dirs += [Path(p.strip()) for p in raw.split(":") if p.strip()]
+    seen: set[str] = set()
+    out: list[Path] = []
+    for d in dirs:
+        if str(d) not in seen:
+            seen.add(str(d))
+            out.append(d)
+    return out
+
+
+def sweep_all_dirs(runs_dir: Path, live_task_ids: set[str],
+                   misses: dict[str, int],
+                   extra_dirs: list[Path] | None = None) -> dict:
+    """Sweep every configured run root; combined summary. Dirs that are
+    not mounted (e.g. /data/validation on a pod without the volume) are
+    skipped quietly."""
+    total: dict = {"scanned": 0, "zombies_failed": [], "errors": 0}
+    dirs = [runs_dir] + list(extra_dirs or [])
+    if extra_dirs is None:
+        dirs = reaper_run_dirs(runs_dir)
+    for d in dirs:
+        if not d.is_dir():
+            logger.debug("run_reaper: run root %s not present; skipping", d)
+            continue
+        s = sweep(d, live_task_ids, misses)
+        total["scanned"] += s["scanned"]
+        total["zombies_failed"].extend(s["zombies_failed"])
+        total["errors"] += s["errors"]
+    return total
+
+
 def sweep(runs_dir: Path, live_task_ids: set[str], misses: dict[str, int]) -> dict:
     """Reconcile one sweep. Pure w.r.t. its inputs; returns a small summary.
 
@@ -297,7 +337,8 @@ async def reaper_loop(celery_app, runs_dir: Path, redis_url: str,
             )
             if got_lock:
                 live = await asyncio.to_thread(collect_live_task_ids, celery_app)
-                summary = await asyncio.to_thread(sweep, runs_dir, live, misses)
+                summary = await asyncio.to_thread(
+                    sweep_all_dirs, runs_dir, live, misses)
                 if summary["zombies_failed"]:
                     logger.error("run_reaper sweep: %s", summary)
                 # W3.1 item 4 (A9): adhoc retention (no-op when the dir
