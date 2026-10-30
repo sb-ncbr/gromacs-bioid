@@ -42,6 +42,10 @@ class PbcRepairReport:
     bond_jumps: int = 0
     max_backbone_gap: float | None = None
     backbone_jumps: int = 0
+    # BH-052 self-check fields
+    unwrap_incomplete: bool = False
+    post_unwrap_bonds_over_4a: int = 0
+    post_unwrap_max_bond_length: float | None = None
     warnings: list[str] = field(default_factory=list)
     error: str | None = None
 
@@ -62,6 +66,9 @@ class PbcRepairReport:
             "bond_jumps": self.bond_jumps,
             "max_backbone_gap": self.max_backbone_gap,
             "backbone_jumps": self.backbone_jumps,
+            "unwrap_incomplete": self.unwrap_incomplete,
+            "post_unwrap_bonds_over_4a": self.post_unwrap_bonds_over_4a,
+            "post_unwrap_max_bond_length": self.post_unwrap_max_bond_length,
             "warnings": self.warnings,
             "error": self.error,
         }
@@ -150,18 +157,18 @@ class PbcRepair:
             report.error = str(exc)
             report.warnings.append(f"PBC unwrapping failed: {exc}")
 
-        # A-17.1 (red-team 3.7): lock frame 0 into a mutable single-frame
-        # snapshot. Non-in-memory readers (prmtop+xtc/nc, psf+dcd, tpr+trr)
-        # only corrected the current Timestep; any later rewind would silently
-        # restore raw (nm-collapsed / wrapped) coordinates.
+        # A-17.1 (red-team 3.7) / BH-052: lock the corrected frame into a
+        # mutable single-frame snapshot. Never use transfer_to_memory for
+        # this: it re-reads frame 0 from DISK and silently discards the
+        # in-memory unwrap corrections (BH-052, found via the W3.1 A8
+        # trajectory twins: a wrapped multi-frame XTC kept 67 A broken
+        # bonds while the report claimed unwrapped=True, giving wrong
+        # stereochemistry and a wrong InChIKey). Snapshot the corrected
+        # positions instead.
         try:
+            import numpy as _np
             traj = getattr(self.u, "trajectory", None)
             if traj is not None and getattr(traj, "n_frames", 1) > 1:
-                self.u.transfer_to_memory(start=0, stop=1)
-            if getattr(self.u.trajectory, "n_frames", 1) > 1:
-                # MemoryReader: transfer_to_memory ignores start/stop — force a
-                # 1-frame snapshot of the (corrected) current frame instead.
-                import numpy as _np
                 dims = getattr(self.u, "dimensions", None)
                 coords = _np.array(self.u.atoms.positions, copy=True)
                 self.u.load_new(coords, format="memory")
@@ -170,7 +177,44 @@ class PbcRepair:
         except Exception as exc:
             report.warnings.append(f"frame0 snapshot failed: {exc}")
 
+        # BH-052 self-check: the report must not claim success while
+        # bonded atoms are still split across the box. Any bonded pair
+        # above 4 A after the snapshot flips unwrapped to False and
+        # warns with the count and the maximum.
+        if report.unwrapped:
+            over, max_bond = self._post_unwrap_bond_check()
+            if over:
+                report.unwrapped = False
+                report.unwrap_incomplete = True
+                report.post_unwrap_bonds_over_4a = over
+                report.post_unwrap_max_bond_length = max_bond
+                report.warnings.append(
+                    f"pbc_unwrap_incomplete: {over} bonded pairs above 4 A "
+                    f"after unwrapping (max {max_bond:.2f} A); molecules "
+                    f"may still be split across the periodic boundary")
+
         return report
+
+    def _post_unwrap_bond_check(self) -> tuple[int, float | None]:
+        """BH-052 self-check: bonded pairs above 4 A and the max distance.
+
+        Reads bonds through the topology storage (same fast path as
+        detect_jumps) and needs a box; without a box or bonds there is
+        nothing PBC-split to report.
+        """
+        if getattr(self.u, "dimensions", None) is None:
+            return 0, None
+        _top = getattr(self.u, "_topology", None)
+        _tb = getattr(_top, "bonds", None) if _top is not None else None
+        _vals = getattr(_tb, "values", None) if _tb is not None else None
+        if _vals is None or len(_vals) == 0:
+            return 0, None
+        b = np.asarray(_vals, dtype=np.int64).reshape(-1, 2)
+        if not len(b):
+            return 0, None
+        pos = self.u.atoms.positions
+        dists = np.linalg.norm(pos[b[:, 0]] - pos[b[:, 1]], axis=1)
+        return int((dists > 4.0).sum()), float(dists.max())
 
     def _guess_bonds(self) -> int:
         """Guess bonds UNIONED with any existing set using DefaultGuesser.

@@ -342,6 +342,19 @@ def _unwrap_periodic_boundaries(context):
             f"Periodic boundary unwrapping failed: {report.error}"
         )
 
+    # BH-052 self-check: molecules still split across the box
+    if (context.config.loader.unwrap_periodic_boundaries
+            and report.unwrap_incomplete):
+        context.add_warning(
+            "pbc_unwrap_incomplete",
+            "Periodic boundary unwrapping did not make molecules whole: "
+            "bonded pairs remain above 4 A after unwrapping.",
+            details={
+                "bonded_pairs_over_4a": report.post_unwrap_bonds_over_4a,
+                "post_unwrap_max_bond_length": report.post_unwrap_max_bond_length,
+            }
+        )
+
     return StepResult(
         summary={"unwrapped": report.unwrapped, "jumps_detected": report.jumps_detected},
         context_updates={"pbc_report": report}
