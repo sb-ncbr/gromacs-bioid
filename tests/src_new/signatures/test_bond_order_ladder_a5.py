@@ -150,10 +150,20 @@ class TestFixCHardKill:
 
     def test_timeout_kills_and_preserves_prestate(self, monkeypatch, caplog):
         """A hung ladder is killed at the shared budget; recorded as
-        bond_order_timeout; parent mol still all-single (unchanged)."""
+        bond_order_timeout; parent mol still all-single (unchanged).
+        W3.1 item 8: the worker is PERSISTENT and warm — a small ligand
+        answers in milliseconds, so the hang is induced deterministically
+        by SIGSTOPping the worker (the budget then expires on a reply
+        that can never come; the whole group is killpg'd)."""
+        import os as _os
+        import signal as _signal
         monkeypatch.setenv("BAT3_DBO_NO_CAP", "1")
-        # far below any interpreter+rdkit startup -> deterministic Timeout
+        # far below any possible ladder runtime -> deterministic timeout
         monkeypatch.setenv("BAT3_BOND_ORDER_TIMEOUT_S", "0.05")
+        from src_new.signatures.generators import _perceive_cache as pc
+        pc._reset_dbo_worker()
+        worker = pc._get_dbo_worker()
+        _os.kill(worker.proc.pid, _signal.SIGSTOP)  # deterministic hang
         mol, _ = _stripped("CC(=O)N")
         t0 = time.monotonic()
         import logging

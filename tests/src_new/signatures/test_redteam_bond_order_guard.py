@@ -45,8 +45,12 @@ def _hless_mol(n_heavy: int) -> Chem.Mol:
 
 def _popen_recorder():
     """Record subprocess spawns while delegating to the real Popen —
-    W3 A5 Fix C runs the ladder in a child interpreter."""
+    W3.1 item 8: the ladder runs in a PERSISTENT child interpreter; the
+    worker is reset first so the recorder observes the (re)spawn."""
     import subprocess as _sp
+    from src_new.signatures.generators._perceive_cache import (
+        _reset_dbo_worker)
+    _reset_dbo_worker()
     real = _sp.Popen
     calls = []
 
@@ -87,6 +91,8 @@ class TestBondOrderLadderSpinGuard:
         # W3 A5: the MonomerInfo-based skip was provably dead (none of the
         # mol builders set it); residue-tagged mols now go through the
         # Fix-C subprocess ladder, whose hard kill is the spin protection.
+        # W3.1 item 8: exact assertion restored (was isinstance(result,
+        # bool)) — the persistent worker solves the small gly-gly peptide.
         mol = _polymer_mol()
         assert mol.GetAtomWithIdx(0).GetMonomerInfo() is not None
         calls, rec = _popen_recorder()
@@ -94,24 +100,28 @@ class TestBondOrderLadderSpinGuard:
             result = determine_bond_orders_safely(mol)
         assert calls, ("ladder must run in the subprocess kill-vehicle "
                        "(W3 A5 Fix C), not a dead in-process guard")
-        assert isinstance(result, bool)
+        assert result is True
 
     def test_small_hless_fragment_keeps_full_ladder(self):
         # below the size cap: the ladder RUNS (in the Fix-C subprocess —
-        # in-process RDKit mocks cannot observe it any more).
+        # in-process RDKit mocks cannot observe it any more) and SOLVES
+        # the subcap H-less fragment (exact assertion restored, W3.1
+        # item 8 — was implied via the vehicle only).
         mol = _hless_mol(10)
         calls, rec = _popen_recorder()
         with mock.patch("subprocess.Popen", side_effect=rec):
-            determine_bond_orders_safely(mol)
+            result = determine_bond_orders_safely(mol)
         assert calls, "subcap H-less fragments must still get the ladder"
+        assert result is True
 
     def test_explicit_hydrogens_above_cap_still_run_ladder(self):
         mol = Chem.AddHs(_hless_mol(_BOND_ORDER_LADDER_MAX_HEAVY_ATOMS_HLESS + 10))
         calls, rec = _popen_recorder()
         with mock.patch("subprocess.Popen", side_effect=rec):
-            determine_bond_orders_safely(mol)
+            result = determine_bond_orders_safely(mol)
         assert calls, ("explicit-H above the cap still gets the ladder "
                        "(H-less guard counts PRE-injection atoms only)")
+        assert result is True
 
     def test_accepted_solution_path_unchanged(self):
         with mock.patch.object(rdDetermineBonds, "DetermineBondOrders"):
@@ -200,7 +210,9 @@ class TestHydrogenInjectionAwareGuard:
         assert calls, ("no-fragment mol-side call still reaches the ladder "
                        "(pre-item-7 behavior, mol-side only; W3 A5: in "
                        "the subprocess kill-vehicle)")
-        assert isinstance(result, bool)
+        # W3.1 item 8: exact assertion restored (was isinstance(result,
+        # bool)) — the ladder runs all 13 charges and none is accepted.
+        assert result is False
 
     def test_small_hless_fragment_unaffected(self):
         # heme/NAD/FAD size: 44 heavy atoms, counts-mode injection — the
@@ -217,7 +229,10 @@ class TestHydrogenInjectionAwareGuard:
             result = determine_bond_orders_safely(mol, fragment=fragment)
         assert calls, ("heme/NAD-size subcap fragments must still get the "
                        "ladder (via the Fix-C subprocess since W3 A5)")
-        assert isinstance(result, bool)
+        # W3.1 item 8: exact assertion restored (was isinstance(result,
+        # bool)) — the synthetic UA fragment (no real geometry) runs the
+        # full ladder and no charge is accepted.
+        assert result is False
 
     def test_smiles_builder_path_skips_big_injected_fragment(self):
         # end-to-end through the smiles builder (the 1FC1 prompt path)

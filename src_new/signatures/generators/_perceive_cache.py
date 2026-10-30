@@ -26,6 +26,7 @@ import logging
 import os
 import pickle
 import signal
+import struct
 import subprocess
 import sys
 import threading
@@ -300,63 +301,218 @@ def _dbo_ladder_core(mol, net_charge: int) -> bool:
 
 
 _DBO_CHILD_BOOTSTRAP = """
-import sys, pickle, importlib.util
+import sys, os, pickle, struct, importlib.util
+# W3.1 item 8 (A5): die with the parent run (PR_SET_PDEATHSIG) — an
+# orphaned DBO interpreter kept burning CPU after run termination.
+try:
+    import ctypes, signal
+    ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGKILL)
+except Exception:
+    pass
 spec = importlib.util.spec_from_file_location("dbo_worker", sys.argv[1])
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
-blob, q = pickle.loads(sys.stdin.buffer.read())
 from rdkit import Chem
-mol = Chem.Mol(blob)
-ok = m._dbo_ladder_core(mol, q)
-sys.stdout.buffer.write(pickle.dumps((ok, mol.ToBinary() if ok else None)))
+
+
+def _recv(stream):
+    hdr = b""
+    while len(hdr) < 4:
+        chunk = stream.read(4 - len(hdr))
+        if not chunk:
+            return None
+        hdr += chunk
+    (n,) = struct.unpack(">I", hdr)
+    buf = b""
+    while len(buf) < n:
+        chunk = stream.read(n - len(buf))
+        if not chunk:
+            return None
+        buf += chunk
+    return buf
+
+
+# W3.1 item 8 (A5): a PERSISTENT worker — one interpreter serves every
+# request (was: a fresh ~170 ms interpreter per ligand).
+while True:
+    payload = _recv(sys.stdin.buffer)
+    if payload is None:
+        break
+    try:
+        blob, q = pickle.loads(payload)
+        mol = Chem.Mol(blob)
+        ok = m._dbo_ladder_core(mol, q)
+        out = pickle.dumps((True, bool(ok),
+                             mol.ToBinary() if ok else None))
+    except Exception as exc:
+        out = pickle.dumps((False, str(exc), None))
+    sys.stdout.buffer.write(struct.pack(">I", len(out)))
+    sys.stdout.buffer.write(out)
+    sys.stdout.buffer.flush()
 """
 
 
 def _bond_order_timeout_s() -> float:
     try:
-        return float(os.environ.get("BAT3_BOND_ORDER_TIMEOUT_S", "120"))
+        return float(os.environ.get("BAT3_BOND_ORDER_TIMEOUT_S", "300"))
     except ValueError:
-        return 120.0
+        return 300.0
+
+
+def _dbo_budget_s(mol) -> float:
+    """W3.1 item 8 (A5): the ladder budget — BAT3_BOND_ORDER_TIMEOUT_S
+    overrides absolutely; otherwise 300 s base (the 120 s cap starved
+    charge-less NAD, which used to succeed in ~210 s) scaled up with
+    atom count, hard ceiling 1800 s."""
+    override = os.environ.get("BAT3_BOND_ORDER_TIMEOUT_S")
+    if override:
+        try:
+            return float(override)
+        except ValueError:
+            pass
+    try:
+        n_atoms = int(mol.GetNumAtoms())
+    except Exception:
+        n_atoms = 0
+    return float(min(max(300, n_atoms), 1800))
+
+
+class _DboWorkerProcess:
+    """W3.1 item 8 (A5): persistent bond-order worker interpreter.
+
+    One child serves every DetermineBondOrders-ladder request for the
+    whole process lifetime (a fresh interpreter cost ~170 ms per
+    ligand). Runs in its own session (start_new_session) so a timeout
+    can kill the whole process GROUP (anything the ladder spawns), and
+    sets PR_SET_PDEATHSIG so the worker dies with the parent run — no
+    orphaned CPU burn after termination. After a kill the accessor
+    respawns on the next request."""
+
+    def __init__(self):
+        # own process group: killpg reaches grandchildren too
+        self.proc = subprocess.Popen(
+            [sys.executable, "-c", _DBO_CHILD_BOOTSTRAP,
+             os.path.abspath(__file__)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True)
+
+    def alive(self) -> bool:
+        return self.proc.poll() is None
+
+    def kill_group(self):
+        try:
+            os.killpg(os.getpgid(self.proc.pid), signal.SIGKILL)
+        except Exception:
+            try:
+                self.proc.kill()
+            except Exception:
+                pass
+
+    def _close(self):
+        for stream in (self.proc.stdin, self.proc.stdout):
+            try:
+                if stream is not None:
+                    stream.close()
+            except Exception:
+                pass
+
+    def call(self, mol_binary: bytes, net_charge: int,
+             budget: float):
+        """One framed request/response round trip.
+        Returns (ran, ok, blob) or None on timeout/death (the caller
+        respawns via the accessor on the next request)."""
+        payload = pickle.dumps((mol_binary, int(net_charge)))
+        reply: dict = {}
+
+        def _reader():
+            try:
+                hdr = self.proc.stdout.read(4)
+                if len(hdr) < 4:
+                    return
+                (n,) = struct.unpack(">I", hdr)
+                body = self.proc.stdout.read(n)
+                if len(body) < n:
+                    return
+                reply["value"] = pickle.loads(body)
+            except Exception:
+                pass
+
+        try:
+            self.proc.stdin.write(struct.pack(">I", len(payload)))
+            self.proc.stdin.write(payload)
+            self.proc.stdin.flush()
+        except (BrokenPipeError, OSError, ValueError):
+            return None  # worker died: caller respawns
+        reader = threading.Thread(target=_reader, daemon=True)
+        reader.start()
+        reader.join(budget)
+        if "value" not in reply:
+            self.kill_group()
+            return None
+        ran, ok, blob = reply["value"]
+        if not ran:
+            return None
+        return (ok, blob)
+
+
+_dbo_worker_lock = threading.Lock()
+_dbo_worker = None
+_dbo_worker_owner_pid = None
+
+
+def _get_dbo_worker():
+    """Fork-safe persistent-worker accessor: a forked child never
+    reuses the parent's worker (shared pipes would corrupt the frame
+    protocol) — it spawns its own."""
+    global _dbo_worker, _dbo_worker_owner_pid
+    with _dbo_worker_lock:
+        if (_dbo_worker is None
+                or not _dbo_worker.alive()
+                or _dbo_worker_owner_pid != os.getpid()):
+            if _dbo_worker is not None:
+                try:
+                    _dbo_worker.kill_group()
+                    _dbo_worker._close()
+                except Exception:
+                    pass
+            _dbo_worker = _DboWorkerProcess()
+            _dbo_worker_owner_pid = os.getpid()
+        return _dbo_worker
+
+
+def _reset_dbo_worker():
+    """Test hook: drop the persistent worker (and its interpreter)."""
+    global _dbo_worker, _dbo_worker_owner_pid
+    with _dbo_worker_lock:
+        if _dbo_worker is not None:
+            try:
+                _dbo_worker.kill_group()
+                _dbo_worker._close()
+            except Exception:
+                pass
+        _dbo_worker = None
+        _dbo_worker_owner_pid = None
 
 
 def _dbo_ladder_subprocess(mol, net_charge: int) -> bool:
-    """W3 A5 Fix C: run the charge ladder in a fresh interpreter with ONE
-    shared hard budget (BAT3_BOND_ORDER_TIMEOUT_S, default 120 s); kill it
-    and continue without bond orders when the budget expires (RDKit C++ is
-    uninterruptible in-process; a child is killable). The parent mol is
-    only overlaid on success, so a kill leaves the all-single pre-state."""
-    budget = _bond_order_timeout_s()
-    cmd = [sys.executable, "-c", _DBO_CHILD_BOOTSTRAP,
-           os.path.abspath(__file__)]
-    try:
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL)
-    except Exception as exc:
-        logger.warning(
-            "bond-order subprocess spawn failed (%s); continuing without "
-            "bond orders", exc)
-        return False
-    try:
-        out, _ = proc.communicate(
-            pickle.dumps((mol.ToBinary(), int(net_charge))), timeout=budget)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.communicate()
+    """W3.1 item 8 (A5): run the charge ladder in the PERSISTENT worker
+    interpreter with a per-request budget (_dbo_budget_s: 300 s base /
+    atom-scaled); kill its whole process group and continue without
+    bond orders when the budget expires (RDKit C++ is uninterruptible
+    in-process; a child is killable). The parent mol is only overlaid
+    on success, so a kill leaves the all-single pre-state."""
+    budget = _dbo_budget_s(mol)
+    worker = _get_dbo_worker()
+    reply = worker.call(mol.ToBinary(), net_charge, budget)
+    if reply is None:
         logger.warning(
             "bond_order_timeout: DetermineBondOrders ladder exceeded the "
-            "shared %.1fs budget; child killed, continuing without bond "
+            "%.1fs budget; worker killed, continuing without bond "
             "orders", budget)
         return False
-    if proc.returncode != 0 or not out:
-        logger.warning(
-            "bond-order subprocess failed (rc=%s); continuing without "
-            "bond orders", proc.returncode)
-        return False
-    try:
-        accepted, blob = pickle.loads(out)
-    except Exception:
-        return False
+    accepted, blob = reply
     if not accepted or not blob:
         return False
     solved = Chem.Mol(blob)
