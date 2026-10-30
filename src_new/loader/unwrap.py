@@ -37,7 +37,6 @@ class PbcRepairReport:
     bonds_guessed: int = 0
     # W3.1 item 11: coordination bonds added to stranded residue metals
     metal_coordination_bonds: int = 0
-    intra_residue_bonds: int = 0
     jumps_detected: bool = False
     max_bond_length: float | None = None
     bond_jumps: int = 0
@@ -58,7 +57,6 @@ class PbcRepairReport:
             "selection": self.selection,
             "bonds_guessed": self.bonds_guessed,
             "metal_coordination_bonds": self.metal_coordination_bonds,
-            "intra_residue_bonds": self.intra_residue_bonds,
             "jumps_detected": self.jumps_detected,
             "max_bond_length": self.max_bond_length,
             "bond_jumps": self.bond_jumps,
@@ -121,15 +119,6 @@ class PbcRepair:
             from .repair import bond_stranded_residue_metals
             report.metal_coordination_bonds = (
                 bond_stranded_residue_metals(self.u))
-
-            # W3.1 S17 follow-up: a residue is one chemical unit — merge
-            # components torn apart by the conservative fudge cutoff
-            # (S17 heme propionate arms at 2.09 A vs the 1.87 A C-C
-            # cutoff); guards: water skipped, single-atom ion components
-            # never merged, heavy atoms only.
-            from .repair import complete_intra_residue_fragments
-            report.intra_residue_bonds = (
-                complete_intra_residue_fragments(self.u))
 
             # Try unwrapping with configured reference
             try:
