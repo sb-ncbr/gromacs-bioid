@@ -35,6 +35,8 @@ class PbcRepairReport:
     reference: str = ""
     selection: str = ""
     bonds_guessed: int = 0
+    # W3.1 item 11: coordination bonds added to stranded residue metals
+    metal_coordination_bonds: int = 0
     jumps_detected: bool = False
     max_bond_length: float | None = None
     bond_jumps: int = 0
@@ -54,6 +56,7 @@ class PbcRepairReport:
             "reference": self.reference,
             "selection": self.selection,
             "bonds_guessed": self.bonds_guessed,
+            "metal_coordination_bonds": self.metal_coordination_bonds,
             "jumps_detected": self.jumps_detected,
             "max_bond_length": self.max_bond_length,
             "bond_jumps": self.bond_jumps,
@@ -107,6 +110,15 @@ class PbcRepair:
                 from .repair import bonds_insufficient
                 if bonds_insufficient(self.u):
                     report.bonds_guessed = self._guess_bonds()
+
+            # W3.1 item 11: the pipeline's bond guessing lives HERE (the
+            # repair step's guessing is off by default) — bond stranded
+            # residue metals (heme Fe, chlorophyll Mg) to their
+            # coordination partners so the residue does not split into a
+            # metal-free molecule plus a phantom ion segment.
+            from .repair import bond_stranded_residue_metals
+            report.metal_coordination_bonds = (
+                bond_stranded_residue_metals(self.u))
 
             # Try unwrapping with configured reference
             try:

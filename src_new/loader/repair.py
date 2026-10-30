@@ -181,6 +181,87 @@ def bonds_insufficient(u) -> bool:
     return len(u.atoms.bonds) < u.atoms.n_atoms * 0.25
 
 
+# W3.1 item 11: metals whose coordination distance exceeds the covalent
+# fudge cutoff (heme Fe-N ~2.0 A vs ~1.68 A cutoff with correctly typed
+# elements)
+_COORDINATION_METAL_ELEMENTS = frozenset({
+    "FE", "ZN", "MG", "MN", "CU", "NI", "CO", "MO", "V", "W"})
+_COORDINATION_PARTNER_ELEMENTS = frozenset({"N", "O", "S"})
+_COORDINATION_CUTOFF_A = 2.6
+
+
+def bond_stranded_residue_metals(u, report=None) -> int:
+    """W3.1 item 11: bond stranded residue metals to their coordination
+    partners.
+
+    A metal atom inside a MULTI-ATOM residue can end up with zero
+    bonds: metal-ligand coordination distances (heme Fe-N ~2.0 A,
+    Zn-finger Zn-S ~2.3 A) exceed the covalent bond-guess fudge
+    cutoff, so the metal becomes its own connected component and the
+    residue splits into a Fe-free porphyrin plus a phantom 'ion'
+    segment (cytc e2e B__v1: HEM verified as C34H30N4O4 plus a bare
+    Fe). Bond each STRANDED coordination metal to its same-residue
+    N/O/S partners within 2.6 A. Free ions (single-atom residues) are
+    never touched — they are legitimately unbonded."""
+    import numpy as np
+    try:
+        elements = [str(e or "").strip().upper() for e in u.atoms.elements]
+    except Exception:
+        return 0
+    try:
+        resindices = [int(r) for r in u.atoms.resindices]
+    except Exception:
+        return 0
+    bonded: set[int] = set()
+    if hasattr(u.atoms, "bonds") and len(u.atoms.bonds):
+        for a, b in u.atoms.bonds.indices:
+            bonded.add(int(a))
+            bonded.add(int(b))
+    by_residue: dict[int, list[int]] = {}
+    for i, ri in enumerate(resindices):
+        by_residue.setdefault(ri, []).append(i)
+    new_bonds: set[tuple[int, int]] = set()
+    pos = u.atoms.positions
+    for _ri, atoms in by_residue.items():
+        if len(atoms) < 2:
+            continue  # single-atom residue: a free ion, keep it
+        stranded_metals = [
+            i for i in atoms
+            if i not in bonded
+            and elements[i] in _COORDINATION_METAL_ELEMENTS]
+        if not stranded_metals:
+            continue
+        partners = [i for i in atoms
+                    if elements[i] in _COORDINATION_PARTNER_ELEMENTS]
+        if not partners:
+            continue
+        for mi in stranded_metals:
+            for pi in partners:
+                d = float(np.linalg.norm(pos[mi] - pos[pi]))
+                if 0.1 < d <= _COORDINATION_CUTOFF_A:
+                    new_bonds.add((min(mi, pi), max(mi, pi)))
+    if not new_bonds:
+        return 0
+    existing: set[tuple[int, int]] = set()
+    if hasattr(u.atoms, "bonds") and len(u.atoms.bonds):
+        existing = {tuple(sorted((int(a), int(b))))
+                    for a, b in u.atoms.bonds.indices}
+    merged = sorted(existing | new_bonds)
+    if hasattr(u.atoms, "bonds"):
+        u.del_TopologyAttr("bonds")
+    from MDAnalysis.core.topologyattrs import Bonds
+    u.add_TopologyAttr(Bonds(merged))
+    if report is not None:
+        try:
+            report.metal_coordination_bonds = len(new_bonds)
+        except Exception:
+            pass
+    logger.info(
+        f"bond_stranded_residue_metals: added {len(new_bonds)} "
+        f"coordination bonds to stranded residue metals")
+    return len(new_bonds)
+
+
 def guess_bonds_union(u, vdwradii, fudge_factor: float, logger=logging) -> int:
     """Guess bonds from coordinates and UNION them with the existing
     (CONECT) bonds — the guesser must never drop authored bonds (wave-2
@@ -284,6 +365,9 @@ class RepairReport:
     masses_guessed: int = 0
     names_fixed: int = 0
     bonds_guessed: int = 0
+    # W3.1 item 11: coordination bonds added to stranded residue
+    # metals (heme Fe, chlorophyll Mg, Fe-S clusters)
+    metal_coordination_bonds: int = 0
     warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -293,6 +377,7 @@ class RepairReport:
             "masses_guessed": self.masses_guessed,
             "names_fixed": self.names_fixed,
             "bonds_guessed": self.bonds_guessed,
+            "metal_coordination_bonds": self.metal_coordination_bonds,
             "warnings": self.warnings,
         }
 
@@ -313,6 +398,10 @@ class TopologyRepair:
             self.fix_names()
         if self.config.loader.guess_missing_bonds:
             self.guess_bonds()
+            # W3.1 item 11: a stranded metal inside a multi-atom residue
+            # (heme Fe, chlorophyll Mg, Fe-S clusters) must be bonded to
+            # its coordination partners — see bond_stranded_residue_metals.
+            self.bond_stranded_residue_metals()
         
         # Deduplicate segids to prevent protein and water chains from merging
         self._deduplicate_segids()
@@ -794,6 +883,10 @@ class TopologyRepair:
         self.report.bonds_guessed = count
         logger.info(f"Bond topology after union guess: {count} bonds")
         return count
+
+    def bond_stranded_residue_metals(self) -> int:
+        """W3.1 item 11 — see the module-level function."""
+        return bond_stranded_residue_metals(self.u, self.report)
 
     def _deduplicate_segids(self) -> None:
         """Rename duplicate segids so each segment has a unique identifier.
