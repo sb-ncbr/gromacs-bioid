@@ -7,6 +7,7 @@ import os
 import tempfile
 import sqlite3
 import threading
+import time
 from datetime import datetime, timezone
 
 from ..config.loader import RunConfig
@@ -66,7 +67,7 @@ def create_empty_cache_if_not_exists(cache_path: str) -> None:
 
     with sqlite3.connect(cache_path, timeout=30.0) as conn:
         conn.execute(
-            """CREATE TABLE "CACHE_IDENTITY" (
+            """CREATE TABLE IF NOT EXISTS "CACHE_IDENTITY" (
                         "RESOLVER_NAME"	TEXT NOT NULL,
                         "SIGNATURE"	    TEXT NOT NULL,
                         "IDENTIFIER"	TEXT NOT NULL,
@@ -75,7 +76,7 @@ def create_empty_cache_if_not_exists(cache_path: str) -> None:
         )
 
         conn.execute(
-            """CREATE TABLE "CACHE_SIMILARITY" (
+            """CREATE TABLE IF NOT EXISTS "CACHE_SIMILARITY" (
                         "RESOLVER_NAME"	TEXT NOT NULL,
                         "SIGNATURE"	    TEXT NOT NULL,
                         "IDENTIFIER"	TEXT NOT NULL,
@@ -156,8 +157,34 @@ class ResolverCache:
             _quarantine_if_corrupt(self._cache_path)
             create_empty_cache_if_not_exists(self._cache_path)
             self._conn = sqlite3.connect(self._cache_path, timeout=30.0)
-            # Enable WAL mode for better concurrent access
-            self._conn.execute("PRAGMA journal_mode=WAL")
+            # Enable WAL mode for better concurrent access.
+            # BH-054: the WAL switch is best-effort. PRAGMA
+            # journal_mode=WAL returns SQLITE_BUSY immediately when
+            # another connection holds a write lock (the busy timeout
+            # does NOT apply to this pragma) — e.g. a concurrent run
+            # initializing the same shared cache. A transient lock here
+            # must never disable the cache: read the current mode
+            # first, retry the switch a few times, and otherwise
+            # continue in the current journal mode (still correct, just
+            # serialized). Permanent disable stays reserved for real
+            # open/corruption failures.
+            mode_row = self._conn.execute("PRAGMA journal_mode").fetchone()
+            if mode_row and str(mode_row[0]).lower() != "wal":
+                for attempt in range(5):
+                    try:
+                        self._conn.execute("PRAGMA journal_mode=WAL")
+                        break
+                    except sqlite3.OperationalError as exc:
+                        msg = str(exc).lower()
+                        if "lock" not in msg and "busy" not in msg:
+                            raise
+                        time.sleep(0.2 * (attempt + 1))
+                else:
+                    logger.info(
+                        "[Cache] WAL switch deferred (database locked at "
+                        "init); continuing in journal mode %r",
+                        mode_row[0],
+                    )
         
         return self._conn
     
