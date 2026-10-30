@@ -34,6 +34,16 @@ class SelfiesGenerator(SignatureGenerator):
         fragment: AtomGroup,
         facade: LoadedUniverse,
     ) -> bool:
+        # W3.1 P24 follow-up / wave-2 item 8d mirror: glycan segments
+        # are carried by the glycan_composition signature — smiles got
+        # this guard in item 8d, selfies (added later in B-14) did not,
+        # and the 1IGT glycans kept reaching the bond-order ladder
+        # through this generator (MolToSmiles fails on the unsanitized
+        # fallback mol anyway, so the attempt is pure wasted budget).
+        from ...molecules.instances import MoleculeType
+        if instance.molecule_type == MoleculeType.CARBOHYDRATE:
+            return False
+
         segment_name = fragment.segids[0] if len(fragment.segids) > 0 else ""
         props = facade.get_segment_properties(segment_name)
         

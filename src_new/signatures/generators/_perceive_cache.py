@@ -127,11 +127,19 @@ def _bonds_into(fragment, atom_idx_to_rdkit_idx, molecule_build):
         )
 
 
-def build_once_family_mol(fragment):
+def build_once_family_mol(fragment, skip_bond_orders: bool = False):
     """inchi/selfies family build: atoms + topology bonds + ONE bond-order
     attempt at formal-charge 0 (exception deliberately swallowed, mol keeps
     whatever bond orders were assigned) — byte-identical to both modules'
-    historical code."""
+    historical code.
+
+    W3.1 P24 follow-up: skip_bond_orders=True skips the bond-order
+    attempt entirely. Carbohydrate segments (glycans) are carried by the
+    glycan_composition signature, and their InChIKey is computed from the
+    connectivity (all-single) mol — live evidence (1IGT E/F): the key is
+    IDENTICAL whether the ladder times out at 120 s or 300 s, i.e. the
+    DBO run contributes nothing while burning the full budget per
+    segment."""
     from rdkit import Chem as _Chem
     from rdkit.Chem import rdDetermineBonds as _rdb
     atom_idx_to_index = {
@@ -145,6 +153,13 @@ def build_once_family_mol(fragment):
         if els[atom_idx_to_index[gidx]] != "H":
             _inject_inferred_hydrogens(molecule_build, rdkit_idx[gidx], n)
     molecule = molecule_build.GetMol()
+    if skip_bond_orders:
+        logger.info(
+            "bond-order determination skipped for this carbohydrate "
+            "segment: glycan_composition carries the identity and the "
+            "InChIKey is computed from the connectivity mol (1IGT "
+            "glycan class — the ladder cannot finish in any budget)")
+        return molecule
     try:
         # B-01 (red-team 4.2): topology net charge first, then ladder —
         # replaces the charge=0 single attempt (wrong keys for charged
@@ -377,6 +392,42 @@ def _dbo_budget_s(mol) -> float:
     return float(min(max(300, n_atoms), 1800))
 
 
+# W3.1 P24 follow-up: run-level DBO ladder cap (safety net). The
+# generate_signatures stage gets ~240 s of TOTAL ladder time per run:
+# 1IGT burns 2 x 300 s on glycans whose identifiers do not depend on
+# the outcome (now skipped outright — see build_once_family_mol), and
+# any OTHER pathological ladder must not push the stage over the
+# structural gate's 300 s wall-time limit either. Charge-less NAD
+# (~210 s, single ligand) still fits.
+_DBO_RUN_CAP_S_DEFAULT = 240.0
+_dbo_run_elapsed_s = 0.0
+_dbo_run_lock = threading.Lock()
+
+
+def _dbo_run_cap_s() -> float:
+    """BAT3_BOND_ORDER_RUN_CAP_S overrides; default 240 s per run."""
+    try:
+        return float(os.environ.get(
+            "BAT3_BOND_ORDER_RUN_CAP_S", str(_DBO_RUN_CAP_S_DEFAULT)))
+    except ValueError:
+        return _DBO_RUN_CAP_S_DEFAULT
+
+
+def dbo_run_budget_reset():
+    """Reset the run-level DBO ladder budget. Called at the start of
+    every generate_signatures stage (the serial in-process path; the
+    process-pool workers are spawn-fresh, so their trackers start at
+    zero on their own)."""
+    global _dbo_run_elapsed_s
+    with _dbo_run_lock:
+        _dbo_run_elapsed_s = 0.0
+
+
+def _dbo_run_remaining_s() -> float:
+    with _dbo_run_lock:
+        return _dbo_run_cap_s() - _dbo_run_elapsed_s
+
+
 class _DboWorkerProcess:
     """W3.1 item 8 (A5): persistent bond-order worker interpreter.
 
@@ -502,10 +553,28 @@ def _dbo_ladder_subprocess(mol, net_charge: int) -> bool:
     atom-scaled); kill its whole process group and continue without
     bond orders when the budget expires (RDKit C++ is uninterruptible
     in-process; a child is killable). The parent mol is only overlaid
-    on success, so a kill leaves the all-single pre-state."""
+    on success, so a kill leaves the all-single pre-state.
+
+    W3.1 P24 follow-up: the effective budget is capped by the RUN-level
+    ladder cap (~240 s total per generate_signatures stage) — a safety
+    net so no case can burn 2 x 300 s on ladders whose outcome does
+    not change the identifiers."""
+    import time as _time
+    global _dbo_run_elapsed_s
     budget = _dbo_budget_s(mol)
+    remaining = _dbo_run_remaining_s()
+    if remaining <= 0:
+        logger.warning(
+            "bond_order_run_budget_exhausted: the run-level DBO ladder "
+            "cap (%.1fs, BAT3_BOND_ORDER_RUN_CAP_S) is spent; continuing "
+            "without bond orders", _dbo_run_cap_s())
+        return False
+    budget = min(budget, remaining)
+    t0 = _time.monotonic()
     worker = _get_dbo_worker()
     reply = worker.call(mol.ToBinary(), net_charge, budget)
+    with _dbo_run_lock:
+        _dbo_run_elapsed_s += _time.monotonic() - t0
     if reply is None:
         logger.warning(
             "bond_order_timeout: DetermineBondOrders ladder exceeded the "

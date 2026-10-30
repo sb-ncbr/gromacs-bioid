@@ -78,8 +78,18 @@ class InchiKeyGenerator(SignatureGenerator):
         # B-14 (red-team 4.1): shared perceive-once cache families
         # "rdkit_once" (inchi == selfies, byte-identical build); the cached
         # pristine Mol is copied here, so RemoveHs stays private.
+        # W3.1 P24 follow-up: carbohydrate segments skip bond-order
+        # determination — the glycan path (glycan_composition) carries
+        # the identity and the InChIKey is computed from the
+        # connectivity mol either way (1IGT E/F: the key is identical
+        # whether the ladder times out at 120 s or 300 s, so the run
+        # only burns budget).
+        from ...molecules.instances import MoleculeType
+        skip_dbo = instance.molecule_type == MoleculeType.CARBOHYDRATE
         molecule = build_once_cached(
-            fragment, "rdkit_once", lambda: build_once_family_mol(fragment),
+            fragment, "rdkit_once",
+            lambda: build_once_family_mol(
+                fragment, skip_bond_orders=skip_dbo),
             timeout_s=getattr(self.config, "perceive_timeout_s", 300),
         )
         # B-11 (red-team 4.5): stereo from 3D on the private copy

@@ -552,10 +552,16 @@ def _generate_signatures(context):
     
     facade = context.get_value("facade")
     store = context.get_value("fragment_store")
-    
+
     if not facade or not store:
         context.fail("missing_facade", "No facade available for signature generation")
-    
+
+    # W3.1 P24 follow-up: reset the run-level DBO ladder cap — the
+    # serial in-process path shares this module state across runs (the
+    # process-pool workers are spawn-fresh and start at zero).
+    from ..signatures.generators._perceive_cache import dbo_run_budget_reset
+    dbo_run_budget_reset()
+
     # Get all instances from store
     all_instances = store.get_all_instances()
 
