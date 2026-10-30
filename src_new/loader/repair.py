@@ -189,6 +189,137 @@ _COORDINATION_METAL_ELEMENTS = frozenset({
 _COORDINATION_PARTNER_ELEMENTS = frozenset({"N", "O", "S"})
 _COORDINATION_CUTOFF_A = 2.6
 
+# W3.1 S17 follow-up: intra-residue completion. A residue is one chemical
+# unit, but the conservative vdW-fudge bond-guess cutoff can tear its
+# covalent skeleton apart (S17 hemoglobin-as-GRO: each HEM's propionate
+# arm sits 2.09 A from the ring carbon — a real C-C bond beyond the
+# 1.87 A C-C fudge cutoff — so the heme verifies as a porphyrin plus
+# two CO2 fragments). Single-atom METAL/ION components are never merged
+# by this rule (bond_stranded_residue_metals owns residue metals; free
+# ions are legitimately unbonded — C13 sodium acetate must not gain a
+# contact-ion-pair bond).
+_INTRA_RESIDUE_COMPLETION_CUTOFF_A = 2.5
+_ION_LIKE_ELEMENTS = frozenset({
+    # transition/coordination metals (item 11's set) plus the common
+    # free-ion elements: alkali, alkaline-earth, halides, aluminium
+    "FE", "ZN", "MG", "MN", "CU", "NI", "CO", "MO", "V", "W",
+    "NA", "K", "LI", "RB", "CS", "CA", "SR", "BA", "CL", "BR", "I", "F",
+    "AL", "CD", "HG", "PB", "SN", "CR", "PT", "PD", "AU", "AG", "SE"})
+
+
+def complete_intra_residue_fragments(u, report=None) -> int:
+    """W3.1 S17 follow-up: merge bond-connected components inside a
+    multi-atom residue when the closest cross-component HEAVY-atom pair
+    is <= 2.5 A (not a value fitted to S17: the merge only applies
+    WITHIN one residue, metals/ions and water are excluded, and
+    non-bonded heavy-atom contacts stay >= ~2.6-2.7 A even in short
+    H-bonds).
+
+    Root cause (live evidence, S17 4HHB.gro): the heme propionate
+    C(ring)-C(arm) bond is 2.09 A — beyond the 0.55 vdW-fudge cutoff
+    (1.87 A for C-C) — so each HEM residue tears into a porphyrin plus
+    two carboxylate (CO2) fragments and the gate's heme expectation
+    (C34FeN4O4) fails. Guards (user-approved):
+      - water residues are never touched;
+      - single-atom metal/ion components are never merged (item 11's
+        coordination rule owns residue metals; contact ion pairs stay
+        ions);
+      - heavy atoms only (GRO hydrogen positions are too noisy to
+        trust for connectivity)."""
+    import numpy as np
+    try:
+        elements = [str(e or "").strip().upper() for e in u.atoms.elements]
+    except Exception:
+        return 0
+    try:
+        resindices = [int(r) for r in u.atoms.resindices]
+        resnames = [str(r or "").strip().upper() for r in u.atoms.resnames]
+    except Exception:
+        return 0
+    from ..molecules.instances import WATER_RESNAMES
+
+    # union-find over the existing bonds
+    n = len(u.atoms)
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    if hasattr(u.atoms, "bonds") and len(u.atoms.bonds):
+        for a, b in u.atoms.bonds.indices:
+            ra, rb = find(int(a)), find(int(b))
+            if ra != rb:
+                parent[ra] = rb
+
+    by_residue: dict[int, list[int]] = {}
+    for i, ri in enumerate(resindices):
+        by_residue.setdefault(ri, []).append(i)
+
+    pos = u.atoms.positions
+    new_bonds: set[tuple[int, int]] = set()
+    for ri, atoms in by_residue.items():
+        if len(atoms) < 2:
+            continue  # single-atom residue: a free ion
+        if resnames[atoms[0]] in WATER_RESNAMES:
+            continue  # water is never intra-residue completed
+        comps: dict[int, list[int]] = {}
+        for i in atoms:
+            comps.setdefault(find(i), []).append(i)
+        if len(comps) < 2:
+            continue
+        mergeable = []
+        for root, members in comps.items():
+            if (len(members) == 1
+                    and elements[members[0]] in _ION_LIKE_ELEMENTS):
+                continue  # single-atom metal/ion component: never merged
+            # heavy atoms only for the distance criterion
+            heavy = [i for i in members if elements[i] != "H"]
+            if heavy:
+                mergeable.append(heavy)
+        if len(mergeable) < 2:
+            continue
+        roots = list(mergeable)
+        for a in range(len(roots)):
+            for b in range(a + 1, len(roots)):
+                pa = pos[roots[a]]
+                pb = pos[roots[b]]
+                d = np.linalg.norm(pa[:, None, :] - pb[None, :, :], axis=-1)
+                flat = int(d.argmin())
+                ia, ib = divmod(flat, len(roots[b]))
+                if d[ia, ib] <= _INTRA_RESIDUE_COMPLETION_CUTOFF_A:
+                    x, y = roots[a][ia], roots[b][ib]
+                    new_bonds.add((min(x, y), max(x, y)))
+    if not new_bonds:
+        return 0
+    existing: set[tuple[int, int]] = set()
+    if hasattr(u.atoms, "bonds") and len(u.atoms.bonds):
+        existing = {tuple(sorted((int(a), int(b))))
+                    for a, b in u.atoms.bonds.indices}
+    merged = sorted(existing | new_bonds)
+    if hasattr(u.atoms, "bonds"):
+        u.del_TopologyAttr("bonds")
+    from MDAnalysis.core.topologyattrs import Bonds
+    u.add_TopologyAttr(Bonds(merged))
+    if report is not None:
+        try:
+            report.intra_residue_bonds = len(new_bonds)
+        except Exception:
+            pass
+    for x, y in sorted(new_bonds):
+        logger.info(
+            "intra_residue_completion: bonded %s-%s (residue %s %d, "
+            "%.2f A)",
+            u.atoms[x].name, u.atoms[y].name,
+            u.atoms[x].residue.resname, u.atoms[x].residue.resid,
+            float(np.linalg.norm(pos[x] - pos[y])))
+    logger.info(
+        f"complete_intra_residue_fragments: added {len(new_bonds)} "
+        f"intra-residue completion bonds")
+    return len(new_bonds)
+
 
 def bond_stranded_residue_metals(u, report=None) -> int:
     """W3.1 item 11: bond stranded residue metals to their coordination
@@ -368,6 +499,7 @@ class RepairReport:
     # W3.1 item 11: coordination bonds added to stranded residue
     # metals (heme Fe, chlorophyll Mg, Fe-S clusters)
     metal_coordination_bonds: int = 0
+    intra_residue_bonds: int = 0
     warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -378,6 +510,7 @@ class RepairReport:
             "names_fixed": self.names_fixed,
             "bonds_guessed": self.bonds_guessed,
             "metal_coordination_bonds": self.metal_coordination_bonds,
+            "intra_residue_bonds": self.intra_residue_bonds,
             "warnings": self.warnings,
         }
 
@@ -402,6 +535,10 @@ class TopologyRepair:
             # (heme Fe, chlorophyll Mg, Fe-S clusters) must be bonded to
             # its coordination partners — see bond_stranded_residue_metals.
             self.bond_stranded_residue_metals()
+            # W3.1 S17 follow-up: a residue is one chemical unit — merge
+            # components torn apart by the conservative fudge cutoff
+            # (heme propionate arms at 2.09 A).
+            self.complete_intra_residue_fragments()
         
         # Deduplicate segids to prevent protein and water chains from merging
         self._deduplicate_segids()
@@ -887,6 +1024,10 @@ class TopologyRepair:
     def bond_stranded_residue_metals(self) -> int:
         """W3.1 item 11 — see the module-level function."""
         return bond_stranded_residue_metals(self.u, self.report)
+
+    def complete_intra_residue_fragments(self) -> int:
+        """W3.1 S17 follow-up — see the module-level function."""
+        return complete_intra_residue_fragments(self.u, self.report)
 
     def _deduplicate_segids(self) -> None:
         """Rename duplicate segids so each segment has a unique identifier.
