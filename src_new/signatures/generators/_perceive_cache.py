@@ -22,6 +22,7 @@ Semantics:
 """
 from __future__ import annotations
 
+import contextvars
 import logging
 import os
 import pickle
@@ -400,8 +401,31 @@ def _dbo_budget_s(mol) -> float:
 # structural gate's 300 s wall-time limit either. Charge-less NAD
 # (~210 s, single ligand) still fits.
 _DBO_RUN_CAP_S_DEFAULT = 240.0
-_dbo_run_elapsed_s = 0.0
+# W3 BH-053: the run-level ladder budget is scoped to the RUN, not the
+# process. Under --pool=threads two runs share one interpreter; a single
+# module-global accumulator meant run B's stage-start reset erased run
+# A's spent budget (A's ladder could then burn 2x the cap) and both
+# drained one counter. Keyed by the current run id (set at stage start
+# via set_dbo_run_id; the parallel process-pool workers get theirs from
+# the config dict).
+_dbo_run_elapsed: dict[str, float] = {}
 _dbo_run_lock = threading.Lock()
+_dbo_run_ctx: "contextvars.ContextVar" = contextvars.ContextVar(
+    "dbo_run_id", default=None)
+
+
+def set_dbo_run_id(run_id) -> None:
+    """Scope the run-level DBO ladder budget to THIS run (BH-053).
+
+    Called at generate_signatures stage start (serial path) and in the
+    process-pool worker bootstrap; the budget map is keyed by it, so a
+    concurrent run's stage-start reset never touches this run's
+    remaining budget."""
+    _dbo_run_ctx.set(run_id)
+
+
+def _dbo_run_key() -> str:
+    return _dbo_run_ctx.get() or "<default>"
 
 
 def _dbo_run_cap_s() -> float:
@@ -414,18 +438,17 @@ def _dbo_run_cap_s() -> float:
 
 
 def dbo_run_budget_reset():
-    """Reset the run-level DBO ladder budget. Called at the start of
-    every generate_signatures stage (the serial in-process path; the
-    process-pool workers are spawn-fresh, so their trackers start at
-    zero on their own)."""
-    global _dbo_run_elapsed_s
+    """Reset THIS run's ladder budget (keyed by run id, BH-053). Called
+    at the start of every generate_signatures stage; the process-pool
+    workers are spawn-fresh, so their trackers start at zero on their
+    own."""
     with _dbo_run_lock:
-        _dbo_run_elapsed_s = 0.0
+        _dbo_run_elapsed.pop(_dbo_run_key(), None)
 
 
 def _dbo_run_remaining_s() -> float:
     with _dbo_run_lock:
-        return _dbo_run_cap_s() - _dbo_run_elapsed_s
+        return _dbo_run_cap_s() - _dbo_run_elapsed.get(_dbo_run_key(), 0.0)
 
 
 class _DboWorkerProcess:
@@ -460,6 +483,15 @@ class _DboWorkerProcess:
                 self.proc.kill()
             except Exception:
                 pass
+        # BH-053: REAP the child — SIGKILL is delivered asynchronously,
+        # so an immediate poll() can still report the corpse as alive
+        # and the next request would be written into a dead pipe (false
+        # bond_order_timeout for one molecule). After wait() the
+        # accessor's alive() check is deterministic.
+        try:
+            self.proc.wait(timeout=5)
+        except Exception:
+            pass
 
     def _close(self):
         for stream in (self.proc.stdin, self.proc.stdout):
@@ -509,42 +541,54 @@ class _DboWorkerProcess:
 
 
 _dbo_worker_lock = threading.Lock()
-_dbo_worker = None
-_dbo_worker_owner_pid = None
+# W3 BH-053: ONE worker per calling THREAD (keyed by (pid, thread id)).
+# The single process-global worker (W3.1 item 8) was written for the
+# serial in-process path; under --pool=threads two runs' concurrent
+# ladders interleaved frames on one pipe (a reply could be applied to
+# the WRONG molecule — silent wrong bond orders) and one run's timeout
+# kill killed the other run's in-flight request (false
+# bond_order_timeout). Each thread's worker keeps its own session /
+# process group, so a budget kill only ever reaches the requesting
+# thread's worker. Keyed by pid as well: a forked child never reuses
+# the parent's worker (shared pipes would corrupt the frame protocol).
+_dbo_workers: "dict[tuple[int, int], _DboWorkerProcess]" = {}
 
 
 def _get_dbo_worker():
-    """Fork-safe persistent-worker accessor: a forked child never
-    reuses the parent's worker (shared pipes would corrupt the frame
-    protocol) — it spawns its own."""
-    global _dbo_worker, _dbo_worker_owner_pid
+    """Fork-safe, THREAD-isolated persistent-worker accessor (BH-053).
+
+    One worker interpreter per calling thread: frames never interleave
+    and a budget kill only ever hits the requesting thread's own worker
+    (each worker runs in its own session/process group). A forked child
+    never reuses the parent's worker either (keyed by pid)."""
+    key = (os.getpid(), threading.get_ident())
     with _dbo_worker_lock:
-        if (_dbo_worker is None
-                or not _dbo_worker.alive()
-                or _dbo_worker_owner_pid != os.getpid()):
-            if _dbo_worker is not None:
+        w = _dbo_workers.get(key)
+        if w is None or not w.alive():
+            if w is not None:
                 try:
-                    _dbo_worker.kill_group()
-                    _dbo_worker._close()
+                    w.kill_group()
+                    w._close()
                 except Exception:
                     pass
-            _dbo_worker = _DboWorkerProcess()
-            _dbo_worker_owner_pid = os.getpid()
-        return _dbo_worker
+            w = _DboWorkerProcess()
+            _dbo_workers[key] = w
+        return w
 
 
 def _reset_dbo_worker():
-    """Test hook: drop the persistent worker (and its interpreter)."""
-    global _dbo_worker, _dbo_worker_owner_pid
+    """Test hook: drop this process's persistent workers (and their
+    interpreters). Workers inherited at fork from a parent pid are left
+    alone — they are not ours to kill."""
     with _dbo_worker_lock:
-        if _dbo_worker is not None:
+        pid = os.getpid()
+        for key in [k for k in _dbo_workers if k[0] == pid]:
+            w = _dbo_workers.pop(key)
             try:
-                _dbo_worker.kill_group()
-                _dbo_worker._close()
+                w.kill_group()
+                w._close()
             except Exception:
                 pass
-        _dbo_worker = None
-        _dbo_worker_owner_pid = None
 
 
 def _dbo_ladder_subprocess(mol, net_charge: int) -> bool:
@@ -560,7 +604,6 @@ def _dbo_ladder_subprocess(mol, net_charge: int) -> bool:
     net so no case can burn 2 x 300 s on ladders whose outcome does
     not change the identifiers."""
     import time as _time
-    global _dbo_run_elapsed_s
     budget = _dbo_budget_s(mol)
     remaining = _dbo_run_remaining_s()
     if remaining <= 0:
@@ -574,7 +617,9 @@ def _dbo_ladder_subprocess(mol, net_charge: int) -> bool:
     worker = _get_dbo_worker()
     reply = worker.call(mol.ToBinary(), net_charge, budget)
     with _dbo_run_lock:
-        _dbo_run_elapsed_s += _time.monotonic() - t0
+        key = _dbo_run_key()
+        _dbo_run_elapsed[key] = \
+            _dbo_run_elapsed.get(key, 0.0) + (_time.monotonic() - t0)
     if reply is None:
         logger.warning(
             "bond_order_timeout: DetermineBondOrders ladder exceeded the "

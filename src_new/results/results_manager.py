@@ -458,6 +458,14 @@ class ResultsManager:
         """Return a deep copy of the in-memory payload."""
         return copy.deepcopy(self._payload)
 
+    @property
+    def run_id(self) -> str:
+        """Run id from the pipeline section ('' when unset).
+
+        W3 BH-053: the run-scoped DBO ladder budget (and anything else
+        per-run in shared interpreter state) is keyed by this."""
+        return (self._payload.get("pipeline") or {}).get("run_id") or ""
+
     def set_pipeline_field(self, key: str, value) -> None:
         """Set a field in the pipeline section."""
         self._payload["pipeline"][key] = value

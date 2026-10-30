@@ -19,7 +19,7 @@ shared budget (BAT3_BOND_ORDER_TIMEOUT_S, default 120 s). SIGALRM cannot
 interrupt RDKit C++; a killable child can. Timeout is recorded as a
 `bond_order_timeout` warning and the caller continues without
 bond orders (all-single pre-state preserved on the parent mol).
-(test mocks Popen to prove the vehicle is really used.)
+(the vehicle proof asserts child-pid != ours + kill/respawn, BH-053.)
 """
 
 from __future__ import annotations
@@ -121,18 +121,36 @@ class TestFixBCarboxylateCap:
 class TestFixCHardKill:
     def test_ladder_runs_in_subprocess(self, monkeypatch, tmp_path):
         """Vehicle proof: the ladder attempt MUST happen in a child
-        process (in-process SIGALRM cannot interrupt RDKit C++)."""
+        process (in-process SIGALRM cannot interrupt RDKit C++).
+
+        BH-053 follow-up: assert the INVARIANT — the request is served
+        by a live child whose pid != ours, and a killed worker is
+        respawned on the next call — instead of counting fresh Popen
+        calls. The persistent worker (W3.1 item 8) is legitimately
+        reused across ladder calls within one thread, so a fresh-Popen
+        assertion was order-dependent on whichever test spawned the
+        worker first in the same pytest process."""
+        import os as _os
+        from src_new.signatures.generators._perceive_cache import (
+            _get_dbo_worker, _reset_dbo_worker)
         monkeypatch.setenv("BAT3_DBO_NO_CAP", "1")  # force the ladder
         monkeypatch.setenv("BAT3_BOND_ORDER_TIMEOUT_S", "60")
+        _reset_dbo_worker()
         mol, _ = _stripped("CC(=O)N")  # no odd comps: clean ladder case
-        real_popen = subprocess.Popen
-        calls = []
-        with mock.patch("subprocess.Popen",
-                        side_effect=lambda *a, **kw: (
-                            calls.append(a) or real_popen(*a, **kw))):
-            ok = determine_bond_orders_safely(mol, net_charge=0)
+        w1 = _get_dbo_worker()
+        assert w1.proc.pid != _os.getpid(), \
+            "ladder must run in a child process (hard-kill vehicle)"
+        ok = determine_bond_orders_safely(mol, net_charge=0)
         assert ok
-        assert calls, "ladder must run in a subprocess (hard-kill vehicle)"
+        assert w1.alive(), "the child died serving a clean request"
+        # a killed worker is transparently respawned on the next call
+        w1.kill_group()
+        ok2 = determine_bond_orders_safely(
+            _stripped("CC(=O)N")[0], net_charge=0)
+        assert ok2, "respawned worker must serve the next request"
+        w2 = _get_dbo_worker()
+        assert w2 is not w1 and w2.proc.pid != _os.getpid()
+        _reset_dbo_worker()
 
     def test_ladder_core_exhausts_all_thirteen_charges(self):
         """W3 A5: the 13-charge exhaustion semantic now lives in

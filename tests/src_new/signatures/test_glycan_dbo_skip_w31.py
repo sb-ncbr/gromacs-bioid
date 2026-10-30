@@ -145,7 +145,7 @@ class TestRunLevelCap:
         pc.dbo_run_budget_reset()
         # spend the whole run-level budget up front
         with pc._dbo_run_lock:
-            pc._dbo_run_elapsed_s = 1e6
+            pc._dbo_run_elapsed[pc._dbo_run_key()] = 1e6
         try:
             with mock.patch.object(
                     pc, "_get_dbo_worker",
@@ -166,7 +166,7 @@ class TestRunLevelCap:
         pc.dbo_run_budget_reset()
         assert pc._dbo_run_remaining_s() == 240.0
         with pc._dbo_run_lock:
-            pc._dbo_run_elapsed_s = 239.0
+            pc._dbo_run_elapsed[pc._dbo_run_key()] = 239.0
         assert pc._dbo_run_remaining_s() == 1.0
         pc.dbo_run_budget_reset()
         assert pc._dbo_run_remaining_s() == 240.0

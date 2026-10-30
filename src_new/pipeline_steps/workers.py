@@ -415,6 +415,11 @@ def _generate_signatures_worker(item: tuple) -> dict[str, Any]:
         
         snapshot_dict, config_dict = item
         deadline_epoch = config_dict.pop("_stage_deadline_epoch", None) if isinstance(config_dict, dict) else None
+        dbo_run_id = config_dict.pop("_dbo_run_id", None) if isinstance(config_dict, dict) else None
+        if dbo_run_id:
+            # W3 BH-053: keep the DBO ladder budget scoped to THIS run
+            from ..signatures.generators._perceive_cache import set_dbo_run_id
+            set_dbo_run_id(dbo_run_id)
         snapshot = SegmentSignatureSnapshot(**snapshot_dict)
         config = RunConfig.from_dict(config_dict)
         if deadline_epoch is not None and __import__("time").time() > deadline_epoch:

@@ -569,10 +569,14 @@ def _generate_signatures(context):
     if not facade or not store:
         context.fail("missing_facade", "No facade available for signature generation")
 
-    # W3.1 P24 follow-up: reset the run-level DBO ladder cap — the
-    # serial in-process path shares this module state across runs (the
-    # process-pool workers are spawn-fresh and start at zero).
-    from ..signatures.generators._perceive_cache import dbo_run_budget_reset
+    # W3.1 P24 follow-up / W3 BH-053: reset the run-level DBO ladder
+    # cap, scoped to THIS run (threaded callers share one interpreter;
+    # runs must not drain one counter). The serial in-process path
+    # shares this module state (the process-pool workers are
+    # spawn-fresh and start at zero).
+    from ..signatures.generators._perceive_cache import (
+        dbo_run_budget_reset, set_dbo_run_id)
+    set_dbo_run_id(getattr(context.results, "run_id", "") or "")
     dbo_run_budget_reset()
 
     # Get all instances from store
@@ -632,6 +636,10 @@ def _generate_signatures(context):
     deadline = budget_deadline(context)
     if deadline is not None:
         config_dict["_stage_deadline_epoch"] = deadline
+    # W3 BH-053: the run-scoped DBO ladder budget follows the run into
+    # the process-pool workers too (defensive: pools are spawn-fresh
+    # today, but the budget must not silently belong to another run).
+    config_dict["_dbo_run_id"] = getattr(context.results, "run_id", "") or ""
 
     generators = get_default_generators(context.config.signatures)
 

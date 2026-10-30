@@ -30,6 +30,19 @@ except ImportError:
     HAS_RDKIT = False
 
 
+@pytest.fixture(autouse=True)
+def _reset_dbo_worker_after_each_test():
+    """W3 BH-053 flake follow-up: this module's signature generation
+    spawns the persistent DBO ladder worker; drop it after each test so
+    later tests in the same pytest process (e.g. the a5 vehicle proof,
+    which asserts spawn/respawn semantics) never inherit a live worker
+    from here."""
+    yield
+    from src_new.signatures.generators._perceive_cache import _reset_dbo_worker
+    _reset_dbo_worker()
+
+
+
 # Module-level functions for process pool tests (must be picklable)
 def _double(x):
     return x * 2
