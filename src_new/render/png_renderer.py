@@ -43,7 +43,13 @@ from pathlib import Path
 #: Total-atom threshold at/above which system renders switch to reduced style.
 REDUCED_STYLE_ATOMS_DEFAULT = 1_000_000
 #: Task-level and per-image wall-clock budgets (seconds).
-TOTAL_BUDGET_S_DEFAULT = 900
+# W3.2 item 2: 900 -> 300. F14 (2952 tiny lipid segments) burned the whole
+# 900 s budget on 1998 UI-fallback PNGs while the fleet kills runs at 3 h
+# with 2 pipelines per worker — the budget must bound the stage wall
+# (PyMOL work + deferred recording) so F14-class export+render stays
+# under 600 s. Fleets wanting more fallback images override via
+# BAT3_RENDER_TOTAL_BUDGET_S.
+TOTAL_BUDGET_S_DEFAULT = 300
 SYSTEM_TIMEOUT_S_DEFAULT = 300
 SEGMENT_TIMEOUT_S_DEFAULT = 120
 #: Full/reduced ray-traced resolution (width, height).

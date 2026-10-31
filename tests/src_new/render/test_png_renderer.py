@@ -208,7 +208,7 @@ def test_from_env_defaults(monkeypatch):
     monkeypatch.delenv("BAT3_RENDER_PYMOL_BIN", raising=False)
     monkeypatch.setenv("PATH", os.defpath)
     cfg = RenderConfig.from_env()
-    assert cfg.total_budget_s == 900
+    assert cfg.total_budget_s == 300  # W3.2 item 2: 900 -> 300 (F14 < 600 s)
     assert cfg.reduced_style_at_atoms == 1_000_000
 
 

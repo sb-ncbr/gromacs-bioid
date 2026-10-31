@@ -505,12 +505,18 @@ def _chemistry_size_skipped(atom_count, generated_keys, cap):
 
 
 
-def _deferred_writes(results):
+def _deferred_writes(results, min_interval_s: float | None = None):
     """Deferred-save window (W3 A6) when the results store supports it;
-    a null context otherwise (test fakes / lightweight contexts)."""
+    a null context otherwise (test fakes / lightweight contexts).
+
+    W3.2 item 2: `min_interval_s` lets long stages (export over thousands
+    of segments) use a wider flush interval than the merge loops."""
     cm = getattr(results, "deferred_saves", None)
     if callable(cm):
-        return cm()
+        try:
+            return cm(min_interval_s=min_interval_s) if min_interval_s is not None else cm()
+        except TypeError:  # older signature without the parameter
+            return cm()
     import contextlib
     return contextlib.nullcontext()
 
@@ -1455,42 +1461,48 @@ def _export_results(context):
     output_dir = context.output_directory
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Export whole system
-    system_path = output_dir / "system.mmcif"
-    try:
-        export_system_mmcif(facade, system_path, context.results)
-    except Exception as exc:
-        logger.warning(f"Whole-system export failed: {exc}")
-        context.add_warning("system_export_failed", str(exc))
-
-    # Export each segment
-    exported = 1 if system_path.exists() else 0
-    for segment in facade.get_segments():
-        segment_path = output_dir / f"{segment}.mmcif"
+    # W3.2 item 2 (A6 corpus blocker): all results writes in ONE deferred
+    # window. F14 (2952 segments) burned 5675 s here — export_segment_mmcif
+    # does set_data + add_artifact per segment (2 synchronous full-payload
+    # rewrites each, ~1.3 s/segment measured) plus the render-path recording
+    # below (a third write per segment). Deferred: flushes at most every 30 s.
+    with _deferred_writes(context.results, min_interval_s=30.0):
+        # Export whole system
+        system_path = output_dir / "system.mmcif"
         try:
-            export_segment_mmcif(facade, segment, segment_path, context.results)
-            exported += 1
+            export_system_mmcif(facade, system_path, context.results)
         except Exception as exc:
-            logger.warning(f"Segment export failed for {segment}: {exc}")
-            context.add_warning("segment_export_failed", f"{segment}: {exc}")
+            logger.warning(f"Whole-system export failed: {exc}")
+            context.add_warning("system_export_failed", str(exc))
 
-    # Record render paths for Mol* Web UI
-    if system_path.exists():
-        context.results.set_data("render/system_mmcif", str(system_path))
-        # Geometry status of the exported system (UI pre-flight / degenerate
-        # gate); mirrors ui geometry-check.ts thresholds.
-        try:
-            from ..loader.scale_guard import geometry_status_from_positions
-            context.results.set_data(
-                "render/geometry",
-                geometry_status_from_positions(facade.universe.atoms.positions),
-            )
-        except Exception as exc:
-            logger.warning(f"geometry status probe failed: {exc}")
-    for segment in facade.get_segments():
-        segment_path = output_dir / f"{segment}.mmcif"
-        if segment_path.exists():
-            context.results.set_data(f"render/segments/{segment}/mmcif", str(segment_path))
+        # Export each segment
+        exported = 1 if system_path.exists() else 0
+        for segment in facade.get_segments():
+            segment_path = output_dir / f"{segment}.mmcif"
+            try:
+                export_segment_mmcif(facade, segment, segment_path, context.results)
+                exported += 1
+            except Exception as exc:
+                logger.warning(f"Segment export failed for {segment}: {exc}")
+                context.add_warning("segment_export_failed", f"{segment}: {exc}")
+
+        # Record render paths for Mol* Web UI
+        if system_path.exists():
+            context.results.set_data("render/system_mmcif", str(system_path))
+            # Geometry status of the exported system (UI pre-flight / degenerate
+            # gate); mirrors ui geometry-check.ts thresholds.
+            try:
+                from ..loader.scale_guard import geometry_status_from_positions
+                context.results.set_data(
+                    "render/geometry",
+                    geometry_status_from_positions(facade.universe.atoms.positions),
+                )
+            except Exception as exc:
+                logger.warning(f"geometry status probe failed: {exc}")
+        for segment in facade.get_segments():
+            segment_path = output_dir / f"{segment}.mmcif"
+            if segment_path.exists():
+                context.results.set_data(f"render/segments/{segment}/mmcif", str(segment_path))
 
     return StepResult(
         summary={"exported": True, "files_exported": exported},
@@ -1537,19 +1549,24 @@ def _render_png(context):
     outcomes = render_all(specs, cfg)
     stats = summarize(outcomes)
 
-    # Record paths to results.json under data.render.* (same convention as mmcif)
-    for o in outcomes:
-        if o.ok:
-            if o.is_system:
-                context.results.set_data("render/system_png", str(o.png_path))
-            else:
-                context.results.set_data(f"render/segments/{o.label}/png", str(o.png_path))
-            context.add_artifact(o.png_path, description=f"Static PNG render ({o.label})", kind="render")
-        elif not o.skipped:
-            context.add_warning(
-                "render_failed", f"{o.label}: {o.error}",
-                {"label": o.label, "error": o.error},
-            )
+    # Record paths to results.json under data.render.* (same convention as
+    # mmcif). W3.2 item 2: inside a deferred-saves window — F14 spent ~48
+    # min in this loop AFTER render_budget_exhausted had fired (1998 ok
+    # outcomes x (set_data + add_artifact) synchronous full-payload
+    # rewrites); with deferral the render budget bounds the whole stage.
+    with _deferred_writes(context.results):
+        for o in outcomes:
+            if o.ok:
+                if o.is_system:
+                    context.results.set_data("render/system_png", str(o.png_path))
+                else:
+                    context.results.set_data(f"render/segments/{o.label}/png", str(o.png_path))
+                context.add_artifact(o.png_path, description=f"Static PNG render ({o.label})", kind="render")
+            elif not o.skipped:
+                context.add_warning(
+                    "render_failed", f"{o.label}: {o.error}",
+                    {"label": o.label, "error": o.error},
+                )
 
     if stats["skipped"]:
         context.add_warning(
