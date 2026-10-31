@@ -123,7 +123,9 @@ async def get_capabilities():
 # search is pointed at /files/adhoc/<sha256>.cif — no run registry lookup,
 # so Celery-dispatched runs get working structure search. Strict
 # sha256 filename guard keeps the route read-only-safe.
-_ADHOC_NAME_RE = re.compile(r"^[0-9a-f]{64}\.cif$")
+# W3.2 item 3 (A9): pdb_struct stages query .pdb files the same way —
+# both suffixes are accepted, nothing else.
+_ADHOC_NAME_RE = re.compile(r"^[0-9a-f]{64}\.(cif|pdb)$")
 
 
 def _adhoc_files_root() -> Path | None:
@@ -137,7 +139,7 @@ def _adhoc_files_root() -> Path | None:
 
 @app.get("/files/adhoc/{filename}", include_in_schema=False)
 async def serve_adhoc_file(filename: str):
-    """Serve a worker-staged adhoc mmCIF by content sha256 (404 on miss)."""
+    """Serve a worker-staged adhoc mmCIF/PDB by content sha256 (404 on miss)."""
     root = _adhoc_files_root()
     if root is None or not _ADHOC_NAME_RE.match(filename):
         raise HTTPException(status_code=404, detail="Not Found")

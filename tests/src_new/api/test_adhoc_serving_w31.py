@@ -89,6 +89,24 @@ class TestAdhocRouteGuard:
                 r = client.get(f"/files/adhoc/{bad}")
                 assert r.status_code == 404, bad
 
+    def test_route_serves_pdb_suffix_w32(self, tmp_path, monkeypatch):
+        """W3.2 item 3 (A9): pdb_struct stages query .pdb files the same
+        way mmCIF stages .cif — the adhoc route regex must accept BOTH
+        suffixes or every staged protein query 404s server-side."""
+        adhoc = tmp_path / "adhoc"
+        adhoc.mkdir(parents=True, exist_ok=True)
+        sha = "b" * 64
+        (adhoc / f"{sha}.pdb").write_text("ATOM  probe\n")
+        monkeypatch.setenv("BAT3_ADHOC_DIR", str(adhoc))
+        with TestClient(app) as client:
+            r = client.get(f"/files/adhoc/{sha}.pdb")
+        assert r.status_code == 200 and "ATOM" in r.text
+        # still strict: no other suffixes, no traversal
+        with TestClient(app) as client:
+            for bad in (f"{sha}.txt", f"{sha}.PDB", f"{sha}"):
+                rr = client.get(f"/files/adhoc/{bad}")
+                assert rr.status_code == 404, bad
+
 
 class TestWorkerStaging:
     """The mmCIF resolver's adhoc staging (real resolver, real files)."""

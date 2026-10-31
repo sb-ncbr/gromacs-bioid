@@ -159,6 +159,34 @@ class PDBStructResolver(IdentifierResolver):
         public_url = ssh_upload(pdb_path, remote_subdir, config)
         return public_url
 
+    def _stage_adhoc_url(self, pdb_path: str) -> str | None:
+        """W3.2 item 3 (A9): write the query PDB to the shared adhoc
+        directory as <sha256>.pdb and return its run-independent public
+        URL (same fix shape as mmCIF BH-044). Returns None when adhoc
+        staging is not configured/possible; the caller then keeps the
+        legacy per-run URL path."""
+        adhoc_dir = getattr(self.config.pdb, "adhoc_files_dir", "") or \
+            os.environ.get("BAT3_ADHOC_DIR", "")
+        if not adhoc_dir:
+            return None
+        try:
+            import hashlib
+            from pathlib import Path
+            root = Path(adhoc_dir)
+            root.mkdir(parents=True, exist_ok=True)
+            content = Path(pdb_path).read_bytes()
+            sha = hashlib.sha256(content).hexdigest()
+            target = root / f"{sha}.pdb"
+            if not target.exists():
+                tmp = root / f".{sha}.tmp"
+                tmp.write_bytes(content)
+                os.replace(tmp, target)  # atomic publish
+            base = self.config.pdb.deployment_file_url.rstrip('/')
+            return f"{base}/files/adhoc/{sha}.pdb"
+        except Exception as exc:
+            logger.warning(f"PDB adhoc staging failed (legacy URL follows): {exc}")
+            return None
+
     def _delete_file(self, pdb_name: str) -> None:
         """
         Remove uploaded PDB file from remote server via SSH.
@@ -300,13 +328,21 @@ class PDBStructResolver(IdentifierResolver):
         logger.debug(f"Resolving PDB similarity search for '{pdb_path}'")
 
         if deployment_file_access:
-            filename = os.path.basename(pdb_path)
-            uuid = self.config.pdb.curr_uuid
-            if not uuid:
-                logger.warning("PDB query skipped: curr_uuid is empty")
-                return []
-            base = self.config.pdb.deployment_file_url.rstrip('/')
-            remote_path = f"{base}/files/{uuid}/input/{filename}"
+            # W3.2 item 3 (A9): prefer the run-independent adhoc URL —
+            # the legacy /files/{curr_uuid}/input/{filename} URL 404s for
+            # every Celery-dispatched corpus run (run dir not under the
+            # API's BAT3_RUNS_DIR, so the /files StaticFiles mount cannot
+            # serve it) and whenever safe_tmp_dir fell back to the worker
+            # pod's local /tmp. Same fix shape as mmCIF BH-044.
+            remote_path = self._stage_adhoc_url(pdb_path)
+            if remote_path is None:
+                filename = os.path.basename(pdb_path)
+                uuid = self.config.pdb.curr_uuid
+                if not uuid:
+                    logger.warning("PDB query skipped: curr_uuid is empty")
+                    return []
+                base = self.config.pdb.deployment_file_url.rstrip('/')
+                remote_path = f"{base}/files/{uuid}/input/{filename}"
             logger.info(f"PDB query remote_path: {remote_path}")
         else:
             remote_path = self._upload_file(pdb_path)
