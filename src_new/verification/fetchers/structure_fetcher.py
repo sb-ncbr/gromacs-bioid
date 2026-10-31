@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 
-from ..base import SignatureFetcher
+from ..base import SignatureFetcher, memoized_fetch
 from . import rcsb_cache
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ class StructureSignatureFetcher(SignatureFetcher):
         """Check if this fetcher supports the given identifier type."""
         return ident_type in self.SUPPORTED_TYPES
     
+    @memoized_fetch
     def fetch(self, identifier: str, ident_type: str) -> str | None:
         """Fetch the canonical PDB structure for a structural identifier.
         

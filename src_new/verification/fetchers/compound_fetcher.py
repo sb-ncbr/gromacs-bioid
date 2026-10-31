@@ -12,7 +12,7 @@ import requests
 from ...utils.net import prefer_ipv4 as _prefer_ipv4
 _prefer_ipv4()
 
-from ..base import SignatureFetcher
+from ..base import SignatureFetcher, memoized_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +192,7 @@ class CompoundSignatureFetcher(SignatureFetcher):
         """Check if this fetcher supports the given identifier type."""
         return ident_type in self.SUPPORTED_TYPES
     
+    @memoized_fetch
     def fetch(self, identifier: str, ident_type: str) -> str | None:
         """Fetch the canonical SMILES for a compound identifier.
         

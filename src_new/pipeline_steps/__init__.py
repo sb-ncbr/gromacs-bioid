@@ -1274,15 +1274,38 @@ def _verify_results(context):
     """Verify identification results with optional parallelism."""
     from ..executor.parallel import run_with_thread_pool
     from .workers import _verify_results_worker
+    from ..verification.base import clear_run_memo
     
     facade = context.get_value("facade")
     if not facade:
         context.fail("missing_facade", "No facade available for verification")
     
+    # W3.2 A7: fresh fetch memo per run (fetch results, including negative
+    # ones, are memoized per (fetcher class, ident type, identifier) — the
+    # firewalled workstation burned ~5 min per repeated InChIKey fetch).
+    clear_run_memo()
+    
     # Get all segments from identifiers data
     identifiers_data = context.results.get_data("identifiers")
     if not identifiers_data or not isinstance(identifiers_data, dict):
         return StepResult(summary={"verified": True})
+    
+    # W3.2 A7: verify once per resolution GROUP. identify_molecules copies
+    # each group representative's identifiers to its members with a
+    # ``_shared_with`` marker; verification runs only for representatives
+    # and ungrouped segments, and the output is copied to the members the
+    # same way (with their own ``_shared_with`` marker). A budget cut
+    # therefore leaves whole groups unverified — never part of one.
+    # (Production shape at b954adc33: P23 = 4 identify groups but 35
+    # verify calls; the budget cut at D_1 left GroES O–U unanswered.)
+    member_to_rep: dict[str, str] = {}
+    for segment in identifiers_data:
+        sd = identifiers_data[segment]
+        if isinstance(sd, dict) and sd.get("_shared_with"):
+            rep = str(sd["_shared_with"])
+            if rep in identifiers_data:
+                member_to_rep[segment] = rep
+    verify_targets = [s for s in sorted(identifiers_data) if s not in member_to_rep]
     
     # Read signatures data once
     signatures_data = context.results.get_data('signatures') or {}
@@ -1297,7 +1320,7 @@ def _verify_results(context):
     deadline = budget_deadline(context)
     segments_summary = context.results.get_data("fragments/segments") or None
     items = []
-    for segment in sorted(identifiers_data.keys()):
+    for segment in verify_targets:
         segment_data = identifiers_data[segment]
         cfg = context.config.to_dict()
         if deadline is not None:
@@ -1368,6 +1391,26 @@ def _verify_results(context):
                 logger.warning("verify_results: class_sizes persist failed (additive only)",
                                exc_info=True)
 
+    # W3.2 A7: members inherit their group representative's verification
+    # output — identical content means identical verification. Runs inside
+    # its own deferred-writes window (same pattern as the rep merge above).
+    if member_to_rep:
+        with _deferred_writes(context.results):
+            for member, rep in sorted(member_to_rep.items()):
+                hits = context.results.get_data(f"verification/{rep}/verified_hits")
+                if hits is None:
+                    continue  # representative unverified (budget cut) — the
+                    # group stays entirely unverified, never partially copied
+                context.results.set_data(
+                    f"verification/{member}/verified_hits", hits)
+                sizes = context.results.get_data(
+                    f"verification/{rep}/class_sizes")
+                if sizes is not None:
+                    context.results.set_data(
+                        f"verification/{member}/class_sizes", sizes)
+                context.results.set_data(
+                    f"verification/{member}/_shared_with", rep)
+
     # v3.142 (Phase 3): composition provenance — identical dict verify_all
     # writes; the step re-persists it on the REAL results manager because the
     # worker's temp-manager write is discarded in the parallel path.
@@ -1395,7 +1438,12 @@ def _verify_results(context):
             "stage_time_budget",
             "verify_results exceeded its time budget; proceeding with partial verification",
         )
-    return StepResult(summary={"verified": True, "partial": budget_hit})
+    return StepResult(summary={
+        "verified": True, "partial": budget_hit,
+        # W3.2 A7: verification units are groups (reps + uniques), members
+        # inherit; segment count kept for continuity with older summaries.
+        "groups": len(verify_targets), "segments": len(identifiers_data),
+    })
 
 
 def _export_results(context):

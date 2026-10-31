@@ -2,9 +2,56 @@
 
 from __future__ import annotations
 
+import functools
 from abc import ABC, abstractmethod
 
 from .models import VerificationScore, AnnotationQuality
+
+
+# ---------------------------------------------------------------------------
+# W3.2 A7: run-scoped fetch memo.
+#
+# Production evidence (W3 package, P23 results.log at b954adc33): the same
+# InChIKey (XUVWGNKSYIFPIN-UHFFFAOYSA-N) was fetched over the network 3
+# times, ~5 min per attempt on the firewalled workstation — once per segment
+# that mentioned it, because each segment's verify worker builds a fresh
+# VerificationManager over fresh fetcher instances. Memoize fetch results
+# (INCLUDING negative results: an unresolvable key stays unresolvable within
+# the run) per (fetcher class, ident type, identifier) for the lifetime of
+# one run; clear_run_memo() is called at each verify_results stage start.
+# ---------------------------------------------------------------------------
+
+_RUN_MEMO: dict[tuple[str, str, str], str | None] = {}
+_MEMO_MISS = object()
+
+
+def run_memo_get(key: tuple) -> object:
+    return _RUN_MEMO.get(key, _MEMO_MISS)
+
+
+def run_memo_put(key: tuple, value: str | None) -> None:
+    _RUN_MEMO[key] = value
+
+
+def clear_run_memo() -> None:
+    _RUN_MEMO.clear()
+
+
+def memoized_fetch(fetch_method):
+    """Decorate a SignatureFetcher.fetch implementation with the run memo."""
+
+    @functools.wraps(fetch_method)
+    def wrapper(self, identifier, ident_type):
+        key = (type(self).__name__, (ident_type or "").upper(),
+               str(identifier).strip())
+        hit = run_memo_get(key)
+        if hit is not _MEMO_MISS:
+            return hit
+        value = fetch_method(self, identifier, ident_type)
+        run_memo_put(key, value)
+        return value
+
+    return wrapper
 
 
 class VerificationWorker(ABC):

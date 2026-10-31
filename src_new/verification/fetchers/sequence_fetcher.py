@@ -6,7 +6,7 @@ import logging
 
 import requests
 
-from ..base import SignatureFetcher
+from ..base import SignatureFetcher, memoized_fetch
 from . import rcsb_cache
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,7 @@ class SequenceSignatureFetcher(SignatureFetcher):
         """Check if this fetcher supports the given identifier type."""
         return ident_type in self.SUPPORTED_TYPES
     
+    @memoized_fetch
     def fetch(self, identifier: str, ident_type: str) -> str | None:
         """Fetch the canonical sequence for a protein/nucleic acid identifier.
         
