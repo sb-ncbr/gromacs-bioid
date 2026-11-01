@@ -14,7 +14,7 @@ license = { text = "Proprietary" }
 
 [project.optional-dependencies]
 # developer extras: tests + the replay/audit harnesses
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "pytest-xdist>=3"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
