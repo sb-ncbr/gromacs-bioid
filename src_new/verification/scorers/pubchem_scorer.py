@@ -88,13 +88,21 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
     (v3.142 1c) Uniform signal schema — total 100 — applied identically
     regardless of store: base 20 + canonical_smiles 20 + isomeric_smiles 15
     + molecular_formula 15 + iupac_name 15 + synonyms 15. The local mirror
-    structurally supplies the first four (no IUPAC/synonyms by design);
-    with live-fetch enabled (default ON, config
-    verification.annotation_live_fetch) and per-segment budget remaining
-    (annotation_live_budget_per_segment, re-armed by the manager per segment
-    via begin_segment), missing signals are fetched live from PUG so the
-    reachable score is STORE-INDEPENDENT. Mirror-only / budget-exhausted /
-    network-failure floors at 70 — a store floor, documented, never a cap.
+    structurally supplies the first four (no IUPAC/synonyms by design).
+
+    (W3.3 item 2, user directive 2026-11-01 — supersedes the "floor is not
+    a cap" note) Determinism contract for the same identifier across runs:
+      * live fetch ON (default, config verification.annotation_live_fetch)
+        + budget remaining: missing signals are filled from PUG. A NEEDED
+        call that cannot complete (network failure / rate limit / budget
+        exhausted) makes the schema unprovable -> None (annotation UNKNOWN,
+        confidence blend re-weights). Never a silently degraded 70/85.
+      * a SUCCEEDED live call whose record genuinely lacks the signal is a
+        legitimately absent signal and keeps the real (lower) score.
+      * live fetch OFF: the mirror floor (70) is the deterministic policy
+        answer.
+    Successful scores are cached per (ident_type, identifier) (D-07); Nones
+    are never cached so a transient failure re-attempts on a later segment.
     Supports PUBCHEM_CID and (via the mirror's inchikey column / PUG inchikey
     endpoints) INCHIKEY.
     """
@@ -198,10 +206,20 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
                     signals.append("isomeric_smiles")
                 if row.formula_hill:
                     signals.append("molecular_formula")
-                # Live fill for mirror-missing signals (IUPAC/synonyms).
-                self._live_fill(identifier, is_inchikey, signals,
-                                "iupac_name" not in signals,
-                                "synonyms" not in signals)
+                # W3.3 item 2 (determinism): with live fetch enabled the
+                # reachable score is the FULL schema — an incomplete fill
+                # (network failure / rate limit / budget exhausted) is
+                # annotation UNKNOWN (None, re-weighted by the blend), never
+                # a silently degraded 70/85 that re-orders top-1 for the
+                # same identifier across runs (T02a/b/c CID 137895 evidence).
+                # With live fetch disabled the mirror floor is the documented
+                # deterministic policy answer.
+                if self._live_fetch:
+                    incomplete = self._live_fill(identifier, is_inchikey, signals,
+                                                 "iupac_name" not in signals,
+                                                 "synonyms" not in signals)
+                    if incomplete:
+                        return None
                 # re-sum from achieved signals (single source of truth)
                 return AnnotationQuality(
                     database="pubchem",
@@ -250,15 +268,19 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
                 signals.append("molecular_formula")
                 score += 15.0
         
-        # Fetch synonyms (budgeted live call; failure is non-fatal)
+        # Fetch synonyms (budgeted live call). W3.3 item 2: a FAILED call
+        # (timeout/rate limit/budget) makes the schema unprovable -> None;
+        # a SUCCEEDED call with an empty synonym list is a legitimately
+        # absent signal and keeps the real (lower) score.
         synonyms_data = self._live_get_json(_pug_synonyms_url(identifier, is_inchikey))
-        if synonyms_data is not None:
-            info_list = synonyms_data.get("InformationList", {}).get("Information", [])
-            if info_list and len(info_list) > 0:
-                synonyms = info_list[0].get("Synonym", [])
-                if synonyms and len(synonyms) > 0:
-                    signals.append("synonyms")
-                    score += 15.0
+        if synonyms_data is None:
+            return None
+        info_list = synonyms_data.get("InformationList", {}).get("Information", [])
+        if info_list and len(info_list) > 0:
+            synonyms = info_list[0].get("Synonym", [])
+            if synonyms and len(synonyms) > 0:
+                signals.append("synonyms")
+                score += 15.0
         
         return AnnotationQuality(
             database="pubchem",
@@ -267,15 +289,22 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
         )
 
     def _live_fill(self, identifier: str, is_inchikey: bool, signals: list,
-                   missing_iupac: bool, missing_syn: bool) -> None:
+                   missing_iupac: bool, missing_syn: bool) -> bool:
         """Fill mirror-missing signals from PUG (bounded live calls).
 
-        Mutates `signals` in place with whatever PUG proves; stays silent on
-        any failure (mirror floor retained).
+        Mutates `signals` in place with whatever PUG proves.
+
+        Returns True when a NEEDED live call could not complete (network
+        failure, rate limit, or budget exhausted) — the caller then treats
+        the score as UNKNOWN (None). A succeeded call whose payload lacks
+        the signal is a legitimately absent signal, not an incompleteness.
         """
+        incomplete = False
         if missing_iupac:
             props_data = self._live_get_json(_pug_props_url(identifier, is_inchikey))
-            if props_data is not None:
+            if props_data is None:
+                incomplete = True
+            else:
                 prop_list = props_data.get("PropertyTable", {}).get("Properties", [])
                 if prop_list:
                     props = prop_list[0]
@@ -292,7 +321,10 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
                         signals.append("molecular_formula")
         if missing_syn:
             synonyms_data = self._live_get_json(_pug_synonyms_url(identifier, is_inchikey))
-            if synonyms_data is not None:
+            if synonyms_data is None:
+                incomplete = True
+            else:
                 info_list = synonyms_data.get("InformationList", {}).get("Information", [])
                 if info_list and info_list[0].get("Synonym"):
                     signals.append("synonyms")
+        return incomplete

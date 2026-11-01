@@ -61,15 +61,14 @@ class TestUniProtScorerMetadata:
 
     @patch("src_new.verification.scorers.uniprot_scorer.requests.get")
     def test_fetch_failure_yields_none_metadata(self, mock_get) -> None:
+        """W3.3 item 2: fetch failure -> None (annotation UNKNOWN), so name /
+        organism metadata are equally absent — no fabricated 0.0 stub."""
         mock_get.side_effect = RuntimeError("network down")
 
         scorer = UniProtAnnotationScorer()
         quality = scorer.score("P00760", "UNIPROT_ID")
 
-        assert quality is not None          # behaviour unchanged: 0.0 score stub
-        assert quality.score == 0.0
-        assert quality.name is None
-        assert quality.organism is None
+        assert quality is None
 
 
 class TestPDBScorerMetadata:

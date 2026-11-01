@@ -11,37 +11,47 @@ from ..models import AnnotationQuality
 class ChemblAnnotationScorer(AnnotationQualityScorer):
     """Scores annotation quality for ChEMBL compounds."""
 
+    def __init__(self) -> None:
+        # W3.3 item 2 (determinism): successful scores cached per canonical
+        # CHEMBL id; transient failures (None) are never cached.
+        self._score_cache: dict[str, AnnotationQuality] = {}
+
     def supports(self, ident_type: str) -> bool:
         """Check if this scorer supports the given identifier type."""
         return ident_type == "CHEMBL_ID"
 
     def score(self, identifier: str, ident_type: str) -> AnnotationQuality | None:
-        """Score the annotation quality for a ChEMBL identifier.
-        
-        Args:
-            identifier: ChEMBL identifier (e.g., "CHEMBL25" or "25").
-            ident_type: Should be "CHEMBL_ID".
-            
-        Returns:
-            AnnotationQuality with score 0-100 and signals found.
-            Returns low score (0.0) on any failure without raising.
+        """Score the annotation quality for a ChEMBL identifier (cached).
+
+        W3.3 item 2: fetch failure -> None (annotation UNKNOWN; the blend
+        re-weights), never a real 0.0/lower score.
         """
         if not self.supports(ident_type):
             return None
-        
+
         # Canonicalize: strip CHEMBL prefix if present, then prepend it back
         chembl_id = identifier.upper()
         if chembl_id.startswith("CHEMBL"):
             chembl_id = chembl_id[6:]  # Strip prefix
         chembl_id = f"CHEMBL{chembl_id}"
-        
+
+        cached = self._score_cache.get(chembl_id)
+        if cached is not None:
+            return cached
+        result = self._score_uncached(chembl_id)
+        if result is not None:
+            self._score_cache[chembl_id] = result
+        return result
+
+    def _score_uncached(self, chembl_id: str) -> AnnotationQuality | None:
+        """Fetch + score one canonical CHEMBL id. None on fetch failure."""
         try:
             url = f"https://www.ebi.ac.uk/chembl/api/data/molecule/{chembl_id}.json"
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             data = response.json()
         except Exception:
-            return AnnotationQuality(database="chembl", score=0.0, signals=[])
+            return None
         
         signals = []
         score = 20.0  # Base points for having the entry

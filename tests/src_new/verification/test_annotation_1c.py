@@ -73,7 +73,11 @@ def test_mirror_hit_live_fill_reaches_full_schema(monkeypatch):
     assert "iupac_name" in quality.signals and "synonyms" in quality.signals
 
 
-def test_mirror_hit_budget_exhaustion_keeps_partial_fill(monkeypatch):
+def test_mirror_hit_budget_exhaustion_is_unknown(monkeypatch):
+    """W3.3 item 2 (supersedes the 1c partial-fill contract): a mirror hit
+    whose NEEDED fill call is budget-skipped proves nothing about the
+    remaining signals — the score is UNKNOWN (None), never a partial 85
+    (cross-run position dependence; T02a/b/c evidence)."""
     from src_new.verification.scorers import pubchem_scorer as mod
     monkeypatch.setattr(mod, "_local_db", lambda: _StubDB(_Row()))
     scorer = PubChemAnnotationScorer()
@@ -81,19 +85,19 @@ def test_mirror_hit_budget_exhaustion_keeps_partial_fill(monkeypatch):
     with patch.object(mod.requests, "get",
                       side_effect=[_props({"IUPACName": "oxidane"}), _syns(["water"])]):
         quality = scorer.score("962", "PUBCHEM_CID")
-    assert quality is not None
-    assert quality.score == 85.0  # 70 floor + iupac 15; synonyms unproven
+    assert quality is None
 
 
-def test_mirror_hit_network_failure_is_silent_monkeypatch(monkeypatch):
+def test_mirror_hit_network_failure_is_unknown(monkeypatch):
+    """W3.3 item 2 (supersedes the silent-floor contract): mirror hit +
+    live-fetch failure -> None (UNKNOWN, re-weighted), not the 70 floor."""
     from src_new.verification.scorers import pubchem_scorer as mod
     monkeypatch.setattr(mod, "_local_db", lambda: _StubDB(_Row()))
     scorer = PubChemAnnotationScorer()
     scorer.begin_segment(25)
     with patch.object(mod.requests, "get", side_effect=Exception("banned")):
         quality = scorer.score("962", "PUBCHEM_CID")
-    assert quality is not None
-    assert quality.score == 70.0  # mirror floor retained
+    assert quality is None
 
 
 def test_inchikey_uses_mirror_inchikey_column(monkeypatch):

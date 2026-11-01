@@ -58,11 +58,13 @@ class TestD07UniProtSchema:
         assert "fields=" in url, url
         assert "protein_existence" in url and "annotation_score" in url
 
-    def test_failure_still_zero(self):
+    def test_failure_returns_none(self):
+        """W3.3 item 2: fetch failure -> annotation UNKNOWN (None, blend
+        re-weights), never a real 0.0 (supersedes D-07's "still zero")."""
         with patch("src_new.verification.scorers.uniprot_scorer.requests.get",
                    side_effect=Exception("network down")):
             q = UniProtAnnotationScorer().score("P00698", "UNIPROT_ID")
-        assert q is not None and q.score == 0.0
+        assert q is None
 
 
 class TestD07ChebiSchema:

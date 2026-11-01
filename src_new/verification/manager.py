@@ -97,7 +97,10 @@ def _equivalence_class_id(ident_type: str, identifier: str,
 # v3.142 (Phase 3): confidence formula version for results provenance.
 # Bump whenever the composition changes so old-run comparisons have an
 # explicit version marker (stored in verification/_meta).
-CONFIDENCE_FORMULA_VERSION = "v3.142.1"
+# v3.143.1 (W3.3 item 2): annotation scorers return None (UNKNOWN) on
+# remote-fetch failure / budget-incompleteness instead of degraded real
+# scores (85-floors / 0.0); None re-weights the blend over measured terms.
+CONFIDENCE_FORMULA_VERSION = "v3.143.1"
 
 
 def normalize_weights(w_resolver: float, w_similarity: float,

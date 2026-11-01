@@ -172,6 +172,10 @@ class TestPubChemScorerLocalMirror:
         return db
 
     def test_mirror_hit_scores_70_without_http(self, monkeypatch) -> None:
+        """Store floor: live_fetch=False makes the mirror's 3-signal 70 the
+        deterministic policy answer (no live fill attempted). With live
+        fetch ON the same state is UNKNOWN instead (see W3.3 determinism
+        tests) — the floor is a config choice, not a failure fallback."""
         from src_new.molecules.pubchem_db import CompoundRow
         from src_new.verification.scorers import pubchem_scorer as mod
 
@@ -180,7 +184,9 @@ class TestPubChemScorerLocalMirror:
         monkeypatch.setattr(mod, "_local_db", lambda: self._stub_db(row))
 
         with patch.object(mod.requests, "get") as mock_get:
-            quality = PubChemAnnotationScorer().score("962", "PUBCHEM_CID")
+            scorer = PubChemAnnotationScorer()
+            scorer.configure(live_fetch=False, timeout_s=3.0)
+            quality = scorer.score("962", "PUBCHEM_CID")
 
         mock_get.assert_not_called()
         assert quality is not None

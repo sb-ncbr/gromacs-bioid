@@ -35,4 +35,4 @@ def test_effective_weights_always_sum_to_one():
 
 def test_formula_version_constant_present():
     assert isinstance(CONFIDENCE_FORMULA_VERSION, str)
-    assert CONFIDENCE_FORMULA_VERSION.startswith("v3.142")
+    assert CONFIDENCE_FORMULA_VERSION.startswith("v3.143")

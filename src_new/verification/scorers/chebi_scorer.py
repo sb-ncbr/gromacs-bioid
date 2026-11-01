@@ -11,36 +11,46 @@ from ..models import AnnotationQuality
 class ChebiAnnotationScorer(AnnotationQualityScorer):
     """Scores annotation quality for ChEBI compounds."""
 
+    def __init__(self) -> None:
+        # W3.3 item 2 (determinism): successful scores cached per numeric
+        # ChEBI id; transient failures (None) are never cached.
+        self._score_cache: dict[str, AnnotationQuality] = {}
+
     def supports(self, ident_type: str) -> bool:
         """Check if this scorer supports the given identifier type."""
         return ident_type in ("CHEBI_ID", "CHEBI")
 
     def score(self, identifier: str, ident_type: str) -> AnnotationQuality | None:
-        """Score the annotation quality for a ChEBI identifier.
-        
-        Args:
-            identifier: ChEBI identifier (e.g., "CHEBI:16236" or "16236").
-            ident_type: Should be "CHEBI_ID".
-            
-        Returns:
-            AnnotationQuality with score 0-100 and signals found.
-            Returns low score (0.0) on any failure without raising.
+        """Score the annotation quality for a ChEBI identifier (cached).
+
+        W3.3 item 2: fetch failure -> None (annotation UNKNOWN; the blend
+        re-weights), never a real 0.0/lower score.
         """
         if not self.supports(ident_type):
             return None
-        
+
         # Strip CHEBI: prefix if present
         chebi_num = identifier.upper()
         if chebi_num.startswith("CHEBI:"):
             chebi_num = chebi_num[6:]  # Strip prefix
-        
+
+        cached = self._score_cache.get(chebi_num)
+        if cached is not None:
+            return cached
+        result = self._score_uncached(chebi_num)
+        if result is not None:
+            self._score_cache[chebi_num] = result
+        return result
+
+    def _score_uncached(self, chebi_num: str) -> AnnotationQuality | None:
+        """Fetch + score one ChEBI numeric id. None on fetch failure."""
         try:
             url = f"https://www.ebi.ac.uk/chebi/backend/api/public/compound/{chebi_num}/"
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             data = response.json()
         except Exception:
-            return AnnotationQuality(database="chebi", score=0.0, signals=[])
+            return None
         
         signals = []
         score = 20.0  # Base points for having the entry

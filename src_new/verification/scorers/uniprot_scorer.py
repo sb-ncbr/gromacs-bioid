@@ -11,6 +11,14 @@ from ..models import AnnotationQuality
 class UniProtAnnotationScorer(AnnotationQualityScorer):
     """Scores annotation quality for UniProt entries (including AlphaFold)."""
 
+    def __init__(self) -> None:
+        # W3.3 item 2 (determinism, same pattern as PubChem D-07): a
+        # successful score is cached per RESOLVED UniProt accession and
+        # served verbatim on repeats (incl. AF- wrapped aliases) — a record
+        # scores once per run instead of re-fetching per window occurrence.
+        # Transient failures are never cached (None re-attempts later).
+        self._score_cache: dict[str, AnnotationQuality] = {}
+
     def supports(self, ident_type: str) -> bool:
         """Check if this scorer supports the given identifier type.
 
@@ -21,19 +29,10 @@ class UniProtAnnotationScorer(AnnotationQualityScorer):
         return ident_type in ("UNIPROT_ID", "ALPHAFOLD_ID", "SWISSPROT_ID")
 
     def score(self, identifier: str, ident_type: str) -> AnnotationQuality | None:
-        """Score the annotation quality for a UniProt identifier.
-        
-        Args:
-            identifier: UniProt identifier (e.g., "P04637") or AlphaFold ID.
-            ident_type: Should be "UNIPROT_ID" or "ALPHAFOLD_ID".
-            
-        Returns:
-            AnnotationQuality with score 0-100 and signals found.
-            Returns low score (0.0) on any failure without raising.
-        """
+        """Score the annotation quality for a UniProt identifier (cached)."""
         if not self.supports(ident_type):
             return None
-        
+
         # For AlphaFold IDs, extract the UniProt ID
         if ident_type == "ALPHAFOLD_ID":
             # Wrapped form: AF-P04637-F1-model_v4 -> P04637.
@@ -47,7 +46,25 @@ class UniProtAnnotationScorer(AnnotationQualityScorer):
                 uniprot_id = identifier
         else:
             uniprot_id = identifier
-        
+
+        cached = self._score_cache.get(uniprot_id)
+        if cached is not None:
+            return cached
+        result = self._score_uncached(uniprot_id)
+        if result is not None:
+            self._score_cache[uniprot_id] = result
+        return result
+
+    def _score_uncached(self, uniprot_id: str) -> AnnotationQuality | None:
+        """Score the annotation quality for a resolved UniProt accession.
+
+        W3.3 item 2 (user directive, re-eval correction 2026-11-01): a
+        fetch failure is annotation UNKNOWN — returns None so the
+        confidence blend re-weights over the measured terms — never a
+        real 0.0/lower score (which silently re-ordered top-1 for the
+        same identifier across twin runs, and eroded the b12 fleet gate
+        UniProt validated@1 by 16 pp under cold-cache remote storms).
+        """
         try:
             # Red-team batch-4 (D-07): the full entry JSON is hundreds of kB;
             # ask only for the fields the scorer reads (live-validated field
@@ -62,7 +79,7 @@ class UniProtAnnotationScorer(AnnotationQualityScorer):
             response.raise_for_status()
             entry = response.json()
         except Exception:
-            return AnnotationQuality(database="uniprot", score=0.0, signals=[])
+            return None
 
         # G5 display metadata (best-effort; absent/{} payloads -> None).
         name: str | None = None
