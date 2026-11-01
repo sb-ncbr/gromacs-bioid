@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 import requests
 
-from ..base import AnnotationQualityScorer
+from ..base import AnnotationQualityScorer, fetch_failure_reason
 from ..models import AnnotationQuality
+
+logger = logging.getLogger("annotation")
 
 
 class ChebiAnnotationScorer(AnnotationQualityScorer):
@@ -49,7 +53,9 @@ class ChebiAnnotationScorer(AnnotationQualityScorer):
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             data = response.json()
-        except Exception:
+        except Exception as exc:
+            logger.warning("ann_fetch_failed service=chebi id=%s reason=%s",
+                           chebi_num, fetch_failure_reason(exc))
             return None
         
         signals = []

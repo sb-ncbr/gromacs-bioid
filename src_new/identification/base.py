@@ -160,18 +160,21 @@ class IdentifierResolver(ABC):
         # MISS - live resolution must never die because of a poisoned cache.
         if cache is not None:
             try:
+                from .cache_manager import record_cache_event
                 if as_similarity:
                     cached = cache.fetch_similarity_identifiers(self.name, signature)
-                    if cached:
-                        return cached
                 else:
                     cached = cache.fetch_identity_identifiers(self.name, signature)
-                    if cached:
-                        return cached
+                # W3.3 A.3: health-record counters (hit vs miss per resolver).
+                record_cache_event(self.name, bool(cached))
+                if cached:
+                    return cached
             except (sqlite3.Error, OSError) as exc:
                 # v3.143 (C-13): OSError from lazy cache init (unwritable/
                 # missing directory) must degrade to a MISS too, not zero the
                 # whole identification stage.
+                from .cache_manager import record_cache_event
+                record_cache_event(self.name, False, error=True)
                 logger.warning(
                     "[Cache] read failed for resolver '%s' (%s); resolving without cache",
                     self.name, exc,

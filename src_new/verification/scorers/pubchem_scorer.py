@@ -6,8 +6,12 @@ import os
 
 import requests
 
-from ..base import AnnotationQualityScorer
+from ..base import AnnotationQualityScorer, fetch_failure_reason
 from ..models import AnnotationQuality
+
+import logging
+
+logger = logging.getLogger("annotation")
 
 _LOCAL_DB = None
 _LOCAL_DB_READY = False
@@ -131,15 +135,21 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
 
     def _live_get_json(self, url: str) -> dict | None:
         """One budgeted live call. Returns parsed JSON or None (never raises:
-        budget exhaustion / network failure are silent fallbacks)."""
+        budget exhaustion / network failure are silent fallbacks, but W3.3
+        A.3 tags every incomplete attempt for the per-run health record)."""
         if not self._live_fetch or self._remaining <= 0:
+            logger.info("ann_fetch_failed service=pubchem reason=budget_exhausted url=%s",
+                        url.rsplit("/", 3)[-3] if "/" in url else url)
             return None
         self._remaining -= 1
         try:
             r = requests.get(url, timeout=self._timeout_s)
             r.raise_for_status()
             return r.json()
-        except Exception:
+        except Exception as exc:
+            logger.warning("ann_fetch_failed service=pubchem reason=%s url=%s",
+                           fetch_failure_reason(exc),
+                           url.rsplit("/", 3)[-3] if "/" in url else url)
             return None
 
     def supports(self, ident_type: str) -> bool:

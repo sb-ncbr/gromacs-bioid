@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import time
 
 import logging
 import traceback
@@ -245,6 +246,9 @@ class PipelineExecutor:
                     set_stage_budget(context, step.id)
                 except Exception:
                     pass
+                # W3.3 A.3 (health record): per-stage wall seconds, persisted
+                # with the run (pipeline/stage_walls). Additive only.
+                _stage_t0 = time.monotonic()
                 try:
                     handler = getattr(step, 'handler', None)
                     if handler:
@@ -295,7 +299,17 @@ class PipelineExecutor:
                     failed_critical = True
                     failed_at_index = i
                     raise
-                
+                finally:
+                    # W3.3 A.3: wall recorded for success AND failure paths.
+                    try:
+                        walls = context.state.get("stage_walls")
+                        if walls is None:
+                            walls = {}
+                            context.state["stage_walls"] = walls
+                        walls[step_id] = round(time.monotonic() - _stage_t0, 3)
+                    except Exception:
+                        pass
+
                 # Apply context_updates to context.state
                 if step_result and hasattr(step_result, 'context_updates'):
                     for key, value in step_result.context_updates.items():
@@ -381,7 +395,24 @@ class PipelineExecutor:
         
         finally:
             logger.removeHandler(log_handler)
-            
+
+            # W3.3 A.3 (health record): additive run metadata — per-stage
+            # wall seconds accumulated per step above, plus the worker pod
+            # name, so every results.json is self-describing for fleet
+            # diagnostics (cold-cache / per-service failure attribution).
+            # Persisted under data/run_health (set_data writes the *data*
+            # branch, not the pipeline branch).
+            try:
+                walls = context.state.get("stage_walls")
+                if walls:
+                    self.results_manager.set_data("run_health/stage_walls",
+                                                  dict(walls))
+                pod = os.environ.get("HOSTNAME")
+                if pod:
+                    self.results_manager.set_data("run_health/pod", pod)
+            except Exception:
+                pass
+
             # Mark remaining tasks as skipped if there was a critical failure
             if failed_critical and failed_at_index >= 0:
                 for i in range(failed_at_index + 1, len(self.steps)):

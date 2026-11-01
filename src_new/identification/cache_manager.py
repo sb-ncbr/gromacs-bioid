@@ -88,11 +88,49 @@ def create_empty_cache_if_not_exists(cache_path: str) -> None:
         conn.commit()
 
 
+# ---------------------------------------------------------------------
+# W3.3 corpus run (A.3 health record): per-resolver cache hit/miss
+# counters. Purely additive observability — no cache behavior changes.
+# The identification step persists `cache_stats_snapshot()` under
+# identification/_meta so every results.json carries its own cache
+# provenance (hit/miss per resolver + cache read errors).
+# ---------------------------------------------------------------------
+_STATS_LOCK = threading.RLock()
+_CACHE_STATS: dict[str, dict[str, int]] = {}
+
+
+def record_cache_event(resolver_name: str, hit: bool, *, error: bool = False) -> None:
+    """Count one cache lookup outcome for `resolver_name`."""
+    with _STATS_LOCK:
+        row = _CACHE_STATS.setdefault(
+            resolver_name, {"hit": 0, "miss": 0, "error": 0})
+        if error:
+            row["error"] += 1
+        elif hit:
+            row["hit"] += 1
+        else:
+            row["miss"] += 1
+
+
+def cache_stats_snapshot() -> dict[str, dict[str, int]]:
+    """Deep copy of the per-resolver counters (safe to persist)."""
+    with _STATS_LOCK:
+        return {name: dict(row) for name, row in _CACHE_STATS.items()}
+
+
+def reset_cache_stats() -> None:
+    """Clear the counters (called once per run at identification start so
+    each results.json's snapshot is per-run, not per-worker-process)."""
+    with _STATS_LOCK:
+        _CACHE_STATS.clear()
+
+
 class ResolverCache:
     """Thread-safe SQLite cache for identifier resolution results.
     
     Uses RLock for thread safety and lazy connection initialization.
     """
+
     
     def __init__(self, config: RunConfig) -> None:
         """Initialize resolver cache.

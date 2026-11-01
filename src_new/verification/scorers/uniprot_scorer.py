@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 import requests
 
-from ..base import AnnotationQualityScorer
+from ..base import AnnotationQualityScorer, fetch_failure_reason
 from ..models import AnnotationQuality
+
+logger = logging.getLogger("annotation")
 
 
 class UniProtAnnotationScorer(AnnotationQualityScorer):
@@ -78,7 +82,10 @@ class UniProtAnnotationScorer(AnnotationQualityScorer):
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             entry = response.json()
-        except Exception:
+        except Exception as exc:
+            # W3.3 A.3 (health record): tagged, status-carrying failure line.
+            logger.warning("ann_fetch_failed service=uniprot id=%s reason=%s",
+                           uniprot_id, fetch_failure_reason(exc))
             return None
 
         # G5 display metadata (best-effort; absent/{} payloads -> None).

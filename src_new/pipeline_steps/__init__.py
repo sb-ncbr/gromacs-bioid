@@ -984,11 +984,15 @@ def _identify_molecules(context):
     """Identify molecules from generated signatures with optional parallelism."""
     from ..signatures.registry import get_signature_type_map
     from ..executor.parallel import run_with_thread_pool
+    from ..identification.cache_manager import reset_cache_stats
     from .workers import _identify_molecules_worker
-    
+
     facade = context.get_value("facade")
     if not facade:
         context.fail("missing_facade", "No facade available for identification")
+
+    # W3.3 A.3: counters are per-run (snapshot lands in this run's results).
+    reset_cache_stats()
 
     # W3.1 item 4 (A9): loud once-per-run notice when structure search
     # will be silently skipped (no adhoc dir + no registry uuid).
@@ -1270,6 +1274,21 @@ def _identify_molecules(context):
             "stage_time_budget",
             "identify_molecules exceeded its time budget; proceeding with partial identifications",
         )
+
+    # W3.3 A.3 (health record): per-run resolver cache counters persisted
+    # with the run + one log line (additive; thread-pool workers share the
+    # module state, so both serial and parallel paths land here).
+    try:
+        from ..identification.cache_manager import cache_stats_snapshot
+        snapshot = cache_stats_snapshot()
+        if snapshot:
+            context.results.set_data("identification/_meta/cache_stats", snapshot)
+            logger.info("identify_molecules: cache_stats %s",
+                        {k: f"{v['hit']}/{v['hit'] + v['miss']}"
+                         for k, v in sorted(snapshot.items())})
+    except Exception:
+        pass
+
     return StepResult(
         summary={"identified": True, "partial": budget_hit,
                  "groups": len(rep_to_group)}

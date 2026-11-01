@@ -111,6 +111,12 @@ class SignatureFetcher(ABC):
         pass
 
 
+def fetch_failure_reason(exc: Exception) -> str:
+    """Status-bearing failure tag for the annotation health record (W3.3 A.3)."""
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    return f"HTTP {status}" if status is not None else type(exc).__name__
+
+
 class AnnotationQualityScorer(ABC):
     """Abstract base class for scoring annotation quality."""
     

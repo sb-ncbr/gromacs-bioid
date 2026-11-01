@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 import requests
 
-from ..base import AnnotationQualityScorer
+from ..base import AnnotationQualityScorer, fetch_failure_reason
 from ..models import AnnotationQuality
+
+logger = logging.getLogger("annotation")
 
 
 class ChemblAnnotationScorer(AnnotationQualityScorer):
@@ -50,7 +54,9 @@ class ChemblAnnotationScorer(AnnotationQualityScorer):
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             data = response.json()
-        except Exception:
+        except Exception as exc:
+            logger.warning("ann_fetch_failed service=chembl id=%s reason=%s",
+                           chembl_id, fetch_failure_reason(exc))
             return None
         
         signals = []
