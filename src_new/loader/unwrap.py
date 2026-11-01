@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -75,52 +74,6 @@ class PbcRepairReport:
         }
 
 
-_PRMTOP_SUFFIXES = (".prmtop", ".parm7", ".top", ".parmtop")
-_PRMTOP_BOX_FLAG = "%FLAG BOX_DIMENSIONS"
-
-
-def _read_prmtop_box(topology_path: str) -> list[float] | None:
-    """Read an AMBER prmtop ``%FLAG BOX_DIMENSIONS`` block.
-
-    W3.3 item 3: this MDAnalysis build's ParmEd topology parsers drop the
-    `.box` attribute entirely, so prmtop-sourced universes have no
-    dimensions even when the topology declares a box. AMBER stores the
-    block as (beta, a, b, c); alpha/gamma are always 90 for amber boxes.
-
-    Returns [a, b, c, 90, beta, 90] in MDAnalysis dimension order, or None
-    when the file is not an amber topology / has no plausible box block.
-    """
-    if not str(topology_path).lower().endswith(_PRMTOP_SUFFIXES):
-        return None
-    try:
-        text = Path(topology_path).read_text(errors="replace")
-    except OSError:
-        return None
-    lines = text.splitlines()
-    try:
-        start = lines.index(_PRMTOP_BOX_FLAG)
-    except ValueError:
-        return None
-    values: list[float] = []
-    for line in lines[start + 1:]:
-        if line.startswith("%FORMAT"):
-            continue
-        if line.startswith("%"):
-            break
-        for token in line.split():
-            try:
-                values.append(float(token))
-            except ValueError:
-                break
-    if len(values) < 4:
-        return None
-    beta, a, b, c = values[:4]
-    if not (1.0 <= a <= 2000.0 and 1.0 <= b <= 2000.0 and 1.0 <= c <= 2000.0
-            and 50.0 <= beta <= 130.0):
-        return None
-    return [a, b, c, 90.0, beta, 90.0]
-
-
 class PbcRepair:
     """Periodic boundary unwrapping for single-frame simulations."""
 
@@ -138,22 +91,11 @@ class PbcRepair:
             selection=self.loader_config.unwrap_selection,
         )
 
-        # W3.3 item 3: recover the box from the amber topology when the
-        # coordinate frame carries none (both MDAnalysis ParmEd parsers
-        # drop .box) — a boxless frame with a declared prmtop box is
-        # unwrappable after all.
-        if getattr(self.u, 'dimensions', None) is None:
-            recovered = _read_prmtop_box(getattr(self.u, 'filename', '') or '')
-            if recovered is not None:
-                self.u.dimensions = np.asarray(recovered, dtype=np.float32)
-                logger.info("pbc: box recovered from prmtop BOX_DIMENSIONS "
-                            "(%s)", [round(v, 3) for v in recovered])
-
         # Capture box dimensions
         if hasattr(self.u, 'dimensions') and self.u.dimensions is not None:
             report.box_dimensions = list(self.u.dimensions)
 
-        # Always detect jumps (boxless: absolute wholeness thresholds)
+        # Always detect jumps
         jump_info = self.detect_jumps()
         report.jumps_detected = jump_info["jumps_detected"]
         report.max_bond_length = jump_info["max_bond_length"]
@@ -162,26 +104,6 @@ class PbcRepair:
         report.backbone_jumps = jump_info["backbone_jumps"]
 
         if not self.loader_config.unwrap_periodic_boundaries:
-            return report
-
-        # W3.3 item 3: still no box after the prmtop recovery attempt —
-        # unwrapping is undefined, which is NOT a failure on its own.
-        # The wholeness scan above decides: whole molecules are reported
-        # as INFO (no run warning); broken ones stay loud.
-        if getattr(self.u, 'dimensions', None) is None:
-            report.unwrap_method = "none (no periodic box)"
-            if report.bond_jumps or report.backbone_jumps:
-                msg = (f"PBC unwrapping failed: no periodic box and "
-                       f"structure broken (bond_jumps={report.bond_jumps}, "
-                       f"backbone_jumps={report.backbone_jumps})")
-                report.error = msg
-                report.warnings.append(msg)
-            else:
-                bond_note = (f"max bond {report.max_bond_length:.2f} A"
-                             if report.max_bond_length is not None
-                             else "no bonds")
-                logger.info("pbc: no periodic box; unwrapping skipped "
-                            "(molecules whole: %s)", bond_note)
             return report
 
         # Perform unwrapping
@@ -326,12 +248,10 @@ class PbcRepair:
         }
 
         box = self.u.dimensions if hasattr(self.u, 'dimensions') else None
+        if box is None:
+            return result
 
-        # W3.3 item 3: a boxless structure is its own unwrapped frame —
-        # distances are real, so scan with the absolute wholeness
-        # thresholds (bond > 4 A; backbone gap uses the existing config
-        # bound) instead of skipping the scan entirely.
-        min_box_edge = min(box[:3]) if box is not None else None
+        min_box_edge = min(box[:3])
 
         # Bond-length scan (A-13, red-team 3.8: vectorized — was a per-bond
         # Python loop, 25 s on a 2M-atom box). Guards go through the topology
@@ -349,8 +269,7 @@ class PbcRepair:
                 _vals = []
         b = np.asarray(_vals, dtype=np.int64).reshape(-1, 2) if len(_vals) else None
         if b is not None and len(b) > 0:
-            threshold = (min_box_edge * self.loader_config.unwrap_max_bond_length_factor
-                         if min_box_edge is not None else 4.0)
+            threshold = min_box_edge * self.loader_config.unwrap_max_bond_length_factor
             pos = self.u.atoms.positions
             dists = np.linalg.norm(pos[b[:, 0]] - pos[b[:, 1]], axis=1)
             result["max_bond_length"] = float(dists.max())
