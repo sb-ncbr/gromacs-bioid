@@ -64,7 +64,7 @@ class TestAdhocUrl:
         adhoc = tmp_path / "adhoc"
         resolver = MmCifResolver(_config(tmp_path, adhoc_files_dir=str(adhoc)))
         with mock.patch(
-                "src_new.identification.resolvers.mmcif.requests.post"
+                "src_new.identification.resolvers._rcsb_search.requests.post"
         ) as post:
             _fake_rcsb_hit(post)
             out = resolver.resolve(SIG, str(tmp_path))
@@ -81,7 +81,7 @@ class TestAdhocUrl:
         path keeps working unchanged."""
         resolver = MmCifResolver(_config(tmp_path))
         with mock.patch(
-                "src_new.identification.resolvers.mmcif.requests.post"
+                "src_new.identification.resolvers._rcsb_search.requests.post"
         ) as post:
             _fake_rcsb_hit(post)
             out = resolver.resolve(SIG, str(tmp_path))
@@ -102,7 +102,7 @@ class TestAdhocUrl:
         resp.raise_for_status.side_effect = err
         resp.json.side_effect = err
         with mock.patch(
-                "src_new.identification.resolvers.mmcif.requests.post",
+                "src_new.identification.resolvers._rcsb_search.requests.post",
                 return_value=resp):
             out = resolver.resolve(SIG, str(tmp_path))
         assert out is None or out == []

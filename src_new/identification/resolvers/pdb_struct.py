@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import subprocess
 import tempfile
 
-import requests
-from requests import Response
 
 from ...config.loader import RunConfig
 from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
+from ._rcsb_search import post_rcsb_query
 from ._ssh_upload import has_ssh_config, ssh_delete, ssh_upload
 
 logger = logging.getLogger("identifier")
@@ -236,8 +234,6 @@ class PDBStructResolver(IdentifierResolver):
         Raises:
             IdentifierResolutionError: On request failure.
         """
-        url = "https://search.rcsb.org/rcsbsearch/v2/query"
-
         required_entity_type = entity_types
         
         request = {
@@ -283,15 +279,10 @@ class PDBStructResolver(IdentifierResolver):
         logger.info("RCSB structure search request: similarity_type=local target_search_space=assembly, paginated rows=10000")
         logger.debug(f"Querying RCSB API for '{remote_path}'")
         
-        try:
-            response: Response = requests.post(url, json=request, headers={"Content-Type": "application/json"}, timeout=30)
-            response.raise_for_status()
-            response_json: dict = response.json()
-            return response_json
-        except requests.exceptions.Timeout:
-            raise IdentifierResolutionError("RCSB API request timed out")
-        except requests.exceptions.RequestException as exc:
-            raise IdentifierResolutionError(f"RCSB API request failed: {exc}")
+        # W3.3 item 1: shared POST with one settle-retry on HTTP response
+        # errors (same adhoc staging path as mmcif -> same NFS negative-
+        # cache race class; unit-tested in test_mmcif_pdb_route_w33.py).
+        return post_rcsb_query(request)
 
     def _parse_pdb_response(self, response: dict) -> list[tuple[str, float]]:
         """

@@ -278,9 +278,10 @@ def _pdb_atom_line(
     pos_x: float,
     pos_y: float,
     pos_z: float,
+    chain_id: str = "A",
 ) -> str:
     """Create ATOM line for PDB file.
-    
+
     Format follows PDB specification:
     ATOM   serial  name  resname chain resnum    x       y       z  occ   temp     elem
     """
@@ -290,7 +291,7 @@ def _pdb_atom_line(
         atom_name,
         "",
         _std_resname3(residue_name),
-        "A",
+        (chain_id or "A")[0],
         residue_idx,
         "",
         pos_x,

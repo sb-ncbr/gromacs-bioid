@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
@@ -11,7 +10,11 @@ import tempfile
 import requests
 
 from ...config.loader import RunConfig
+from ...signatures.generators.topology_less_pdb import _pdb_atom_line
 from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
+# _pdb_atom_line is the single home of the PDB ATOM-line format RCSB
+# accepted live (2026-11-01 probe); the mmCIF->PDB converter reuses it.
+from ._rcsb_search import post_rcsb_query
 from ._ssh_upload import has_ssh_config, ssh_delete, ssh_upload
 
 logger = logging.getLogger("identifier")
@@ -61,6 +64,101 @@ def _resname_token_sets(text: str) -> tuple[set[str], set[str]]:
         elif comp in _NA_RESNAMES:
             na.add(comp)
     return amino, na
+
+
+def _atom_site_rows(text: str) -> tuple[list[str], list[list[str]]]:
+    """Parse the first ``_atom_site`` loop into (column names, data rows).
+
+    Minimal generated mmCIF carries a single bare loop with unquoted,
+    whitespace-separated values; anything non-conforming yields empty
+    results and callers keep the original query path.
+    """
+    lines = text.splitlines()
+    columns: list[str] = []
+    rows: list[list[str]] = []
+    i = 0
+    while i < len(lines):
+        if lines[i].strip() != "loop_":
+            i += 1
+            continue
+        j = i + 1
+        cols: list[str] = []
+        while j < len(lines) and lines[j].strip().startswith("_"):
+            cols.append(lines[j].strip())
+            j += 1
+        if cols and all(c.startswith("_atom_site.") for c in cols):
+            for k in range(j, len(lines)):
+                tok = lines[k].strip()
+                if not tok or tok == "#" or tok.startswith(("_", "loop_", "data_")):
+                    break
+                parts = [p.strip().strip("'\"") for p in tok.split()]
+                if len(parts) == len(cols):
+                    rows.append(parts)
+            return cols, rows
+        return [], []
+    return [], []
+
+
+def _mmcif_text_to_pdb(text: str) -> str | None:
+    """Convert OUR minimal generated mmCIF text to PDB format.
+
+    W3.3 item 1 (live probe 2026-11-01): RCSB's structure-search backend
+    rejects our bare-loop mmCIF payloads server-side (HTTP 500) while the
+    same structure staged as PDB through the identical adhoc route is
+    accepted (HTTP 200, hits). Genuine full mmCIF (declares
+    ``_entity_poly.type``) parses fine upstream and stays on the
+    ``format: "cif"`` path — this converter only fires for the generated
+    minimal format (atom_site loop, no polymer entities).
+
+    Returns the PDB text, or None when the input is not the minimal
+    generated format / has no parsable atom rows.
+    """
+    if "_atom_site.group_PDB" not in text or "_entity_poly.type" in text:
+        return None
+    columns, rows = _atom_site_rows(text)
+    if not columns or not rows:
+        return None
+
+    idx = {name: n for n, name in enumerate(columns)}
+
+    def col(row: list[str], name: str) -> str:
+        n = idx.get(f"_atom_site.{name}")
+        if n is None:
+            return ""
+        value = row[n]
+        return "" if value in ("?", ".") else value
+
+    lines = ["HEADER export"]
+    resseq_fallback = 0
+    last_res_key: tuple[str, str] | None = None
+    for serial, row in enumerate(rows, start=1):
+        chain = col(row, "label_asym_id") or "A"
+        resseq_token = col(row, "label_seq_id")
+        res_key = (chain, resseq_token)
+        if res_key != last_res_key:
+            resseq_fallback += 1
+            last_res_key = res_key
+        try:
+            residue_idx = int(resseq_token) if resseq_token else resseq_fallback
+        except ValueError:
+            residue_idx = resseq_fallback
+        try:
+            x = float(col(row, "Cartn_x"))
+            y = float(col(row, "Cartn_y"))
+            z = float(col(row, "Cartn_z"))
+        except ValueError:
+            continue
+        atom_name = col(row, "label_atom_id") or col(row, "type_symbol") or "X"
+        residue_name = col(row, "label_comp_id") or "UNK"
+        element = col(row, "type_symbol") or "".join(
+            ch for ch in atom_name if ch.isalpha())[:2]
+        lines.append(_pdb_atom_line(
+            serial, atom_name, element, residue_name, residue_idx,
+            x, y, z, chain_id=chain))
+    if len(lines) == 1:
+        return None
+    lines.append("END")
+    return "\n".join(lines) + "\n"
 
 
 def _na_only_mmcif_payload(text: str) -> bool:
@@ -165,15 +263,28 @@ class MmCifResolver(IdentifierResolver):
             self._last_error = "na_mode_unsupported"
             return []
 
-        # Create temp file for mmCIF structure
-        fd, cif_path = tempfile.mkstemp(suffix=".cif", dir=safe_tmp_dir(working_directory))
+        # W3.3 item 1: RCSB rejects our minimal generated mmCIF (HTTP 500,
+        # live probe 2026-11-01) but accepts the same structure as PDB
+        # (HTTP 200, hits) through the identical staging route. Route the
+        # generated minimal format through a PDB conversion; genuine full
+        # mmCIF (declares polymer entities) stays on format "cif".
+        query_text = signature
+        query_format = "cif"
+        pdb_text = _mmcif_text_to_pdb(signature)
+        if pdb_text is not None:
+            query_text = pdb_text
+            query_format = "pdb"
+
+        # Create temp file for the query structure
+        fd, q_path = tempfile.mkstemp(
+            suffix=f".{query_format}", dir=safe_tmp_dir(working_directory))
         os.close(fd)
-        
+
         try:
-            with open(cif_path, 'w') as f:
-                f.write(signature)
-            
-            results = self._mmcif_similarity_search(cif_path)
+            with open(q_path, 'w') as f:
+                f.write(query_text)
+
+            results = self._mmcif_similarity_search(q_path, query_format)
             return results
         except Exception as exc:
             # A9 (BH-044): never fail silently — the manager's not-result
@@ -182,8 +293,8 @@ class MmCifResolver(IdentifierResolver):
             logger.warning(f"MmCif structure resolution failed: {exc}")
             return []
         finally:
-            if os.path.exists(cif_path):
-                os.unlink(cif_path)
+            if os.path.exists(q_path):
+                os.unlink(q_path)
 
     def _upload_cif_file(self, cif_path: str) -> str | None:
         """
@@ -243,21 +354,21 @@ class MmCifResolver(IdentifierResolver):
         else:
             logger.debug(f"Delete not applicable for '{remote_url}'")
 
-    def _fetch_mmcif_similarity(self, remote_path: str) -> dict:
+    def _fetch_mmcif_similarity(self, remote_path: str, query_format: str = "cif") -> dict:
         """
-        Execute RCSB structural similarity search for mmCIF file.
-        
+        Execute RCSB structural similarity search for a staged structure file.
+
         Args:
-            remote_path: URL to the mmCIF file.
-            
+            remote_path: URL to the staged file.
+            query_format: RCSB value.format — "cif" for genuine full mmCIF,
+                "pdb" for our converted minimal generated payload.
+
         Returns:
             JSON response from RCSB API.
-            
+
         Raises:
             IdentifierResolutionError: On request failure.
         """
-        url = "https://search.rcsb.org/rcsbsearch/v2/query"
-        
         request = {
             "query": {
                 "type": "group",
@@ -269,7 +380,7 @@ class MmCifResolver(IdentifierResolver):
                         "parameters": {
                             "value": {
                                 "url": remote_path,
-                                "format": "cif"
+                                "format": query_format
                             },
                             "similarity_type": "local",
                             "target_search_space": "assembly",
@@ -293,23 +404,10 @@ class MmCifResolver(IdentifierResolver):
         }
 
         logger.info("RCSB structure search request: similarity_type=local target_search_space=assembly, paginated rows=10000")
-        logger.debug(f"Querying RCSB API for mmCIF structure '{remote_path}'")
-        
-        try:
-            response = requests.post(url, json=request, headers={"Content-Type": "application/json"}, timeout=30)
-            response.raise_for_status()
-            response_json: dict = response.json()
-            return response_json
-        except requests.exceptions.Timeout:
-            raise IdentifierResolutionError(
-                "structure_search_unavailable: RCSB API request timed out")
-        except requests.exceptions.RequestException as exc:
-            # A9 (BH-044): countable, status-carrying failure (the ~100
-            # silent 404s for Celery-dispatched runs)
-            status = getattr(getattr(exc, "response", None), "status_code", None)
-            detail = f"HTTP {status}" if status is not None else str(exc)
-            raise IdentifierResolutionError(
-                f"structure_search_unavailable: {detail}")
+        logger.debug(f"Querying RCSB API for structure '{remote_path}' (format={query_format})")
+        # W3.3 item 1: shared POST with one settle-retry on HTTP response
+        # errors (api-pod NFS negative-cache race -> RCSB fetch 404).
+        return post_rcsb_query(request)
 
     def _parse_mmcif_response(self, response: dict) -> list[tuple[str, float]]:
         """
@@ -332,9 +430,9 @@ class MmCifResolver(IdentifierResolver):
         
         return results
 
-    def _stage_adhoc_url(self, cif_path: str) -> str | None:
-        """A9 (BH-044): write the segment mmCIF to the shared adhoc
-        directory as <sha256>.cif and return its run-independent public
+    def _stage_adhoc_url(self, file_path: str, suffix: str = ".cif") -> str | None:
+        """A9 (BH-044): write the query structure file to the shared adhoc
+        directory as <sha256><suffix> and return its run-independent public
         URL. Returns None when adhoc staging is not configured/possible;
         callers then keep the legacy per-run URL path."""
         adhoc_dir = getattr(self.config.pdb, "adhoc_files_dir", "") or \
@@ -346,39 +444,41 @@ class MmCifResolver(IdentifierResolver):
             from pathlib import Path
             root = Path(adhoc_dir)
             root.mkdir(parents=True, exist_ok=True)
-            content = Path(cif_path).read_bytes()
+            content = Path(file_path).read_bytes()
             sha = hashlib.sha256(content).hexdigest()
-            target = root / f"{sha}.cif"
+            target = root / f"{sha}{suffix}"
             if not target.exists():
                 tmp = root / f".{sha}.tmp"
                 tmp.write_bytes(content)
                 os.replace(tmp, target)  # atomic publish
             base = self.config.pdb.deployment_file_url.rstrip('/')
-            return f"{base}/files/adhoc/{sha}.cif"
+            return f"{base}/files/adhoc/{sha}{suffix}"
         except Exception as exc:
-            logger.warning(f"mmCIF adhoc staging failed: {exc}")
+            logger.warning(f"adhoc staging failed: {exc}")
             return None
 
-    def _mmcif_similarity_search(self, cif_path: str) -> list[tuple[str, float]]:
+    def _mmcif_similarity_search(self, q_path: str, query_format: str = "cif") -> list[tuple[str, float]]:
         """
         Execute complete mmCIF similarity search workflow.
         
         Args:
-            cif_path: Path to mmCIF file.
+            q_path: Path to the query structure file.
+            query_format: RCSB value.format for the staged file.
             
         Returns:
             List of (PDB ID, similarity percentage) tuples.
         """
-        logger.debug(f"Resolving mmCIF similarity search for '{cif_path}'")
+        logger.debug(f"Resolving mmCIF similarity search for '{q_path}' ({query_format})")
+        suffix = f".{query_format}"
         
         # Check if deployment file access is enabled
         if self.config.pdb.use_deployment_file_access:
             # A9 (BH-044): prefer the run-independent adhoc URL — Celery
             # runs are not in the API registry, so /files/{uuid}/...
             # returned 404 for ALL of them (structure search silently off).
-            remote_path = self._stage_adhoc_url(cif_path)
+            remote_path = self._stage_adhoc_url(q_path, suffix)
             if remote_path is None:
-                filename = os.path.basename(cif_path)
+                filename = os.path.basename(q_path)
                 uuid = self.config.pdb.curr_uuid
                 if not uuid:
                     logger.warning("mmCIF query skipped: curr_uuid is empty")
@@ -388,18 +488,18 @@ class MmCifResolver(IdentifierResolver):
             logger.info(f"mmCIF query remote_path: {remote_path}")
             
             # Fetch similar structures
-            response = self._fetch_mmcif_similarity(remote_path)
+            response = self._fetch_mmcif_similarity(remote_path, query_format)
             return self._parse_mmcif_response(response)
         else:
             # Upload mode via SSH
-            remote_path = self._upload_cif_file(cif_path)
+            remote_path = self._upload_cif_file(q_path)
             if remote_path is None:
                 logger.warning("mmCIF upload not available and deployment file access disabled; skipping search")
                 return []
             logger.info(f"mmCIF upload mode remote_path: {remote_path}")
             
             # Fetch similar structures
-            response = self._fetch_mmcif_similarity(remote_path)
+            response = self._fetch_mmcif_similarity(remote_path, query_format)
             results = self._parse_mmcif_response(response)
             
             # Clean up uploaded file
