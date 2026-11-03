@@ -179,6 +179,15 @@ class IdentifiersConfig:
     inchikey_self_similarity: bool = True
     mmcif_struct: bool = True
     mmcif_struct_similarity: bool = True
+    # Corpus c13 item 2 / ruling D2: how evidence from structure-search
+    # resolvers (mmcif_struct, pdb_struct_*, foldseek_3di, alphafind_struct)
+    # may shape scores. "full" (default; current paper-run semantics): a
+    # structure match counts as a full corroborating source in consensus
+    # diversity and belief. "tiebreak": structure sources are stripped from
+    # scoring so they can only order sequence-identical equal-consensus
+    # entries, never raise one. Introduced for the 397 A/B; changing the
+    # default requires a measurement.
+    mmcif_struct_mode: str = "full"
     foldseek_3di: bool = True
     foldseek_3di_similarity: bool = True
     lipid_maps: bool = True

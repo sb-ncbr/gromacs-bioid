@@ -165,19 +165,16 @@ class TestVerificationWithRealNetwork:
         # Assert test_protein is in the returned dict
         assert "test_protein" in per_segment
         
-        # Assert at least one hit returned
+        # Corpus c13 fix (F2b): a structure-ONLY group (pdb_struct similarity
+        # rows with no sequence/chemical signature of their own) is kept out
+        # of the verification window — it stays a candidate with attribution
+        # but produces no window hits, and the exclusion is recorded in the
+        # window stats.
         hits = per_segment["test_protein"]
-        assert len(hits) > 0
-        
-        top_hit = hits[0]
-        
-        # Assert is_verified is a boolean (either True or False is acceptable)
-        assert isinstance(top_hit.is_verified, bool)
-        
-        # If False, check that rejection_reason is present
-        if not top_hit.is_verified:
-            assert top_hit.rejection_reason is not None
-            assert top_hit.rejection_reason in ("fetch_failed", "verification_failed", "below_threshold", "no_worker", "fingerprint_unavailable", "fingerprint_mismatch")
+        assert hits == []
+        window_stats = results.get_data("verification/test_protein/window")
+        assert window_stats is not None
+        assert window_stats["n_structure_only_excluded"] == 1
 
 
 class TestVerificationCrossResolverConsensus:

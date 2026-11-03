@@ -732,16 +732,33 @@ class VerificationManager:
             if not raw_hits:
                 continue
             
-            deduped = deduplicate_and_score(raw_hits)
+            # D2 (corpus c13): structure evidence scoring mode — "full"
+            # (default): structure matches count as corroborating sources;
+            # "tiebreak": they are stripped from consensus/belief and may
+            # only order equal-consensus sequence-identical rows.
+            _struct_mode = getattr(
+                getattr(getattr(self, "config", None), "identifiers", None),
+                "mmcif_struct_mode", None) or "full"
+            deduped = deduplicate_and_score(raw_hits, structure_mode=_struct_mode)
             if not deduped:
                 continue
             
-            # Sort groups by consensus_score descending
-            sorted_groups = sorted(
-                deduped.items(),
-                key=lambda x: x[1]["consensus_score"],
-                reverse=True
-            )
+            # Sort groups by consensus_score descending (tiebreak mode: a
+            # structure-corroborated group wins score ties — its ONLY
+            # allowed scoring effect)
+            if _struct_mode == "tiebreak":
+                sorted_groups = sorted(
+                    deduped.items(),
+                    key=lambda x: (x[1]["consensus_score"],
+                                   bool(x[1].get("structure_corroborated"))),
+                    reverse=True,
+                )
+            else:
+                sorted_groups = sorted(
+                    deduped.items(),
+                    key=lambda x: x[1]["consensus_score"],
+                    reverse=True
+                )
 
             # Take top N
             top_n = self._verification_config.verify_top_n
@@ -769,7 +786,29 @@ class VerificationManager:
                 )
             results.set_data(f"verification/{segment}/rerank", rerank_stats)
 
-            top_groups, window_stats = _family_interleave(sorted_groups, top_n)
+            # F2b (corpus c13 item 2): structure-only candidate groups (every
+            # source resolver a structure-search resolver) must not consume
+            # verification-window slots — 2,241 such unverified rows in c13
+            # displaced sequence-supported rows (entry 6100's GT fell out of
+            # the window). They stay in the candidate record with full
+            # attribution; the window simply ignores them.
+            _STRUCT_ONLY = frozenset({
+                "mmcif_struct", "pdb_struct_protein", "pdb_struct_nucleotide",
+                "foldseek_3di", "alphafind_struct",
+            })
+            window_groups = [
+                (k, m) for k, m in sorted_groups
+                if not ({r.split("@", 1)[0]
+                         for r in ((m or {}).get("source_resolvers") or [])}
+                        and {r.split("@", 1)[0]
+                             for r in ((m or {}).get("source_resolvers") or [])}
+                        <= _STRUCT_ONLY)
+            ]
+            n_structure_only_excluded = len(sorted_groups) - len(window_groups)
+
+            top_groups, window_stats = _family_interleave(window_groups, top_n)
+            window_stats["n_groups_total"] = len(sorted_groups)
+            window_stats["n_structure_only_excluded"] = n_structure_only_excluded
             # D-03: persist window composition/truncation additively (legacy
             # runs simply lack the key).
             results.set_data(f"verification/{segment}/window", window_stats)

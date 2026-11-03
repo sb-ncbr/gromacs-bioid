@@ -92,6 +92,13 @@ RESOLVER_SOURCES: dict[str, str] = {
 FORMULA_SOURCES = frozenset(
     {"pubchem-formula", "chembl-formula", "glycan-composition"})
 
+# Structure-search resolvers: their hits are pure spatial evidence. Under
+# ruling D2 ("tiebreak") they are excluded from consensus diversity and
+# belief and may only order equal-consensus rows (corpus c13 item 2).
+_STRUCTURE_MODE_RESOLVERS = frozenset(
+    {"mmcif_struct", "pdb_struct_protein", "pdb_struct_nucleotide",
+     "foldseek_3di", "alphafind_struct"})
+
 # D-08 pooling: SWISSPROT_ID and UNIPROT_ID name the SAME accession
 # namespace searched by the same source (Swiss-Prot); their rows must pool
 # into ONE evidence family instead of forming never-merged twin groups.
@@ -261,7 +268,8 @@ def collect_hits(results: ResultsManager, segment: str) -> list[RawHit]:
 
 
 def deduplicate_and_score(
-    hits: list[RawHit]
+    hits: list[RawHit],
+    structure_mode: str = "full",
 ) -> dict[tuple[str, str], dict]:
     """Deduplicate hits and compute consensus scores.
     
@@ -294,8 +302,22 @@ def deduplicate_and_score(
     result: dict[tuple[str, str], dict] = {}
     
     for (normalized_id, ident_type), group_hits in groups.items():
+        structure_corroborated = any(
+            h.resolver_name.split("@", 1)[0] in _STRUCTURE_MODE_RESOLVERS
+            for h in group_hits)
+        scoring_hits = group_hits
+        if structure_mode == "tiebreak":
+            # structure sources never raise a score in tiebreak mode — not
+            # even when they are the ONLY sources (the row stays, attributed,
+            # with zero scoring mass and is kept out of the window by the
+            # manager's structure-only exclusion).
+            scoring_hits = [h for h in group_hits
+                            if h.resolver_name.split("@", 1)[0]
+                            not in _STRUCTURE_MODE_RESOLVERS]
+        
         # base_score = max resolver_score in the group
-        base_score = max(hit.resolver_score for hit in group_hits)
+        base_score = max((hit.resolver_score for hit in scoring_hits),
+                         default=0.0)
         
         # Sanitize NaN/Inf in base_score
         if math.isnan(base_score) or math.isinf(base_score):
@@ -309,7 +331,7 @@ def deduplicate_and_score(
         # supporting_evidence_count derived from it) uses the same base-name
         # collapse.
         distinct_resolvers = {hit.resolver_name.split("@", 1)[0]
-                              for hit in group_hits}
+                              for hit in scoring_hits}
         diversity = len(distinct_resolvers)
         
         # consensus_score = base_score * log2(1 + diversity)
@@ -322,22 +344,25 @@ def deduplicate_and_score(
         # Cap consensus_score at 100
         consensus_score = min(consensus_score, 100.0)
         
-        # Collect source_resolvers list
-        source_resolvers = sorted(distinct_resolvers)
+        # Collect source_resolvers list (full attribution — including the
+        # structure sources that tiebreak mode excluded from SCORING)
+        all_resolvers = {hit.resolver_name.split("@", 1)[0]
+                         for hit in group_hits}
+        source_resolvers = sorted(all_resolvers)
         
         # v3.142 belief term: agreement-structure belief from chain counts.
         # Red-team batch-4 (D-08): chains are distinct EVIDENCE SOURCES
         # (databases), not resolver names — formula_pubchem/local/hfamily
         # are one source, the two Swiss-Prot BLASTs are one source, etc.
         # resolver-chain counts are retained below for transparency.
-        n_identity_chains = len({h.resolver_name for h in group_hits
+        n_identity_chains = len({h.resolver_name for h in scoring_hits
                                  if h.hit_type == "identity"})
-        n_similarity_chains = len({h.resolver_name for h in group_hits
+        n_similarity_chains = len({h.resolver_name for h in scoring_hits
                                    if h.hit_type == "similarity"})
         identity_sources = {_resolver_source(h.resolver_name)
-                            for h in group_hits if h.hit_type == "identity"}
+                            for h in scoring_hits if h.hit_type == "identity"}
         similarity_sources = {_resolver_source(h.resolver_name)
-                              for h in group_hits if h.hit_type == "similarity"}
+                              for h in scoring_hits if h.hit_type == "similarity"}
         # D-13b: a dual-mode resolver's identity and similarity listings
         # now persist under distinct keys (2a) and one accession can carry
         # the SAME source in both tiers. Count each source at its
@@ -402,6 +427,7 @@ def deduplicate_and_score(
             "n_identity_sources": n_identity_sources,
             "n_candidate_sources": n_candidate_sources,
             "n_similarity_sources": n_similarity_sources,
+            "structure_corroborated": structure_corroborated,
         }
     
     return result
