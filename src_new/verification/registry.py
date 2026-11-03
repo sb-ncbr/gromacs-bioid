@@ -110,17 +110,21 @@ class VerificationRegistry:
         return None
 
     def begin_segment(self, *, live_fetch: bool, budget: int,
-                      timeout_s: float) -> None:
+                      timeout_s: float,
+                      min_interval_s: float = 1.0) -> None:
         """Per-segment wiring for budget-aware scorers (v3.142 1c).
 
         Scorers that consume live API budget (PubChem mirror live-fill)
         expose configure()/begin_segment(); scorers without those hooks are
         untouched. Called by the manager once per segment from config.
+        Item-4 correction (11-03): min_interval_s is the per-process PUG
+        rate limit knob (annotation_live_min_interval_s).
         """
         for scorer in self._scorers:
             configure = getattr(scorer, "configure", None)
             if callable(configure):
-                configure(live_fetch=live_fetch, timeout_s=timeout_s)
+                configure(live_fetch=live_fetch, timeout_s=timeout_s,
+                          min_interval_s=min_interval_s)
             begin = getattr(scorer, "begin_segment", None)
             if callable(begin):
                 begin(budget)

@@ -142,6 +142,7 @@ def build_confidence_meta(cfg) -> dict:
         "annotation_live_fetch": cfg.annotation_live_fetch,
         "annotation_live_budget_per_segment": cfg.annotation_live_budget_per_segment,
         "annotation_fetch_timeout_s": cfg.annotation_fetch_timeout_s,
+        "annotation_live_min_interval_s": cfg.annotation_live_min_interval_s,
         "min_final_confidence": cfg.min_final_confidence,
     }
 from ..signatures.skeletize import from_smiles, hex_to_fp, parse_signature, skeleton_fp as _skel_fp, tanimoto as _skel_tanimoto, fp_to_hex as _fp_to_hex
@@ -725,7 +726,8 @@ class VerificationManager:
             if callable(begin):
                 begin(live_fetch=cfg.annotation_live_fetch,
                       budget=cfg.annotation_live_budget_per_segment,
-                      timeout_s=cfg.annotation_fetch_timeout_s)
+                      timeout_s=cfg.annotation_fetch_timeout_s,
+                      min_interval_s=cfg.annotation_live_min_interval_s)
             
             # Collect and deduplicate hits
             raw_hits = collect_hits(results, segment)

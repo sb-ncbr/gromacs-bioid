@@ -140,6 +140,7 @@ class TestPubChemScorer:
             }
         }
         props_response.raise_for_status = Mock()
+        props_response.status_code = 200
         
         # Second call: synonyms
         synonyms_response = Mock()
@@ -151,6 +152,7 @@ class TestPubChemScorer:
             }
         }
         synonyms_response.raise_for_status = Mock()
+        synonyms_response.status_code = 200
         
         mock_get.side_effect = [props_response, synonyms_response]
         
@@ -208,11 +210,13 @@ class TestPubChemScorerLocalMirror:
             }]}
         }
         props_response.raise_for_status = Mock()
+        props_response.status_code = 200
         synonyms_response = Mock()
         synonyms_response.json.return_value = {
             "InformationList": {"Information": [{"Synonym": ["water"]}]}
         }
         synonyms_response.raise_for_status = Mock()
+        synonyms_response.status_code = 200
 
         with patch.object(mod.requests, "get",
                           side_effect=[props_response, synonyms_response]):

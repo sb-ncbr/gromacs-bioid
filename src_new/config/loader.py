@@ -346,6 +346,13 @@ class VerificationConfig:
     annotation_live_fetch: bool = True
     annotation_live_budget_per_segment: int = 25
     annotation_fetch_timeout_s: float = 3.0
+    # Item-4 correction (user ruling 11-03): per-process PUG rate limit in
+    # seconds between live annotation calls (<=1 req/s/pod default). The
+    # fleet-scale NCBI throttling (503 PUGREST ServerBusy) scales with
+    # aggregate request rate; the pod-local limiter plus 503/429 retry
+    # with Retry-After backoff (throttled attempts don't consume the
+    # per-segment budget) keeps live fetch viable at fleet size.
+    annotation_live_min_interval_s: float = 1.0
     resolver_weight: float = 0.4
     similarity_weight: float = 0.4
     annotation_weight: float = 0.2

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 
 import requests
 
@@ -57,6 +59,55 @@ def _pug_smiles_signals(props: dict) -> tuple[bool, bool]:
                          or props.get("CanonicalSMILES"))
     has_isomeric = bool(props.get("SMILES") or props.get("IsomericSMILES"))
     return has_canonical, has_isomeric
+
+
+# Item-4 correction (user ruling 11-03): NCBI throttling (503 PUGREST
+# ServerBusy, 429) is the binding constraint on annotation A-coverage at
+# fleet scale, not budget. Robust live calls instead of disabling fetch:
+_PUG_RETRIES = 3                 # total tries per call on 503/429
+_PUG_RETRY_AFTER_CAP_S = 10.0   # Retry-After honoured but bounded
+_PUG_MIN_INTERVAL_S_DEFAULT = 1.0  # <=1 req/s/pod default
+
+
+class _RateLimiter:
+    """Per-process PUG rate limiter (thread-safe). NCBI's published
+    guidance is <=5 req/s; a pod-local 1 req/s default (config knob
+    annotation_live_min_interval_s) keeps the fleet far below the shared
+    throttle ceiling. Interval 0 disables."""
+
+    def __init__(self) -> None:
+        self._min_interval_s = _PUG_MIN_INTERVAL_S_DEFAULT
+        self._lock = threading.Lock()
+        self._next_ok = 0.0
+
+    def set_interval(self, min_interval_s: float) -> None:
+        with self._lock:
+            self._min_interval_s = max(0.0, float(min_interval_s))
+
+    def wait(self) -> None:
+        with self._lock:
+            interval = self._min_interval_s
+            if interval <= 0:
+                return
+            now = time.monotonic()
+            delay = max(0.0, self._next_ok - now)
+            self._next_ok = max(now, self._next_ok) + interval
+        if delay > 0:
+            time.sleep(delay)
+
+
+_PUG_LIMITER = _RateLimiter()
+
+
+def _retry_after_s(response) -> float:
+    """Backoff for a throttled attempt: honour the Retry-After header when
+    present, else exponential (2^attempt); capped so the worst case stays
+    bounded (3 tries x cap + limiter intervals per call)."""
+    try:
+        v = float(response.headers.get("Retry-After", ""))
+    except (TypeError, ValueError):
+        v = 0.0
+    return min(max(v, 1.0), _PUG_RETRY_AFTER_CAP_S)
 
 
 def _local_db():
@@ -123,10 +174,15 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
         # are the same record); transient None failures are never cached.
         self._score_cache: dict[tuple[str, str], AnnotationQuality] = {}
 
-    def configure(self, *, live_fetch: bool, timeout_s: float) -> None:
-        """Per-manager wiring (v3.142): live-fetch policy from config."""
+    def configure(self, *, live_fetch: bool, timeout_s: float,
+                  min_interval_s: float = _PUG_MIN_INTERVAL_S_DEFAULT) -> None:
+        """Per-manager wiring (v3.142): live-fetch policy from config.
+        Item-4 correction (11-03): min_interval_s is the per-process PUG
+        rate limit (config knob annotation_live_min_interval_s, default
+        1 req/s/pod)."""
         self._live_fetch = bool(live_fetch)
         self._timeout_s = float(timeout_s)
+        _PUG_LIMITER.set_interval(min_interval_s)
 
     def begin_segment(self, budget: int) -> None:
         """Re-arm the per-segment live-call budget (manager calls once per
@@ -134,23 +190,63 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
         self._remaining = int(budget)
 
     def _live_get_json(self, url: str) -> dict | None:
-        """One budgeted live call. Returns parsed JSON or None (never raises:
-        budget exhaustion / network failure are silent fallbacks, but W3.3
-        A.3 tags every incomplete attempt for the per-run health record)."""
+        """One budgeted live call with throttle-resilient retry (item-4
+        correction, user ruling 11-03). Returns parsed JSON or None (never
+        raises: budget exhaustion / network failure are silent fallbacks,
+        but W3.3 A.3 tags every incomplete attempt for the per-run health
+        record). Semantics:
+
+        * 503/429: retried up to _PUG_RETRIES tries with backoff
+          honouring Retry-After (capped). A THROTTLED attempt does NOT
+          consume the per-segment budget — only a non-throttle outcome
+          (success / definitive HTTP failure / network exception) spends
+          one unit.
+        * Every attempt passes the per-process rate limiter (<=1 req/s
+          per pod default; config knob annotation_live_min_interval_s).
+        * W3.3-2 contract unchanged: still failing after retries -> None
+          (annotation UNKNOWN, never a silently degraded score)."""
         if not self._live_fetch or self._remaining <= 0:
             logger.info("ann_fetch_failed service=pubchem reason=budget_exhausted url=%s",
                         url.rsplit("/", 3)[-3] if "/" in url else url)
             return None
-        self._remaining -= 1
-        try:
-            r = requests.get(url, timeout=self._timeout_s)
-            r.raise_for_status()
-            return r.json()
-        except Exception as exc:
-            logger.warning("ann_fetch_failed service=pubchem reason=%s url=%s",
-                           fetch_failure_reason(exc),
-                           url.rsplit("/", 3)[-3] if "/" in url else url)
-            return None
+        short_url = url.rsplit("/", 3)[-3] if "/" in url else url
+        for attempt in range(1, _PUG_RETRIES + 1):
+            _PUG_LIMITER.wait()
+            try:
+                r = requests.get(url, timeout=self._timeout_s)
+            except Exception as exc:
+                self._remaining -= 1
+                logger.warning("ann_fetch_failed service=pubchem reason=%s url=%s",
+                               fetch_failure_reason(exc), short_url)
+                return None
+            if r.status_code == 429 or r.status_code >= 500:
+                if attempt < _PUG_RETRIES:
+                    # intermediate throttle: retried, not a failure record
+                    logger.info("ann_fetch_throttled service=pubchem "
+                                "reason=HTTP %d attempt=%d/%d retrying url=%s",
+                                r.status_code, attempt, _PUG_RETRIES,
+                                short_url)
+                    time.sleep(_retry_after_s(r))
+                    continue
+                # retries exhausted while throttled: budget NOT consumed
+                # (the attempt never got a fair shot at a real response)
+                logger.warning("ann_fetch_failed service=pubchem "
+                               "reason=HTTP %d throttled tries=%d url=%s",
+                               r.status_code, _PUG_RETRIES, short_url)
+                return None
+            self._remaining -= 1
+            if r.status_code != 200:
+                logger.warning("ann_fetch_failed service=pubchem "
+                               "reason=HTTP %d url=%s",
+                               r.status_code, short_url)
+                return None
+            try:
+                return r.json()
+            except Exception as exc:
+                logger.warning("ann_fetch_failed service=pubchem reason=%s url=%s",
+                               fetch_failure_reason(exc), short_url)
+                return None
+        return None
 
     def supports(self, ident_type: str) -> bool:
         """Check if this scorer supports the given identifier type."""

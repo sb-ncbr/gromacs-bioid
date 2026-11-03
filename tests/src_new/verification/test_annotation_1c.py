@@ -31,6 +31,7 @@ class _StubDB:
 
 def _props(props):
     r = Mock()
+    r.status_code = 200
     r.json.return_value = {"PropertyTable": {"Properties": [props]}}
     r.raise_for_status = Mock()
     return r
@@ -38,6 +39,7 @@ def _props(props):
 
 def _syns(syns):
     r = Mock()
+    r.status_code = 200
     r.json.return_value = {"InformationList": {"Information": [{"Synonym": syns}]}}
     r.raise_for_status = Mock()
     return r

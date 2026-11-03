@@ -4,6 +4,18 @@ from __future__ import annotations
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _zero_pug_rate_limiter():
+    """Item-4 correction (11-03): the per-process PUG rate limiter defaults
+    to 1 req/s — real sleeps would slow every mocked-live test. Zero it for
+    the test duration and restore afterwards."""
+    from src_new.verification.scorers import pubchem_scorer as _mod
+    _mod._PUG_LIMITER.set_interval(0.0)
+    yield
+    _mod._PUG_LIMITER.set_interval(
+        _mod._PUG_MIN_INTERVAL_S_DEFAULT)
+
 from src_new.config.loader import RunConfig
 from src_new.results.results_manager import ResultsManager
 from src_new.verification.registry import get_default_registry
