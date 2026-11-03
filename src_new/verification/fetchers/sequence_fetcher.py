@@ -3,13 +3,83 @@
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
+import threading
+import time
 
 import requests
 
-from ..base import SignatureFetcher, memoized_fetch
+from ..base import SignatureFetcher, TransientFetchError, memoized_fetch
 from . import rcsb_cache
 
 logger = logging.getLogger(__name__)
+
+# Local sequence sources (image-resident BLAST DBs; env-overridable, mirroring
+# the BlastConfig defaults in config/loader.py so behavior matches by default).
+_BLASTDBCMD = os.environ.get("BAT3_BLASTDBCMD", "/usr/bin/blastdbcmd")
+_SWISSPROT_DB = os.environ.get("BAT3_SWISSPROT_DB", "/app/databases/swissprot/swissprot")
+_NR_DB = os.environ.get("BAT3_NR_DB", "/app/databases/nr/nr")
+# Pod-local persistent sequence cache (successes only — definitive misses and
+# transients are never persisted; env-overridable for tests).
+_SEQ_CACHE = os.environ.get("BAT3_SEQ_CACHE", "/app/cache/sequence_cache")
+# REST retry policy: total tries = _REST_TRIES, backoff doubles from 1 s.
+_REST_TRIES = 3
+_REST_TIMEOUT_S = 10
+
+
+def _seqcache_path(accession: str) -> str:
+    return os.path.join(_SEQ_CACHE, accession.upper() + ".seq")
+
+
+def _seqcache_read(accession: str) -> str | None:
+    try:
+        with open(_seqcache_path(accession)) as fh:
+            seq = fh.read().strip()
+            return seq or None
+    except OSError:
+        return None
+
+
+def _seqcache_write(accession: str, sequence: str) -> None:
+    if not sequence:
+        return
+    # reviewer fix (c13 re-check): atomic write (unique tmp + os.replace).
+    # Two threads in one pod can concurrently read a half-written cache
+    # file - a silently truncated sequence would produce a wrong S.
+    try:
+        os.makedirs(_SEQ_CACHE, exist_ok=True)
+        final = _seqcache_path(accession)
+        tmp = f"{final}.tmp.{os.getpid()}.{threading.get_ident()}"
+        with open(tmp, "w") as fh:
+            fh.write(sequence)
+        os.replace(tmp, final)
+    except OSError:
+        pass
+
+
+def _blastdbcmd_sequence(accession: str) -> str | None:
+    """Look the accession up in the local BLAST databases (swissprot, then nr).
+
+    Returns None if absent everywhere or if lookup itself fails — absence from
+    the local DBs is not "no sequence", it just defers to REST.
+    Coverage evidence (397-sample, v3.143-b13 image): 6,975/6,975 distinct
+    UniProt accessions resolve from the swissprot DB alone.
+    """
+    for db in (_SWISSPROT_DB, _NR_DB):
+        try:
+            out = subprocess.run(
+                [_BLASTDBCMD, "-db", db, "-entry", accession, "-outfmt", "%s"],
+                capture_output=True, text=True, timeout=15,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.debug(f"blastdbcmd {db} {accession} lookup failed: {exc}")
+            continue
+        if out.returncode == 0:
+            seq = "".join(out.stdout.split())
+            if seq:
+                return seq
+    return None
 
 
 class SequenceSignatureFetcher(SignatureFetcher):
@@ -49,6 +119,8 @@ class SequenceSignatureFetcher(SignatureFetcher):
             else:
                 logger.warning(f"Unknown sequence ident_type: {ident_type}")
                 return None
+        except TransientFetchError:
+            raise
         except Exception as e:
             logger.warning(f"SequenceSignatureFetcher fetch failed for {identifier}: {e}")
             return None
@@ -136,18 +208,57 @@ class SequenceSignatureFetcher(SignatureFetcher):
             return None
     
     def _fetch_uniprot(self, uniprot_id: str) -> str | None:
-        """Fetch sequence from UniProt."""
+        """Fetch sequence from UniProt (local BLAST DBs first, then REST).
+
+        Order: pod-local sequence cache (successes only) → blastdbcmd against
+        swissprot/nr → rest.uniprot.org with retry+backoff. Raises
+        TransientFetchError after exhausted 5xx/timeout retries so no None
+        reaches the run memo for a transient outage; a definitive 404/empty
+        FASTA returns None (memozable miss).
+        """
+        acc = uniprot_id.strip()
+        cached = _seqcache_read(acc)
+        if cached:
+            return cached
+        seq = _blastdbcmd_sequence(acc)
+        if seq:
+            logger.debug(f"UniProt {acc} FASTA local-db hit")
+            _seqcache_write(acc, seq)
+            return seq
         url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.fasta"
-        try:
-            r = requests.get(url, timeout=10)
-            r.raise_for_status()
+        delay = 1.0
+        for attempt in range(_REST_TRIES):
+            try:
+                r = requests.get(url, timeout=_REST_TIMEOUT_S)
+            except requests.RequestException as e:
+                if attempt < _REST_TRIES - 1:
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                logger.warning(f"UniProt {uniprot_id} fetch FASTA failed: {e}")
+                raise TransientFetchError(f"UniProt {acc}: {e}") from e
+            transient = r.status_code >= 500 or r.status_code == 429
+            if transient and attempt < _REST_TRIES - 1:
+                time.sleep(delay)
+                delay *= 2
+                continue
+            if transient:
+                # reviewer fix (c13 re-check): EVERY 5xx and 429 is
+                # transient - a 504 must never be memoized as a definitive
+                # None miss.
+                logger.warning(f"UniProt {uniprot_id} fetch FASTA failed: HTTP {r.status_code}")
+                raise TransientFetchError(f"UniProt {acc}: HTTP {r.status_code}")
+            if r.status_code != 200:
+                # definitive miss (404) or other non-retryable status
+                logger.warning(f"UniProt {uniprot_id} fetch FASTA failed: HTTP {r.status_code}")
+                return None
             lines = r.text.splitlines()
             # Skip header lines (starting with '>') and join sequence lines
             seq = ''.join(line.strip() for line in lines if not line.startswith('>'))
+            if seq:
+                _seqcache_write(acc, seq)
             return seq if seq else None
-        except Exception as e:
-            logger.warning(f"UniProt {uniprot_id} fetch FASTA failed: {e}")
-            return None
+        return None
     
     def _fetch_alphafold(self, alphafold_id: str) -> str | None:
         """Fetch sequence for an AlphaFold identifier (via UniProt).
@@ -172,6 +283,8 @@ class SequenceSignatureFetcher(SignatureFetcher):
                     return None
                 ident = parts[1]
             return self._fetch_uniprot(ident)
+        except TransientFetchError:
+            raise
         except Exception as e:
             logger.warning(f"AlphaFold {alphafold_id} fetch FASTA failed: {e}")
             return None

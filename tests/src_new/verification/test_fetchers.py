@@ -116,6 +116,7 @@ class TestSequenceFetcher:
         (9,161-row ALPHAFOLD coverage hole in calibration census, v3.142)."""
         mock_response = Mock()
         mock_response.text = ">sp|P99999|CYC_HUMAN\nMGDVEKGKKIF\n"
+        mock_response.status_code = 200
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
         fetcher = SequenceSignatureFetcher()
@@ -128,6 +129,7 @@ class TestSequenceFetcher:
         """Wrapped AF-<ACC>-F1-model_vN form extracts the UniProt accession."""
         mock_response = Mock()
         mock_response.text = ">sp|Q9NRA1|\nACDEFGHIK\n"
+        mock_response.status_code = 200
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
         fetcher = SequenceSignatureFetcher()

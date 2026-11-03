@@ -22,6 +22,16 @@ from .models import VerificationScore, AnnotationQuality
 # ---------------------------------------------------------------------------
 
 _RUN_MEMO: dict[tuple[str, str, str], str | None] = {}
+
+
+class TransientFetchError(Exception):
+    """A fetch failed transiently (5xx, timeout, connection error) after
+    retries. Unlike a definitive miss (404), this must NEVER be memoized or
+    treated as "no sequence": callers propagate it so the result is left
+    unmeasured rather than silently zeroed (corpus c13 finding: a UniProt
+    500 memoized as None zeroed the similarity term for the whole run)."""
+
+
 _MEMO_MISS = object()
 
 
