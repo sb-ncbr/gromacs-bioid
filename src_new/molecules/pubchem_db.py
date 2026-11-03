@@ -49,7 +49,9 @@ CREATE TABLE IF NOT EXISTS compounds (
     smiles       TEXT NOT NULL,
     inchikey     TEXT,
     formula_hill TEXT NOT NULL,
-    exact_mass   REAL
+    exact_mass   REAL,
+    iupac_name   TEXT,
+    has_synonyms INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -62,6 +64,13 @@ class CompoundRow(NamedTuple):
     inchikey: str | None
     formula_hill: str
     exact_mass: float | None
+    # Item-4 correction (user ruling 11-03): annotation pre-fill columns.
+    # The only signals live fetch adds over the mirror are iupac_name and
+    # synonyms; supplying them locally removes the NCBI-throttle exposure
+    # for mirror-hit rows entirely. Absent (None/False) on legacy mirrors
+    # built before the extension — the scorer live-fills those as before.
+    iupac_name: str | None = None
+    has_synonyms: bool = False
 
 
 def normalize_formula(formula: str) -> str:
@@ -160,6 +169,45 @@ def _iter_inchikeys(path: Path, after_cid: int = 0) -> Iterator[tuple[int, str]]
                 yield cid, ik
 
 
+def _iter_iupac(path: Path, after_cid: int = 0) -> Iterator[tuple[int, str]]:
+    """Yield (cid, iupac_name) from CID-IUPAC.gz (2-col, CID-ascending).
+
+    Item-4 correction (user ruling 11-03): the mirror structurally lacks
+    IUPAC names and synonyms — the only signals live fetch adds. Extending
+    the mirror from the Extras bulk files supplies them locally and
+    removes the NCBI-throttle exposure for mirror-hit rows entirely.
+    """
+    with gzip.open(path, "rt", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            parts = line.rstrip("\n").split("\t", 1)
+            if len(parts) != 2 or not parts[0].isdigit():
+                continue
+            cid = int(parts[0])
+            if cid > after_cid:
+                yield cid, parts[1].strip()
+
+
+def _iter_synonyms(path: Path, after_cid: int = 0) -> Iterator[tuple[int, bool]]:
+    """Yield (cid, has_synonym_row) from CID-Synonym-filtered.gz.
+
+    Format: one synonym per line (2-col, CID-ascending with MULTIPLE rows
+    per CID). The mirror stores only a has_synonyms FLAG (not the synonym
+    list) — the annotation scorer's 'synonyms' signal is presence-only,
+    and storing ~1.5B synonym strings would triple the DB. Rows with a
+    blank synonym column still prove the CID participated in the
+    synonym file and count as has_synonyms (defensive; the filtered file
+    has no blank rows in practice).
+    """
+    with gzip.open(path, "rt", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            parts = line.rstrip("\n").split("\t", 1)
+            if len(parts) != 2 or not parts[0].isdigit():
+                continue
+            cid = int(parts[0])
+            if cid > after_cid:
+                yield cid, True
+
+
 def _checkpoint_path(db_path: Path) -> Path:
     return db_path.with_suffix(".checkpoint.json")
 
@@ -181,6 +229,8 @@ def build(
     db_path: str | Path,
     smiles_gz: str | Path,
     inchikey_gz: str | Path,
+    iupac_gz: str | Path | None = None,
+    synonyms_gz: str | Path | None = None,
     limit: int | None = None,
     resume: bool = True,
     workers: int | None = None,
@@ -191,6 +241,11 @@ def build(
         db_path: Target SQLite file (inside a staging dir).
         smiles_gz: ``CID-SMILES.gz`` path.
         inchikey_gz: ``CID-InChI-Key.gz`` path.
+        iupac_gz: ``CID-IUPAC.gz`` path (item-4 correction 11-03: annotation
+            pre-fill — the mirror gains an ``iupac_name`` column). Optional;
+            a build without it produces the legacy 5-column schema.
+        synonyms_gz: ``CID-Synonym-filtered.gz`` path (annotation pre-fill —
+            the mirror gains a ``has_synonyms`` flag). Optional, same rule.
         limit: If set, only the first ``limit`` CIDs are imported (sample builds).
         resume: Continue from the checkpoint file when present.
         workers: RDKit derivation processes (default: min(8, cpu_count)).
@@ -201,6 +256,9 @@ def build(
     db_path = Path(db_path)
     smiles_gz = Path(smiles_gz)
     inchikey_gz = Path(inchikey_gz)
+    iupac_gz = Path(iupac_gz) if iupac_gz else None
+    synonyms_gz = Path(synonyms_gz) if synonyms_gz else None
+    with_annotations = iupac_gz is not None or synonyms_gz is not None
     started = time.time()
     workers = workers or min(8, mp.cpu_count() or 1)
 
@@ -242,6 +300,58 @@ def build(
             _advance_ik()
         return ik_val if ik_cid == cid else None
 
+    # Item-4 correction (11-03): same zip-merge for the annotation
+    # pre-fill streams (CID-ascending Extras files).
+    iup_iter = (_iter_iupac(iupac_gz, after_cid=done_upto if resume else 0)
+                if iupac_gz else None)
+    iup_cid: int | None = None
+    iup_val: str | None = None
+
+    def _advance_iup() -> None:
+        nonlocal iup_cid, iup_val
+        try:
+            iup_cid, iup_val = next(iup_iter)
+        except StopIteration:
+            iup_cid, iup_val = None, None
+
+    if iup_iter is not None:
+        _advance_iup()
+
+    def _iup_for(cid: int) -> str | None:
+        nonlocal iup_cid, iup_val
+        while iup_cid is not None and iup_cid < cid:
+            _advance_iup()
+        return iup_val if iup_cid == cid else None
+
+    syn_iter = (_iter_synonyms(synonyms_gz, after_cid=done_upto if resume else 0)
+                if synonyms_gz else None)
+    syn_cid: int | None = None
+
+    def _advance_syn() -> None:
+        nonlocal syn_cid
+        try:
+            syn_cid, _flag = next(syn_iter)
+        except StopIteration:
+            syn_cid = None
+
+    if syn_iter is not None:
+        _advance_syn()
+
+    def _has_syn_for(cid: int) -> bool:
+        nonlocal syn_cid
+        while syn_cid is not None and syn_cid < cid:
+            _advance_syn()
+        return syn_cid == cid
+
+    # Explicit column lists: the extended schema has two more columns with
+    # defaults, so a legacy-shaped insert (no annotation data) fills them
+    # with NULL/0 instead of erroring on the column count.
+    insert_sql = (
+        "INSERT OR REPLACE INTO compounds "
+        "(cid, smiles, inchikey, formula_hill, exact_mass"
+        + (", iupac_name, has_synonyms" if with_annotations else "")
+        + ") VALUES (?,?,?,?,?" + (",?,?" if with_annotations else "") + ")")
+
     conn = sqlite3.connect(db_path)
     if fresh:
         conn.executescript(SCHEMA)
@@ -251,6 +361,8 @@ def build(
 
     parse_failures = 0
     ik_matched = [0]
+    iup_matched = [0]
+    syn_flagged = [0]
     total_in = 0
     batch_cids: list[int] = []
     batch_smiles: list[str] = []
@@ -264,8 +376,15 @@ def build(
                 parse_failures += 0 if parsed else 1
                 ik = _ik_for(cid)
                 ik_matched[0] += 1 if ik else 0
-                rows.append((cid, smi, ik, formula, mass))
-        conn.executemany("INSERT OR REPLACE INTO compounds VALUES (?,?,?,?,?)", rows)
+                row = (cid, smi, ik, formula, mass)
+                if with_annotations:
+                    iup = _iup_for(cid)
+                    iup_matched[0] += 1 if iup else 0
+                    has_syn = _has_syn_for(cid)
+                    syn_flagged[0] += 1 if has_syn else 0
+                    row = row + (iup, 1 if has_syn else 0)
+                rows.append(row)
+        conn.executemany(insert_sql, rows)
         conn.commit()
         rows_written += len(rows)
         done_upto = rows[-1][0]
@@ -324,6 +443,8 @@ def build(
         "rows_written": rows_written,
         "smiles_parse_failures": parse_failures,
         "inchikey_matched": ik_matched[0],
+        "iupac_matched": iup_matched[0] if with_annotations else None,
+        "synonyms_flagged": syn_flagged[0] if with_annotations else None,
         "limit": limit,
         "done_upto_cid": done_upto,
         "elapsed_s": round(time.time() - started, 1),
@@ -349,12 +470,32 @@ class PubChemDB:
     def __init__(self, db_path: str | Path) -> None:
         self._db_path = Path(db_path)
         self._conn: sqlite3.Connection | None = None
+        # Item-4 correction (11-03): annotation pre-fill columns
+        # (iupac_name, has_synonyms) — resolved lazily because the DB may
+        # not exist yet at construction; legacy mirrors degrade to NULL/0.
+        self._ann_select: str | None = None
         # One shared read-only connection per instance; a lock serializes
         # queries so a single instance is safe across `threads` celery pools
         # (sqlite rejects cross-thread cursors otherwise). Queries are
         # sub-millisecond, so contention is invisible. check_same_thread=False
         # is safe precisely because the lock exists.
         self._lock = threading.Lock()
+
+    def _sel(self) -> str:
+        """SELECT suffix for the annotation pre-fill columns. Legacy mirrors
+        (built before the 11-03 extension) lack the columns and degrade to
+        NULL/0 — readers then live-fill as before."""
+        if self._ann_select is None:
+            try:
+                cols = {r[1] for r in self._query(
+                    "PRAGMA table_info(compounds)", ())}
+                self._ann_select = (
+                    ", iupac_name, has_synonyms"
+                    if {"iupac_name", "has_synonyms"} <= cols
+                    else ", NULL AS iupac_name, 0 AS has_synonyms")
+            except sqlite3.Error:
+                return ""  # DB not openable yet: legacy column set
+        return self._ann_select
 
     def _get_conn(self) -> sqlite3.Connection:
         if self._conn is None:
@@ -377,13 +518,19 @@ class PubChemDB:
 
     @staticmethod
     def _to_row(raw: tuple) -> CompoundRow:
+        # 5-tuple = legacy mirror (no annotation columns); 7-tuple =
+        # extended mirror (item-4 correction 11-03).
+        iupac = raw[5] if len(raw) > 5 else None
+        has_syn = bool(raw[6]) if len(raw) > 6 else False
         return CompoundRow(cid=raw[0], smiles=raw[1], inchikey=raw[2],
-                           formula_hill=raw[3], exact_mass=raw[4])
+                           formula_hill=raw[3], exact_mass=raw[4],
+                           iupac_name=iupac, has_synonyms=has_syn)
 
     def by_cid(self, cid: int | str) -> CompoundRow | None:
         """Look up a compound by PubChem CID."""
         raw = self._query(
-            "SELECT cid, smiles, inchikey, formula_hill, exact_mass FROM compounds WHERE cid=?",
+            f"SELECT cid, smiles, inchikey, formula_hill, "
+            f"exact_mass{self._sel()} FROM compounds WHERE cid=?",
             (int(cid),),
         )
         return self._to_row(raw[0]) if raw else None
@@ -406,7 +553,8 @@ class PubChemDB:
             chunk = ids[i:i + chunk_size]
             placeholders = ",".join("?" * len(chunk))
             raw = self._query(
-                "SELECT cid, smiles, inchikey, formula_hill, exact_mass "
+                f"SELECT cid, smiles, inchikey, formula_hill, "
+                f"exact_mass{self._sel()} "
                 f"FROM compounds WHERE cid IN ({placeholders})",
                 tuple(chunk))
             for r in raw:
@@ -427,7 +575,8 @@ class PubChemDB:
         if not block:
             return None
         raw = self._query(
-            "SELECT cid, smiles, inchikey, formula_hill, exact_mass FROM compounds "
+            f"SELECT cid, smiles, inchikey, formula_hill, "
+            f"exact_mass{self._sel()} FROM compounds "
             "WHERE inchikey >= ? AND inchikey < ? ORDER BY inchikey, cid LIMIT 1",
             (block, block + chr(0x7F)),
         )
@@ -436,7 +585,8 @@ class PubChemDB:
     def by_inchikey(self, inchikey: str) -> CompoundRow | None:
         """Look up a compound by full InChIKey (lowest-CID row on duplicates)."""
         raw = self._query(
-            "SELECT cid, smiles, inchikey, formula_hill, exact_mass FROM compounds WHERE inchikey=?",
+            f"SELECT cid, smiles, inchikey, formula_hill, "
+            f"exact_mass{self._sel()} FROM compounds WHERE inchikey=?",
             (inchikey.strip(),),
         )
         return self._to_row(raw[0]) if raw else None

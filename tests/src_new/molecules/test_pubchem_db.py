@@ -176,3 +176,126 @@ class TestThreadSafety:
             t.join()
         assert not errors
         assert results and all(results)
+
+
+class TestAnnotationPrefill:
+    """Item-4 correction (user ruling 11-03): the mirror gains iupac_name
+    (CID-IUPAC.gz) and a has_synonyms flag (CID-Synonym-filtered.gz) — the
+    pre-fill that removes the NCBI-throttle exposure for mirror-hit
+    annotation rows (the only signals live fetch existed for)."""
+
+    @pytest.fixture()
+    def ann_db(self, tmp_path: Path) -> Path:
+        smiles_gz = tmp_path / "CID-SMILES.gz"
+        ik_gz = tmp_path / "CID-InChI-Key.gz"
+        iup_gz = tmp_path / "CID-IUPAC.gz"
+        syn_gz = tmp_path / "CID-Synonym-filtered.gz"
+        _write_gz(smiles_gz, [f"{cid}\t{smi}" for cid, smi, _ in _ROWS])
+        _write_gz(
+            ik_gz,
+            [f"{cid}\t{_IK_FAKE_INCHI}\t{ik}" for cid, _, ik in _ROWS if ik],
+        )
+        # IUPAC names for cids 2 and 3 only (gap coverage for the rest)
+        _write_gz(iup_gz, ["2\tethanol", "3\tacetylsalicylic acid"])
+        # synonyms: MULTIPLE rows per cid (2 has two); extra cid=99 ignored
+        _write_gz(syn_gz, [
+            "2\tdrinking alcohol", "2\talcohol", "3\taspirin",
+            "5\thydroxyethane", "99\tignored",
+        ])
+        db_path = tmp_path / "pubchem.sqlite"
+        stats = build(db_path, smiles_gz, ik_gz, iupac_gz=iup_gz,
+                      synonyms_gz=syn_gz, workers=1)
+        assert stats["rows_written"] == len(_ROWS)
+        assert stats["iupac_matched"] == 2
+        assert stats["synonyms_flagged"] == 3
+        return db_path
+
+    def test_rows_carry_annotation_columns(self, ann_db: Path) -> None:
+        db = PubChemDB(ann_db)
+        r2 = db.by_cid(2)
+        assert r2.iupac_name == "ethanol"
+        assert r2.has_synonyms is True
+        r3 = db.by_cid(3)
+        assert r3.iupac_name == "acetylsalicylic acid"
+        assert r3.has_synonyms is True
+        r5 = db.by_cid(5)
+        assert r5.iupac_name is None      # no IUPAC row in the file
+        assert r5.has_synonyms is True    # but synonyms flag set
+        r1 = db.by_cid(1)
+        assert r1.iupac_name is None
+        assert r1.has_synonyms is False
+
+    def test_by_inchikey_carries_annotations(self, ann_db: Path) -> None:
+        db = PubChemDB(ann_db)
+        row = db.by_inchikey("LFQSCWFLJHTTHZ-UHFFFAOYSA-N")
+        assert row is not None
+        assert row.iupac_name == "ethanol"
+        assert row.has_synonyms is True
+
+    def test_by_cids_carries_annotations(self, ann_db: Path) -> None:
+        db = PubChemDB(ann_db)
+        rows = db.by_cids(["2", "3", "999999"])
+        assert set(rows) == {"2", "3"}
+        assert rows["2"].iupac_name == "ethanol"
+
+    def test_build_without_annotation_files_is_legacy(
+            self, sample_db: Path) -> None:
+        """A build with no CID-IUPAC/CID-Synonym paths yields NULL/False
+        annotation fields (schema present, values absent)."""
+        db = PubChemDB(sample_db)
+        row = db.by_cid(2)
+        assert row.smiles == "CCO"
+        assert row.iupac_name is None
+        assert row.has_synonyms is False
+
+    def test_true_legacy_schema_degrades(self, tmp_path: Path) -> None:
+        """A mirror file built before the extension (5-column schema, no
+        annotation columns) still reads: NULL/0 via the PRAGMA fallback."""
+        import sqlite3
+
+        p = tmp_path / "pubchem.sqlite"
+        conn = sqlite3.connect(p)
+        conn.executescript("""
+            CREATE TABLE compounds (
+                cid          INTEGER PRIMARY KEY,
+                smiles       TEXT NOT NULL,
+                inchikey     TEXT,
+                formula_hill TEXT NOT NULL,
+                exact_mass   REAL
+            );
+        """)
+        conn.execute(
+            "INSERT INTO compounds VALUES (2,'CCO',"
+            "'LFQSCWFLJHTTHZ-UHFFFAOYSA-N','C2H6O',46.07)")
+        conn.commit()
+        conn.close()
+        db = PubChemDB(p)
+        row = db.by_cid(2)
+        assert row is not None
+        assert row.smiles == "CCO"
+        assert row.iupac_name is None
+        assert row.has_synonyms is False
+        by_ik = db.by_inchikey("LFQSCWFLJHTTHZ-UHFFFAOYSA-N")
+        assert by_ik is not None and by_ik.cid == 2
+        assert by_ik.has_synonyms is False
+
+    def test_scorer_full_schema_without_live_calls(
+            self, ann_db: Path, monkeypatch) -> None:
+        """The item-4 pre-fill contract: a mirror-hit row with iupac_name +
+        has_synonyms scores the FULL schema (100) with ZERO live calls —
+        zero budget armed, so any live call would return None."""
+        from src_new.verification.scorers import pubchem_scorer as mod
+        from src_new.verification.scorers.pubchem_scorer import (
+            PubChemAnnotationScorer,
+        )
+
+        db = PubChemDB(ann_db)
+        monkeypatch.setattr(mod, "_local_db", lambda: db)
+        scorer = PubChemAnnotationScorer()
+        scorer.begin_segment(0)  # zero budget: live calls impossible
+        quality = scorer.score("2", "PUBCHEM_CID")
+        assert quality is not None
+        assert quality.score == 100.0
+        assert set(quality.signals) == {
+            "canonical_smiles", "isomeric_smiles", "molecular_formula",
+            "iupac_name", "synonyms"}

@@ -29,9 +29,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 BASE_URL = "https://ftp.ncbi.nlm.nih.gov/pubchem/Compound/Extras"
 
 # Ordered manifest: (filename, required). Sizes recorded at populate time.
+# Item-4 correction (user ruling 11-03): CID-IUPAC + CID-Synonym-filtered
+# extend the mirror with the two signals live fetch existed for
+# (iupac_name, has_synonyms) — the pre-fill that removes the NCBI-throttle
+# exposure for mirror-hit annotation rows.
 MANIFEST: list[tuple[str, bool]] = [
     ("CID-SMILES.gz", True),
     ("CID-InChI-Key.gz", True),
+    ("CID-IUPAC.gz", True),
+    ("CID-Synonym-filtered.gz", True),
 ]
 
 USER_AGENT = "bat3-pubchem-mirror/1.0 (local research mirror; contact: bat3 admin)"
@@ -303,6 +309,8 @@ def main(argv: list[str] | None = None) -> int:
         db_path=staging_dir / "pubchem.sqlite",
         smiles_gz=raw_dir / "CID-SMILES.gz",
         inchikey_gz=raw_dir / "CID-InChI-Key.gz",
+        iupac_gz=raw_dir / "CID-IUPAC.gz",
+        synonyms_gz=raw_dir / "CID-Synonym-filtered.gz",
         limit=args.limit,
     )
     metadata["build"] = build_stats

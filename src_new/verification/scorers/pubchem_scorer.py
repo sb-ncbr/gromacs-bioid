@@ -143,7 +143,10 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
     (v3.142 1c) Uniform signal schema — total 100 — applied identically
     regardless of store: base 20 + canonical_smiles 20 + isomeric_smiles 15
     + molecular_formula 15 + iupac_name 15 + synonyms 15. The local mirror
-    structurally supplies the first four (no IUPAC/synonyms by design).
+    structurally supplies the first four; the item-4 extension (11-03,
+    CID-IUPAC.gz + CID-Synonym-filtered.gz) additionally supplies
+    iupac_name/synonyms locally on extended mirrors — legacy mirrors
+    live-fill those two as before.
 
     (W3.3 item 2, user directive 2026-11-01 — supersedes the "floor is not
     a cap" note) Determinism contract for the same identifier across runs:
@@ -312,6 +315,16 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
                     signals.append("isomeric_smiles")
                 if row.formula_hill:
                     signals.append("molecular_formula")
+                # Item-4 correction (user ruling 11-03): the extended mirror
+                # (CID-IUPAC.gz + CID-Synonym-filtered.gz) supplies the two
+                # signals live fetch existed for — locally, ~1ms, immune to
+                # NCBI throttling. Legacy mirrors return None/False here and
+                # the live fill below runs as before. getattr keeps duck-typed
+                # row stubs (and any pre-extension row object) working.
+                if getattr(row, "iupac_name", None):
+                    signals.append("iupac_name")
+                if getattr(row, "has_synonyms", False):
+                    signals.append("synonyms")
                 # W3.3 item 2 (determinism): with live fetch enabled the
                 # reachable score is the FULL schema — an incomplete fill
                 # (network failure / rate limit / budget exhausted) is
