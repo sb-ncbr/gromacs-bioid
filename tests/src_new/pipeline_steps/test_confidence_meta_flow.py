@@ -71,7 +71,8 @@ def test_unnormalized_weights_flow_through_ini_and_are_normalized_at_use(tmp_pat
     assert meta is not None
     assert meta["weights_raw"] == [0.5, 0.5, 0.5]
     assert all(abs(w - 1.0 / 3.0) < 1e-12 for w in meta["weights_effective"])
-    assert meta["confidence_formula_version"].startswith("v3.143")
+    assert meta["confidence_formula_version"].startswith("v3.144"), \
+        "c13 fix F3 bumped the blend semantics (unmeasured similarity re-weights)"
     assert meta["belief_constants"]["rho"] == 0.5
     assert abs(meta["belief_constants"]["kappa"] - 1.0 / 3.0) < 1e-12
 

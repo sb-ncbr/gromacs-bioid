@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from ..config.loader import RunConfig
     from ..results.results_manager import ResultsManager
 
-from .base import VerificationWorker, SignatureFetcher, AnnotationQualityScorer
+from .base import VerificationWorker, SignatureFetcher, AnnotationQualityScorer, TransientFetchError
 from .dedup import RawHit, collect_hits, deduplicate_and_score, BELIEF_RHO, BELIEF_KAPPA
 from .fetchers.compound_fetcher import resolve_cids_offline
 from .models import VerifiedHit, VerificationScore, AnnotationQuality, similarity_meets_floor
@@ -100,7 +100,7 @@ def _equivalence_class_id(ident_type: str, identifier: str,
 # v3.143.1 (W3.3 item 2): annotation scorers return None (UNKNOWN) on
 # remote-fetch failure / budget-incompleteness instead of degraded real
 # scores (85-floors / 0.0); None re-weights the blend over measured terms.
-CONFIDENCE_FORMULA_VERSION = "v3.143.1"
+CONFIDENCE_FORMULA_VERSION = "v3.144.0"
 
 
 def normalize_weights(w_resolver: float, w_similarity: float,
@@ -595,29 +595,29 @@ def _compose_confidence(
     w_similarity: float,
     w_annotation: float,
     resolver_component: float,
-    similarity_component: float,
+    similarity_component: float | None,
     annotation_component: float | None,
 ) -> float:
     """Weighted confidence composition.
 
-    None annotation_component means UNKNOWN (fetch/parse failure) and must
-    never act as a zero: the formula re-weights over the terms that are
-    actually measured (red-team wave-2, item 1c). A real zero score stays a
-    real zero and keeps the annotation weight.
+    A None term means UNKNOWN (unmeasured: no worker, fetch/parse failure)
+    and must never act as a zero: the formula re-weights over the terms that
+    are actually measured (red-team wave-2, item 1c for annotation; corpus c13
+    fix F3 for similarity — a UniProt 5xx must not zero the similarity term).
+    A real zero score stays a real zero and keeps its weight. Weights are
+    pre-normalized (sum == 1), so with all terms measured num/den == num.
     """
+    num = w_resolver * resolver_component
+    den = w_resolver
+    if similarity_component is not None:
+        num += w_similarity * similarity_component
+        den += w_similarity
     if annotation_component is not None:
-        return (
-            w_resolver * resolver_component
-            + w_similarity * similarity_component
-            + w_annotation * annotation_component
-        )
-    present = w_resolver + w_similarity
-    if present <= 0:
+        num += w_annotation * annotation_component
+        den += w_annotation
+    if den <= 0:
         return 0.0
-    return (
-        w_resolver * resolver_component
-        + w_similarity * similarity_component
-    ) / present
+    return num / den
 
 
 def _persist_ann_scorer_errors(results, errors: dict) -> None:
@@ -829,9 +829,15 @@ class VerificationManager:
                 # structure fetcher, not the sequence one).
                 fetcher = self._registry.get_fetcher(ident_type, signature_type=signature_type)
                 canonical_signature: str | None = None
+                saw_transient = {"v": False}
                 if fetcher:
                     try:
                         canonical_signature = fetcher.fetch(normalized_id, ident_type)
+                    except TransientFetchError:
+                        # transient fetch outage (5xx/timeout): canonical is
+                        # UNMEASURED, not absent — flagged below so a dead
+                        # UniProt endpoint never reads as "no such sequence".
+                        saw_transient["v"] = True
                     except Exception:
                         # Fetch failed, but we continue
                         pass
@@ -876,6 +882,12 @@ class VerificationManager:
                         if f:
                             try:
                                 c = f.fetch(normalized_id, ident_type)
+                            except TransientFetchError:
+                                # transient fetch outage (5xx/timeout): leave
+                                # canonical unmeasured, flag for the
+                                # similarity_unmeasured rejection label — do
+                                # NOT let a 500 pose as "no canonical exists".
+                                saw_transient["v"] = True
                             except Exception:
                                 pass
                         _canonical_cache[st] = c
@@ -896,6 +908,9 @@ class VerificationManager:
                             score = worker.verify(
                                 sig_c, normalized_id, ident_type,
                                 canon_c, signature_type=st_c)
+                        except TransientFetchError:
+                            saw_transient["v"] = True
+                            continue
                         except Exception:
                             # Worker failed, try next one
                             continue
@@ -935,7 +950,15 @@ class VerificationManager:
                                 break
                 
                 if similarity_score is None:
-                    rejection_reason = "verification_failed" if saw_workers else "no_worker"
+                    if saw_transient["v"]:
+                        # c13 fix (F3): a transient fetch outage (5xx/timeout)
+                        # left the term UNMEASURED — distinct from a measured
+                        # failure ("verification_failed"): the blend re-weights
+                        # instead of zeroing, and non-identity hits carry this
+                        # explicit label.
+                        rejection_reason = "similarity_unmeasured"
+                    else:
+                        rejection_reason = "verification_failed" if saw_workers else "no_worker"
                 
                 
                 # Look up AnnotationQualityScorer (v3.142: honor the
@@ -991,6 +1014,14 @@ class VerificationManager:
                     similarity_component = similarity_score.normalized_score
                 elif ident_type in CHEMICAL_IDENT_TYPES and skeleton_sim is not None:
                     similarity_component = skeleton_sim * 100.0
+                elif saw_transient["v"]:
+                    # c13 fix (F3, reviewer-narrowed): the term is
+                    # UNMEASURED only for a transient outage - the blend
+                    # re-weights over the measured terms like the annotation
+                    # term. A DEFINITIVE failure (404/obsolete accession) or
+                    # no_worker keeps the pre-F3 0.0: re-weighting those
+                    # would raise identity hits on dead accessions.
+                    similarity_component = None
                 else:
                     similarity_component = 0.0
                 annotation_component = (
