@@ -116,3 +116,72 @@ def test_verify_stage_clears_the_memo(tmp_path):
     _verify_results(_Ctx(rm, cfg))
     assert base_mod.run_memo_get(("StaleFetcher", "INCHIKEY", "STALE")) \
         is base_mod._MEMO_MISS, "verify_results did not start with a clean memo"
+
+
+
+def test_negative_result_is_memoized():
+    f = _fetcher(None)
+    assert f.fetch("MISSING", "UNIPROT_ID") is None
+    assert f.fetch("MISSING", "UNIPROT_ID") is None
+    assert f.calls == 1, "a definitive miss must be memoizable (200/404 only)"
+
+
+def test_transient_error_never_memoized():
+    import threading
+    from src_new.verification.base import TransientFetchError
+
+    class F(SignatureFetcher):
+        def __init__(self):
+            self.calls = 0
+
+        def supports(self, ident_type):
+            return True
+
+        @memoized_fetch
+        def fetch(self, identifier, ident_type):
+            self.calls += 1
+            raise TransientFetchError("HTTP 500")
+
+    f = F()
+    for _ in range(2):
+        with pytest.raises(TransientFetchError):
+            f.fetch("P06802", "UNIPROT_ID")
+    assert f.calls == 2, "a 5xx/timeout propagated past the memo — it must never be cached"
+
+
+def test_concurrent_runs_no_cross_reads_clear_is_scoped():
+    """Two 'runs' on two threads (celery pool model): neither reads the
+    other's memo, and clear_run_memo() in one does not wipe the other's."""
+    import threading
+
+    f = _fetcher("SEQ")
+    bar = threading.Barrier(2)
+    deltas = {}
+
+    def worker(name):
+        clear_run_memo()
+        before = f.calls
+        f.fetch("K1", "UNIPROT_ID")          # both threads cache K1 independently
+        bar.wait()
+        before_cross = f.calls
+        f.fetch("K2" if name == "a" else "K3", "UNIPROT_ID")
+        deltas[(name, "own")] = f.calls - before_cross
+        bar.wait()
+        before_other = f.calls
+        f.fetch("K2" if name == "b" else "K3", "UNIPROT_ID")  # other thread's key
+        deltas[(name, "cross")] = f.calls - before_other
+        bar.wait()
+        if name == "b":
+            clear_run_memo()                  # b wipes ONLY its own memo
+        bar.wait()
+        before_clear = f.calls
+        f.fetch("K1", "UNIPROT_ID")
+        deltas[(name, "after_clear")] = f.calls - before_clear
+
+    ta = threading.Thread(target=worker, args=("a",))
+    tb = threading.Thread(target=worker, args=("b",))
+    ta.start(); tb.start(); ta.join(); tb.join()
+
+    assert deltas[("a", "cross")] == 1, "thread a must not read thread b's K2"
+    assert deltas[("a", "after_clear")] == 0, "b's clear must not wipe a's memo"
+    assert deltas[("b", "after_clear")] == 1, "b's own memo was cleared by its clear()"

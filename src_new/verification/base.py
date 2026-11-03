@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import threading
 from abc import ABC, abstractmethod
 
 from .models import VerificationScore, AnnotationQuality
@@ -16,12 +17,39 @@ from .models import VerificationScore, AnnotationQuality
 # times, ~5 min per attempt on the firewalled workstation — once per segment
 # that mentioned it, because each segment's verify worker builds a fresh
 # VerificationManager over fresh fetcher instances. Memoize fetch results
-# (INCLUDING negative results: an unresolvable key stays unresolvable within
-# the run) per (fetcher class, ident type, identifier) for the lifetime of
-# one run; clear_run_memo() is called at each verify_results stage start.
+# per (fetcher class, ident type, identifier) for the lifetime of one run;
+# clear_run_memo() is called at each verify_results stage start.
+#
+# c13 corpus fix (F1b): the memo is THREAD-LOCAL, not a module global. Celery
+# runs one task per worker thread and the verify stage spawns a fresh pool
+# per run (executor.parallel.run_with_thread_pool), so a thread-local dict
+# is per-run by construction: concurrent runs in one process neither read
+# each other's memo nor wipe it via clear(). Negative results ARE cached,
+# but only definitive ones: callers raise TransientFetchError for 5xx/
+# timeouts, which propagates past run_memo_put below (never cached).
 # ---------------------------------------------------------------------------
 
-_RUN_MEMO: dict[tuple[str, str, str], str | None] = {}
+_RUN_MEMO_LOCAL = threading.local()
+
+
+def _run_memo_dict() -> dict:
+    d = getattr(_RUN_MEMO_LOCAL, "d", None)
+    if d is None:
+        d = {}
+        _RUN_MEMO_LOCAL.d = d
+    return d
+
+
+def run_memo_get(key: tuple) -> object:
+    return _run_memo_dict().get(key, _MEMO_MISS)
+
+
+def run_memo_put(key: tuple, value: str | None) -> None:
+    _run_memo_dict()[key] = value
+
+
+def clear_run_memo() -> None:
+    _run_memo_dict().clear()
 
 
 class TransientFetchError(Exception):
@@ -33,18 +61,6 @@ class TransientFetchError(Exception):
 
 
 _MEMO_MISS = object()
-
-
-def run_memo_get(key: tuple) -> object:
-    return _RUN_MEMO.get(key, _MEMO_MISS)
-
-
-def run_memo_put(key: tuple, value: str | None) -> None:
-    _RUN_MEMO[key] = value
-
-
-def clear_run_memo() -> None:
-    _RUN_MEMO.clear()
 
 
 def memoized_fetch(fetch_method):
