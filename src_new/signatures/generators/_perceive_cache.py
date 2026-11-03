@@ -279,12 +279,21 @@ def determine_bond_orders_safely(mol, net_charge: int = 0,
     # perfect (ms, no enumeration); orders/charges copy back, capped O's
     # restored to -1. Skipped via BAT3_DBO_NO_CAP=1 (tests/rollback).
     if os.environ.get("BAT3_DBO_NO_CAP", "0") != "1":
-        q_used = _dbo_capped_carboxylate(mol, net_charge=net_charge)
-        if q_used is not None:
+        # item 3: the capped single-shot runs in the killable worker —
+        # never in-process (see _dbo_capped_carboxylate_subprocess).
+        status, q_used = _dbo_capped_carboxylate_subprocess(
+            mol, net_charge=net_charge)
+        if status == "ok":
             logger.debug(
                 "bond orders perceived via carboxylate-capped single-shot "
                 "at charge %d (BH-049 fast path)", q_used)
             return True
+        if status == "timeout":
+            return False  # uninterruptible class: the ladder would only
+            # burn more budget on the same molecule — continue without
+            # bond orders (similarity-tier chemistry, as on every DBO
+            # budget miss)
+        # "na": not applicable / failed -> historical ladder path
     # W3 A5 (BH-049) Fix C: the whole ladder in a hard-killed subprocess
     # with ONE shared budget. SIGALRM cannot interrupt RDKit C++ (M13 spun
     # >20 min inside DetermineBondOrders); a killable child can.
@@ -355,10 +364,17 @@ while True:
     if payload is None:
         break
     try:
-        blob, q = pickle.loads(payload)
+        req = pickle.loads(payload)
+        # item 3: 3-tuple requests carry a mode; legacy 2-tuples (stale
+        # worker from a pre-fix parent) fall back to the ladder.
+        blob, q, mode = (req + ("ladder",))[:3] if len(req) == 2 else req
         mol = Chem.Mol(blob)
-        ok = m._dbo_ladder_core(mol, q)
-        out = pickle.dumps((True, bool(ok),
+        if mode == "capped":
+            q_used, out = m._dbo_capped_core(mol, q)
+            out = pickle.dumps((True, q_used, out))
+        else:
+            ok = m._dbo_ladder_core(mol, q)
+            out = pickle.dumps((True, bool(ok),
                              mol.ToBinary() if ok else None))
     except Exception as exc:
         out = pickle.dumps((False, str(exc), None))
@@ -502,11 +518,18 @@ class _DboWorkerProcess:
                 pass
 
     def call(self, mol_binary: bytes, net_charge: int,
-             budget: float):
+             budget: float, mode: str = "ladder"):
         """One framed request/response round trip.
+
+        mode: "ladder" (historical charge ladder via _dbo_ladder_core) or
+        "capped" (item-3: the carboxylate-capped single-shot via
+        _dbo_capped_core — its DetermineBondOrders call is RDKit C++ and
+        can spin for hours in-process; the killable child is the only
+        protection that works).
+
         Returns (ran, ok, blob) or None on timeout/death (the caller
         respawns via the accessor on the next request)."""
-        payload = pickle.dumps((mol_binary, int(net_charge)))
+        payload = pickle.dumps((mol_binary, int(net_charge), str(mode)))
         reply: dict = {}
 
         def _reader():
@@ -591,6 +614,19 @@ def _reset_dbo_worker():
                 pass
 
 
+def _overlay_solved(mol, solved) -> None:
+    """Copy perceived bond orders/charges from a solved copy back onto
+    mol (shared by the ladder and capped subprocess wrappers)."""
+    for b in mol.GetBonds():
+        sb = solved.GetBondBetweenAtoms(b.GetBeginAtomIdx(),
+                                        b.GetEndAtomIdx())
+        b.SetBondType(sb.GetBondType())
+    for a in mol.GetAtoms():
+        sa = solved.GetAtomWithIdx(a.GetIdx())
+        a.SetFormalCharge(sa.GetFormalCharge())
+        a.SetNoImplicit(True)
+
+
 def _dbo_ladder_subprocess(mol, net_charge: int) -> bool:
     """W3.1 item 8 (A5): run the charge ladder in the PERSISTENT worker
     interpreter with a per-request budget (_dbo_budget_s: 300 s base /
@@ -630,14 +666,7 @@ def _dbo_ladder_subprocess(mol, net_charge: int) -> bool:
     if not accepted or not blob:
         return False
     solved = Chem.Mol(blob)
-    for b in mol.GetBonds():
-        sb = solved.GetBondBetweenAtoms(b.GetBeginAtomIdx(),
-                                        b.GetEndAtomIdx())
-        b.SetBondType(sb.GetBondType())
-    for a in mol.GetAtoms():
-        sa = solved.GetAtomWithIdx(a.GetIdx())
-        a.SetFormalCharge(sa.GetFormalCharge())
-        a.SetNoImplicit(True)
+    _overlay_solved(mol, solved)
     return True
 
 
@@ -744,6 +773,71 @@ def _dbo_capped_carboxylate(mol, net_charge: int = 0):
         _reset_to_single_bonds(mol)  # never hand back a half-rewritten mol
         return None
     return q
+
+
+def _dbo_capped_core(mol, net_charge: int):
+    """Child-interpreter body for the capped single-shot (item 3): run
+    the historical _dbo_capped_carboxylate on a PRIVATE copy and return
+    (q_used, solved_binary) — or (None, None) when not applicable/failed.
+    Never mutates the parent's mol: the parent overlays on success only,
+    so a kill leaves the all-single pre-state."""
+    work = Chem.Mol(mol)
+    q_used = _dbo_capped_carboxylate(work, net_charge)
+    if q_used is None:
+        return None, None
+    return q_used, work.ToBinary()
+
+
+def _dbo_capped_carboxylate_subprocess(mol, net_charge: int = 0):
+    """Item 3 (c13 corpus): the carboxylate-capped single-shot's
+    DetermineBondOrders call runs IN THE KILLABLE WORKER, never
+    in-process.
+
+    Offline repro (entry 9227, .tmp/redteam/item3_repro): the capped
+    attempt itself spun >3 h inside RDKit C++ with no cooperative
+    checkpoint — SIGALRM cannot interrupt a C++ call (the W3 A5 hazard
+    the ladder's own comment documents; Fix C protected the ladder, Fix B
+    never got the same treatment). Fleet evidence: 9227/9260 wall-killed
+    at exactly 3 h with ZERO stage-budget warnings.
+
+    Returns ("ok", q_used) when solved+overlaid, ("na", None) when not
+    applicable/failed (historical ladder still worth trying), or
+    ("timeout", None) when the budget expired (the molecule proved
+    uninterruptible-class: the ladder is skipped, we continue without
+    bond orders)."""
+    import time as _time
+    if _is_hless(mol) or not _ua_odd_carboxylate_os(mol):
+        return "na", None  # parent-side fast path: no round trip needed
+    budget = _dbo_budget_s(mol)
+    remaining = _dbo_run_remaining_s()
+    if remaining <= 0:
+        logger.warning(
+            "bond_order_run_budget_exhausted: the run-level DBO cap "
+            "(%.1fs, BAT3_BOND_ORDER_RUN_CAP_S) is spent before the "
+            "capped single-shot; continuing without bond orders",
+            _dbo_run_cap_s())
+        return "timeout", None
+    budget = min(budget, remaining)
+    t0 = _time.monotonic()
+    worker = _get_dbo_worker()
+    reply = worker.call(mol.ToBinary(), net_charge, budget, mode="capped")
+    with _dbo_run_lock:
+        key = _dbo_run_key()
+        _dbo_run_elapsed[key] = \
+            _dbo_run_elapsed.get(key, 0.0) + (_time.monotonic() - t0)
+    if reply is None:
+        logger.warning(
+            "bond_order_timeout: carboxylate-capped single-shot exceeded "
+            "the %.1fs budget; worker killed, continuing without bond "
+            "orders (ladder skipped: same uninterruptible molecule "
+            "class)", budget)
+        return "timeout", None
+    q_used, blob = reply
+    if q_used is None or not blob:
+        return "na", None
+    solved = Chem.Mol(blob)
+    _overlay_solved(mol, solved)
+    return "ok", q_used
 
 
 # --- B-10 (red-team 4.4): united-atom / H-less correction ---------------------
