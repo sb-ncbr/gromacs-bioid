@@ -298,6 +298,52 @@ def determine_bond_orders_safely(mol, net_charge: int = 0,
             "bonds for similarity-tier chemistry",
             n_heavy, max_heavy_atoms_hless)
         return False
+    # c13 D1: the smiles-class and inchi/selfies families build the SAME
+    # graph (shared atom construction + topology bonds) and each asked for
+    # bond orders. The second request re-solved from scratch — 9227 re-ran
+    # the 1800 s fall-through ladder for ~12 min after the first family had
+    # solved it, or got no bond orders at all once the run cap was spent
+    # (InChIKey computed on the all-single graph while the SMILES carried
+    # the solved chemistry). The outcome is a deterministic function of
+    # (graph, net charge), so reuse it within the run: every accepted solve
+    # reaches mol through _overlay_solved, which the reuse replays exactly.
+    # Active inside a generate_signatures stage only (set_dbo_run_id was
+    # called; the stage-start dbo_run_budget_reset clears it); direct calls
+    # outside a stage keep solving every time.
+    if _dbo_run_ctx.get() is None:
+        return _determine_bond_orders_uncached(mol, net_charge)
+    memo_key = _dbo_memo_key(mol, net_charge)
+    with _dbo_run_lock:
+        hit = _dbo_memo.get(_dbo_run_key(), {}).get(memo_key)
+    if hit is not None:
+        accepted, solved = hit
+        if accepted:
+            _overlay_solved(mol, solved)
+        logger.info(
+            "bond orders reused from this run's earlier determination of "
+            "the same %d-atom graph (accepted=%s)",
+            mol.GetNumAtoms(), accepted)
+        return accepted
+    accepted = _determine_bond_orders_uncached(mol, net_charge)
+    with _dbo_run_lock:
+        _dbo_memo.setdefault(_dbo_run_key(), {})[memo_key] = (
+            accepted, Chem.Mol(mol) if accepted else None)
+    return accepted
+
+
+def _dbo_memo_key(mol, net_charge: int) -> tuple:
+    """Input-graph identity for the D1 reuse: element, charge and explicit-H
+    count per atom in index order, the bond index pairs, the net charge."""
+    atoms = tuple((a.GetAtomicNum(), a.GetFormalCharge(), a.GetNumExplicitHs())
+                  for a in mol.GetAtoms())
+    bonds = tuple(sorted(
+        (min(b.GetBeginAtomIdx(), b.GetEndAtomIdx()),
+         max(b.GetBeginAtomIdx(), b.GetEndAtomIdx()))
+        for b in mol.GetBonds()))
+    return int(net_charge), atoms, bonds
+
+
+def _determine_bond_orders_uncached(mol, net_charge: int) -> bool:
     # W3 A5 (BH-049) Fix B: carboxylate-capped single-shot DBO BEFORE the
     # ladder. Every odd UA {C,O,O} carboxylate component gets a temporary H
     # on a copy -> every UA component even -> RDKit's first matching is
@@ -457,6 +503,9 @@ _DBO_RUN_CAP_S_DEFAULT = 240.0
 # via set_dbo_run_id; the parallel process-pool workers get theirs from
 # the config dict).
 _dbo_run_elapsed: dict[str, float] = {}
+# c13 D1: per-run bond-order outcomes keyed by input graph (same run key,
+# same reset as the budget): {run key: {graph key: (accepted, solved mol)}}
+_dbo_memo: dict[str, dict] = {}
 _dbo_run_lock = threading.Lock()
 _dbo_run_ctx: "contextvars.ContextVar" = contextvars.ContextVar(
     "dbo_run_id", default=None)
@@ -507,6 +556,7 @@ def dbo_run_budget_reset():
     own."""
     with _dbo_run_lock:
         _dbo_run_elapsed.pop(_dbo_run_key(), None)
+        _dbo_memo.pop(_dbo_run_key(), None)
 
 
 def _dbo_run_remaining_s() -> float:

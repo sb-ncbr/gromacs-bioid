@@ -20,3 +20,17 @@ def _clear_fetch_run_memo():
     clear_run_memo()
     yield
     clear_run_memo()
+
+
+@pytest.fixture(autouse=True)
+def _clear_dbo_reuse():
+    """c13 D1: bond-order reuse is per run (run id set at the
+    generate_signatures stage start, which also clears it). Tests share a
+    process, so neither a run id set by a pipeline test nor its memo may
+    leak into the next test."""
+    from src_new.signatures.generators import _perceive_cache as pc
+    pc.set_dbo_run_id(None)
+    pc._dbo_memo.clear()
+    yield
+    pc.set_dbo_run_id(None)
+    pc._dbo_memo.clear()
