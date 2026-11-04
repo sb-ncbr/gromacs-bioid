@@ -203,6 +203,20 @@ def validate_db(db_path: Path, min_rows: int) -> list[str]:
             row = conn.execute("SELECT smiles FROM compounds WHERE cid=?", (cid,)).fetchone()
             if (row is not None) != expect_smiles:
                 failures.append(f"probe CID {cid}: expected row={expect_smiles}, got {row is not None}")
+        # Annotation pre-fill: the extras files are zip-merged by CID, so a
+        # merge that silently matched nothing (unsorted file, format drift)
+        # would ship NULL/0 annotation columns under the new schema. These
+        # CIDs carry an IUPAC name and synonyms in PubChem.
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(compounds)")}
+        if {"iupac_name", "has_synonyms"} <= cols:
+            for cid in (702, 2244, 5957):
+                row = conn.execute(
+                    "SELECT iupac_name, has_synonyms FROM compounds WHERE cid=?",
+                    (cid,)).fetchone()
+                if row is None or not row[0] or not row[1]:
+                    failures.append(
+                        f"annotation probe CID {cid}: iupac_name/has_synonyms "
+                        f"missing (got {row})")
         quick = conn.execute("PRAGMA quick_check(1000)").fetchone()[0]
         if quick != "ok":
             failures.append(f"quick_check: {quick}")

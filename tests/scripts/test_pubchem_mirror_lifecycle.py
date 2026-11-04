@@ -102,3 +102,40 @@ def test_main_activate_only_missing_version_errors(tmp_path):
     rc = pm.main(["--target-dir", str(tmp_path), "--activate-only",
                   "--version-label", "v2099-01-01"])
     assert rc != 0
+
+
+def _mk_db(path, rows, annotated):
+    import sqlite3
+    conn = sqlite3.connect(path)
+    extra = ", iupac_name TEXT, has_synonyms INTEGER NOT NULL DEFAULT 0" if annotated else ""
+    conn.execute("CREATE TABLE compounds (cid INTEGER PRIMARY KEY, smiles TEXT, "
+                 f"inchikey TEXT, formula_hill TEXT, exact_mass REAL{extra})")
+    for r in rows:
+        conn.execute(f"INSERT INTO compounds VALUES ({','.join('?' * len(r))})", r)
+    conn.commit()
+    conn.close()
+
+
+def test_validate_accepts_annotated_probes(tmp_path):
+    db = tmp_path / "pubchem.sqlite"
+    _mk_db(db, [(702, "CCO", None, None, None, "ethanol", 1),
+                (2244, "CC(=O)OC1=CC=CC=C1C(=O)O", None, None, None, "2-acetyloxybenzoic acid", 1),
+                (5957, "C", None, None, None, "ATP-ish", 1)], annotated=True)
+    assert pm.validate_db(db, min_rows=3) == []
+
+
+def test_validate_rejects_empty_annotation_merge(tmp_path):
+    """Annotation schema present but the zip-merge matched nothing."""
+    db = tmp_path / "pubchem.sqlite"
+    _mk_db(db, [(702, "CCO", None, None, None, None, 0),
+                (2244, "CC(=O)OC1=CC=CC=C1C(=O)O", None, None, None, None, 0),
+                (5957, "C", None, None, None, "ATP-ish", 1)], annotated=True)
+    failures = pm.validate_db(db, min_rows=3)
+    assert len(failures) == 2 and all("annotation probe" in f for f in failures)
+
+
+def test_validate_legacy_schema_skips_annotation_probes(tmp_path):
+    db = tmp_path / "pubchem.sqlite"
+    _mk_db(db, [(702, "CCO", None, None, None), (2244, "C", None, None, None),
+                (5957, "C", None, None, None)], annotated=False)
+    assert pm.validate_db(db, min_rows=3) == []
