@@ -21,13 +21,17 @@ spec:
           type: RuntimeDefault
       containers:
         - name: pubchem-mirror-build
-          image: "cerit.io/tomsko/bat3-worker:v2.38"
+          # b16 = f1012ce1c (dd694dd4e annotation extras + M1 validation probes)
+          image: "cerit.io/tomsko/bat3-validation-api@sha256:7a090106365f874b9a495c4b98a08cc8b44863f995d39a525202da066b6f847e"
           imagePullPolicy: IfNotPresent
           command:
             - python
             - /app/scripts/populate_pubchem_mirror.py
             - --target-dir
             - /app/databases/pubchem
+            # build + validate only; workers read current/ live, so activation
+            # is a separate gated --activate-only run between campaigns
+            - --defer-activate
           resources:
             requests:
               cpu: "4"
