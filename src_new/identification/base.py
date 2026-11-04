@@ -12,25 +12,22 @@ from .cache_manager import ResolverCache
 logger = logging.getLogger("identifier")
 
 def safe_tmp_dir(working_directory: str | None = None) -> str:
-    """Return a writable temporary directory.
+    """Return a writable directory for resolver temp files.
 
-    Uses working_directory only when it exists and is writable for the
-    current process; otherwise falls back to the system temp dir.
-    Run/input directories may be owned by a different uid than the worker
-    (scheduler-created NFS dirs), so resolvers must not assume writability.
+    c13 S6: never the run's input directory. Resolvers used to write their
+    query files into working_directory (the input dir) whenever it was
+    writable; a run killed mid-query left them behind, and later runs
+    loaded the stray file as the system (see input.discovery
+    _STRAY_TEMP_RE). Every deployment stages structure-search queries via
+    BAT3_ADHOC_DIR, so nothing needs these files inside the input dir.
+    working_directory is accepted for call compatibility and ignored.
     """
     import os as _os
     import tempfile as _tempfile
 
-    if working_directory and _os.path.isdir(working_directory) and _os.access(working_directory, _os.W_OK):
-        return working_directory
-    fallback = _tempfile.gettempdir()
-    if working_directory and working_directory != fallback:
-        logger.warning(
-            f"Working directory '{working_directory}' is not writable; "
-            f"using '{fallback}' for resolver temp files"
-        )
-    return fallback
+    path = _os.path.join(_tempfile.gettempdir(), "bat3_resolver_tmp")
+    _os.makedirs(path, exist_ok=True)
+    return path
 
 
 

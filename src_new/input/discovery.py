@@ -1,5 +1,22 @@
+import logging
+import re
 from pathlib import Path
 from .models import InputKind, FileRecord, InputBundle, LoadDecision
+
+logger = logging.getLogger("base")
+
+# c13 S6: resolver query files (tempfile.mkstemp: "tmp" + 8 chars) that a
+# killed run left behind in the input directory (resolvers wrote them via
+# safe_tmp_dir(working_directory) until S6). The loader's
+# _rank_pdb_candidates ranks any non-"average" PDB above MDposit's
+# average.pdb, so a stray 23-51-atom ligand query file became the loaded
+# system: 8 of the 397 sample entries since c13 (2289, 2623, 2853, 2987,
+# 3071, 3089, 3283, 3541); 827 such files sit in 768 corpus input dirs.
+_STRAY_TEMP_RE = re.compile(r"^tmp[a-z0-9_]{8}\.(pdb|cif|json)$")
+
+
+def _is_stray_temp(path: Path) -> bool:
+    return bool(_STRAY_TEMP_RE.match(path.name))
 
 
 # Canonical suffix table (single source of truth; mirrors the mdpc
@@ -56,7 +73,7 @@ def discover_input_kind(dir_path: Path) -> InputKind | None:
 
     extensions = set()
     for f in dir_path.iterdir():
-        if f.is_file():
+        if f.is_file() and not _is_stray_temp(f):
             extensions.add(f.suffix.lower())
 
     if ".tpr" in extensions:
@@ -116,6 +133,11 @@ def inspect_directory(dir_path: Path) -> InputBundle:
 
     if dir_path.exists() and dir_path.is_dir():
         for f in sorted(dir_path.iterdir()):
+            if f.is_file() and _is_stray_temp(f):
+                logger.warning(
+                    "input discovery: ignoring stray resolver temp file %s "
+                    "(left by an interrupted run; c13 S6)", f.name)
+                continue
             if f.is_file():
                 ext = f.suffix.lower()
                 file_type, role = _CANONICAL_SUFFIX_TABLE.get(ext, ("UNKNOWN", "unknown"))
