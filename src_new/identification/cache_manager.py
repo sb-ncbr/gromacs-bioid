@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import tempfile
@@ -123,6 +124,23 @@ def reset_cache_stats() -> None:
     each results.json's snapshot is per-run, not per-worker-process)."""
     with _STATS_LOCK:
         _CACHE_STATS.clear()
+
+
+# c13 S3: the SIGNATURE column used to hold the full signature text, once
+# per cached hit and again in the primary-key index. Structure signatures
+# are 100-400 KB and RCSB structure search returns thousands of hits per
+# query: b14 fleet 2026-11-04, 7,146 pdb_struct_protein rows from 3 query
+# structures = 1.7 GB, mmcif_struct 2,491 rows from 1 = 554 MB; the pod-local
+# 2 GiB emptyDir evicted the worker mid-run (also q4jc5/r87nt on 9227).
+# Long signatures are now stored under a sha256 key; lookups fall back to
+# the full text so pre-S3 rows (the warm-start seed) still hit.
+_SIGNATURE_HASH_MIN_LEN = 256
+
+
+def _signature_key(signature: str) -> str:
+    if len(signature) < _SIGNATURE_HASH_MIN_LEN:
+        return signature
+    return "sha256:" + hashlib.sha256(signature.encode("utf-8")).hexdigest()
 
 
 class ResolverCache:
@@ -251,7 +269,7 @@ class ResolverCache:
                     continue
                 conn.execute(
                     "INSERT INTO CACHE_IDENTITY VALUES (?, ?, ?)",
-                    (resolver_name, signature, ident),
+                    (resolver_name, _signature_key(signature), ident),
                 )
             conn.commit()
 
@@ -273,10 +291,13 @@ class ResolverCache:
             conn = self._get_connection()
             if conn is None:
                 return []
-            records = conn.execute(
-                "SELECT IDENTIFIER FROM CACHE_IDENTITY WHERE RESOLVER_NAME=? AND SIGNATURE=?",
-                (resolver_name, signature),
-            ).fetchall()
+            query = ("SELECT IDENTIFIER FROM CACHE_IDENTITY "
+                     "WHERE RESOLVER_NAME=? AND SIGNATURE=?")
+            key = _signature_key(signature)
+            records = conn.execute(query, (resolver_name, key)).fetchall()
+            if not records and key != signature:  # pre-S3 full-text rows
+                records = conn.execute(
+                    query, (resolver_name, signature)).fetchall()
             return [record[0] for record in records]
 
     def save_similarity_identifiers(
@@ -307,7 +328,8 @@ class ResolverCache:
                     continue
                 conn.execute(
                     "INSERT INTO CACHE_SIMILARITY VALUES (?, ?, ?, ?)",
-                    (resolver_name, signature, _ident, _similarity),
+                    (resolver_name, _signature_key(signature), _ident,
+                     _similarity),
                 )
             conn.commit()
 
@@ -329,9 +351,11 @@ class ResolverCache:
             conn = self._get_connection()
             if conn is None:
                 return []
-            records = conn.execute(
-                "SELECT IDENTIFIER, SIMILARITY FROM CACHE_SIMILARITY "
-                "WHERE RESOLVER_NAME=? AND SIGNATURE=?",
-                (resolver_name, signature),
-            ).fetchall()
+            query = ("SELECT IDENTIFIER, SIMILARITY FROM CACHE_SIMILARITY "
+                     "WHERE RESOLVER_NAME=? AND SIGNATURE=?")
+            key = _signature_key(signature)
+            records = conn.execute(query, (resolver_name, key)).fetchall()
+            if not records and key != signature:  # pre-S3 full-text rows
+                records = conn.execute(
+                    query, (resolver_name, signature)).fetchall()
             return records
