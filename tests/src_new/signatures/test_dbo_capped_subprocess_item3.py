@@ -80,26 +80,36 @@ class TestCappedSingleShotInWorker:
                    if a.GetAtomicNum() == 8
                    and a.GetFormalCharge() == -1) >= 3
 
-    def test_capped_timeout_gives_up_without_ladder(self, monkeypatch):
-        """Worker timeout on the capped shot: no bond orders, and the
-        ladder is NOT tried afterwards — the molecule already proved
-        itself an uninterruptible class; the ladder would only burn
-        more budget on the same explosion."""
+    def test_capped_timeout_falls_through_to_ladder(self, monkeypatch):
+        """Item-3 follow-up (user ruling 11-03): worker timeout on the
+        capped shot falls through to the subprocess-capped ladder with
+        the run cap bypassed and the fallback budget floor — ga1's
+        ladder SOLVED this class (~20 min) and skipping discarded
+        recoverable chemistry (wrong InChIKey on 9227). The capped
+        attempt's run-cap slice is refunded (it bought nothing)."""
         class _Dead:
             def call(self, *a, **k):
                 return None
 
         ladder = []
+
+        def fake_ladder(m, q, *, ignore_run_cap=False, min_budget_s=0.0):
+            ladder.append((ignore_run_cap, min_budget_s))
+            return True
+
         monkeypatch.setattr(pc, "_get_dbo_worker", lambda: _Dead())
         monkeypatch.setattr(pc, "_dbo_run_remaining_s", lambda: 1e9)
-        monkeypatch.setattr(pc, "_dbo_ladder_subprocess",
-                            lambda m, q: ladder.append(1) or True)
+        monkeypatch.setattr(pc, "_dbo_ladder_subprocess", fake_ladder)
 
         mol = _stripped(_M13_SHAPE_SMI)
         ok = pc.determine_bond_orders_safely(mol, net_charge=-3)
 
-        assert ok is False
-        assert not ladder, "timeout must skip the ladder"
+        assert ok is True
+        assert ladder, "timeout must fall through to the ladder"
+        assert ladder[0][0] is True, \
+            "the fall-through ladder must bypass the run cap"
+        assert ladder[0][1] > 0, \
+            "the fall-through ladder must get the fallback budget floor"
 
     def test_capped_na_falls_through_to_ladder(self, monkeypatch):
         """No odd-UA carboxylate component: the parent-side fast path

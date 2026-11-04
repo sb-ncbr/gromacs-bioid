@@ -176,6 +176,31 @@ def build_once_family_mol(fragment, skip_bond_orders: bool = False):
 
 _TRIAL_CHARGES = (0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6)
 
+
+def _extend_soft_timeout(seconds: float) -> None:
+    """Item-3 follow-up (fall-through validation, 11-03): a ladder request
+    granted a budget larger than the builder's pending SIGALRM soft budget
+    (perceive_timeout_s, default 300 s) would be killed mid-solve by the
+    alarm — the parent waits on the worker pipe, the alarm raises
+    PerceiveTimeoutError there, and the solve is discarded even though the
+    child keeps running (repro evidence: fall-through ladder cut at 60 s of
+    a ~1500 s ga1-class solve). Re-arm the pending itimer to cover the
+    granted budget; no-op when no alarm is armed (non-main threads —
+    _with_soft_timeout only arms SIGALRM on the main thread) or on
+    platforms without setitimer. The ladder's subprocess kill remains the
+    hard bound; the alarm extension only keeps the SOFT bound from firing
+    first."""
+    try:
+        remaining = signal.getitimer(signal.ITIMER_REAL)[0]
+    except (AttributeError, ValueError, OSError):
+        return
+    if remaining and remaining > 0:
+        try:
+            signal.setitimer(signal.ITIMER_REAL, float(seconds))
+        except (ValueError, OSError):
+            pass
+
+
 # Wave-2 (item 2a): DetermineBondOrders is an exponential valence search in
 # RDKit C++ and CANNOT be interrupted by perceive_timeout_s (demonstrated
 # wave-1: a 36-residue backbone-only peptide spun >20 min; the d13 75-minute
@@ -289,10 +314,17 @@ def determine_bond_orders_safely(mol, net_charge: int = 0,
                 "at charge %d (BH-049 fast path)", q_used)
             return True
         if status == "timeout":
-            return False  # uninterruptible class: the ladder would only
-            # burn more budget on the same molecule — continue without
-            # bond orders (similarity-tier chemistry, as on every DBO
-            # budget miss)
+            # item-3 follow-up (user ruling 11-03): fall through to the
+            # subprocess-capped ladder instead of skipping. ga1's ladder
+            # SOLVED this class (9227's cyclic peptide, ~20 min; the c13
+            # capped-shot fast path never returned) — skipping discarded
+            # recoverable chemistry (all-single bonds -> wrong InChIKey:
+            # DIDPGBUT... vs ga1's BRNDVKGUCOTQKX-YLYWMDJXSA-O). Bounded:
+            # the ladder subprocess is hard-killed at
+            # max(atom-scaled, fallback floor) <= 1800 s.
+            return _dbo_ladder_subprocess(
+                mol, net_charge, ignore_run_cap=True,
+                min_budget_s=_dbo_fallback_budget_s())
         # "na": not applicable / failed -> historical ladder path
     # W3 A5 (BH-049) Fix C: the whole ladder in a hard-killed subprocess
     # with ONE shared budget. SIGALRM cannot interrupt RDKit C++ (M13 spun
@@ -451,6 +483,21 @@ def _dbo_run_cap_s() -> float:
             "BAT3_BOND_ORDER_RUN_CAP_S", str(_DBO_RUN_CAP_S_DEFAULT)))
     except ValueError:
         return _DBO_RUN_CAP_S_DEFAULT
+
+
+def _dbo_fallback_budget_s() -> float:
+    """Item-3 follow-up (user ruling 11-03): budget floor for the
+    capped-timeout fall-through ladder. The molecule class that kills the
+    capped single-shot is exactly the class whose ladder solve is slow
+    (ga1 evidence: 9227's 97-atom cyclic peptide took ~20 min of ladder,
+    far beyond the 300 s atom-scaled budget); without the floor the
+    fall-through would be killed and the chemistry lost. Hard ceiling:
+    the documented 1800 s atom-scaled cap. BAT3_DBO_FALLBACK_BUDGET_S
+    overrides."""
+    try:
+        return float(os.environ.get("BAT3_DBO_FALLBACK_BUDGET_S", "1800"))
+    except ValueError:
+        return 1800.0
 
 
 def dbo_run_budget_reset():
@@ -627,7 +674,9 @@ def _overlay_solved(mol, solved) -> None:
         a.SetNoImplicit(True)
 
 
-def _dbo_ladder_subprocess(mol, net_charge: int) -> bool:
+def _dbo_ladder_subprocess(mol, net_charge: int, *,
+                           ignore_run_cap: bool = False,
+                           min_budget_s: float = 0.0) -> bool:
     """W3.1 item 8 (A5): run the charge ladder in the PERSISTENT worker
     interpreter with a per-request budget (_dbo_budget_s: 300 s base /
     atom-scaled); kill its whole process group and continue without
@@ -638,17 +687,31 @@ def _dbo_ladder_subprocess(mol, net_charge: int) -> bool:
     W3.1 P24 follow-up: the effective budget is capped by the RUN-level
     ladder cap (~240 s total per generate_signatures stage) — a safety
     net so no case can burn 2 x 300 s on ladders whose outcome does
-    not change the identifiers."""
+    not change the identifiers.
+
+    Item-3 follow-up (user ruling 11-03): the capped-timeout fall-through
+    calls with ignore_run_cap=True + min_budget_s — the molecule class
+    that kills the capped single-shot is exactly the class whose ladder
+    solve is SLOW (ga1: 9227's cyclic peptide took ~20 min of ladder,
+    log 09:56:36 -> 10:16:57), so the atom-scaled budget and the 240 s
+    run cap would discard recoverable chemistry. Still bounded: the
+    subprocess kill applies at max(atom-scaled, min_budget_s) <= the
+    documented 1800 s ceiling."""
     import time as _time
-    budget = _dbo_budget_s(mol)
+    budget = max(_dbo_budget_s(mol), float(min_budget_s))
     remaining = _dbo_run_remaining_s()
-    if remaining <= 0:
+    if remaining <= 0 and not ignore_run_cap:
         logger.warning(
             "bond_order_run_budget_exhausted: the run-level DBO ladder "
             "cap (%.1fs, BAT3_BOND_ORDER_RUN_CAP_S) is spent; continuing "
             "without bond orders", _dbo_run_cap_s())
         return False
-    budget = min(budget, remaining)
+    if not ignore_run_cap:
+        budget = min(budget, remaining)
+    # keep the builder's SIGALRM soft budget (perceive_timeout_s) from
+    # firing mid-solve: the ladder's own subprocess kill is the bound
+    # that matters here (item-3 follow-up; see _extend_soft_timeout)
+    _extend_soft_timeout(budget + 30.0)
     t0 = _time.monotonic()
     worker = _get_dbo_worker()
     reply = worker.call(mol.ToBinary(), net_charge, budget)
@@ -802,9 +865,10 @@ def _dbo_capped_carboxylate_subprocess(mol, net_charge: int = 0):
 
     Returns ("ok", q_used) when solved+overlaid, ("na", None) when not
     applicable/failed (historical ladder still worth trying), or
-    ("timeout", None) when the budget expired (the molecule proved
-    uninterruptible-class: the ladder is skipped, we continue without
-    bond orders)."""
+    ("timeout", None) when the budget expired (the caller falls through
+    to the subprocess-capped ladder — user ruling 11-03 — with the
+    run-cap slice this attempt consumed refunded: a timeout bought
+    nothing)."""
     import time as _time
     if _is_hless(mol) or not _ua_odd_carboxylate_os(mol):
         return "na", None  # parent-side fast path: no round trip needed
@@ -826,11 +890,19 @@ def _dbo_capped_carboxylate_subprocess(mol, net_charge: int = 0):
         _dbo_run_elapsed[key] = \
             _dbo_run_elapsed.get(key, 0.0) + (_time.monotonic() - t0)
     if reply is None:
+        # refund the run-cap slice: a timed-out capped attempt bought
+        # nothing, and the fall-through ladder (user ruling 11-03) needs
+        # the headroom — the run cap may overdraw for this class, the
+        # per-molecule subprocess kill stays the hard bound.
+        with _dbo_run_lock:
+            key = _dbo_run_key()
+            _dbo_run_elapsed[key] = max(
+                0.0, _dbo_run_elapsed.get(key, 0.0)
+                - (_time.monotonic() - t0))
         logger.warning(
             "bond_order_timeout: carboxylate-capped single-shot exceeded "
-            "the %.1fs budget; worker killed, continuing without bond "
-            "orders (ladder skipped: same uninterruptible molecule "
-            "class)", budget)
+            "the %.1fs budget; worker killed, falling through to the "
+            "subprocess-capped ladder (bounded, no hang)", budget)
         return "timeout", None
     q_used, blob = reply
     if q_used is None or not blob:
