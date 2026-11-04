@@ -336,3 +336,41 @@ class TestHungBatchIsolation:
         assert hung is not None and hung.smiles == "HANG" and not hung.formula_hill
         assert db.by_cid(1).formula_hill == "C2H6O"
         assert db.by_cid(8).formula_hill == "CH4O"
+
+
+def _derive_slow_batches_hang_sentinel(batch):
+    """M5: full batches are slow (1.5 s), probes of <=2 rows are instant
+    unless they contain the hanging sentinel."""
+    import time as _time
+    from src_new.molecules import pubchem_db as _pdb
+    if any(smi == "HANG" for _cid, smi in batch):
+        _time.sleep(3600)
+    if len(batch) >= 4:
+        _time.sleep(1.5)
+    return _pdb._REAL_DERIVE(batch)
+
+
+class TestIsolationNotStarvedByResubmittedBatches:
+    """M5 (b19 build 2026-11-04): isolation probes queued behind the
+    resubmitted in-flight batches, timed out before starting, and ordinary
+    compounds (consecutive CIDs from 157783726) were stored unparsed."""
+
+    def test_only_the_hanging_compound_is_unparsed(self, tmp_path: Path, monkeypatch) -> None:
+        from src_new.molecules import pubchem_db as pdb
+        monkeypatch.setattr(pdb, "_REAL_DERIVE", pdb._derive_chemistry, raising=False)
+        monkeypatch.setattr(pdb, "_derive_chemistry", _derive_slow_batches_hang_sentinel)
+        monkeypatch.setattr(pdb, "_BATCH_TIMEOUT_S", 3.0)
+        monkeypatch.setattr(pdb, "_ISOLATE_TIMEOUT_S", 1.0)
+        monkeypatch.setattr(pdb, "_BATCH_ROWS", 4)
+        rows = [(1, "CCO"), (2, "HANG"), (3, "CCN"), (4, "CCC"),
+                (5, "CO"), (6, "CC(=O)O"), (7, "O"), (8, "N"),
+                (9, "CCCC"), (10, "c1ccccc1"), (11, "CCCl"), (12, "CCBr")]
+        smiles_gz = tmp_path / "CID-SMILES.gz"
+        ik_gz = tmp_path / "CID-InChI-Key.gz"
+        _write_gz(smiles_gz, [f"{cid}\t{smi}" for cid, smi in rows])
+        _write_gz(ik_gz, [])
+        db_path = tmp_path / "pubchem.sqlite"
+        build(db_path, smiles_gz, ik_gz, workers=2)
+        db = PubChemDB(db_path)
+        unparsed = [cid for cid, _ in rows if not db.by_cid(cid).formula_hill]
+        assert unparsed == [2]

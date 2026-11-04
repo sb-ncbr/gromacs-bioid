@@ -425,12 +425,23 @@ def build(
             pending[i] = (pool.apply_async(_derive_chemistry, (payload,)), payload)
 
     def _derive_isolating(payload):
-        """M3: bisect a stuck batch down to the compound(s) that hang."""
-        res = pool.apply_async(_derive_chemistry, (payload,))
+        """M3: bisect a stuck batch down to the compound(s) that hang.
+
+        M5: each probe runs in its own single-process pool. Probing through
+        the main pool queued the sub-batch behind the resubmitted in-flight
+        batches, so with a short isolate timeout every probe timed out
+        before it started and ordinary compounds were stored unparsed
+        (b19 build 2026-11-04: consecutive CIDs from 157783726 on, all
+        57-418-char SMILES)."""
+        iso = ctx.Pool(1)
         try:
-            return res.get(timeout=_ISOLATE_TIMEOUT_S)
+            return iso.apply_async(_derive_chemistry, (payload,)).get(
+                timeout=_ISOLATE_TIMEOUT_S)
         except mp.TimeoutError:
-            _restart_pool()
+            pass
+        finally:
+            iso.terminate()
+            iso.join()
         if len(payload) == 1:
             cid, smiles = payload[0]
             logger.warning("pubchem_db.build: CID %d SMILES did not derive within "
