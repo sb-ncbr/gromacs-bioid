@@ -742,6 +742,16 @@ def _generate_signatures(context):
     if budget_hit:
         _grant_merge_grace(context)  # W3.1-3: keep the partials we paid for
 
+    # W3.1-3b: budget_hit carried over from the GENERATION phase must
+    # NOT cut the merge — the grace above exists precisely so those
+    # partials get written. Reusing the flag at the post-member-loop
+    # break processed only the FIRST result and structurally discarded
+    # the cut segment, i.e. exactly the result holding the partials
+    # the grace was meant to save (c13 item-3 in-pod: the fall-through
+    # ladder solved 9227's peptide, the merge then dropped it). Only a
+    # budget hit measured DURING the merge stops further results.
+    merge_cut = False
+
     generated_count = 0
     _atom_cap = context.config.signatures.smiles_maximum_number_of_atoms
     _per_copy_gens = [g for g in generators if g.name in _PER_COPY_GENERATORS]
@@ -764,6 +774,7 @@ def _generate_signatures(context):
             for member_name in group_members.get(rep_name, [rep_name]):
                 if _budget_exceeded(context):
                     budget_hit = True
+                    merge_cut = True
                     logger.warning(
                         f"generate_signatures: stage time budget exceeded during merge "
                         f"at {member_name}; partial output")
@@ -842,7 +853,7 @@ def _generate_signatures(context):
                 if _sig_errs:
                     context.results.set_data(f"stage_errors/signatures/{member_name}", _sig_errs)
 
-            if budget_hit:
+            if merge_cut:
                 break
 
     if budget_hit:

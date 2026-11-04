@@ -281,6 +281,102 @@ class TestBudgetHitKeepsPartials:
             "budget cut discarded the partial signatures that were "
             "already generated")
 
+    def test_generation_phase_cut_keeps_cut_segment_partials(
+            self, tmp_path, monkeypatch):
+        """W3.1-3b: a budget cut fired DURING GENERATION must not be
+        re-applied by the merge loop.
+
+        Production evidence (c13 item-3, in-pod 9227): the mid-segment
+        skip sets budget_hit=True; the merge then granted its grace but
+        the post-member-loop `if budget_hit: break` — written for the
+        MERGE-phase cut — re-used the generation-phase flag, so the
+        merge processed only the FIRST result and structurally
+        discarded the cut segment: exactly the result holding the
+        partials the grace was meant to save. The M05 executor test
+        above cannot catch this (it asserts only len(sigs) >= 1: the
+        first segment always survives).
+
+        Deterministic repro: two distinct small molecules (two reps,
+        serial path); the budget flips to exceeded right after the
+        second segment's first chemistry generator returns, so the cut
+        fires mid-segment on the LAST rep. The cut segment's partial
+        signatures must still be merged."""
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        import src_new.pipeline_steps as pp
+        from src_new.signatures.generators.smiles import (
+            SimpleSmilesGenerator)
+
+        # Arrange: two distinct molecules -> two reps, A first, L second
+        names_a, els_a, bonds_a, pos_a = _embedded_coords("CCO")
+        names_l, els_l, bonds_l, pos_l = _embedded_coords("CCC")
+        u = _system_universe([
+            _mol(names_a, els_a, bonds_a, pos_a, "A"),
+            _mol(names_l, els_l, bonds_l, pos_l, "L",
+                 offset=(25.0, 0.0, 0.0))])
+        facade, s2i = _facade(u)
+        store = SimpleNamespace(
+            get_all_instances=lambda: list(s2i.values()))
+
+        warns: list = []
+        cfg = RunConfig()
+        cfg.executor.signatures_parallel = False  # serial path
+        results = ResultsManager(
+            str(tmp_path / "results.json"), "w31merge")
+
+        ctx = MagicMock()
+        ctx.config = cfg
+        ctx.results = results
+        ctx.working_directory = tmp_path
+        ctx.debug_directory = tmp_path
+        ctx.get_value.side_effect = lambda k, *a, **kw: {
+            "facade": facade, "fragment_store": store,
+            "stage_deadline_epoch": None}.get(k)
+        ctx.fail.side_effect = Exception("context.fail called")
+        ctx.add_warning.side_effect = lambda code, msg, details=None: (
+            warns.append((code, msg)))
+
+        # Stateful budget: not exceeded until segment L's first
+        # chemistry generator returns (mid-generation cut on the last
+        # rep); the merge grace (set_value of the stage-deadline key)
+        # re-arms it, mirroring the real deadline semantics.
+        state = {"exceeded": False}
+        monkeypatch.setattr(pp, "_budget_exceeded",
+                            lambda ctx_: state["exceeded"])
+
+        def _set_value(key, value, *args, **kwargs):
+            if key == pp._STAGE_BUDGET_STATE_KEY:
+                state["exceeded"] = False  # grace re-arms the deadline
+        ctx.set_value.side_effect = _set_value
+
+        _orig_generate = SimpleSmilesGenerator._generate
+
+        def _generate_then_flip(self, instance, fragment, facade_):
+            sig = _orig_generate(self, instance, fragment, facade_)
+            if "L" in set(fragment.segids):
+                state["exceeded"] = True  # budget blows after L's smiles
+            return sig
+        monkeypatch.setattr(SimpleSmilesGenerator, "_generate",
+                            _generate_then_flip)
+
+        # Act
+        pp._generate_signatures(ctx)
+
+        # Assert: the FIRST rep merged fully ...
+        gen_a = results.get_data("signatures/A/generated") or {}
+        assert "smiles" in gen_a, gen_a
+        # ... and the CUT segment's partials survived the merge
+        gen_l = results.get_data("signatures/L/generated") or {}
+        assert "smiles" in gen_l, (
+            "generation-phase budget cut was re-applied by the merge and "
+            f"dropped the cut segment's partials: A={sorted(gen_a)} "
+            f"L={sorted(gen_l)}")
+        attempted_l = results.get_data("signatures/L/attempted") or []
+        assert "smiles" in attempted_l, attempted_l
+        # the cut is still recorded as a stage warning + partial summary
+        assert any(code == "stage_time_budget" for code, _ in warns), warns
+
 
 class TestA7PropagationContract:
     def test_members_inherit_rep_identifiers(self, tmp_path):
