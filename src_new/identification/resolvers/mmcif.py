@@ -14,6 +14,7 @@ from ...signatures.generators.topology_less_pdb import _pdb_atom_line
 from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
 # _pdb_atom_line is the single home of the PDB ATOM-line format RCSB
 # accepted live (2026-11-01 probe); the mmCIF->PDB converter reuses it.
+from ...constants import FORCE_FIELD_RESIDUE_PARENTS
 from ._rcsb_search import post_rcsb_query
 from ._ssh_upload import has_ssh_config, ssh_delete, ssh_upload
 
@@ -59,6 +60,7 @@ def _resname_token_sets(text: str) -> tuple[set[str], set[str]]:
         if len(parts) < 4:
             continue
         comp = parts[3].strip().strip("'\"").upper()
+        comp = FORCE_FIELD_RESIDUE_PARENTS.get(comp, comp)  # c13 S4: CYX/HIE...
         if comp in _AMINO_RESNAMES:
             amino.add(comp)
         elif comp in _NA_RESNAMES:
@@ -183,6 +185,23 @@ def _na_only_mmcif_payload(text: str) -> bool:
     return False
 
 
+def _no_polymer_mmcif_payload(text: str) -> bool:
+    """c13 S4: True for OUR minimal generated mmCIF whose atom rows carry no
+    amino-acid or nucleotide residue — a small-molecule segment. RCSB
+    structure search rejects such a query with HTTP 400 ("We could not
+    process your search request", live probe 2026-11-04 on T02's 39-atom
+    ligand), which the 397 sample logged 66-294 times per arm as
+    structure_search_unavailable after a wasted 10 s settle-retry. Full
+    mmCIF (declares _entity_poly.type) and unclassifiable text return False
+    (server decides)."""
+    if _ENTITY_POLY_TYPE_RE.search(text) or "_atom_site.label_comp_id" not in text:
+        return False
+    amino, na = _resname_token_sets(text)
+    if amino or na:
+        return False
+    return any(line.startswith(("ATOM", "HETATM")) for line in text.splitlines())
+
+
 class MmCifResolver(IdentifierResolver):
     """
     MmCifResolver identifies structures using mmCIF format via RCSB Search API.
@@ -261,6 +280,13 @@ class MmCifResolver(IdentifierResolver):
                 "rejected by design upstream; verdict=na_mode_unsupported"
             )
             self._last_error = "na_mode_unsupported"
+            return []
+        if _no_polymer_mmcif_payload(signature):
+            logger.info(
+                "RCSB structure search skipped (mmcif): no polymer residues "
+                "in the payload (small-molecule segment); verdict=no_polymer_payload"
+            )
+            self._last_error = "no_polymer_payload"
             return []
 
         # W3.3 item 1: RCSB rejects our minimal generated mmCIF (HTTP 500,

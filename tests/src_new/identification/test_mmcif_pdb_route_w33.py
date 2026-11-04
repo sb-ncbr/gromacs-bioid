@@ -145,6 +145,45 @@ class TestQueryRouting:
         assert params["value"]["url"].endswith(".cif")
 
 
+def _minimal_cif(rows):
+    head = ("data_mock\nloop_\n_atom_site.group_PDB\n_atom_site.id\n"
+            "_atom_site.label_atom_id\n_atom_site.label_comp_id\n"
+            "_atom_site.label_asym_id\n_atom_site.label_seq_id\n"
+            "_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n"
+            "_atom_site.type_symbol\n")
+    body = "".join(f"ATOM {i} {a} {comp} A {seq} {i}.000 0.000 0.000 {a[0]}\n"
+                   for i, (a, comp, seq) in enumerate(rows, start=1))
+    return head + body + "#\n"
+
+
+class TestNoPolymerSkip:
+    """c13 S4: RCSB answers a small-molecule-only query with HTTP 400 (live
+    probe 2026-11-04, T02's 39-atom ligand); the 397 sample logged it 66-294
+    times per arm as structure_search_unavailable after a 10 s retry."""
+
+    def test_ligand_only_payload_skipped_without_post(self, tmp_path):
+        resolver = MmCifResolver(_config(tmp_path))
+        ligand = _minimal_cif([("O1", "BDD", 101), ("C1", "BDD", 101), ("C2", "BDD", 101)])
+        with mock.patch(
+            "src_new.identification.resolvers._rcsb_search.requests.post"
+        ) as post_mock:
+            results = resolver._resolve_similarity(ligand, str(tmp_path))
+        assert results == []
+        assert post_mock.call_count == 0
+        assert resolver._last_error == "no_polymer_payload"
+
+    def test_force_field_named_protein_still_queried(self, tmp_path):
+        resolver = MmCifResolver(_config(tmp_path))
+        protein = _minimal_cif([("CA", "HIE", 1), ("CA", "CYX", 2), ("CA", "ASH", 3)])
+        with mock.patch(
+            "src_new.identification.resolvers._rcsb_search.requests.post"
+        ) as post_mock:
+            _fake_rcsb_hit(post_mock)
+            results = resolver._resolve_similarity(protein, str(tmp_path))
+        assert results == [("4HHB", 98.0)]
+        assert post_mock.call_count == 1
+
+
 class TestTransientRetry:
     def test_single_retry_after_http_404_race(self, tmp_path):
         """RCSB reports its fetch of the freshly staged URL as 404 (api-pod
