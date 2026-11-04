@@ -299,3 +299,40 @@ class TestAnnotationPrefill:
         assert set(quality.signals) == {
             "canonical_smiles", "isomeric_smiles", "molecular_formula",
             "iupac_name", "synonyms"}
+
+
+def _derive_hanging_on_sentinel(batch):
+    """M3: stand-in for an RDKit spin on one pathological SMILES."""
+    import time as _time
+    from src_new.molecules import pubchem_db as _pdb
+    if any(smi == "HANG" for _cid, smi in batch):
+        _time.sleep(3600)
+    return _pdb._REAL_DERIVE(batch)
+
+
+class TestHungBatchIsolation:
+    """M3 (b16 mirror build 2026-11-04): a worker spun in RDKit for 2 h on one
+    SMILES while the parent blocked in AsyncResult.get() with no timeout."""
+
+    def test_hanging_compound_is_isolated_and_build_completes(
+            self, tmp_path: Path, monkeypatch) -> None:
+        from src_new.molecules import pubchem_db as pdb
+        monkeypatch.setattr(pdb, "_REAL_DERIVE", pdb._derive_chemistry, raising=False)
+        monkeypatch.setattr(pdb, "_derive_chemistry", _derive_hanging_on_sentinel)
+        monkeypatch.setattr(pdb, "_BATCH_TIMEOUT_S", 3.0)
+        monkeypatch.setattr(pdb, "_ISOLATE_TIMEOUT_S", 2.0)
+        monkeypatch.setattr(pdb, "_BATCH_ROWS", 4)
+        rows = [(1, "CCO"), (2, "CC(=O)O"), (3, "HANG"), (4, "c1ccccc1"),
+                (5, "CCN"), (6, "CCC"), (7, "O"), (8, "CO")]
+        smiles_gz = tmp_path / "CID-SMILES.gz"
+        ik_gz = tmp_path / "CID-InChI-Key.gz"
+        _write_gz(smiles_gz, [f"{cid}\t{smi}" for cid, smi in rows])
+        _write_gz(ik_gz, [])
+        db_path = tmp_path / "pubchem.sqlite"
+        stats = build(db_path, smiles_gz, ik_gz, workers=2)
+        assert stats["rows_written"] == len(rows)
+        db = PubChemDB(db_path)
+        hung = db.by_cid(3)
+        assert hung is not None and hung.smiles == "HANG" and not hung.formula_hill
+        assert db.by_cid(1).formula_hill == "C2H6O"
+        assert db.by_cid(8).formula_hill == "CH4O"

@@ -36,6 +36,14 @@ logger = logging.getLogger(__name__)
 
 _BATCH_ROWS = 100_000
 _CHECKPOINT_ROWS = 5_000_000
+# M3 (b16 build 2026-11-04): one pool worker spun in RDKit on a single
+# SMILES of the 2026-11-03 release for 2 h at 100 % CPU (85M rows, CID ~127M)
+# while the parent blocked in AsyncResult.get() with no timeout. A healthy
+# 25k-row batch takes seconds; a batch past the timeout is bisected under
+# the shorter one until the offending compound is isolated and stored
+# unparsed (SMILES/InChIKey/annotations kept, no formula/mass).
+_BATCH_TIMEOUT_S = float(os.environ.get("BAT3_PUBCHEM_BATCH_TIMEOUT_S", "900"))
+_ISOLATE_TIMEOUT_S = float(os.environ.get("BAT3_PUBCHEM_ISOLATE_TIMEOUT_S", "120"))
 _INCHIKEY_RE = re.compile(r"^[A-Z]{14}-[A-Z]{10}-[A-Z]$")
 _FORMULA_PART_RE = re.compile(r"([A-Z][a-z]?)(\d*)")
 # Trailing formal-charge annotation emitted by RDKit CalcMolFormula
@@ -394,22 +402,57 @@ def build(
             logger.info("pubchem_db.build checkpoint: cid=%d rows=%d", done_upto, rows_written)
 
     ctx = mp.get_context("fork") if os.name == "posix" else mp.get_context()
-    pending: list = []
+    pending: list = []  # (AsyncResult or derived rows, payload)
     pool = ctx.Pool(workers) if workers > 1 else None
 
     def submit(b_cids, b_smiles):
         payload = list(zip(b_cids, b_smiles))
         if pool is not None:
-            pending.append(pool.apply_async(_derive_chemistry, (payload,)))
+            pending.append((pool.apply_async(_derive_chemistry, (payload,)), payload))
         else:
-            pending.append(_derive_chemistry(payload))
+            pending.append((_derive_chemistry(payload), payload))
         # keep at most 2*workers batches in flight; flush the oldest when full
         if len(pending) >= 2 * workers:
             _flush_oldest()
 
+    def _restart_pool():
+        """M3: terminate (kills a spinning worker), recreate, resubmit."""
+        nonlocal pool
+        pool.terminate()
+        pool.join()
+        pool = ctx.Pool(workers)
+        for i, (_res, payload) in enumerate(pending):
+            pending[i] = (pool.apply_async(_derive_chemistry, (payload,)), payload)
+
+    def _derive_isolating(payload):
+        """M3: bisect a stuck batch down to the compound(s) that hang."""
+        res = pool.apply_async(_derive_chemistry, (payload,))
+        try:
+            return res.get(timeout=_ISOLATE_TIMEOUT_S)
+        except mp.TimeoutError:
+            _restart_pool()
+        if len(payload) == 1:
+            cid, smiles = payload[0]
+            logger.warning("pubchem_db.build: CID %d SMILES did not derive within "
+                           "%.0fs; stored unparsed", cid, _ISOLATE_TIMEOUT_S)
+            return [(cid, smiles, "", None, False)]
+        mid = len(payload) // 2
+        return _derive_isolating(payload[:mid]) + _derive_isolating(payload[mid:])
+
     def _flush_oldest():
-        oldest = pending.pop(0)
-        derived = oldest.get() if hasattr(oldest, "get") else oldest
+        oldest, payload = pending.pop(0)
+        if hasattr(oldest, "get"):
+            try:
+                derived = oldest.get(timeout=_BATCH_TIMEOUT_S)
+            except mp.TimeoutError:
+                logger.warning(
+                    "pubchem_db.build: batch CID %d-%d exceeded %.0fs; restarting "
+                    "the pool and isolating", payload[0][0], payload[-1][0],
+                    _BATCH_TIMEOUT_S)
+                _restart_pool()
+                derived = _derive_isolating(payload)
+        else:
+            derived = oldest
         flush([derived])
 
     for cid, smiles in _iter_smiles(smiles_gz, after_cid=done_upto if resume else 0):
