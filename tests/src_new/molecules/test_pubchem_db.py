@@ -415,3 +415,59 @@ class TestIsolationNotStarvedByResubmittedBatches:
         db = PubChemDB(db_path)
         unparsed = [cid for cid, _ in rows if not db.by_cid(cid).formula_hill]
         assert unparsed == [2]
+
+
+def _derive_blowing_up_on_sentinel(batch):
+    """M8: stand-in for an RDKit runaway allocation on one SMILES. Refuses to
+    run uncapped so a missing cap fails the build instead of eating RAM."""
+    import resource
+    from src_new.molecules import pubchem_db as _pdb
+    soft, _hard = resource.getrlimit(resource.RLIMIT_AS)
+    if soft == resource.RLIM_INFINITY:
+        raise RuntimeError("derivation worker runs without a memory cap")
+    if any(smi == "BLOWUP" for _cid, smi in batch):
+        bytearray(soft)  # one request the size of the whole cap
+    return _pdb._REAL_DERIVE(batch)
+
+
+class TestRunawayAllocationIsCapped:
+    """M8 (b20 build 2026-11-04): one compound past CID ~164.67M made a
+    worker allocate without bound; the container was OOMKilled at 32Gi and
+    64Gi on every resume."""
+
+    def test_only_the_runaway_compound_is_unparsed(self, tmp_path: Path, monkeypatch) -> None:
+        import resource
+        from src_new.molecules import pubchem_db as pdb
+        with open("/proc/self/statm") as fh:
+            vsz = int(fh.read().split()[0]) * resource.getpagesize()
+        monkeypatch.setattr(pdb, "_WORKER_MEM_BYTES", vsz + 512 * 2**20)
+        monkeypatch.setattr(pdb, "_REAL_DERIVE", pdb._derive_chemistry, raising=False)
+        monkeypatch.setattr(pdb, "_derive_chemistry", _derive_blowing_up_on_sentinel)
+        monkeypatch.setattr(pdb, "_BATCH_TIMEOUT_S", 30.0)
+        monkeypatch.setattr(pdb, "_ISOLATE_TIMEOUT_S", 30.0)
+        monkeypatch.setattr(pdb, "_BATCH_ROWS", 4)
+        rows = [(1, "CCO"), (2, "CCN"), (3, "BLOWUP"), (4, "CCC"),
+                (5, "CO"), (6, "CC(=O)O"), (7, "O"), (8, "N")]
+        smiles_gz = tmp_path / "CID-SMILES.gz"
+        ik_gz = tmp_path / "CID-InChI-Key.gz"
+        _write_gz(smiles_gz, [f"{cid}\t{smi}" for cid, smi in rows])
+        _write_gz(ik_gz, [])
+        db_path = tmp_path / "pubchem.sqlite"
+        stats = build(db_path, smiles_gz, ik_gz, workers=2)
+        assert stats["rows_written"] == len(rows)
+        db = PubChemDB(db_path)
+        unparsed = [cid for cid, _ in rows if not db.by_cid(cid).formula_hill]
+        assert unparsed == [3]
+
+    def test_memory_error_inside_rdkit_stores_the_compound_unparsed(self, monkeypatch) -> None:
+        from src_new.molecules import pubchem_db as pdb
+        real = pdb._derive_one
+
+        def one(Chem, desc, cid, smiles):
+            if smiles == "BLOWUP":
+                raise MemoryError
+            return real(Chem, desc, cid, smiles)
+
+        monkeypatch.setattr(pdb, "_derive_one", one)
+        out = pdb._derive_chemistry([(1, "CCO"), (2, "BLOWUP")])
+        assert out[0][2] == "C2H6O" and out[1] == (2, "BLOWUP", "", None, False)

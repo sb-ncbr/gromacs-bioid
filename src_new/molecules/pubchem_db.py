@@ -44,6 +44,12 @@ _CHECKPOINT_ROWS = 5_000_000
 # unparsed (SMILES/InChIKey/annotations kept, no formula/mass).
 _BATCH_TIMEOUT_S = float(os.environ.get("BAT3_PUBCHEM_BATCH_TIMEOUT_S", "900"))
 _ISOLATE_TIMEOUT_S = float(os.environ.get("BAT3_PUBCHEM_ISOLATE_TIMEOUT_S", "120"))
+# M8 (b20 build 2026-11-04): past CID ~164.67M one compound made a pool
+# worker allocate without bound; the container was OOMKilled at 32Gi and
+# again at 64Gi on every resume from the 164.17M checkpoint. Each derivation
+# process gets an address-space cap, so the runaway compound raises
+# MemoryError (stored unparsed) instead of taking the build down. 0 = no cap.
+_WORKER_MEM_BYTES = int(float(os.environ.get("BAT3_PUBCHEM_WORKER_MEM_GB", "6")) * 2**30)
 _INCHIKEY_RE = re.compile(r"^[A-Z]{14}-[A-Z]{10}-[A-Z]$")
 _FORMULA_PART_RE = re.compile(r"([A-Z][a-z]?)(\d*)")
 # Trailing formal-charge annotation emitted by RDKit CalcMolFormula
@@ -112,6 +118,36 @@ def normalize_formula(formula: str) -> str:
     return out
 
 
+def _limit_worker_memory() -> None:
+    """M8: pool initializer - cap the derivation process's address space."""
+    if _WORKER_MEM_BYTES <= 0:
+        return
+    import resource
+
+    try:
+        resource.setrlimit(resource.RLIMIT_AS, (_WORKER_MEM_BYTES, _WORKER_MEM_BYTES))
+    except (ValueError, OSError):  # pragma: no cover - hard limit already lower
+        logger.warning("pubchem_db.build: could not cap worker memory")
+
+
+def _derive_one(Chem, rdMolDescriptors, cid: int, smiles: str) -> tuple[int, str, str, float | None, bool]:
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return (cid, smiles, "", None, False)
+    # Formula convention (parity-verified 2026-09-24): PUG fastformula is
+    # insensitive to BOTH isotopes and formal charge/protonation state
+    # (zwitterion CID 136728936 'C5H5N5O-2' and dianion CID 19752125
+    # 'C20H24O2-2' answer the PLAIN formula queries 'C5H5N5O'/'C20H24O2').
+    # CalcMolFormula merges isotopes by default (rdkit 2026.03) and
+    # appends charge as a trailing '±n' annotation - strip it so the
+    # index key matches the PUG query form. Original SMILES preserved.
+    for atom in mol.GetAtoms():
+        atom.SetIsotope(0)
+    formula = rdMolDescriptors.CalcMolFormula(mol)
+    formula = _CHARGE_SUFFIX_RE.sub("", formula)
+    return (cid, smiles, formula, float(rdMolDescriptors.CalcExactMolWt(mol)), True)
+
+
 def _derive_chemistry(batch: list[tuple[int, str]]) -> list[tuple[int, str, str, float | None, bool]]:
     """Worker: (cid, smiles) -> (cid, smiles, formula_hill, exact_mass, parsed)."""
     from rdkit import Chem
@@ -119,30 +155,10 @@ def _derive_chemistry(batch: list[tuple[int, str]]) -> list[tuple[int, str, str,
 
     out: list[tuple[int, str, str, float | None, bool]] = []
     for cid, smiles in batch:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
+        try:
+            out.append(_derive_one(Chem, rdMolDescriptors, cid, smiles))
+        except MemoryError:  # M8: over the worker cap
             out.append((cid, smiles, "", None, False))
-            continue
-        # Formula convention (parity-verified 2026-09-24): PUG fastformula is
-        # insensitive to BOTH isotopes and formal charge/protonation state
-        # (zwitterion CID 136728936 'C5H5N5O-2' and dianion CID 19752125
-        # 'C20H24O2-2' answer the PLAIN formula queries 'C5H5N5O'/'C20H24O2').
-        # CalcMolFormula merges isotopes by default (rdkit 2026.03) and
-        # appends charge as a trailing '±n' annotation - strip it so the
-        # index key matches the PUG query form. Original SMILES preserved.
-        for atom in mol.GetAtoms():
-            atom.SetIsotope(0)
-        formula = rdMolDescriptors.CalcMolFormula(mol)
-        formula = _CHARGE_SUFFIX_RE.sub("", formula)
-        out.append(
-            (
-                cid,
-                smiles,
-                formula,
-                float(rdMolDescriptors.CalcExactMolWt(mol)),
-                True,
-            )
-        )
     return out
 
 
@@ -403,7 +419,7 @@ def build(
 
     ctx = mp.get_context("fork") if os.name == "posix" else mp.get_context()
     pending: list = []  # (AsyncResult or derived rows, payload)
-    pool = ctx.Pool(workers) if workers > 1 else None
+    pool = ctx.Pool(workers, initializer=_limit_worker_memory) if workers > 1 else None
 
     def submit(b_cids, b_smiles):
         payload = list(zip(b_cids, b_smiles))
@@ -420,7 +436,7 @@ def build(
         nonlocal pool
         pool.terminate()
         pool.join()
-        pool = ctx.Pool(workers)
+        pool = ctx.Pool(workers, initializer=_limit_worker_memory)
         for i, (_res, payload) in enumerate(pending):
             pending[i] = (pool.apply_async(_derive_chemistry, (payload,)), payload)
 
@@ -433,11 +449,11 @@ def build(
         before it started and ordinary compounds were stored unparsed
         (b19 build 2026-11-04: consecutive CIDs from 157783726 on, all
         57-418-char SMILES)."""
-        iso = ctx.Pool(1)
+        iso = ctx.Pool(1, initializer=_limit_worker_memory)
         try:
             return iso.apply_async(_derive_chemistry, (payload,)).get(
                 timeout=_ISOLATE_TIMEOUT_S)
-        except mp.TimeoutError:
+        except (mp.TimeoutError, MemoryError):
             pass
         finally:
             iso.terminate()
@@ -445,7 +461,8 @@ def build(
         if len(payload) == 1:
             cid, smiles = payload[0]
             logger.warning("pubchem_db.build: CID %d SMILES did not derive within "
-                           "%.0fs; stored unparsed", cid, _ISOLATE_TIMEOUT_S)
+                           "%.0fs / the worker memory cap; stored unparsed",
+                           cid, _ISOLATE_TIMEOUT_S)
             return [(cid, smiles, "", None, False)]
         mid = len(payload) // 2
         return _derive_isolating(payload[:mid]) + _derive_isolating(payload[mid:])
@@ -461,6 +478,12 @@ def build(
                     "the pool and isolating", payload[0][0], payload[-1][0],
                     _BATCH_TIMEOUT_S)
                 _restart_pool()
+                derived = _derive_isolating(payload)
+            except MemoryError:
+                # M8: the capped worker survives; only isolate the batch
+                logger.warning(
+                    "pubchem_db.build: batch CID %d-%d hit the worker memory cap; "
+                    "isolating", payload[0][0], payload[-1][0])
                 derived = _derive_isolating(payload)
         else:
             derived = oldest
