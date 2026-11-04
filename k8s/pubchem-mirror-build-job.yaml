@@ -21,9 +21,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: pubchem-mirror-build
-          # b19 = 0a9ef4284 (annotation extras dd694dd4e, M1 validation probes,
-          # M3 hung-batch isolation)
-          image: "cerit.io/tomsko/bat3-validation-api@sha256:3e52dce7b213ac72c9d4d78336b49ddea185f06d3065e4286e6f18c0ed319e4e"
+          # b20 = f4364d4d7 (annotation extras dd694dd4e, M1 validation probes,
+          # M3 hung-batch isolation, M5 isolation probes in their own pool)
+          image: "cerit.io/tomsko/bat3-validation-api@sha256:08837dc16a43125d478d606228a04f70111b650f76d5b7afb16b3404e5b98d8e"
           imagePullPolicy: IfNotPresent
           command:
             - python
