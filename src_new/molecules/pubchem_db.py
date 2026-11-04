@@ -551,6 +551,12 @@ class PubChemDB:
                 return ""  # DB not openable yet: legacy column set
         return self._ann_select
 
+    def has_annotation_columns(self) -> bool:
+        """M7: True for a mirror built with the annotation extras. Its
+        iupac_name/has_synonyms are then authoritative: a compound absent
+        from CID-IUPAC.gz / CID-Synonym-filtered.gz has no such record."""
+        return self._sel().startswith(", iupac_name")
+
     def _get_conn(self) -> sqlite3.Connection:
         if self._conn is None:
             uri = f"file:{self._db_path}?mode=ro&immutable=1"

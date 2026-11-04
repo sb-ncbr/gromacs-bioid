@@ -300,6 +300,47 @@ class TestAnnotationPrefill:
             "canonical_smiles", "isomeric_smiles", "molecular_formula",
             "iupac_name", "synonyms"}
 
+    def test_extended_mirror_absence_is_authoritative(
+            self, ann_db: Path, monkeypatch) -> None:
+        """M7 (user ruling 11-04: mirror first, live only on failure): a
+        mirror hit the extended mirror records WITHOUT IUPAC/synonyms scores
+        from the mirror — no live fill (zero budget would make it None)."""
+        from src_new.verification.scorers import pubchem_scorer as mod
+        from src_new.verification.scorers.pubchem_scorer import (
+            PubChemAnnotationScorer,
+        )
+
+        db = PubChemDB(ann_db)
+        assert db.has_annotation_columns()
+        monkeypatch.setattr(mod, "_local_db", lambda: db)
+        scorer = PubChemAnnotationScorer()
+        scorer.begin_segment(0)  # live fetch on, zero budget
+        quality = scorer.score("7", "PUBCHEM_CID")  # benzoic acid: no IUPAC, no synonyms
+        assert quality is not None
+        assert set(quality.signals) == {
+            "canonical_smiles", "isomeric_smiles", "molecular_formula"}
+
+    def test_legacy_mirror_still_live_fills(self, tmp_path: Path, monkeypatch) -> None:
+        import sqlite3
+        from src_new.verification.scorers import pubchem_scorer as mod
+        from src_new.verification.scorers.pubchem_scorer import (
+            PubChemAnnotationScorer,
+        )
+
+        p = tmp_path / "pubchem.sqlite"
+        conn = sqlite3.connect(p)
+        conn.execute("CREATE TABLE compounds (cid INTEGER PRIMARY KEY, smiles TEXT NOT NULL, "
+                     "inchikey TEXT, formula_hill TEXT NOT NULL, exact_mass REAL)")
+        conn.execute("INSERT INTO compounds VALUES (7,'C1=CC=C(C=C1)C(=O)O',NULL,'C7H6O2',122.04)")
+        conn.commit()
+        conn.close()
+        db = PubChemDB(p)
+        assert not db.has_annotation_columns()
+        monkeypatch.setattr(mod, "_local_db", lambda: db)
+        scorer = PubChemAnnotationScorer()
+        scorer.begin_segment(0)  # live fill needed, budget 0 -> unprovable
+        assert scorer.score("7", "PUBCHEM_CID") is None
+
 
 def _derive_hanging_on_sentinel(batch):
     """M3: stand-in for an RDKit spin on one pathological SMILES."""

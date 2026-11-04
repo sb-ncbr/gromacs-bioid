@@ -333,7 +333,17 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
                 # same identifier across runs (T02a/b/c CID 137895 evidence).
                 # With live fetch disabled the mirror floor is the documented
                 # deterministic policy answer.
-                if self._live_fetch:
+                # M7 (user ruling 11-04: mirror first, live fetch only on
+                # failure): an extended mirror answers both signals
+                # authoritatively, so a missing IUPAC name or synonym is a real
+                # absence, not a gap to fill. Live fill only for legacy
+                # mirrors; mirror misses still take the live path below.
+                # Without this, every mirror hit lacking synonyms went live
+                # and NCBI throttling pushed verify past its budget (b15paper:
+                # 21/24 smoke entries at the 1200 s budget).
+                probe = getattr(db, "has_annotation_columns", None)
+                authoritative = callable(probe) and probe() is True
+                if self._live_fetch and not authoritative:
                     incomplete = self._live_fill(identifier, is_inchikey, signals,
                                                  "iupac_name" not in signals,
                                                  "synonyms" not in signals)
