@@ -41,6 +41,12 @@ def _post_once(request: dict, timeout_s: float) -> dict:
         timeout=timeout_s,
     )
     response.raise_for_status()
+    # c13 structure search (S2): RCSB answers a valid query with no matches
+    # as HTTP 204 and an empty body. response.json() raised on it, so every
+    # legitimate empty result burned the 10 s settle-retry and was counted
+    # as structure_search_unavailable.
+    if response.status_code == 204:
+        return {"total_count": 0, "result_set": []}
     return response.json()
 
 

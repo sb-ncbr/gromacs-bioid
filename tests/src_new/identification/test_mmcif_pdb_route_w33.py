@@ -186,6 +186,27 @@ class TestTransientRetry:
         assert "HTTP 500" in resolver._last_error
         assert post_mock.call_count == 2  # one retry, then give up
 
+    def test_http_204_is_empty_result_not_outage(self, tmp_path):
+        """c13 S2: RCSB answers a valid no-match query with 204 + empty body.
+        That is 0 hits — no settle-retry, no structure_search_unavailable."""
+        resolver = MmCifResolver(_config(tmp_path))
+        with mock.patch(
+            "src_new.identification.resolvers._rcsb_search.requests.post"
+        ) as post_mock, mock.patch(
+            "src_new.identification.resolvers._rcsb_search.time.sleep"
+        ) as sleep_mock:
+            empty = mock.Mock()
+            empty.status_code = 204
+            empty.raise_for_status = lambda: None
+            empty.json.side_effect = requests.exceptions.JSONDecodeError(
+                "Expecting value", "", 0)
+            post_mock.return_value = empty
+            results = resolver._resolve_similarity(FULL_CIF, str(tmp_path))
+        assert results == []
+        assert "structure_search_unavailable" not in (resolver._last_error or "")
+        assert post_mock.call_count == 1
+        sleep_mock.assert_not_called()
+
     def test_timeout_not_retried(self, tmp_path):
         resolver = MmCifResolver(_config(tmp_path))
         with mock.patch(
