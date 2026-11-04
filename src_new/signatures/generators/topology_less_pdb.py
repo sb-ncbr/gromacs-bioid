@@ -8,6 +8,7 @@ from io import StringIO
 import numpy as np
 
 from ...config.loader import SignaturesConfig
+from ...constants import FORCE_FIELD_RESIDUE_PARENTS
 from ...loader.universe_facade import LoadedUniverse, SegmentProperty
 from ...molecules.instances import MoleculeInstance
 from ..base import SignatureGenerator
@@ -230,11 +231,22 @@ _STD_RESNAMES_3 = {
 def _std_resname3(name: str) -> str:
     """Map a residue name to a canonical <=3-char code (B-04).
 
-    HISE/HISD/HISH->HIS, LYSH->LYS, CYS2/CYX->CYS, terminal NALA/CGLN etc.
-    -> ALA/GLN; unknown 4-char names collapse to their first 3 chars so the
-    fixed-width column layout survives.
+    Force-field variants -> PDB parent (FORCE_FIELD_RESIDUE_PARENTS:
+    CYX/CYM/CYS2->CYS, HIE/HID/HIP/HSD/HISE->HIS, ASH->ASP, GLH->GLU,
+    LYN/LYSH->LYS, AMBER nucleic DA5/RU3 ...), also behind an AMBER terminal
+    prefix (NHIE/CCYX); terminal NALA/CGLN etc. -> ALA/GLN; unknown 4-char
+    names collapse to their first 3 chars so the fixed-width column layout
+    survives.
+
+    c13 structure search (S1): 3-char names used to pass through unchanged,
+    so AMBER CYX reached RCSB, which then answered 204 for the whole query.
     """
     n = (name or "").strip().upper()
+    parent = FORCE_FIELD_RESIDUE_PARENTS.get(n)
+    if parent is None and len(n) == 4 and n[0] in "NC":
+        parent = FORCE_FIELD_RESIDUE_PARENTS.get(n[1:])
+    if parent is not None:
+        return parent
     if len(n) <= 3:
         return n
     if n[1:] in _STD_RESNAMES_3:

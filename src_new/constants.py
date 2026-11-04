@@ -203,6 +203,32 @@ KNOWN_RESIDUE_CODES: dict[str, object] = {
     'DGN': 'Q', 'DAS': 'D', 'DTR': 'W', 'DHI': 'H', 'DPN': 'P',
 }
 
+# c13 structure search (S1): force-field protonation / disulfide / terminal
+# variants (AMBER, CHARMM, GROMACS, GROMOS) -> the PDB Chemical Component
+# Dictionary parent code. Exported structure files (RCSB / Foldseek /
+# AlphaFind queries, structure verification) must carry PDB names: RCSB
+# structure search answers 204 (no results) for a whole query containing
+# AMBER CYX (live probe 2026-11-04, T02/1N8U: as exported -> 204, CYX->CYS
+# only -> 1N8U top hit), and gemmi reads CYX as 'X'. Genuine CCD components
+# (MSE, SEP, ACE, NME, D-amino acids, ...) are deliberately absent.
+FORCE_FIELD_RESIDUE_PARENTS: dict[str, str] = {
+    'CYX': 'CYS', 'CYM': 'CYS', 'CYS2': 'CYS', 'CYSH': 'CYS', 'CYS1': 'CYS',
+    'HIE': 'HIS', 'HID': 'HIS', 'HIP': 'HIS', 'HSD': 'HIS', 'HSE': 'HIS',
+    'HSP': 'HIS', 'HISD': 'HIS', 'HISE': 'HIS', 'HISH': 'HIS', 'HIS1': 'HIS',
+    'HIS2': 'HIS', 'HISA': 'HIS', 'HISB': 'HIS',
+    'ASH': 'ASP', 'ASPP': 'ASP', 'ASPH': 'ASP',
+    'GLH': 'GLU', 'GLUP': 'GLU', 'GLUH': 'GLU',
+    'LYN': 'LYS', 'LSN': 'LYS', 'LYSH': 'LYS',
+    'ARN': 'ARG', 'TYM': 'TYR',
+    # AMBER nucleic 5'/3' terminal residues
+    'DA5': 'DA', 'DA3': 'DA', 'DC5': 'DC', 'DC3': 'DC',
+    'DG5': 'DG', 'DG3': 'DG', 'DT5': 'DT', 'DT3': 'DT',
+    'A5': 'A', 'A3': 'A', 'C5': 'C', 'C3': 'C',
+    'G5': 'G', 'G3': 'G', 'U5': 'U', 'U3': 'U',
+    'RA5': 'A', 'RA3': 'A', 'RC5': 'C', 'RC3': 'C',
+    'RG5': 'G', 'RG3': 'G', 'RU5': 'U', 'RU3': 'U',
+}
+
 KNOWN_NUCLEIC_ACIDS_CODES: dict[str, object] = {
     'A': 'A',
     'C': 'C',

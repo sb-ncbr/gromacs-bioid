@@ -312,8 +312,10 @@ def fragment_to_pdb_biopython(
         if chain is None:
             chain = chains_out[cid] = Chain.Chain(cid)
         atoms = residue.atoms
+        # c13 structure search (S1): PDB residue names (was [:3] truncation:
+        # CYX reached RCSB verbatim -> 204 for the whole query; NALA -> NAL).
         residue_out = Residue.Residue(
-            (" ", resseq[rindex], " "), str(residue.resname)[:3], "")
+            (" ", resseq[rindex], " "), _std_resname3(str(residue.resname)), "")
 
         if only_backbone:
             selected = (
@@ -391,28 +393,9 @@ def fragment_to_pdb_biopython(
 # residue names (LYSH/CYS2/HISE/NALA/terminal variants) and resSeq >= 10000
 # shifted every following column and produced unparseable Foldseek/AlphaFind/
 # RCSB inputs. Normalize to canonical 3-letter codes and renumber per chain.
-_STD_RESNAMES_3 = {
-    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
-    "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
-    "DA", "DC", "DG", "DT", "DU", "RA", "RC", "RG", "RT", "RU",
-}
-
-
-def _std_resname3(name: str) -> str:
-    """Map a residue name to a canonical <=3-char code (B-04).
-
-    HISE/HISD/HISH->HIS, LYSH->LYS, CYS2/CYX->CYS, terminal NALA/CGLN etc.
-    -> ALA/GLN; unknown 4-char names collapse to their first 3 chars so the
-    fixed-width column layout survives.
-    """
-    n = (name or "").strip().upper()
-    if len(n) <= 3:
-        return n
-    if n[1:] in _STD_RESNAMES_3:
-        return n[1:]
-    if n[:3] in _STD_RESNAMES_3:
-        return n[:3]
-    return n[:3]
+# c13 structure search (S1): one normalizer for every PDB writer (was a
+# drifting copy here), also mapping 3-char force-field names (CYX, HIE, ...).
+from .topology_less_pdb import _std_resname3  # noqa: E402
 
 
 def _renumber_writer_residues(resnums) -> dict:
