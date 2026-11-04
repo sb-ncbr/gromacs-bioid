@@ -209,6 +209,27 @@ class TestTransientRetry:
         sleep_mock.assert_called_once()
 
     def test_permanent_5xx_stays_countable_error(self, tmp_path):
+        """c13 S5: overload-class 5xx earns three backoff retries, then
+        stays a countable error."""
+        resolver = MmCifResolver(_config(tmp_path))
+        with mock.patch(
+            "src_new.identification.resolvers._rcsb_search.requests.post"
+        ) as post_mock, mock.patch(
+            "src_new.identification.resolvers._rcsb_search.time.sleep"
+        ) as sleep_mock:
+            fail = mock.Mock()
+            fail.status_code = 500
+            fail.raise_for_status.side_effect = _http_error(500)
+            post_mock.return_value = fail
+            results = resolver._resolve_similarity(FULL_CIF, str(tmp_path))
+        assert results == []
+        assert "structure_search_unavailable" in (resolver._last_error or "")
+        assert "HTTP 500" in resolver._last_error
+        assert post_mock.call_count == 4  # three backoff retries, then give up
+        delays = [c.args[0] for c in sleep_mock.call_args_list]
+        assert len(delays) == 3 and delays[0] < delays[1] < delays[2]
+
+    def test_transient_5xx_recovers_within_backoff(self, tmp_path):
         resolver = MmCifResolver(_config(tmp_path))
         with mock.patch(
             "src_new.identification.resolvers._rcsb_search.requests.post"
@@ -218,12 +239,31 @@ class TestTransientRetry:
             fail = mock.Mock()
             fail.status_code = 500
             fail.raise_for_status.side_effect = _http_error(500)
-            post_mock.side_effect = [fail, fail]
+            ok = mock.Mock()
+            ok.status_code = 200
+            ok.json.return_value = {"result_set": [{"identifier": "1N8U", "score": 1.0}]}
+            ok.raise_for_status = lambda: None
+            post_mock.side_effect = [fail, fail, ok]
+            results = resolver._resolve_similarity(FULL_CIF, str(tmp_path))
+        assert results == [("1N8U", 100.0)]
+        assert post_mock.call_count == 3
+
+    def test_deterministic_4xx_not_retried(self, tmp_path):
+        resolver = MmCifResolver(_config(tmp_path))
+        with mock.patch(
+            "src_new.identification.resolvers._rcsb_search.requests.post"
+        ) as post_mock, mock.patch(
+            "src_new.identification.resolvers._rcsb_search.time.sleep"
+        ) as sleep_mock:
+            fail = mock.Mock()
+            fail.status_code = 400
+            fail.raise_for_status.side_effect = _http_error(400)
+            post_mock.return_value = fail
             results = resolver._resolve_similarity(FULL_CIF, str(tmp_path))
         assert results == []
-        assert "structure_search_unavailable" in (resolver._last_error or "")
-        assert "HTTP 500" in resolver._last_error
-        assert post_mock.call_count == 2  # one retry, then give up
+        assert "HTTP 400" in (resolver._last_error or "")
+        assert post_mock.call_count == 1
+        sleep_mock.assert_not_called()
 
     def test_http_204_is_empty_result_not_outage(self, tmp_path):
         """c13 S2: RCSB answers a valid no-match query with 204 + empty body.
@@ -246,13 +286,17 @@ class TestTransientRetry:
         assert post_mock.call_count == 1
         sleep_mock.assert_not_called()
 
-    def test_timeout_not_retried(self, tmp_path):
+    def test_timeout_retried_with_backoff(self, tmp_path):
+        """c13 S5: timeouts are an overload symptom at fleet scale (up to 51
+        per 397-run arm) and now earn the backoff retries."""
         resolver = MmCifResolver(_config(tmp_path))
         with mock.patch(
             "src_new.identification.resolvers._rcsb_search.requests.post"
-        ) as post_mock:
+        ) as post_mock, mock.patch(
+            "src_new.identification.resolvers._rcsb_search.time.sleep"
+        ):
             post_mock.side_effect = requests.exceptions.Timeout("slow")
             results = resolver._resolve_similarity(FULL_CIF, str(tmp_path))
         assert results == []
         assert "timed out" in (resolver._last_error or "")
-        assert post_mock.call_count == 1
+        assert post_mock.call_count == 4
