@@ -15,7 +15,7 @@ from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
 # _pdb_atom_line is the single home of the PDB ATOM-line format RCSB
 # accepted live (2026-11-01 probe); the mmCIF->PDB converter reuses it.
 from ...constants import FORCE_FIELD_RESIDUE_PARENTS
-from ._rcsb_search import post_rcsb_query
+from ._rcsb_search import merge_hit_lists, post_rcsb_query, split_oversized_query
 from ._ssh_upload import has_ssh_config, ssh_delete, ssh_upload
 
 logger = logging.getLogger("identifier")
@@ -301,6 +301,27 @@ class MmCifResolver(IdentifierResolver):
             query_text = pdb_text
             query_format = "pdb"
 
+        # g1: RCSB rejects large query assemblies (HTTP 400 / gateway
+        # timeout); converted PDB queries are split per chain and merged
+        if query_format == "pdb":
+            queries = split_oversized_query(query_text)
+            if len(queries) > 1:
+                logger.info(f"RCSB structure query oversized; split into "
+                            f"{len(queries)} per-chain queries")
+                hit_lists, errors = [], []
+                for q in queries:
+                    self._last_error = None
+                    hit_lists.append(self._similarity_one(q, query_format, working_directory))
+                    if self._last_error:
+                        errors.append(self._last_error)
+                # a failed chain is only an error when no chain got through
+                self._last_error = errors[0] if len(errors) == len(queries) else None
+                return merge_hit_lists(hit_lists)
+        return self._similarity_one(query_text, query_format, working_directory)
+
+    def _similarity_one(self, query_text: str, query_format: str,
+                        working_directory: str) -> list[tuple[str, float]]:
+        """One RCSB similarity search for a query text."""
         # Create temp file for the query structure
         fd, q_path = tempfile.mkstemp(
             suffix=f".{query_format}", dir=safe_tmp_dir(working_directory))

@@ -123,3 +123,78 @@ def post_rcsb_query(request: dict, *, timeout_s: float = 30.0) -> dict:
                         attempt + 1, allowed, delay)
             attempt += 1
             time.sleep(delay)
+
+
+# g1 (2026-11-05): RCSB structure search cannot process large query
+# assemblies. Live probe on a 4-chain MDposit system (45,652 atoms, 2,872
+# residues): the whole file -> HTTP 400 "We could not process your search
+# request" (or a 20 s gateway timeout, HTTP 500, which then burned three
+# backoff retries); the same file with correct chain labels -> still 400;
+# any single chain (~718 residues) -> 200 with the right family on top.
+# Oversized queries are therefore split into per-chain queries (distinct
+# chain sequences only, largest first) whose hit lists are merged.
+MAX_QUERY_RESIDUES = 1500
+MAX_CHAIN_QUERIES = 4
+_MIN_CHAIN_RESIDUES = 20
+_CHAIN_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+
+def _pdb_xyz(line: str) -> tuple[float, float, float]:
+    return float(line[30:38]), float(line[38:46]), float(line[46:54])
+
+
+def split_oversized_query(pdb_text: str,
+                          max_residues: int = MAX_QUERY_RESIDUES,
+                          max_chains: int = MAX_CHAIN_QUERIES) -> list[str]:
+    """[pdb_text] when the query is small enough, else per-chain PDB texts.
+
+    Chains come from the chain column; when the payload carries a single
+    label (MDposit topology-less systems collapse every chain to 'A'),
+    chains are re-derived at broken peptide bonds (C(i)-N(i+1) > 2 A).
+    Only ATOM records are kept per chain (CONECT serials would dangle);
+    identical chain sequences are queried once."""
+    import math
+
+    atoms = [ln for ln in pdb_text.splitlines() if ln.startswith("ATOM")]
+    # residue = run of consecutive records sharing chain/number/name (label
+    # and numbering can both repeat across collapsed chains)
+    n_res = sum(1 for i, ln in enumerate(atoms)
+                if i == 0 or ln[17:27] != atoms[i - 1][17:27])
+    if n_res <= max_residues:
+        return [pdb_text]
+
+    chains: dict[str, list[str]] = {}
+    if len({ln[21] for ln in atoms}) > 1:
+        for ln in atoms:
+            chains.setdefault(ln[21], []).append(ln)
+    else:
+        idx, last_c = 0, None
+        for ln in atoms:
+            name = ln[12:16].strip()
+            if name == "N" and last_c is not None and math.dist(_pdb_xyz(ln), last_c) > 2.0:
+                idx += 1
+            if name == "C":
+                last_c = _pdb_xyz(ln)
+            label = _CHAIN_LABELS[idx % len(_CHAIN_LABELS)]
+            chains.setdefault(f"{idx}", []).append(ln[:21] + label + ln[22:])
+
+    distinct: dict[tuple, list[str]] = {}
+    for lines in chains.values():
+        seq = [ln[17:20] for i, ln in enumerate(lines)
+               if i == 0 or ln[17:27] != lines[i - 1][17:27]]
+        if len(seq) >= _MIN_CHAIN_RESIDUES:
+            distinct.setdefault(tuple(seq), lines)
+    if not distinct:
+        return [pdb_text]
+    picked = sorted(distinct.values(), key=len, reverse=True)[:max_chains]
+    return ["\n".join(lines + ["END"]) + "\n" for lines in picked]
+
+
+def merge_hit_lists(hit_lists: list[list[tuple[str, float]]]) -> list[tuple[str, float]]:
+    """Union of per-chain hit lists, best score per identifier, best first."""
+    best: dict[str, float] = {}
+    for hits in hit_lists:
+        for ident, score in hits:
+            if ident not in best or score > best[ident]:
+                best[ident] = score
+    return sorted(best.items(), key=lambda kv: kv[1], reverse=True)

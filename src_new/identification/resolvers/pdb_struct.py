@@ -10,7 +10,7 @@ import tempfile
 
 from ...config.loader import RunConfig
 from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
-from ._rcsb_search import post_rcsb_query
+from ._rcsb_search import merge_hit_lists, post_rcsb_query, split_oversized_query
 from ._ssh_upload import has_ssh_config, ssh_delete, ssh_upload
 
 logger = logging.getLogger("identifier")
@@ -111,6 +111,16 @@ class PDBStructResolver(IdentifierResolver):
             self._last_error = "na_mode_unsupported"
             return []
 
+        # g1: RCSB rejects large query assemblies; split them per chain
+        queries = split_oversized_query(signature)
+        if len(queries) > 1:
+            logger.info(f"RCSB structure query oversized; split into "
+                        f"{len(queries)} per-chain queries")
+        return merge_hit_lists([self._similarity_one(q, working_directory)
+                                for q in queries])
+
+    def _similarity_one(self, signature: str, working_directory: str) -> list[tuple[str, float]]:
+        """One RCSB similarity search for a PDB query text."""
         # Create temp file for PDB structure
         fd, pdb_path = tempfile.mkstemp(suffix=".pdb", dir=safe_tmp_dir(working_directory))
         os.close(fd)
