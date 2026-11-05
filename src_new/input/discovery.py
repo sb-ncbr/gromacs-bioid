@@ -214,7 +214,20 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             selected_strategy="ITP_GRO",
             topology_files=[itp_files[0]] if itp_files else [],
         )
-    
+
+    # 4b. g1: .top/.itp + .xtc with no structure file (MDposit serves a
+    # solvated topology next to a solvent-stripped trajectory; 44 corpus
+    # entries had no strategy at all and failed validation everywhere)
+    if (".top" in exts or ".itp" in exts) and ".xtc" in exts:
+        strat = "TOP_XTC" if ".top" in exts else "ITP_XTC"
+        topo = [f.path for f in bundle.files
+                if f.path.suffix.lower() == (".top" if ".top" in exts else ".itp")]
+        return LoadDecision(
+            input_kind=InputKind.GROMACS,
+            selected_strategy=strat,
+            topology_files=topo[:1],
+        )
+
     # 5. .prmtop + .nc or .parm7 + .nc -> "PRMTOP_NC", AMBER
     
     # 5b. .prmtop + .xtc or .parm7 + .xtc -> "PRMTOP_XTC", AMBER

@@ -16,7 +16,7 @@ from MDAnalysis import Universe
 from ..config.loader import RunConfig
 from ..input.models import InputKind, InputBundle, LoadDecision
 from ..results.results_manager import ResultsManager
-from .probe import match_atoms
+from .probe import match_atoms, read_source_frame0
 from .scale_guard import run_scale_guard
 
 logger = logging.getLogger("base")
@@ -44,6 +44,9 @@ class LoadStrategy(str, Enum):
     GROMACS_TOP_PDB = "gromacs_top_pdb"
     GROMACS_ITP_PDB = "gromacs_itp_pdb"
     GROMACS_TPR_TRR = "gromacs_tpr_trr"
+    # g1: topology + trajectory for text GROMACS topologies
+    GROMACS_TOP_XTC = "gromacs_top_xtc"
+    GROMACS_ITP_XTC = "gromacs_itp_xtc"
     GROMACS_GRO = "gromacs_gro"  # A-07 (3.3): topology-free GRO fallback
     LAMMPS_DATA = "lammps_data"
     PDB = "pdb"
@@ -88,6 +91,21 @@ _PROBE_PAIRS: dict["LoadStrategy", tuple[str, str]] = {
     LoadStrategy.AMBER_PRMTOP_MDCRD: ("prmtop", "mdcrd"),
     LoadStrategy.AMBER_PARM7_MDCRD: ("parm7", "mdcrd"),
     LoadStrategy.GROMACS_TPR_TRR: ("tpr", "trr"),
+    LoadStrategy.GROMACS_TOP_XTC: ("top", "xtc"),
+    LoadStrategy.GROMACS_ITP_XTC: ("itp", "xtc"),
+}
+
+# standalone topology parse per _PROBE_PAIRS key (atom-count probe and the
+# solvent-stripped trajectory retry); MDAnalysis maps a bare .top to the
+# AMBER parser, so GROMACS text topologies need the ITP format explicitly
+_TOPOLOGY_PARSE_KWARGS = {
+    "parm7": dict(topology_format="PRMTOP"),
+    "prmtop": dict(topology_format="PRMTOP"),
+    "psf": {},
+    "tpr": dict(tpr_resid_from_one=True),
+    "top": dict(topology_format="ITP", tpr_resid_from_one=True),
+    "itp": dict(topology_format="ITP", tpr_resid_from_one=True,
+                infer_system=True),
 }
 
 
@@ -372,6 +390,23 @@ def validate_for_strategy(bundle: InputBundle, strategy: LoadStrategy) -> FileVa
                 if len(trr_files) > 1:
                     warnings.append("multiple_trr_files")
 
+        case LoadStrategy.GROMACS_TOP_XTC | LoadStrategy.GROMACS_ITP_XTC:
+            topo_key = "top" if strategy == LoadStrategy.GROMACS_TOP_XTC else "itp"
+            topo_files = _get_files_by_ext(bundle, f".{topo_key}")
+            if len(topo_files) == 0:
+                errors.append(f"No .{topo_key} files found")
+            else:
+                selected_files[topo_key] = sorted(topo_files, key=lambda p: p.name)[0]
+                if len(topo_files) > 1:
+                    warnings.append(f"multiple_{topo_key}_files")
+            xtc_files = _get_files_by_ext(bundle, ".xtc")
+            if len(xtc_files) == 0:
+                errors.append("No .xtc files found")
+            else:
+                selected_files["xtc"] = sorted(xtc_files, key=lambda p: p.name)[0]
+                if len(xtc_files) > 1:
+                    warnings.append("multiple_xtc_files")
+
         case LoadStrategy.PDB:
             # B3 (BH-014 rest): .ent is PDB-format content (X03)
             pdb_files = (_get_files_by_ext(bundle, ".pdb")
@@ -516,6 +551,11 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_GRO,  # A-07 topology-free tail
                 LoadStrategy.PDB,          # A-07 cross-kind tail
             ]
+        elif strategy in ("TOP_XTC", "ITP_XTC"):
+            base_strategies = [LoadStrategy.GROMACS_TOP_XTC,
+                               LoadStrategy.GROMACS_ITP_XTC]
+            if strategy == "ITP_XTC":
+                base_strategies.reverse()
         elif strategy == "ITP_GRO":
             base_strategies = [
                 LoadStrategy.GROMACS_ITP_GRO,
@@ -846,6 +886,12 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
             u = Universe(str(files["tpr"]), str(files["trr"]), tpr_resid_from_one=True)
             _ = u.trajectory[0]
             return u
+        case LoadStrategy.GROMACS_TOP_XTC | LoadStrategy.GROMACS_ITP_XTC:
+            key = "top" if "top" in files else "itp"
+            u = Universe(str(files[key]), str(files["xtc"]),
+                         **_TOPOLOGY_PARSE_KWARGS[key])
+            _ = u.trajectory[0]
+            return u
         case LoadStrategy.LAMMPS_DATA:
             return _load_lammps_data(files["data"])
         case LoadStrategy.PDB:
@@ -903,14 +949,14 @@ _STATIC_PAIR_STRATEGIES = frozenset({
 })
 
 
-def _topology_n_atoms(path: Path) -> int | None:
-    """Parse a (binary) topology to get its declared atom count; None on failure.
+def _topology_n_atoms(path: Path, key: str | None = None) -> int | None:
+    """Parse a topology to get its declared atom count; None on failure.
 
-    Only used for _PROBE_PAIRS topologies (.psf/.prmtop/.parm7/.tpr) — text
-    topologies (.top/.itp) would need the ITP machinery and are skipped.
+    Only used for _PROBE_PAIRS topologies; key (the _PROBE_PAIRS file key)
+    selects the parser options (.top/.itp go through the ITP parser).
     """
     try:
-        return Universe(str(path)).atoms.n_atoms
+        return Universe(str(path), **_TOPOLOGY_PARSE_KWARGS.get(key, {})).atoms.n_atoms
     except Exception:
         return None
 
@@ -956,12 +1002,165 @@ def _topology_structure_universe(top_path, pdb_path, build_kwargs):
             for a, b in zip(u_top.atoms[:k].names, u_str.atoms.names))
         if not names_match:
             raise direct_exc
-        from MDAnalysis import Merge
         import numpy as np
-        merged = Merge(u_top.atoms[:k])
+        merged = _merge_subset(u_top, u_top.atoms[:k])
         merged.load_new(
             np.asarray(u_str.atoms.positions)[np.newaxis, :, :])
         return merged
+
+
+_PRMTOP_FILLED: dict[str, Path | None] = {}
+
+
+def _prmtop_sections(lines):
+    """{flag: (first data line index, end index)} of an AMBER prmtop."""
+    out, flag, start = {}, None, 0
+    for i, ln in enumerate(lines):
+        if ln.startswith("%FLAG"):
+            if flag is not None:
+                out[flag] = (start, i)
+            flag, start = ln.split()[1], i + 2  # skip the %FORMAT line
+    if flag is not None:
+        out[flag] = (start, len(lines))
+    return out
+
+
+def _prmtop_with_atom_types(path) -> Path | None:
+    """g1 (54 corpus entries, MDposit MD-A001AH family): prmtops whose
+    AMBER_ATOM_TYPE section is present but BLANK. MDAnalysis' TOPParser
+    splits it on whitespace, finds 0 types and rejects the whole file
+    ("Length of types does not match number of atoms. Expect: 1077
+    Have: 0") although charges, bonds and ATOMIC_NUMBER are intact.
+    Returns a temporary copy with element symbols (from ATOMIC_NUMBER)
+    as types, or None when the file needs no repair."""
+    key = str(path)
+    if key in _PRMTOP_FILLED:
+        return _PRMTOP_FILLED[key]
+    _PRMTOP_FILLED[key] = None
+    try:
+        text = Path(path).read_text(errors="replace")
+    except OSError:
+        return None
+    lines = text.splitlines()
+    sec = _prmtop_sections(lines)
+    if "AMBER_ATOM_TYPE" not in sec or "ATOMIC_NUMBER" not in sec:
+        return None
+    t0, t1 = sec["AMBER_ATOM_TYPE"]
+    if any(ln.strip() for ln in lines[t0:t1]):
+        return None
+    try:
+        from MDAnalysis.guesser.tables import Z2SYMB
+    except ImportError:  # MDAnalysis < 2.8
+        from MDAnalysis.topology.tables import Z2SYMB
+    a0, a1 = sec["ATOMIC_NUMBER"]
+    p0, _ = sec["POINTERS"]
+    n_atoms = int(lines[p0].split()[0])
+    zs = [int(z) for ln in lines[a0:a1] for z in ln.split()]
+    if len(zs) != n_atoms:
+        return None
+    # extra points / virtual sites carry Z <= 0
+    types = [Z2SYMB.get(z, "EP") if z > 0 else "EP" for z in zs]
+    body = ["".join(f"{t:<4.4}" for t in types[i:i + 20])
+            for i in range(0, len(types), 20)]
+    out_dir = Path(tempfile.mkdtemp(prefix="bat3_prmtop_"))
+    out = out_dir / Path(path).name
+    out.write_text("\n".join(lines[:t0] + body + lines[t1:]) + "\n")
+    _PRMTOP_FILLED[key] = out
+    return out
+
+
+def _merge_subset(u_top, atoms):
+    """MDAnalysis Merge of a topology subset. GROMACS ITP dihedral types
+    are tuples of uneven length that Merge cannot pack ("inhomogeneous
+    shape", 16319 fixture); angle/dihedral/improper terms are not used
+    downstream, so they are dropped and the merge retried."""
+    from MDAnalysis import Merge
+    try:
+        return Merge(atoms)
+    except ValueError:
+        for attr in ("angles", "dihedrals", "impropers"):
+            if hasattr(u_top, attr):
+                u_top.del_TopologyAttr(attr)
+        return Merge(atoms)
+
+
+def _bond_length_median(u_top, idx, positions):
+    """Median frame-0 length (A) of topology bonds inside the subset idx;
+    None when the subset holds no bonds."""
+    import numpy as np
+    try:
+        b = u_top.bonds.indices
+    except Exception:
+        return None
+    if len(b) == 0:
+        return None
+    pos_of = np.full(len(u_top.atoms), -1)
+    pos_of[idx] = np.arange(len(idx))
+    b = b[(pos_of[b[:, 0]] >= 0) & (pos_of[b[:, 1]] >= 0)]
+    if len(b) == 0:
+        return None
+    d = np.linalg.norm(positions[pos_of[b[:, 0]]] - positions[pos_of[b[:, 1]]],
+                       axis=1)
+    return float(np.median(d))
+
+
+def _stripped_trajectory_universe(strategy, top_path, traj_path):
+    """Topology + SOLVENT-STRIPPED trajectory (frame 0).
+
+    MDposit serves trajectory.xtc with water and counter-ions removed
+    while the deposited topology keeps the full solvated system (g1
+    entry 9333: parm7 14,671 atoms, xtc 76 = the ligand). The atom-count
+    probe rejected every such pairing and, with no static structure in
+    the bundle, the whole run failed. The trajectory is matched against
+    solvent-stripped subsets of the topology, in order:
+      prefix      - the first k atoms, every later atom water or ion
+      non_solvent - all atoms outside water and single-atom residues
+      non_water   - all non-water atoms (structural ions kept)
+    A candidate is accepted when its count equals the trajectory's and
+    the median topology bond length in frame 0 is chemically plausible
+    (0.9-1.9 A; a misaligned subset lands far outside). A subset without
+    any bonds is accepted only as a prefix. Returns (universe, info)."""
+    import numpy as np
+    from ..molecules.instances import WATER_RESNAMES
+
+    key = _PROBE_PAIRS[strategy][0]
+    u_top = Universe(str(top_path), **_TOPOLOGY_PARSE_KWARGS.get(key, {}))
+    frame0 = read_source_frame0(Path(traj_path))
+    if frame0 is None:
+        raise _GateFailure("rejected_atoms",
+                           f"{Path(traj_path).name}: no topology-free reader")
+    positions, dims = frame0
+    n, k = len(u_top.atoms), len(positions)
+
+    res = u_top.atoms.resindices
+    resnames = np.array([str(r).upper() for r in u_top.residues.resnames])
+    water = np.isin(resnames, sorted(WATER_RESNAMES))[res]
+    ion = (np.bincount(res, minlength=len(u_top.residues)) == 1)[res]
+    solvent = water | ion
+    candidates = []
+    if 0 < k < n and solvent[k:].all():
+        candidates.append(("prefix", np.arange(k)))
+    for name, keep in (("non_solvent", ~solvent), ("non_water", ~water)):
+        idx = np.flatnonzero(keep)
+        if len(idx) == k:
+            candidates.append((name, idx))
+
+    for name, idx in candidates:
+        med = _bond_length_median(u_top, idx, positions)
+        if med is None and name != "prefix":
+            continue
+        if med is not None and not 0.9 <= med <= 1.9:
+            continue
+        merged = _merge_subset(u_top, u_top.atoms[idx])
+        merged.load_new(np.asarray(positions)[np.newaxis, :, :],
+                        dimensions=dims)
+        return merged, {"subset": name, "n_topology": n, "n_trajectory": k,
+                        "bond_median_A": None if med is None else round(med, 3)}
+    raise _GateFailure(
+        "rejected_atoms",
+        f"atom count mismatch: topology has {n} atoms, "
+        f"{Path(traj_path).name} has {k} and matches no solvent-stripped "
+        f"subset of the topology (tried {[c for c, _ in candidates] or 'none'})")
 
 
 def _check_topology_structure_names(universe, pdb_path) -> None:
@@ -1146,7 +1345,14 @@ def load_simulation(
     all_warnings: list[str] = []
     attempts: list[LoadAttempt] = []
     
-    for strategy in strategies:
+    # (strategy, stripped): a trajectory pairing rejected for having FEWER
+    # atoms than its topology is re-queued at the END as a solvent-stripped
+    # retry, so it only rescues runs no other strategy could load
+    queue = [(s, False) for s in strategies]
+    qi = 0
+    while qi < len(queue):
+        strategy, stripped = queue[qi]
+        qi += 1
         # Validate for this strategy
         validation = validate_for_strategy(bundle, strategy)
         
@@ -1178,11 +1384,23 @@ def load_simulation(
             timestamp=datetime.datetime.now(timezone.utc).isoformat(),
         )
 
+        # g1: a prmtop whose AMBER_ATOM_TYPE section is blank is parsed
+        # from a copy with element-symbol types (attempt keeps the original)
+        for key in ("prmtop", "parm7"):
+            if key in validation.selected_files:
+                filled = _prmtop_with_atom_types(validation.selected_files[key])
+                if filled is not None:
+                    validation.selected_files[key] = filled
+                    note = ("prmtop_atom_types_filled: AMBER_ATOM_TYPE section "
+                            "is blank; element symbols used as atom types")
+                    if note not in all_warnings:
+                        all_warnings.append(note)
+
         # atom-count probe for topology/trajectory pairings (before the
         # expensive Universe build; mdpc 'rejected_atoms' semantics)
-        if strategy in _PROBE_PAIRS:
+        if strategy in _PROBE_PAIRS and not stripped:
             topo_key, traj_key = _PROBE_PAIRS[strategy]
-            topo_atoms = _topology_n_atoms(validation.selected_files[topo_key])
+            topo_atoms = _topology_n_atoms(validation.selected_files[topo_key], topo_key)
             if topo_atoms is not None:
                 probe = match_atoms(topo_atoms, validation.selected_files[traj_key])
                 if not probe.ok:
@@ -1195,6 +1413,8 @@ def load_simulation(
                     # step instead of silently dropping the trajectory.
                     all_warnings.append(
                         f"trajectory_ignored: {probe.error_message}")
+                    if (probe.n_atoms_source or 0) < (probe.n_atoms_topology or 0):
+                        queue.append((strategy, True))
                     _record_attempts(results, attempts)
                     continue
                 if probe.error_code == "probe_failed":
@@ -1202,7 +1422,13 @@ def load_simulation(
 
         try:
             # Try to load
-            universe = load_with_strategy(strategy, validation.selected_files, config)
+            if stripped:
+                topo_key, traj_key = _PROBE_PAIRS[strategy]
+                universe, stripped_info = _stripped_trajectory_universe(
+                    strategy, validation.selected_files[topo_key],
+                    validation.selected_files[traj_key])
+            else:
+                universe = load_with_strategy(strategy, validation.selected_files, config)
 
             # Post-build success gates (mdpc executor). Deliberately NO protein
             # gate: bat3 catalogs every molecule, so solvent-only / empty-catalog
@@ -1251,6 +1477,19 @@ def load_simulation(
                 all_warnings.append(
                     f"topology_ignored: falling back to {strategy.value} "
                     f"without topology metadata ({reason[:160]})")
+
+            if stripped:
+                # the trajectory was used after all: replace the
+                # trajectory_ignored note with what was actually dropped
+                all_warnings[:] = [w for w in all_warnings
+                                   if not w.startswith("trajectory_ignored")]
+                all_warnings.append(
+                    f"trajectory_solvent_stripped: {stripped_info['n_trajectory']} "
+                    f"trajectory atoms matched the {stripped_info['subset']} subset "
+                    f"of {stripped_info['n_topology']} topology atoms; "
+                    f"{stripped_info['n_topology'] - stripped_info['n_trajectory']} "
+                    "solvent/ion atoms absent from the deposit")
+                results.set_data("loading/stripped_trajectory", stripped_info)
 
             # Record final results
             results.set_data("loading/success", True)

@@ -51,21 +51,40 @@ def probe_source_n_atoms(path: Path) -> int | None:
     .pdb/.gro/.crd/.rst7 are parsed by the Universe build anyway; probing
     them would need the full parser, defeating the point).
     """
-    suffix = path.suffix.lower()
-    spec = _READER_BY_SUFFIX.get(suffix)
-    if spec is None:
-        return None
-    cls_name, module = spec
     try:
-        import importlib
-
-        mod = importlib.import_module(module)
-        reader_cls = getattr(mod, cls_name)
-        reader = reader_cls(str(path))
+        reader = _open_reader(path)
+        if reader is None:
+            return None
         return int(reader.n_atoms)
     except Exception as exc:
         logger.warning(f"probe of {path.name} failed: {exc}")
         return None
+
+
+def _open_reader(path: Path):
+    """Topology-free reader for a trajectory source; None for other types."""
+    spec = _READER_BY_SUFFIX.get(path.suffix.lower())
+    if spec is None:
+        return None
+    import importlib
+
+    cls_name, module = spec
+    return getattr(importlib.import_module(module), cls_name)(str(path))
+
+
+def read_source_frame0(path: Path):
+    """(positions, dimensions) of frame 0 of a trajectory source, read
+    without a topology (solvent-stripped trajectory matching); None for
+    sources without a topology-free reader. Raises on unreadable files."""
+    reader = _open_reader(path)
+    if reader is None:
+        return None
+    try:
+        ts = reader.ts
+        dims = None if ts.dimensions is None else ts.dimensions.copy()
+        return ts.positions.copy(), dims
+    finally:
+        reader.close()
 
 
 def match_atoms(topology_atoms: int, source: Path) -> ProbeResult:

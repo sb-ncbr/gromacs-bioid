@@ -273,3 +273,184 @@ class TestStructureAloneFiTail:
         assert res.final_strategy.value == "pdb"
         warnings_ = results.get_data("loading/warnings")
         assert any("topology_ignored" in w for w in warnings_), warnings_
+
+
+def _dcd_from_positions(pos, out: Path) -> Path:
+    arr = np.asarray(pos, dtype=np.float32)[np.newaxis, :, :]
+    seg = mda.Universe.empty(arr.shape[1], trajectory=True)
+    seg.load_new(arr, format="memory")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with mda.Writer(str(out), seg.atoms.n_atoms) as w:
+            w.write(seg)
+    return out
+
+
+class TestSolventStrippedTrajectory:
+    """g1 (2026-11-05): MDposit serves trajectory.xtc with water and
+    counter-ions removed while the topology keeps the full solvated
+    system (entry 9333: parm7 14,671 atoms, xtc 76). With no static
+    structure in the bundle every such run failed load_failed/
+    atom_count_mismatch (~400 corpus entries). The pairing now retries,
+    as the LAST resort, against solvent-stripped subsets of the topology
+    with a bond-length sanity gate."""
+
+    SRC = DATA / "charmm_psf_dcd"  # 28 solute atoms, then 2 TIP3 + SOD + CLA
+    # the synthetic fixture's bonds are stretched (median 2.4 A); scaled
+    # to atomistic lengths so the bond-length gate sees real chemistry
+    SCALE = 0.6
+
+    def _full(self):
+        u = mda.Universe(str(self.SRC / "system.psf"),
+                         str(self.SRC / "traj.dcd"))
+        u.atoms.positions = u.atoms.positions * self.SCALE
+        return u
+
+    def test_stripped_dcd_loads_solute_with_topology(self, tmp_path):
+        u = self._full()
+        k = 28
+        assert set(u.atoms[k:].resnames) <= {"TIP3", "SOD", "CLA"}
+        d = _bundle_dir(tmp_path, {
+            "system.psf": self.SRC / "system.psf",
+            "traj.dcd": _dcd_from_positions(u.atoms.positions[:k],
+                                            tmp_path / "traj.dcd")})
+        res, results = _load(tmp_path, d)
+        assert res.success, [a.error_message for a in res.attempts]
+        assert res.final_strategy.value == "charmm_psf_dcd"
+        assert res.universe.atoms.n_atoms == k
+        assert list(res.universe.atoms.names) == list(u.atoms[:k].names)
+        np.testing.assert_allclose(res.universe.atoms.positions,
+                                   u.atoms.positions[:k], atol=1e-3)
+        # topology metadata survives (charges, bonds)
+        np.testing.assert_allclose(res.universe.atoms.charges,
+                                   u.atoms[:k].charges, atol=1e-6)
+        assert len(res.universe.bonds) > 0
+        warnings_ = results.get_data("loading/warnings") or []
+        assert any(w.startswith("trajectory_solvent_stripped") for w in warnings_), warnings_
+        assert not any(w.startswith("trajectory_ignored") for w in warnings_), warnings_
+        info = results.get_data("loading/stripped_trajectory")
+        assert info["subset"] == "prefix" and info["n_topology"] == 36
+
+    def test_scrambled_coordinates_fail_the_bond_gate(self, tmp_path):
+        """Right count, wrong mapping: the bond-length gate rejects it and
+        the run still reports atom_count_mismatch (no silent mis-load)."""
+        rng = np.random.default_rng(0)
+        pos = rng.uniform(0, 40, size=(28, 3))
+        d = _bundle_dir(tmp_path, {
+            "system.psf": self.SRC / "system.psf",
+            "traj.dcd": _dcd_from_positions(pos, tmp_path / "traj.dcd")})
+        res, results = _load(tmp_path, d)
+        assert not res.success
+        summary = results.get_data("loading/failure_summary")
+        assert summary["reason"] == "atom_count_mismatch", summary
+
+    def test_count_matching_no_subset_still_fails(self, tmp_path):
+        u = self._full()
+        d = _bundle_dir(tmp_path, {
+            "system.psf": self.SRC / "system.psf",
+            "traj.dcd": _dcd_from_positions(u.atoms.positions[:20],
+                                            tmp_path / "traj.dcd")})
+        res, results = _load(tmp_path, d)
+        assert not res.success
+        assert results.get_data("loading/failure_summary")["reason"] == \
+            "atom_count_mismatch"
+
+
+class TestBlankAmberAtomTypes:
+    """g1 (2026-11-05): 54 corpus prmtops (MDposit MD-A001AH family) ship
+    an AMBER_ATOM_TYPE section that is present but blank; MDAnalysis
+    rejected the whole topology ("Expect: 1077 Have: 0")."""
+
+    def _blank_types(self, src: Path, out: Path) -> Path:
+        lines = src.read_text().splitlines()
+        i = next(k for k, ln in enumerate(lines)
+                 if ln.startswith("%FLAG AMBER_ATOM_TYPE"))
+        j = next(k for k in range(i + 2, len(lines))
+                 if lines[k].startswith("%"))
+        lines[i + 2:j] = [" " * 80] * (j - i - 2)
+        out.write_text("\n".join(lines) + "\n")
+        return out
+
+    def test_blank_types_load_with_element_types(self, tmp_path):
+        src = DATA / "amber_prmtop_rst7"
+        u_ref = mda.Universe(str(src / "system.prmtop"),
+                             str(src / "coords.rst7"), format="RESTRT")
+        blank = self._blank_types(src / "system.prmtop",
+                                  tmp_path / "blank.prmtop")
+        with pytest.raises(Exception):
+            mda.Universe(str(blank), topology_format="PRMTOP")
+        d = _bundle_dir(tmp_path, {
+            "system.prmtop": blank,
+            "md.xtc": _xtc_from_universe(u_ref, tmp_path / "md.xtc")})
+        res, results = _load(tmp_path, d)
+        assert res.success, [a.error_message for a in res.attempts]
+        assert res.final_strategy.value == "amber_prmtop_xtc"
+        u = res.universe
+        assert u.atoms.n_atoms == u_ref.atoms.n_atoms
+        np.testing.assert_allclose(u.atoms.charges, u_ref.atoms.charges)
+        assert len(u.bonds) == len(u_ref.bonds)
+        # types are element symbols of ATOMIC_NUMBER (the synthetic
+        # fixture stores mass numbers there, so only shape is checked)
+        assert all(t.strip() for t in u.atoms.types) and len(set(u.atoms.types)) > 1
+        warnings_ = results.get_data("loading/warnings") or []
+        assert any(w.startswith("prmtop_atom_types_filled") for w in warnings_)
+        # the attempt table still names the deposited file, not the copy
+        assert any(p.endswith("system.prmtop") and str(tmp_path) in p
+                   for a in res.attempts for p in a.used_files)
+
+    def test_intact_prmtop_is_untouched(self, tmp_path):
+        from src_new.loader.strategies import _prmtop_with_atom_types
+        assert _prmtop_with_atom_types(
+            DATA / "amber_prmtop_rst7" / "system.prmtop") is None
+
+
+class TestGromacsTopologyTrajectory:
+    """g1 (2026-11-05): {topology.top, trajectory.xtc} bundles (36 corpus
+    entries, + 8 {*.itp, xtc}) had no strategy at all; every one failed
+    validation_failed ("No .tpr files found"). The MDposit topology is
+    solvated (2071: 136,320 atoms) and the trajectory solvent-stripped
+    (12,584), so the new pairing goes through the same atom-count probe
+    and solvent-stripped retry as the AMBER/CHARMM trajectory pairs."""
+
+    SRC = DATA / "16319"  # DPPC bilayer: 72 DPPC, then SOL + Na/Cl
+
+    def _bundle(self, tmp_path, n_atoms=None):
+        top, gro = self.SRC / "topol.top", self.SRC / "md.gro"
+        if not (top.exists() and gro.exists()):
+            pytest.skip("16319 fixture absent")
+        u = mda.Universe(str(top), str(gro), topology_format="ITP",
+                         infer_system=True)
+        files = {p.name: p for p in self.SRC.glob("*.itp")}
+        files["topol.top"] = top
+        files["traj.xtc"] = _xtc_from_universe(u, tmp_path / "traj.xtc",
+                                               n_atoms=n_atoms)
+        return u, _bundle_dir(tmp_path, files)
+
+    def test_discovery_picks_top_xtc(self, tmp_path):
+        _u, d = self._bundle(tmp_path)
+        decision = select_best_file_combination(inspect_directory(d))
+        assert decision.selected_strategy == "TOP_XTC"
+
+    def test_full_trajectory_loads(self, tmp_path):
+        u, d = self._bundle(tmp_path)
+        res, results = _load(tmp_path, d)
+        assert res.success, [a.error_message for a in res.attempts]
+        assert res.final_strategy.value == "gromacs_top_xtc"
+        assert res.universe.atoms.n_atoms == u.atoms.n_atoms
+        assert not any(w.startswith("trajectory_")
+                       for w in (results.get_data("loading/warnings") or []))
+
+    def test_solvent_stripped_trajectory_loads_solute(self, tmp_path):
+        u_full = mda.Universe(str(self.SRC / "topol.top"),
+                              str(self.SRC / "md.gro"), topology_format="ITP",
+                              infer_system=True)
+        k = int((u_full.atoms.resnames == "DPPC").sum())
+        assert set(u_full.atoms[k:].resnames) <= {"SOL", "Na", "Cl"}
+        u, d = self._bundle(tmp_path, n_atoms=k)
+        res, results = _load(tmp_path, d)
+        assert res.success, [a.error_message for a in res.attempts]
+        assert res.final_strategy.value == "gromacs_top_xtc"
+        assert res.universe.atoms.n_atoms == k
+        assert set(res.universe.residues.resnames) == {"DPPC"}
+        info = results.get_data("loading/stripped_trajectory")
+        assert info["subset"] == "prefix" and info["n_topology"] == u.atoms.n_atoms
