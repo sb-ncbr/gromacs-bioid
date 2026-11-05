@@ -250,6 +250,19 @@ def _has_bare_proton_fragment(mol) -> bool:
     return False
 
 
+def _has_charged_carbon(mol) -> bool:
+    """A formal charge on carbon (carbanion/carbocation): practically never
+    the real state of a deposited ligand, but how DetermineBondOrders
+    balances a wrong trial charge (g1 2647: [C-]([O-]) for an acetyl).
+    Cyanide/isocyanide carbons ([C-]#N, [C-]#[N+]) are real and exempt."""
+    for a in mol.GetAtoms():
+        if a.GetAtomicNum() == 6 and a.GetFormalCharge() != 0:
+            if any(b.GetBondType() == Chem.BondType.TRIPLE for b in a.GetBonds()):
+                continue
+            return True
+    return False
+
+
 def determine_bond_orders_safely(mol, net_charge: int = 0,
                                  max_heavy_atoms_hless: int
                                  = _BOND_ORDER_LADDER_MAX_HEAVY_ATOMS_HLESS,
@@ -383,7 +396,12 @@ def _dbo_ladder_core(mol, net_charge: int) -> bool:
     Fix-C child interpreter (ONE budget shared across all charges)."""
     from rdkit.Chem import rdDetermineBonds as _rdb
     order = [net_charge] + [q for q in _TRIAL_CHARGES if q != net_charge]
+    fallback = None  # (charge, solved copy) of a charged-carbon solution
     for q in order:
+        if fallback is not None and ((q - fallback[0]) % 2 or abs(q) > 3):
+            # an explicit-H graph fixes the electron parity: only charges
+            # of the fallback's parity can solve it; bounded to |q| <= 3
+            continue
         try:
             _rdb.DetermineBondOrders(
                 mol, allowChargedFragments=True, embedChiral=False, charge=q)
@@ -393,13 +411,28 @@ def _dbo_ladder_core(mol, net_charge: int) -> bool:
         no_bare_h = not _has_bare_proton_fragment(mol)
         charge_match = (sum(a.GetFormalCharge() for a in mol.GetAtoms()) == q)
         if no_bare_h and charge_match:
-            return True
+            # g1: topology-less ligands carry no net charge, so a protonated
+            # (+1) ligand fails at 0 and was accepted at -1 with invented
+            # carbanions (2647: C[C-]([O-])N...[NH+] for an acetyl C(=O)).
+            # A charged-carbon solution is kept only when no other charge
+            # solves the graph without one.
+            if not _has_charged_carbon(mol):
+                return True
+            if fallback is None:
+                fallback = (q, Chem.Mol(mol))
+            _reset_to_single_bonds(mol)
+            logger.debug("bond-order solution at charge %d has a charged "
+                         "carbon; trying the other charges", q)
+            continue
         # unacceptable solution: reset and continue the ladder
         _has_bare = not no_bare_h
         _reset_to_single_bonds(mol)
         logger.debug(
             "bond-order solution at charge %d rejected (%s)",
             q, "bare [H+] fragment" if _has_bare else "charge mismatch")
+    if fallback is not None:
+        _overlay_solved(mol, fallback[1])
+        return True
     return False
 
 

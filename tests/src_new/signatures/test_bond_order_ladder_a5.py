@@ -258,3 +258,50 @@ class TestM13Integration:
         key = ik.get("value") or ik.get("inchi_key") or ik if isinstance(
             ik, dict) else ik
         assert str(key).startswith("DOAKLVKFURWEDJ"), (big_name, ik)
+
+
+class TestNoInventedCarbanions:
+    """g1 (2026-11-05): topology-less ligands (average.pdb + xtc) carry no
+    net charge, so the ladder starts at 0. A protonated (+1) ligand cannot
+    solve at 0 and was accepted at -1 — the next rung — with invented
+    carbanions: 2647's acetylpiperazine came out C[C-]([O-])N...[NH+]
+    instead of CC(=O)N...[NH+], and the similarity search then found the
+    misperceived compound. A charged-carbon solution is now kept only when
+    no other charge solves the graph without one."""
+
+    @staticmethod
+    def _perceive(smi):
+        mol, _ref = _stripped(smi)
+        assert determine_bond_orders_safely(mol, net_charge=0)
+        return mol
+
+    @staticmethod
+    def _charged_carbons(mol):
+        return [a.GetIdx() for a in mol.GetAtoms()
+                if a.GetAtomicNum() == 6 and a.GetFormalCharge() != 0]
+
+    def test_protonated_acetylpiperazine_keeps_its_carbonyl(self):
+        mol = self._perceive("CC(=O)N1CC[NH+](Cc2cnc(Cc3ccccc3)s2)CC1")
+        assert self._charged_carbons(mol) == []
+        assert sum(a.GetFormalCharge() for a in mol.GetAtoms()) == 1
+        ref = Chem.MolToSmiles(Chem.MolFromSmiles(
+            "CC(=O)N1CC[NH+](Cc2cnc(Cc3ccccc3)s2)CC1"))
+        got = Chem.MolToSmiles(Chem.MolFromSmiles(
+            Chem.MolToSmiles(Chem.RemoveHs(mol, sanitize=False))))
+        assert got == ref
+
+    def test_protonated_aminoquinazoline_is_aromatic(self):
+        mol = self._perceive("COc1cc2nc(N3CCN(C(=O)C4CCCO4)CC3)[nH+]c(N)c2cc1OC")
+        assert self._charged_carbons(mol) == []
+
+    def test_neutral_and_real_ions_unchanged(self):
+        for smi, q in (("CC(=O)N1CCN(CC1)CC2=CN=C(S2)CC3=CC=CC=C3", 0),
+                       ("NCC(=O)O", 0), ("CC(=O)[O-]", -1), ("C[NH3+]", 1)):
+            mol = self._perceive(smi)
+            assert self._charged_carbons(mol) == [], smi
+            assert sum(a.GetFormalCharge() for a in mol.GetAtoms()) == q, smi
+
+    def test_cyanide_carbanion_is_real(self):
+        mol, _ = _stripped("[C-]#N")
+        assert determine_bond_orders_safely(mol, net_charge=-1)
+        assert self._charged_carbons(mol) == [0]
