@@ -57,18 +57,25 @@ spec:
             capabilities:
               drop:
                 - ALL
+          # g1 incident 2026-11-05: with the default 1 s timeout the probe
+          # failed while RCSB fetched /files/adhoc query files for ~400
+          # concurrent runs; the pod crash-looped, nginx served its static
+          # 503 page with HTTP 200, and every RCSB structure search got 500.
           livenessProbe:
             httpGet:
               path: /health/live
               port: {{ .Values.service.api.port | default 8000 }}
             initialDelaySeconds: 10
-            periodSeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 6
           readinessProbe:
             httpGet:
               path: /health/ready
               port: {{ .Values.service.api.port | default 8000 }}
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 5
       volumes:
         - name: runs-data
           persistentVolumeClaim:
