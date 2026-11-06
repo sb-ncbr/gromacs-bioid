@@ -263,3 +263,26 @@ class TestUiGapsE2E:
         body = response.json()
         assert "segment_selectors" in body["additions"]
         assert body["api_version_marker"] >= 2
+
+
+class TestVirtualSegmentNames:
+    """G3 follow-up (live run e1605717, 3PTB): protein A, benzamidine A__v1,
+    Ca A__v2 and water A__v3 were all named "A"; virtual segments now take
+    their residue name."""
+
+    def test_virtual_segments_use_resname(self) -> None:
+        assert segment_display_name("A__v1", "BEN") == "BEN"
+        assert segment_display_name("seg_0_Title__v4", "POPC") == "POPC"
+        assert segment_display_name("A__v2", None) == "A"
+
+    def test_real_segments_unchanged(self) -> None:
+        assert segment_display_name("A", "ALA") == "A"
+        assert segment_display_name("seg_1_Protein_chain_B", "GLY") == "Chain B"
+
+    def test_resname_from_payload(self) -> None:
+        from src_new.api.names import segment_resname
+        payload = {"signatures": {"A__v3": {"generated": {"resname": "HOH"}},
+                                  "A": {"generated": {}}}}
+        assert segment_resname(payload, "A__v3") == "HOH"
+        assert segment_resname(payload, "A") is None
+        assert segment_resname({}, "A__v1") is None

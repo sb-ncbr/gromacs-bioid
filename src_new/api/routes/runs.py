@@ -54,7 +54,7 @@ from ..models import (
     RunStageProgress,
     RunSummaryResponse,
 )
-from ..names import chain_of, segment_display_name, strip_seg
+from ..names import chain_of, segment_display_name, segment_resname, strip_seg
 from ..utils import build_database_url, normalize_identifier
 from ..tasks import run_pipeline_task
 
@@ -919,7 +919,8 @@ async def get_molecules(run_id: str) -> MoleculeSummaryResponse:
             seg_props["copies"] = int(seg_from_fragments.get("copies") or 1)
         except (TypeError, ValueError):
             seg_props["copies"] = 1
-        seg_props["display_name"] = segment_display_name(seg_name)
+        seg_props["display_name"] = segment_display_name(
+            seg_name, segment_resname(data.get("data", {}) or {}, seg_name))
         seg_props["chain"] = chain_of(strip_seg(seg_name))
         segment_meta[seg_name] = seg_props
     
@@ -987,7 +988,7 @@ async def download_results_csv(run_id: str) -> PlainTextResponse:
 
         writer.writerow([
             seg,
-            segment_display_name(seg),
+            segment_display_name(seg, segment_resname(payload_data, seg)),
             entry.get("type") or "unknown",
             copies,
             atoms,

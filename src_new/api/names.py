@@ -29,9 +29,23 @@ def chain_of(source: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
-def segment_display_name(segment: str) -> str:
+def segment_display_name(segment: str, resname: Optional[str] = None) -> str:
     """Base display name for one segment (before the UI's duplicate
-    disambiguation): chains → "Chain X"; otherwise the stripped source."""
+    disambiguation): chains → "Chain X"; otherwise the stripped source.
+
+    Virtual segments (``X__vN``: the ligands, ions and water split off a
+    parent segment) use their residue name when known. Stripping alone named
+    every one of them after the parent (3PTB, live run e1605717: protein,
+    benzamidine, Ca and water all "A")."""
+    if resname and _V_SUFFIX.search(segment):
+        return str(resname).strip() or strip_seg(segment)
     source = strip_seg(segment)
     chain = chain_of(source)
     return f"Chain {chain}" if chain else source
+
+
+def segment_resname(payload_data: dict, segment: str) -> Optional[str]:
+    """The `resname` signature of a segment from a results payload, if any."""
+    sig = ((payload_data.get("signatures") or {}).get(segment) or {})
+    value = (sig.get("generated") or {}).get("resname")
+    return value if isinstance(value, str) and value.strip() else None
