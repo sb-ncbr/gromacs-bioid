@@ -55,8 +55,12 @@ def _build_biopython_structure_from_atoms(atoms) -> Structure.Structure:
     return _build_biopython_structure(w)
 
 
-def _build_biopython_structure(universe: MDAnalysis.Universe, filter_segment: str | None = None) -> Structure.Structure:
-    """Build a Biopython Structure from an MDAnalysis Universe."""
+def _build_biopython_structure(universe: MDAnalysis.Universe, filter_segment: str | None = None,
+                               residue_ids: dict | None = None) -> Structure.Structure:
+    """Build a Biopython Structure from an MDAnalysis Universe.
+
+    residue_ids, when given, is filled with atom index -> (chain id,
+    written auth_seq_id, insertion code) for the G9 residue-range selectors."""
     if not BIOPYTHON_AVAILABLE:
         raise ImportError("Biopython is required for mmCIF export. Install with: pip install biopython")
     
@@ -104,6 +108,8 @@ def _build_biopython_structure(universe: MDAnalysis.Universe, filter_segment: st
             atom_name, pos, 0.0, 0.0, '.', atom_name, atom.index, element=element.upper()
         )
         residue.add(bp_atom)
+        if residue_ids is not None:
+            residue_ids[int(atom.index)] = (chain_id, residue.id[1], residue.id[2])
     
     return structure
 
@@ -148,7 +154,48 @@ def _indices_to_ranges(indices: list[int]) -> list[list[int]]:
     return ranges
 
 
-def _segment_selectors(facade: LoadedUniverse) -> dict[str, dict]:
+def _residue_ranges(segment_atoms, residue_ids: dict, owners: dict) -> list[list] | None:
+    """[[chain, beg_auth_seq_id, end_auth_seq_id], ...] covering exactly the
+    segment's residues, or None when a residue number is shared with another
+    segment in the same chain (an auth_seq_id range cannot tell them apart;
+    the caller keeps atom-index addressing for that segment)."""
+    per_chain: dict[str, set[int]] = {}
+    for idx in segment_atoms.indices:
+        rid = residue_ids.get(int(idx))
+        if rid is None:
+            return None
+        per_chain.setdefault(rid[0], set()).add(int(rid[1]))
+    ranges: list[list] = []
+    for chain, numbers in sorted(per_chain.items()):
+        # every number in a run must belong to this segment alone
+        if any(len(owners.get((chain, n), ())) != 1 for n in numbers):
+            return None
+        ordered = sorted(numbers)
+        beg = prev = ordered[0]
+        for n in ordered[1:]:
+            # a gap is fine only if no residue of ANY segment sits in it
+            if n == prev + 1 or not any((chain, k) in owners for k in range(prev + 1, n)):
+                prev = n
+                continue
+            ranges.append([chain, beg, prev])
+            beg = prev = n
+        ranges.append([chain, beg, prev])
+    return ranges
+
+
+def _segment_atoms(facade, segment: str):
+    """All copies when the facade can list them, else the representative
+    fragment's atoms; None when the facade knows neither."""
+    if hasattr(facade, "get_segment_all_atoms"):
+        try:
+            return facade.get_segment_all_atoms(segment)
+        except KeyError:
+            pass
+    frag = facade.get_fragment(segment) if hasattr(facade, "get_fragment") else None
+    return getattr(frag, "atoms", frag) if frag is not None else None
+
+
+def _segment_selectors(facade: LoadedUniverse, residue_ids: dict | None = None) -> dict[str, dict]:
     """Per-segment selectors into the exported system mmCIF (BACKEND_GAPS G9).
 
     ``_build_biopython_structure`` groups atoms into chains by segid
@@ -184,31 +231,44 @@ def _segment_selectors(facade: LoadedUniverse) -> dict[str, dict]:
             row_of_atom[aidx] = row
             row += 1
 
-    selectors: dict[str, dict] = {}
+    # W3 A2/B4 (BH-002): each segment's OWN atoms — a segid can hold several
+    # species (chain + stray atom); selecting by segid would leak a virtual
+    # sibling's atoms into the parent's ranges (cytc: HEM Fe -> B__v1 inside
+    # seg B). G9 follow-up (user 2026-11-06): ALL copies of the molecule, so
+    # 145 POPC / 62 crystal waters colour fully, not just the first copy.
     universe_segids = {str(s) for s in universe.atoms.segids}
+    seg_atoms: dict[str, object] = {}
     for segment in sorted(facade.get_segments()):
-        # W3 A2/B4 (BH-002): isolate the segment's OWN fragment rows — a
-        # segid can hold several species (chain + stray atom); selecting by
-        # segid would leak a virtual sibling's atoms into the parent's
-        # ranges (cytc: HEM Fe -> B__v1 inside seg B).
-        frag = facade.get_fragment(segment) if hasattr(
-            facade, "get_fragment") else None
-        if frag is not None:
-            atoms = frag.atoms
-        elif segment in universe_segids:
+        atoms = _segment_atoms(facade, segment)
+        if atoms is None and segment in universe_segids:
             atoms = universe.atoms[universe.atoms.segids == segment]
-        else:
-            # Virtual minority segment (no fragment handle): skip.
-            continue
+        if atoms is not None and len(atoms.indices):
+            seg_atoms[segment] = atoms
+
+    # (chain, auth_seq_id) -> segments with a residue there (range purity)
+    owners: dict = {}
+    if residue_ids:
+        for segment, atoms in seg_atoms.items():
+            for idx in atoms.indices:
+                rid = residue_ids.get(int(idx))
+                if rid is not None:
+                    owners.setdefault((rid[0], int(rid[1])), set()).add(segment)
+
+    selectors: dict[str, dict] = {}
+    for segment, atoms in seg_atoms.items():
         rows = sorted(row_of_atom[int(i)] for i in atoms.indices)
         if not rows:
             continue
-        chains = sorted({str(s) for s in atoms.segids})
-        selectors[segment] = {
-            "chains": chains,
+        entry = {
+            "chains": sorted({str(s) for s in atoms.segids}),
             "atom_index_ranges": _indices_to_ranges(rows),
             "atom_count": len(rows),
         }
+        if residue_ids:
+            ranges = _residue_ranges(atoms, residue_ids, owners)
+            if ranges is not None:
+                entry["residue_ranges"] = ranges
+        selectors[segment] = entry
     return selectors
 
 
@@ -220,7 +280,8 @@ def export_system_mmcif(facade: LoadedUniverse, output_path: Path, results: Resu
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    structure = _build_biopython_structure(facade.universe)
+    residue_ids: dict = {}
+    structure = _build_biopython_structure(facade.universe, residue_ids=residue_ids)
     
     # Use MMCIFIOWithCell to preserve box dimensions
     cell = _get_universe_dimensions(facade.universe)
@@ -240,7 +301,8 @@ def export_system_mmcif(facade: LoadedUniverse, output_path: Path, results: Resu
         # universe atom id = _atom_site.id). Best-effort: selector failure
         # must not fail the export.
         try:
-            results.set_data("render/segment_selectors", _segment_selectors(facade))
+            results.set_data("render/segment_selectors",
+                             _segment_selectors(facade, residue_ids))
         except Exception as exc:
             logger.warning(f"Segment-selector computation failed: {exc}")
     

@@ -69,6 +69,8 @@ REGISTERED_ADDITIONS: dict[str, dict[str, set[str]]] = {
     "g5_hit_name_organism": {"VerifiedHitItem": {"name", "organism"}},
     "g7_unique_segment_names": {"MoleculeInstanceInfo": {"segment_names"}},
     "g9_render_selectors": {"RenderPathsResponse": {"segment_selectors"}},
+    # 2026-11-06: all copies as compact auth_seq_id ranges (whole-molecule colouring)
+    "g9_residue_ranges": {"RenderSegmentSelector": {"residue_ranges"}},
 }
 
 _MODELS = {

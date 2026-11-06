@@ -173,3 +173,31 @@ class TestSegmentSelectors:
                 for row_idx in range(start, end):
                     assert int(atom_rows[row_idx][id_col]) == row_idx + 1
                     assert atom_rows[row_idx][asym_col] in entry["chains"]
+
+
+class TestResidueRanges:
+    """G9 follow-up (user 2026-11-06): whole-molecule colouring needs every
+    copy; compact auth_seq_id ranges address them, never another segment."""
+
+    def test_consecutive_copies_merge_into_one_range(self):
+        from src_new.loader.export_mmcif import _residue_ranges
+        atoms = SimpleNamespace(indices=np.array([10, 11, 12]))
+        rid = {10: ("A", 301, " "), 11: ("A", 302, " "), 12: ("A", 303, " ")}
+        owners = {("A", n): {"A__v3"} for n in (301, 302, 303)}
+        assert _residue_ranges(atoms, rid, owners) == [["A", 301, 303]]
+
+    def test_gap_with_foreign_residue_splits_the_range(self):
+        from src_new.loader.export_mmcif import _residue_ranges
+        atoms = SimpleNamespace(indices=np.array([1, 3]))
+        rid = {1: ("A", 5, " "), 3: ("A", 7, " ")}
+        owners = {("A", 5): {"W"}, ("A", 6): {"LIG"}, ("A", 7): {"W"}}
+        assert _residue_ranges(atoms, rid, owners) == [["A", 5, 5], ["A", 7, 7]]
+
+    def test_shared_number_gives_up(self):
+        """184 and 184A (insertion code) of different segments share the
+        auth_seq_id: a range cannot separate them -> atom indices only."""
+        from src_new.loader.export_mmcif import _residue_ranges
+        atoms = SimpleNamespace(indices=np.array([1]))
+        rid = {1: ("A", 184, " ")}
+        owners = {("A", 184): {"A", "A__v1"}}
+        assert _residue_ranges(atoms, rid, owners) is None

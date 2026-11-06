@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -167,6 +167,11 @@ class RenderSegmentSelector(BaseModel):
     chains: List[str] = Field(default_factory=list, description="auth_asym_id value(s) the segment's atoms landed in")
     atom_index_ranges: List[List[int]] = Field(default_factory=list, description="Merged [start, end) atom_site row ranges (0-based; id = row+1)")
     atom_count: int = Field(0, description="Total atoms addressed by the ranges")
+    residue_ranges: Optional[List[List[Union[str, int]]]] = Field(
+        None,
+        description="All copies as [auth_asym_id, beg_auth_seq_id, end_auth_seq_id] "
+                    "ranges (inclusive), exact: no other segment has a residue "
+                    "inside them; absent when numbers are shared (use the atom ranges)")
 
 
 class RenderPathsResponse(BaseModel):

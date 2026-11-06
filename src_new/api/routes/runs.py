@@ -1130,6 +1130,8 @@ async def get_render_paths(run_id: str) -> RenderPathsResponse:
                 chains=list(info.get("chains") or []),
                 atom_index_ranges=[list(r) for r in (info.get("atom_index_ranges") or [])],
                 atom_count=int(info.get("atom_count") or 0),
+                residue_ranges=([list(r) for r in info["residue_ranges"]]
+                                if isinstance(info.get("residue_ranges"), list) else None),
             )
 
     return RenderPathsResponse(

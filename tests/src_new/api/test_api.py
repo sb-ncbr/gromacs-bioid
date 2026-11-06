@@ -951,7 +951,7 @@ class TestRenderEndpoint:
         assert set(sel) == {"A", "A__v1"}
         # typed, passthrough from the persisted export record
         assert sel["A"] == {"chains": ["A"], "atom_index_ranges": [[0, 265]],
-                            "atom_count": 265}
+                            "atom_count": 265, "residue_ranges": None}
         # virtual segment: parent chain + exact (non-contiguous) ranges
         assert sel["A__v1"]["chains"] == ["A"]
         assert sel["A__v1"]["atom_index_ranges"] == [[265, 266], [300, 358]]

@@ -380,3 +380,24 @@ class TestInsertionCodes:
         assert any("184" in r and "A" in r for r in rows)
         selectors = results.as_dict()["data"]["render"]["segment_selectors"]
         assert selectors, "G9 selectors must be written once the export succeeds"
+
+
+@pytest.mark.skipif(not Path("/home/tomsko/work/bat3_article_reviews/bioid_bughunt/"
+                             "testcases/P04_3ptb_trypsin_benzamidine/input/3PTB.pdb").exists(),
+                    reason="P04 fixture absent")
+def test_3ptb_selectors_cover_every_water_copy(tmp_path: Path):
+    """G9 follow-up: the 62 crystal waters (virtual A__v3) were addressed by
+    their FIRST copy only (atom_count 1) — confidence colouring reached one
+    water of 62."""
+    facade, results = _make_facade(
+        "/home/tomsko/work/bat3_article_reviews/bioid_bughunt/testcases/"
+        "P04_3ptb_trypsin_benzamidine/input", tmp_path)
+    export_system_mmcif(facade, tmp_path / "system.mmcif", results)
+    sel = results.as_dict()["data"]["render"]["segment_selectors"]
+    water = next(k for k in sel if k.startswith("A__v") and sel[k]["atom_count"] == 62)
+    assert sel[water]["residue_ranges"]
+    # protein: its own residues only, still one chain
+    assert sel["A"]["chains"] == ["A"] and sel["A"]["atom_count"] == 1629
+    # no atom is addressed twice
+    rows = [r for s in sel.values() for b, e in s["atom_index_ranges"] for r in range(b, e)]
+    assert len(rows) == len(set(rows)) == sum(s["atom_count"] for s in sel.values())

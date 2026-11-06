@@ -534,6 +534,9 @@ class LoadedUniverse:
         signatures, identification and verification process them.
         """
         self._virtual_fragments: dict = {}
+        # every copy of each virtual species (frag0 above is the
+        # representative); used for whole-molecule selectors (G9)
+        self._virtual_members: dict = {}
         self._virtual_truncated: list[dict] = []
         for segment_name in list(getattr(self, "_segments", ())):
             selected = self._selected_cache.get(segment_name)
@@ -608,6 +611,7 @@ class LoadedUniverse:
                 vname = f"{segment_name}__v{vidx}"
                 frag0 = members[0]
                 self._virtual_fragments[vname] = frag0
+                self._virtual_members[vname] = list(members)
                 props = SegmentProperties(
                     atom_count_total=len(frag0.atoms),
                     atom_count_fragment=len(frag0.atoms),
@@ -1104,6 +1108,35 @@ class LoadedUniverse:
             element_composition=composition,
         )
     
+    def get_segment_all_atoms(self, segment_name: str) -> AtomGroup:
+        """Every atom of a segment across ALL its copies (G9 selectors).
+
+        get_fragment() is one representative copy; colouring a molecule by
+        confidence must reach all of them (145 POPC copies, 62 crystal
+        waters). A virtual segment is the union of its species' copies; a
+        real segment is its segid minus the atoms of its virtual siblings.
+        """
+        import numpy as _np
+
+        members = getattr(self, "_virtual_members", {}).get(segment_name)
+        if members is not None:
+            idx = _np.array(sorted({int(i) for m in members for i in m.atoms.indices}),
+                            dtype=_np.int64)
+            return self.universe.atoms[idx]
+        if segment_name not in self._segments:
+            raise KeyError(f"Segment '{segment_name}' not found")
+        selected = self._selected_cache.get(segment_name)
+        if selected is None:
+            selected = self.universe.atoms[self.universe.atoms.segids == segment_name]
+            self._selected_cache[segment_name] = selected
+        prefix = f"{segment_name}__v"
+        taken = {int(i) for name, ms in getattr(self, "_virtual_members", {}).items()
+                 if name.startswith(prefix) for m in ms for i in m.atoms.indices}
+        if not taken:
+            return selected
+        keep = _np.array([i for i in selected.indices if int(i) not in taken], dtype=_np.int64)
+        return self.universe.atoms[keep]
+
     def extract_all_molecule_instances(self) -> list[MoleculeInstance]:
         """Extract MoleculeInstance for all segments. Consolidated on
         get_segments() (wave-2 item 10a) — one enumeration path; the
