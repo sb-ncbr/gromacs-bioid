@@ -16,7 +16,7 @@ import { Toggle, ToggleGroup, ToggleGroupItem, Tooltip, TooltipContent, TooltipT
 import { Maximize, RotateCcw, Droplet } from "lucide-react";
 import { Viewer } from "molstar/lib/apps/viewer/app";
 import type { PluginUIContext } from "molstar/lib/mol-plugin-ui/context";
-import { MVSData } from "molstar/lib/extensions/mvs/mvs-data";
+import { buildMvs } from "./mvsScene";
 import { loadMVS } from "molstar/lib/extensions/mvs/load";
 import "molstar/build/viewer/molstar.css";
 import type { Molecule, RunStatus } from "../viewmodel";
@@ -29,7 +29,6 @@ import {
   moleculeForChain,
   type CanvasMode,
   type Palette,
-  type PlanComponent,
 } from "./viewerModel";
 
 const LOAD_TIMEOUT_MS = 25000;
@@ -61,20 +60,6 @@ function readPalette(): Palette {
     water: take("--vm-scene-water", LIGHT_PALETTE.water),
     ion: take("--vm-scene-ion", LIGHT_PALETTE.ion),
   };
-}
-
-/** Build one MVS state from the scene plan. */
-function buildMvs(url: string, components: PlanComponent[]) {
-  const builder = MVSData.createBuilder();
-  const structure = builder.download({ url }).parse({ format: "mmcif" }).modelStructure();
-  for (const c of components) {
-    const selector = c.builtin ? c.builtin : { auth_asym_id: c.chainAsymId };
-    structure
-      .component({ selector: selector as never })
-      .representation({ type: c.representation as never })
-      .color({ hex: c.colorHex } as never);
-  }
-  return builder.getState();
 }
 
 export function StageCanvas({ runId, runStatus, molecules, selectedId, onSelect, renderPaths, fallbackSegment = "SYSTEM" }: StageCanvasProps) {

@@ -224,3 +224,17 @@ describe("adapt · gap switches", () => {
     expect(vm.run.input.atoms).toBe(2000 + 2000 + 130 * 278 + 1 + 1);
   });
 });
+
+describe("inputFilesOf · header lists submitted inputs only", () => {
+  it("keeps the input/ directory of a run listing (live run bce4a0fa)", async () => {
+    const { inputFilesOf } = await import("./adapter");
+    const listing = ["config.ini", "input/MDR00042100.gro", "input/MDR00042100.tpr",
+      "results.debug.log", "results.json", "results.log", "seg_0_PROA.mmcif", "system.mmcif"];
+    expect(inputFilesOf(listing)).toEqual(["input/MDR00042100.gro", "input/MDR00042100.tpr"]);
+  });
+  it("drops known outputs from a flat listing", async () => {
+    const { inputFilesOf } = await import("./adapter");
+    expect(inputFilesOf(["navms_input.tpr", "frame.gro", "results.json", "system.mmcif", "config.ini"]))
+      .toEqual(["navms_input.tpr", "frame.gro"]);
+  });
+});

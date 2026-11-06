@@ -36,12 +36,14 @@ export const LIGHT_PALETTE: Palette = {
   ion: "#8a6fc0",
 };
 
-export type Representation = "cartoon" | "ball_and_stick" | "licorice" | "spacefill" | "point";
+/** MVS representation types (molstar mvs-tree-representations; no "point"/"licorice"). */
+export type Representation = "cartoon" | "ball_and_stick" | "spacefill";
 
 export interface PlanComponent {
   key: string;
   /** Mol* built-in selector (protein/ligand/water/ion…) or one auth chain. */
-  builtin?: "protein" | "nucleic" | "ligand" | "water" | "ion" | "non_standard";
+  /** MVS ComponentSelectorT values only — an unknown one fails MVS validation and the whole scene. */
+  builtin?: "protein" | "nucleic" | "ligand" | "water" | "ion";
   chainAsymId?: string;
   representation: Representation;
   colorHex: string;
@@ -54,7 +56,7 @@ export const KIND_REPRESENTATION: Record<MoleculeKind, Representation> = {
   small_molecule: "ball_and_stick",
   lipid: "ball_and_stick", // thin licorice once stylable through MVS size params
   ion: "spacefill",
-  water: "point",
+  water: "ball_and_stick",
   unknown: "ball_and_stick",
 };
 
@@ -99,8 +101,10 @@ function basePlan(molecules: Molecule[], showWaterIons: boolean, p: Palette): Pl
       colorHex: kindColor(kind, p),
     });
   }
-  if (kinds.has("lipid") || kinds.has("unknown")) {
-    out.push({ key: "kind:other", builtin: "non_standard", representation: "ball_and_stick", colorHex: p.other });
+  // Lipids/unknown non-polymers fall under MVS "ligand"; drawn once, in the
+  // same neutral colour as small molecules, unless that component exists.
+  if ((kinds.has("lipid") || kinds.has("unknown")) && !kinds.has("small_molecule")) {
+    out.push({ key: "kind:other", builtin: "ligand", representation: "ball_and_stick", colorHex: p.other });
   }
   return out;
 }

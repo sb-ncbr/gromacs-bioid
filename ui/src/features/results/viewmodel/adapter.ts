@@ -335,6 +335,21 @@ const TECHNICAL: TechnicalEntry[] = [
 /* The adapter                                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The submitted input files of a run. `/files` lists the whole run directory
+ * (inputs under `input/`, plus config.ini, logs, results.json and the
+ * per-segment mmCIF exports); only the inputs belong on the header line
+ * (live 2026-11-06: "config.ini + … + results.debug.log + seg_0_PROA.mmcif …").
+ * Listings without an `input/` prefix keep everything but known outputs.
+ */
+const OUTPUT_FILE = /^(config\.ini|results.*\.(json|log)|.*\.mmcif|heartbeat)$/i;
+
+export function inputFilesOf(files: string[]): string[] {
+  const under = files.filter((f) => f.startsWith("input/"));
+  if (under.length) return under;
+  return files.filter((f) => !OUTPUT_FILE.test(basename(f)));
+}
+
 export function adapt(bundle: ApiBundle, options: AdapterOptions = {}): ViewModel {
   const now = options.now ?? Date.now();
   const status = runStatus(bundle);
@@ -353,7 +368,7 @@ export function adapt(bundle: ApiBundle, options: AdapterOptions = {}): ViewMode
     for (const m of missed) m.note_ids.push(derived.id);
   }
 
-  const files = bundle.files?.files ?? [];
+  const files = inputFilesOf(bundle.files?.files ?? []);
   const atoms = molecules.reduce((sum, m) => sum + m.atoms_per_copy * m.copies, 0);
   const rawName = bundle.summary?.run_name ?? (files[0] ? basename(files[0]) : null);
   const progressBlock = bundle.status?.progress ?? null;

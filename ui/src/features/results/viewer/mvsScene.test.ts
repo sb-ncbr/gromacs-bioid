@@ -1,0 +1,24 @@
+import { describe, expect, it } from "vitest";
+import { MVSData } from "molstar/lib/extensions/mvs/mvs-data";
+import type { ViewModel } from "../viewmodel";
+import { buildMvs } from "./mvsScene";
+import { planScene } from "./viewerModel";
+import navmsRaw from "../viewmodel/fixtures/navms-finished.json";
+import largeRaw from "../viewmodel/fixtures/large-finished.json";
+
+const fixtures = { navms: navmsRaw, large: largeRaw } as unknown as Record<string, ViewModel>;
+
+describe("buildMvs · every scene passes Mol* MVS validation", () => {
+  for (const [name, vm] of Object.entries(fixtures)) {
+    for (const mode of ["highlight", "confidence"] as const) {
+      for (const water of [false, true]) {
+        it(`${name} · ${mode} · water/ions ${water ? "on" : "off"}`, () => {
+          const sel = vm.molecules[0]?.id ?? null;
+          const plan = planScene(vm.molecules, "finished", mode, sel, water);
+          const state = buildMvs("https://example.org/system.mmcif", plan.components);
+          expect(MVSData.validationIssues(state, { noExtra: true })).toBeUndefined();
+        });
+      }
+    }
+  }
+});
