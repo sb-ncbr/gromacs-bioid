@@ -300,3 +300,30 @@ class TestTransientRetry:
         assert results == []
         assert "timed out" in (resolver._last_error or "")
         assert post_mock.call_count == 4
+
+
+def _atom_site(rows: list[str]) -> str:
+    return ("data_mock\nloop_\n_atom_site.group_PDB\n_atom_site.id\n"
+            "_atom_site.label_atom_id\n_atom_site.label_comp_id\n"
+            "_atom_site.label_asym_id\n_atom_site.label_seq_id\n"
+            "_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n"
+            "_atom_site.type_symbol\n" + "\n".join(rows) + "\n")
+
+
+def test_single_residue_payload_is_no_polymer():
+    """b31 (4493): a free arginine segment carries an amino-acid resname
+    but is ONE residue — RCSB rejects a one-residue assembly with HTTP 400
+    (451 g1 re-runs logged structure_search_unavailable). Skip it as
+    no_polymer_payload; a two-residue peptide still goes to RCSB."""
+    from src_new.identification.resolvers.mmcif import _no_polymer_mmcif_payload
+    monomer = _atom_site([
+        "ATOM 1 N ARG SYSTEM 239 35.340 20.850 46.470 N",
+        "ATOM 2 CA ARG SYSTEM 239 34.380 22.120 46.380 C",
+        "ATOM 3 CZ ARG SYSTEM 239 36.370 23.970 46.950 C",
+    ])
+    dipeptide = _atom_site([
+        "ATOM 1 CA ALA A 1 0.000 0.000 0.000 C",
+        "ATOM 2 CA GLY A 2 3.800 0.000 0.000 C",
+    ])
+    assert _no_polymer_mmcif_payload(monomer) is True
+    assert _no_polymer_mmcif_payload(dipeptide) is False

@@ -198,8 +198,23 @@ def _no_polymer_mmcif_payload(text: str) -> bool:
         return False
     amino, na = _resname_token_sets(text)
     if amino or na:
-        return False
+        # b31: ONE residue is a monomer even with an amino-acid/nucleotide
+        # name (free DCY/ARG ligands, a 114-atom "ASP" ligand) — RCSB
+        # rejects a one-residue assembly with HTTP 400 (451 g1 re-runs)
+        return _atom_site_residue_count(text) == 1
     return any(line.startswith(("ATOM", "HETATM")) for line in text.splitlines())
+
+
+def _atom_site_residue_count(text: str) -> int | None:
+    """Distinct residues (chain, seq id, comp id) in the minimal generated
+    atom_site loop; None when the loop lacks those columns or rows."""
+    columns, rows = _atom_site_rows(text)
+    idx = {name: n for n, name in enumerate(columns)}
+    keys = [idx.get(f"_atom_site.{c}") for c in ("label_asym_id", "label_seq_id",
+                                                  "label_comp_id")]
+    if not rows or any(k is None for k in keys):
+        return None
+    return len({tuple(r[k] for k in keys) for r in rows})
 
 
 class MmCifResolver(IdentifierResolver):
