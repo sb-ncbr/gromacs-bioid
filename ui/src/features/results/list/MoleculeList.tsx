@@ -22,7 +22,8 @@ import {
   ScrollArea,
   cn,
 } from "@e-infra/design-system";
-import { ChevronDown, ChevronRight, Search } from "lucide-react";
+import { Boxes, ChevronDown, ChevronRight, Search } from "lucide-react";
+import { SYSTEM_SELECTION } from "../stage/SystemStage";
 import type { Molecule, RunStatus } from "../viewmodel";
 import {
   applyQuery,
@@ -373,6 +374,28 @@ export function MoleculeList({
               })}
           </div>
         </ScrollArea>
+        {molecules.length > 0 && (
+          <button
+            type="button"
+            onClick={() => onSelect(SYSTEM_SELECTION)}
+            aria-pressed={selectedId === SYSTEM_SELECTION}
+            className={cn(
+              "flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm",
+              selectedId === SYSTEM_SELECTION
+                ? "border-(--vm-accent) bg-(--vm-accent-soft) text-(--vm-fg)"
+                : "border-(--vm-line) text-(--vm-fg-2) hover:bg-(--vm-surface-2)",
+            )}
+          >
+            <span className="flex items-center gap-2 font-medium">
+              <Boxes size={14} aria-hidden />
+              Whole system
+            </span>
+            <span className="text-xs text-(--vm-muted)">
+              {molecules.length.toLocaleString()} molecules ·{" "}
+              {molecules.reduce((s, m) => s + m.atoms_per_copy * m.copies, 0).toLocaleString()} atoms
+            </span>
+          </button>
+        )}
       </CardContent>
     </Card>
   );

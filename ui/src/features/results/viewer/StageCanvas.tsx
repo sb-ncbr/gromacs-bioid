@@ -42,6 +42,8 @@ export interface StageCanvasProps {
   renderPaths: RenderPathsResponse | null;
   /** Segment id used for the static-PNG fallback (same as today). */
   fallbackSegment?: string;
+  /** Initial colouring; the whole-system view opens by confidence. */
+  defaultMode?: CanvasMode;
 }
 
 type Mode = "loading" | "interactive" | "static" | "unavailable";
@@ -62,14 +64,14 @@ function readPalette(): Palette {
   };
 }
 
-export function StageCanvas({ runId, runStatus, molecules, selectedId, onSelect, renderPaths, fallbackSegment = "SYSTEM" }: StageCanvasProps) {
+export function StageCanvas({ runId, runStatus, molecules, selectedId, onSelect, renderPaths, fallbackSegment = "SYSTEM", defaultMode = "highlight" }: StageCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const pluginRef = useRef<PluginUIContext | null>(null);
   const generationRef = useRef(0);
   const [mode, setMode] = useState<Mode>("loading");
   const [ready, setReady] = useState(false);
   const [forceInteractive, setForceInteractive] = useState(false);
-  const [canvasMode, setCanvasMode] = useState<CanvasMode>("highlight");
+  const [canvasMode, setCanvasMode] = useState<CanvasMode>(defaultMode);
   const [showWaterIons, setShowWaterIons] = useState(false);
 
   const finished = runStatus === "finished";

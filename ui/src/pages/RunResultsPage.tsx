@@ -33,6 +33,7 @@ import {
 import { adapt, type ApiBundle, type ViewModel } from "../features/results/viewmodel";
 import { MoleculeList } from "../features/results/list";
 import { Stage } from "../features/results/stage";
+import { SystemStage, SYSTEM_SELECTION } from "../features/results/stage/SystemStage";
 import { StageCanvas } from "../features/results/viewer";
 import { StatusStrip } from "../features/results/status";
 import { RunHeader } from "../features/results/header/RunHeader";
@@ -126,8 +127,11 @@ export default function RunResultsPage() {
   }, [runId, statusQ.data, summaryQ.data, moleculesQ.data, signaturesAllQ.data, verificationAllQ.data, queueQ.data, filesQ.data]);
 
   const molecules = vm?.molecules ?? [];
+  // "Whole system" is its own selection; per-segment views (technical
+  // fold, verification/identifier queries) keep the first molecule.
+  const systemView = segment === SYSTEM_SELECTION && molecules.length > 0;
   const selectedId = molecules.find((m) => m.id === segment)?.id ?? molecules[0]?.id ?? null;
-  const selected = molecules.find((m) => m.id === selectedId) ?? null;
+  const selected = systemView ? null : molecules.find((m) => m.id === selectedId) ?? null;
   const onSelect = useCallback((id: string) => patchQuery({ segment: id }), [patchQuery]);
 
   // Per-segment developer views inside the technical fold.
@@ -259,7 +263,7 @@ export default function RunResultsPage() {
         <MoleculeList
           molecules={molecules}
           runStatus={vm.run.status}
-          selectedId={selectedId}
+          selectedId={systemView ? SYSTEM_SELECTION : selectedId}
           onSelect={onSelect}
           groupBy={vm.run.status === "finished" ? "identification" : "kind"}
           onGroupByChange={() => {}}
@@ -283,6 +287,23 @@ export default function RunResultsPage() {
                 onSelect={onSelect}
                 renderPaths={renderQ.data ?? null}
                 fallbackSegment={selectedId ?? undefined}
+              />
+            }
+          />
+        ) : systemView ? (
+          <SystemStage
+            molecules={molecules}
+            runStatus={vm.run.status}
+            canvas={
+              <StageCanvas
+                runId={runId}
+                runStatus={vm.run.status}
+                molecules={molecules}
+                selectedId={null}
+                onSelect={onSelect}
+                renderPaths={renderQ.data ?? null}
+                fallbackSegment="SYSTEM"
+                defaultMode="confidence"
               />
             }
           />
