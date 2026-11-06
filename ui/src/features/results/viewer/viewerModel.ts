@@ -45,12 +45,18 @@ export interface SegmentSelector {
   /** 0-based [start, end) atom_site rows (MVS atom_index). */
   atom_index_ranges: number[][];
   atom_count: number;
+  /** All copies as inclusive [chain, beg_auth_seq_id, end_auth_seq_id]
+   * ranges; exact (no foreign residue inside), absent when numbers clash. */
+  residue_ranges?: [string, number, number][] | null;
 }
 export type SegmentSelectors = Record<string, SegmentSelector>;
 
 /** Virtual segments share their parent's chain; above this many atoms they
  * are not addressed atom by atom (bulk water/lipids stay neutral). */
 export const ATOM_INDEX_CAP = 5000;
+/** Residue ranges are compact (one per contiguous run of copies); above
+ * this many the molecule is too fragmented to address that way. */
+export const RESIDUE_RANGE_CAP = 2000;
 
 export interface PlanComponent {
   key: string;
@@ -60,6 +66,8 @@ export interface PlanComponent {
   chainAsymId?: string;
   /** G9 fallback for segments without their own chain: MVS atom_index list. */
   atomIndices?: number[];
+  /** G9: every copy as auth_seq_id ranges [chain, beg, end] (inclusive). */
+  residueRanges?: [string, number, number][];
   representation: Representation;
   colorHex: string;
 }
@@ -127,16 +135,20 @@ function basePlan(molecules: Molecule[], showWaterIons: boolean, p: Palette): Pl
 const VIRTUAL = /__v\d+$/;
 
 /**
- * Where a molecule is in the system mmCIF: its own chain (parsed `_chain_X`
- * name, or the G9 selector's single chain for a non-virtual segment), else
- * its atom rows when it is small enough; null when not addressable.
+ * Where a molecule is in the system mmCIF, every copy of it: the G9 residue
+ * ranges when present (exact, compact — and unlike a chain they never paint
+ * the ligands/water sharing that chain), else its own chain (parsed
+ * `_chain_X` name, or the selector's single chain for a non-virtual
+ * segment), else its atom rows when small enough; null when not addressable.
  */
 export function addressOf(
   m: Molecule,
   selectors?: SegmentSelectors | null,
-): Pick<PlanComponent, "chainAsymId" | "atomIndices"> | null {
-  if (m.chain != null) return { chainAsymId: m.chain };
+): Pick<PlanComponent, "chainAsymId" | "atomIndices" | "residueRanges"> | null {
   const sel = selectors?.[m.id];
+  const ranges = sel?.residue_ranges;
+  if (ranges && ranges.length > 0 && ranges.length <= RESIDUE_RANGE_CAP) return { residueRanges: ranges };
+  if (m.chain != null) return { chainAsymId: m.chain };
   if (!sel) return null;
   if (!VIRTUAL.test(m.id) && sel.chains.length === 1) return { chainAsymId: sel.chains[0] };
   if (sel.atom_count > 0 && sel.atom_count <= ATOM_INDEX_CAP) {

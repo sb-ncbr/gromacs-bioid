@@ -117,3 +117,24 @@ describe("G9 selectors · molecules without a parsed chain", () => {
     expect(moleculeForChain(ms, "A", selectors)).toBeNull(); // shared chain: ambiguous
   });
 });
+
+describe("G9 residue ranges · every copy of a molecule", () => {
+  const mol = (id: string, kind: string, chain: string | null = null) =>
+    ({ id, kind, chain, copies: 145, atoms_per_copy: 134, display_name: id, result: null }) as unknown as ViewModel["molecules"][number];
+
+  it("multi-copy virtual segments beyond the atom cap are addressed by residue ranges", () => {
+    const selectors = {
+      seg_0_Title__v1: { chains: ["X"], atom_index_ranges: [[0, 19430]], atom_count: 19430,
+                         residue_ranges: [["X", 1, 145]] as [string, number, number][] },
+    };
+    expect(addressOf(mol("seg_0_Title__v1", "lipid"), selectors)).toEqual({ residueRanges: [["X", 1, 145]] });
+  });
+
+  it("residue ranges win over a parsed chain (no overpaint of chain siblings)", () => {
+    const selectors = {
+      Protein_chain_A: { chains: ["A"], atom_index_ranges: [[0, 1629]], atom_count: 1629,
+                         residue_ranges: [["A", 16, 245]] as [string, number, number][] },
+    };
+    expect(addressOf(mol("Protein_chain_A", "protein", "A"), selectors)).toEqual({ residueRanges: [["A", 16, 245]] });
+  });
+});

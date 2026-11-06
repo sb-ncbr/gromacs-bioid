@@ -32,3 +32,12 @@ describe("buildMvs · G9 selector components validate too", () => {
     expect(MVSData.validationIssues(state, { noExtra: true })).toBeUndefined();
   });
 });
+
+describe("buildMvs · residue-range components validate", () => {
+  it("auth_seq_id range components pass MVS validation", () => {
+    const state = buildMvs("https://example.org/system.mmcif", [
+      { key: "w", residueRanges: [["A", 301, 362], ["B", 1, 1]], representation: "ball_and_stick", colorHex: "#1f5f26" },
+    ]);
+    expect(MVSData.validationIssues(state, { noExtra: true })).toBeUndefined();
+  });
+});

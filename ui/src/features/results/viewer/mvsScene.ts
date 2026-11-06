@@ -15,9 +15,15 @@ export function buildMvs(url: string, components: PlanComponent[]) {
   for (const c of components) {
     const selector = c.builtin
       ? c.builtin
-      : c.atomIndices
-        ? c.atomIndices.map((atom_index) => ({ atom_index }))
-        : { auth_asym_id: c.chainAsymId ?? "" };
+      : c.residueRanges
+        ? c.residueRanges.map(([auth_asym_id, beg_auth_seq_id, end_auth_seq_id]) => ({
+            auth_asym_id,
+            beg_auth_seq_id,
+            end_auth_seq_id,
+          }))
+        : c.atomIndices
+          ? c.atomIndices.map((atom_index) => ({ atom_index }))
+          : { auth_asym_id: c.chainAsymId ?? "" };
     structure
       .component({ selector })
       .representation({ type: c.representation })
