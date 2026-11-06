@@ -49,7 +49,12 @@ export function AnswerHeader({ molecule, molecules, runStatus, onSelect }: Answe
     <div className="flex items-start justify-between gap-4 px-5 pt-5 pb-4">
       <div className="min-w-0">
         <p className="text-xs uppercase tracking-wide text-(--vm-muted)">{eyebrow(molecule)}</p>
-        <h2 className="mt-1 text-[22px] font-bold leading-snug text-(--vm-fg)">
+        {/* PubChem IUPAC names can exceed 100 characters with long unbroken
+            runs: wrap anywhere, clamp to three lines, full name on hover. */}
+        <h2
+          className="mt-1 line-clamp-3 text-[22px] font-bold leading-snug text-(--vm-fg) [overflow-wrap:anywhere]"
+          title={title.sub ? `${title.title} — ${title.sub}` : title.title}
+        >
           {title.title}
           {title.sub && <span className="ml-2 font-normal italic text-(--vm-fg-2) text-base">{title.sub}</span>}
         </h2>

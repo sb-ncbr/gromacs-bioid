@@ -92,7 +92,7 @@ function Row({ row, selected, onSelect }: { row: RowView; selected: boolean; onS
           {m.display_name}
           {m.copies > 1 && <span className="ml-1.5 text-xs font-normal text-(--vm-muted)">{copiesText(m.copies)}</span>}
         </span>
-        <span className="block truncate text-xs text-(--vm-muted)">{row.line2}</span>
+        <span className="block truncate text-xs text-(--vm-muted)" title={row.line2 || undefined}>{row.line2}</span>
       </span>
       {row.score != null && (
         <span className={cn("text-sm tabular-nums", CONFIDENCE_COLOR[row.icon as keyof typeof CONFIDENCE_COLOR] ?? "text-(--vm-muted)")}>
@@ -133,7 +133,7 @@ function IdentGroupRow({
             {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
             <StatusIcon icon={group.icon} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-(--vm-fg)">
+              <span className="block truncate text-sm font-medium text-(--vm-fg)" title={group.name}>
                 {group.name}
                 <span className="ml-1.5 text-xs font-normal text-(--vm-muted)">{group.count}×</span>
               </span>
@@ -152,7 +152,7 @@ function IdentGroupRow({
           >
             <StatusIcon icon={group.icon} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-(--vm-fg)">{group.name}</span>
+              <span className="block truncate text-sm font-medium text-(--vm-fg)" title={group.name}>{group.name}</span>
             </span>
             {group.score != null && <span className="text-sm tabular-nums text-(--vm-muted)">{group.score}</span>}
           </button>

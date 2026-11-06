@@ -84,7 +84,7 @@ function MatchRow({ entry }: { entry: MatchEntry & { exact?: boolean } }) {
           `${entry.db} ${entry.id}`
         )}
       </TableCell>
-      <TableCell className="max-w-[280px] truncate">{entry.what}</TableCell>
+      <TableCell className="max-w-[280px] truncate" title={entry.what}>{entry.what}</TableCell>
       <TableCell className="max-w-[220px] truncate text-(--vm-muted)">{entry.evidence}</TableCell>
       <TableCell className="text-right">
         <ConfPill confidence={entry.confidence} exact={entry.exact ?? false} />
@@ -199,8 +199,8 @@ function RejectedToggle({
         <ul className="mt-2 basis-full space-y-1 rounded-md bg-(--vm-surface-2) p-3 text-sm" style={inline ? { width: "100%" } : undefined}>
           {rejected.map((r, i) => (
             <li key={`${r.db}-${r.id}-${i}`} className="flex justify-between gap-4">
-              <span className="text-(--vm-fg)">{r.what}</span>
-              <span className="text-(--vm-muted) text-right">{r.clause}</span>
+              <span className="min-w-0 line-clamp-2 text-(--vm-fg) [overflow-wrap:anywhere]" title={r.what}>{r.what}</span>
+              <span className="shrink-0 text-(--vm-muted) text-right">{r.clause}</span>
             </li>
           ))}
         </ul>
