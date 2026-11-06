@@ -130,3 +130,40 @@ class TestResolvers:
             out = r._resolve_similarity("data_x\n", str(tmp_path))
         assert out == []
         assert r._last_error == "structure_search_unavailable: HTTP 400"
+
+
+def _chain_with_h(n_res, label, z, h_per_res=8):
+    """Backbone chain plus hydrogens (all-atom MD payload shape)."""
+    lines, serial = [], 1
+    for i in range(n_res):
+        for k, (name, el) in enumerate([("N", "N"), ("CA", "C"), ("C", "C")]
+                                       + [(f"H{j}", "H") for j in range(h_per_res)]):
+            x = 3.8 * i + (1.2 * k if k < 3 else 0.5)
+            lines.append("ATOM  %5d  %-3s ALA %1s%4d    %8.3f%8.3f%8.3f  1.00  0.00          %2s"
+                         % (serial % 100000, name, label, i + 1, x, 0.0, z, el))
+            serial += 1
+    return lines
+
+
+class TestHydrogenStrip:
+    """b24 redo, entry 2336: the deduplicated 1,133-residue spike chain still
+    got HTTP 400 with hydrogens (17,472 atoms) and 200/663 hits without
+    (8,841). The RCSB limit is on atoms; hydrogens go first."""
+
+    def test_atom_heavy_query_drops_hydrogens_only(self):
+        text = _pdb(_chain_with_h(1200, "A", 0.0))   # 13,200 atoms, 1,200 residues
+        out = split_oversized_query(text)
+        assert len(out) == 1
+        atoms = [ln for ln in out[0].splitlines() if ln.startswith("ATOM")]
+        assert len(atoms) == 3600
+        assert all(ln[76:78].strip() != "H" for ln in atoms)
+
+    def test_small_all_atom_query_keeps_hydrogens(self):
+        text = _pdb(_chain_with_h(700, "A", 0.0))    # 7,700 atoms
+        assert split_oversized_query(text) == [text]
+
+    def test_split_chains_are_heavy_atom(self):
+        text = _pdb(_chain_with_h(900, "A", 0.0), _chain_with_h(900, "B", 50.0))
+        out = split_oversized_query(text)
+        assert len(out) == 1  # identical sequences: queried once
+        assert not any(ln[76:78].strip() == "H" for ln in out[0].splitlines())

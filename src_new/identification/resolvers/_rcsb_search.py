@@ -133,7 +133,14 @@ def post_rcsb_query(request: dict, *, timeout_s: float = 30.0) -> dict:
 # any single chain (~718 residues) -> 200 with the right family on top.
 # Oversized queries are therefore split into per-chain queries (distinct
 # chain sequences only, largest first) whose hit lists are merged.
+# The limit is on ATOMS, and all-atom MD payloads carry hydrogens (b24 redo,
+# entry 2336: one deduplicated 1,133-residue spike chain, 17,472 atoms ->
+# still 400; the same chain heavy-atom only, 8,841 atoms -> 200, 663 hits,
+# 7TLB/5X5B/7CN8 on top; a 718-residue chain with H, 11,413 atoms -> 200).
+# An oversized query therefore drops its hydrogens first and is split only
+# when the heavy-atom payload is still too large.
 MAX_QUERY_RESIDUES = 1500
+MAX_QUERY_ATOMS = 12000
 MAX_CHAIN_QUERIES = 4
 _MIN_CHAIN_RESIDUES = 20
 _CHAIN_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -143,25 +150,41 @@ def _pdb_xyz(line: str) -> tuple[float, float, float]:
     return float(line[30:38]), float(line[38:46]), float(line[46:54])
 
 
+def _is_hydrogen(line: str) -> bool:
+    element = line[76:78].strip().upper()
+    if element:
+        return element in ("H", "D")
+    return line[12:16].strip().upper().lstrip("0123456789").startswith(("H", "D"))
+
+
+def _n_residues(atoms: list[str]) -> int:
+    # residue = run of consecutive records sharing chain/number/name (label
+    # and numbering can both repeat across collapsed chains)
+    return sum(1 for i, ln in enumerate(atoms)
+               if i == 0 or ln[17:27] != atoms[i - 1][17:27])
+
+
 def split_oversized_query(pdb_text: str,
                           max_residues: int = MAX_QUERY_RESIDUES,
-                          max_chains: int = MAX_CHAIN_QUERIES) -> list[str]:
-    """[pdb_text] when the query is small enough, else per-chain PDB texts.
+                          max_chains: int = MAX_CHAIN_QUERIES,
+                          max_atoms: int = MAX_QUERY_ATOMS) -> list[str]:
+    """[pdb_text] when the query is small enough; else the heavy-atom query
+    when that fits; else per-chain heavy-atom PDB texts.
 
     Chains come from the chain column; when the payload carries a single
     label (MDposit topology-less systems collapse every chain to 'A'),
     chains are re-derived at broken peptide bonds (C(i)-N(i+1) > 2 A).
-    Only ATOM records are kept per chain (CONECT serials would dangle);
-    identical chain sequences are queried once."""
+    Only ATOM records are kept (CONECT serials would dangle); identical
+    chain sequences are queried once."""
     import math
 
     atoms = [ln for ln in pdb_text.splitlines() if ln.startswith("ATOM")]
-    # residue = run of consecutive records sharing chain/number/name (label
-    # and numbering can both repeat across collapsed chains)
-    n_res = sum(1 for i, ln in enumerate(atoms)
-                if i == 0 or ln[17:27] != atoms[i - 1][17:27])
-    if n_res <= max_residues:
+    n_res = _n_residues(atoms)
+    if n_res <= max_residues and len(atoms) <= max_atoms:
         return [pdb_text]
+    atoms = [ln for ln in atoms if not _is_hydrogen(ln)]
+    if n_res <= max_residues and len(atoms) <= max_atoms:
+        return ["\n".join(atoms + ["END"]) + "\n"]
 
     chains: dict[str, list[str]] = {}
     if len({ln[21] for ln in atoms}) > 1:
