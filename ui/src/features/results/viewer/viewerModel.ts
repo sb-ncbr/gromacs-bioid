@@ -39,12 +39,27 @@ export const LIGHT_PALETTE: Palette = {
 /** MVS representation types (molstar mvs-tree-representations; no "point"/"licorice"). */
 export type Representation = "cartoon" | "ball_and_stick" | "spacefill";
 
+/** G9: per-segment selector into the system mmCIF (`/render` segment_selectors). */
+export interface SegmentSelector {
+  chains: string[];
+  /** 0-based [start, end) atom_site rows (MVS atom_index). */
+  atom_index_ranges: number[][];
+  atom_count: number;
+}
+export type SegmentSelectors = Record<string, SegmentSelector>;
+
+/** Virtual segments share their parent's chain; above this many atoms they
+ * are not addressed atom by atom (bulk water/lipids stay neutral). */
+export const ATOM_INDEX_CAP = 5000;
+
 export interface PlanComponent {
   key: string;
   /** Mol* built-in selector (protein/ligand/water/ion…) or one auth chain. */
   /** MVS ComponentSelectorT values only — an unknown one fails MVS validation and the whole scene. */
   builtin?: "protein" | "nucleic" | "ligand" | "water" | "ion";
   chainAsymId?: string;
+  /** G9 fallback for segments without their own chain: MVS atom_index list. */
+  atomIndices?: number[];
   representation: Representation;
   colorHex: string;
 }
@@ -109,10 +124,34 @@ function basePlan(molecules: Molecule[], showWaterIons: boolean, p: Palette): Pl
   return out;
 }
 
+const VIRTUAL = /__v\d+$/;
+
+/**
+ * Where a molecule is in the system mmCIF: its own chain (parsed `_chain_X`
+ * name, or the G9 selector's single chain for a non-virtual segment), else
+ * its atom rows when it is small enough; null when not addressable.
+ */
+export function addressOf(
+  m: Molecule,
+  selectors?: SegmentSelectors | null,
+): Pick<PlanComponent, "chainAsymId" | "atomIndices"> | null {
+  if (m.chain != null) return { chainAsymId: m.chain };
+  const sel = selectors?.[m.id];
+  if (!sel) return null;
+  if (!VIRTUAL.test(m.id) && sel.chains.length === 1) return { chainAsymId: sel.chains[0] };
+  if (sel.atom_count > 0 && sel.atom_count <= ATOM_INDEX_CAP) {
+    const atomIndices: number[] = [];
+    for (const [beg, end] of sel.atom_index_ranges) for (let i = beg; i < end; i++) atomIndices.push(i);
+    return atomIndices.length ? { atomIndices } : null;
+  }
+  return null;
+}
+
 /**
  * Build the scene plan.
  * - highlight: everything neutral, the selected molecule's chain in accent.
- * - confidence: every chain-addressable molecule in its label colour.
+ * - confidence: every addressable molecule in its label colour.
+ * Molecules are addressed by chain, else through the G9 selectors.
  */
 export function planScene(
   molecules: Molecule[],
@@ -121,17 +160,19 @@ export function planScene(
   selectedId: string | null,
   showWaterIons: boolean,
   palette: Palette = LIGHT_PALETTE,
+  selectors?: SegmentSelectors | null,
 ): ScenePlan {
   const components = basePlan(molecules, showWaterIons, palette);
   const effective: CanvasMode = runStatus === "finished" ? mode : "highlight";
 
   if (effective === "confidence") {
     for (const m of molecules) {
-      if (m.chain == null) continue; // G9: no selector for virtual segments
       if ((m.kind === "water" || m.kind === "ion") && !showWaterIons) continue;
+      const address = addressOf(m, selectors);
+      if (!address) continue;
       components.push({
         key: `mol:${m.id}`,
-        chainAsymId: m.chain,
+        ...address,
         representation: KIND_REPRESENTATION[m.kind],
         colorHex: labelColor(m, palette),
       });
@@ -149,10 +190,11 @@ export function planScene(
 
   const selected = molecules.find((m) => m.id === selectedId) ?? null;
   const legend: ScenePlan["legend"] = [];
-  if (selected?.chain != null) {
+  const selectedAddress = selected ? addressOf(selected, selectors) : null;
+  if (selected && selectedAddress) {
     components.push({
       key: `sel:${selected.id}`,
-      chainAsymId: selected.chain,
+      ...selectedAddress,
       representation: KIND_REPRESENTATION[selected.kind],
       colorHex: palette.accent,
     });
@@ -171,7 +213,16 @@ export function planScene(
  * back to a molecule (identical chains collapse to the first — two-way
  * selection stays exact for distinct chains, see G9).
  */
-export function moleculeForChain(molecules: Molecule[], asymId: string | null): string | null {
+export function moleculeForChain(
+  molecules: Molecule[],
+  asymId: string | null,
+  selectors?: SegmentSelectors | null,
+): string | null {
   if (asymId == null) return null;
-  return molecules.find((m) => m.chain === asymId)?.id ?? null;
+  return (
+    molecules.find((m) => m.chain === asymId)?.id ??
+    molecules.find((m) => !VIRTUAL.test(m.id) && selectors?.[m.id]?.chains.length === 1 &&
+      selectors[m.id].chains[0] === asymId)?.id ??
+    null
+  );
 }

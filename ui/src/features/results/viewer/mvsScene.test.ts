@@ -22,3 +22,13 @@ describe("buildMvs · every scene passes Mol* MVS validation", () => {
     }
   }
 });
+
+describe("buildMvs · G9 selector components validate too", () => {
+  it("atom-index and selector-chain components pass MVS validation", () => {
+    const state = buildMvs("https://example.org/system.mmcif", [
+      { key: "a", chainAsymId: "PROA", representation: "cartoon", colorHex: "#1f5f26" },
+      { key: "b", atomIndices: [1629, 1630, 1631], representation: "ball_and_stick", colorHex: "#9a3412" },
+    ]);
+    expect(MVSData.validationIssues(state, { noExtra: true })).toBeUndefined();
+  });
+});

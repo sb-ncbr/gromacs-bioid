@@ -13,7 +13,11 @@ export function buildMvs(url: string, components: PlanComponent[]) {
   const builder = MVSData.createBuilder();
   const structure = builder.download({ url }).parse({ format: "mmcif" }).modelStructure();
   for (const c of components) {
-    const selector = c.builtin ? c.builtin : { auth_asym_id: c.chainAsymId ?? "" };
+    const selector = c.builtin
+      ? c.builtin
+      : c.atomIndices
+        ? c.atomIndices.map((atom_index) => ({ atom_index }))
+        : { auth_asym_id: c.chainAsymId ?? "" };
     structure
       .component({ selector })
       .representation({ type: c.representation })

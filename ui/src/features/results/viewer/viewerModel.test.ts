@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ViewModel } from "../viewmodel";
-import { moleculeForChain, planScene, LIGHT_PALETTE } from "./viewerModel";
+import { addressOf, moleculeForChain, planScene, LIGHT_PALETTE } from "./viewerModel";
 import navmsRaw from "../viewmodel/fixtures/navms-finished.json";
 import largeRaw from "../viewmodel/fixtures/large-finished.json";
 
@@ -77,5 +77,43 @@ describe("moleculeForChain (two-way selection, G9 note)", () => {
     expect(moleculeForChain(navms.molecules, "A")).toBe(chainA.id);
     expect(moleculeForChain(navms.molecules, null)).toBeNull();
     expect(moleculeForChain(navms.molecules, "ZZZ")).toBeNull();
+  });
+});
+
+describe("G9 selectors · molecules without a parsed chain", () => {
+  const mol = (id: string, kind: string, chain: string | null = null) =>
+    ({ id, kind, chain, copies: 1, atoms_per_copy: 10, display_name: id, result: null }) as unknown as ViewModel["molecules"][number];
+  const selectors = {
+    seg_0_PROA: { chains: ["PROA"], atom_index_ranges: [[0, 1200]], atom_count: 1200 },
+    A__v1: { chains: ["A"], atom_index_ranges: [[1629, 1638]], atom_count: 9 },
+    A__v3: { chains: ["A"], atom_index_ranges: [[1700, 8000]], atom_count: 6300 },
+  };
+
+  it("addresses a non-virtual segment by its single selector chain", () => {
+    expect(addressOf(mol("seg_0_PROA", "protein"), selectors)).toEqual({ chainAsymId: "PROA" });
+  });
+
+  it("addresses a small virtual segment by its atom rows, never by the shared chain", () => {
+    const a = addressOf(mol("A__v1", "small_molecule"), selectors);
+    expect(a?.atomIndices).toEqual([1629, 1630, 1631, 1632, 1633, 1634, 1635, 1636, 1637]);
+    expect(a?.chainAsymId).toBeUndefined();
+  });
+
+  it("leaves bulk virtual segments (above the cap) unaddressed", () => {
+    expect(addressOf(mol("A__v3", "water"), selectors)).toBeNull();
+  });
+
+  it("parsed chains still win; no selectors keeps the old behaviour", () => {
+    expect(addressOf(mol("x", "protein", "B"), selectors)).toEqual({ chainAsymId: "B" });
+    expect(addressOf(mol("seg_0_PROA", "protein"), null)).toBeNull();
+  });
+
+  it("confidence mode colours selector-addressed molecules; clicks map back", () => {
+    const ms = [mol("seg_0_PROA", "protein"), mol("A__v1", "small_molecule")];
+    const plan = planScene(ms, "finished", "confidence", null, false, LIGHT_PALETTE, selectors);
+    expect(plan.components.map((c) => c.key)).toEqual(
+      expect.arrayContaining(["mol:seg_0_PROA", "mol:A__v1"]));
+    expect(moleculeForChain(ms, "PROA", selectors)).toBe("seg_0_PROA");
+    expect(moleculeForChain(ms, "A", selectors)).toBeNull(); // shared chain: ambiguous
   });
 });

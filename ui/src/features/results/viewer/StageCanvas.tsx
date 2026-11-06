@@ -29,6 +29,7 @@ import {
   moleculeForChain,
   type CanvasMode,
   type Palette,
+  type SegmentSelectors,
 } from "./viewerModel";
 
 const LOAD_TIMEOUT_MS = 25000;
@@ -75,6 +76,10 @@ export function StageCanvas({ runId, runStatus, molecules, selectedId, onSelect,
   const [showWaterIons, setShowWaterIons] = useState(false);
 
   const finished = runStatus === "finished";
+  // G9 (additive): per-segment selectors into the system mmCIF; {} on runs
+  // exported before 2026-10-28 (or when the system export failed).
+  const selectors = ((renderPaths ?? null) as { segment_selectors?: SegmentSelectors | null } | null)
+    ?.segment_selectors ?? null;
 
   // Create the Mol* plugin exactly once (unchanged from the legacy viewer).
   useEffect(() => {
@@ -127,7 +132,7 @@ export function StageCanvas({ runId, runStatus, molecules, selectedId, onSelect,
           if (!first) return;
           const loc = StructureElement.Location.create(loci.structure, first.unit, first.unit.elements[0]);
           const asym = SP.chain.auth_asym_id(loc);
-          const id = moleculeForChain(molecules, asym ?? null);
+          const id = moleculeForChain(molecules, asym ?? null, selectors);
           if (id && id !== selectedId) onSelect(id);
         } catch {
           /* clicking empty space or unmapped residues: ignore */
@@ -135,7 +140,7 @@ export function StageCanvas({ runId, runStatus, molecules, selectedId, onSelect,
       })();
     });
     return () => sub.unsubscribe();
-  }, [ready, molecules, selectedId, onSelect]);
+  }, [ready, molecules, selectedId, onSelect, selectors]);
 
   const v37 = (renderPaths ?? null) as (RenderPathsResponse & RenderPathsV37) | null;
   const v39 = (renderPaths ?? null) as (RenderPathsResponse & RenderPathsV39) | null;
@@ -150,8 +155,8 @@ export function StageCanvas({ runId, runStatus, molecules, selectedId, onSelect,
   const pngUrl = fileUrl(resolveStaticPngPath(v37, fallbackSegment));
 
   const plan = useMemo(
-    () => planScene(molecules, runStatus, canvasMode, selectedId, showWaterIons, readPalette()),
-    [molecules, runStatus, canvasMode, selectedId, showWaterIons],
+    () => planScene(molecules, runStatus, canvasMode, selectedId, showWaterIons, readPalette(), selectors),
+    [molecules, runStatus, canvasMode, selectedId, showWaterIons, selectors],
   );
 
   // Rebuild the scene when the plan or structure changes; camera is kept so
