@@ -16,6 +16,9 @@ import hashlib
 import json
 import os
 import re
+import sqlite3
+import subprocess
+import threading
 import time
 
 import requests
@@ -37,6 +40,68 @@ try:
         os.makedirs(os.path.join(ROOT, _d), exist_ok=True)
 except OSError:
     pass  # read-only/offline environments: fall through to direct fetch
+
+# Local-first resolution (g1, 2026-11-06): the same PubChem records and
+# PDB/UniProt sequences the live endpoints serve, read from the pod's
+# databases. A 196k-pair g1 run against live REST is hours of rate-limited
+# traffic; the endpoints stay as the fallback for anything not local.
+MIRROR = os.environ.get("SIM_PUBCHEM_MIRROR", "/app/databases/pubchem/current/pubchem.sqlite")
+BLASTDBCMD = os.environ.get("SIM_BLASTDBCMD", "/usr/bin/blastdbcmd")
+SWISSPROT_DB = os.environ.get("SIM_SWISSPROT_DB", "/app/databases/swissprot/swissprot")
+PDB_SEQ_DBS = tuple(p for p in os.environ.get(
+    "SIM_PDB_SEQ_DBS", "/app/databases/pdbaa/pdbaa:/app/databases/pdbnt/pdbnt").split(":") if p)
+_local = threading.local()
+_pdb_index = None
+_pdb_index_lock = threading.Lock()
+
+
+def _mirror_smiles(sql, args):
+    """One-row SMILES lookup in the local PubChem mirror (None when absent)."""
+    if not os.path.exists(MIRROR):
+        return None
+    con = getattr(_local, "mirror", None)
+    if con is None:
+        con = sqlite3.connect(f"file:{MIRROR}?mode=ro&immutable=1", uri=True)
+        _local.mirror = con
+    try:
+        row = con.execute(sql, args).fetchone()
+    except sqlite3.Error:
+        return None
+    return row[0] if row and row[0] else None
+
+
+def _local_pdb_seqs(pdb):
+    """Chain sequences of a PDB entry from the local pdbaa/pdbnt BLAST DBs,
+    indexed once per process (None when the entry is not local)."""
+    global _pdb_index
+    if _pdb_index is None:
+        with _pdb_index_lock:
+            if _pdb_index is None:
+                idx = {}
+                for db in PDB_SEQ_DBS:
+                    try:
+                        out = subprocess.run([BLASTDBCMD, "-db", db, "-entry", "all", "-outfmt", "%a|%s"],
+                                             capture_output=True, text=True, timeout=1800)
+                    except (OSError, subprocess.SubprocessError):
+                        continue
+                    for ln in out.stdout.splitlines():
+                        acc, _, seq = ln.partition("|")
+                        if seq:
+                            idx.setdefault(acc[:4].upper(), set()).add(seq)
+                _pdb_index = idx
+    seqs = _pdb_index.get(pdb)
+    return sorted(seqs) if seqs else None
+
+
+def _local_uniprot_seq(acc):
+    try:
+        out = subprocess.run([BLASTDBCMD, "-db", SWISSPROT_DB, "-entry", acc, "-outfmt", "%s"],
+                             capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    seq = "".join(out.stdout.split()) if out.returncode == 0 else ""
+    return seq or None
+
 
 UNI = "https://rest.uniprot.org/uniprotkb"
 RCSB_FASTA = "https://www.rcsb.org/fasta/entry"
@@ -75,12 +140,15 @@ def _get(url, kind="text"):
 
 def uniprot_seq(acc):
     acc = acc.strip().upper().split("-")[0]
-    return _cached_json("uniprot_seq", acc, lambda: "".join(
+    return _cached_json("uniprot_seq", acc, lambda: _local_uniprot_seq(acc) or "".join(
         ln.strip() for ln in _get(f"{UNI}/{acc}.fasta").splitlines() if not ln.startswith(">")))
 
 
 def pdb_entity_seqs(pdb):
     pdb = pdb.strip().upper()[:4]
+    local = _local_pdb_seqs(pdb)
+    if local:
+        return local
     txt = _cached_json("pdb_fasta", pdb, lambda: _get(f"{RCSB_FASTA}/{pdb}"))
     seqs, cur = [], None
     for ln in txt.splitlines():
@@ -170,6 +238,13 @@ def _inchikey_smiles(ik):
     WATCH: ChemSpider is token-limited; order keeps it late.
     """
     def _fetch():
+        # 0) local mirror: exact key, then the connectivity block (protonation
+        # and stereo variants share the skeleton this engine compares)
+        smi = (_mirror_smiles("select smiles from compounds where inchikey=? limit 1", (ik,))
+               or _mirror_smiles("select smiles from compounds where inchikey>=? and inchikey<? "
+                                 "order by cid limit 1", (ik[:14] + "-", ik[:14] + ".")))
+        if smi:
+            return smi
         # 1) cactus (cheap + broad); charged-species keys (-Q/-S/... ) try the
         # neutral -N form too: public registers only index neutral keys.
         cactus_variants = [ik] if ik.endswith("-N") else [ik, ik[:-1] + "N"]
@@ -231,6 +306,9 @@ def _cid_smiles_idsm(cid):
 def _cid_smiles(cid):
     """Canonical structure for a CID (PUG first, IDSM mirror fallback)."""
     def _fetch():
+        smi = _mirror_smiles("select smiles from compounds where cid=?", (int(cid),))
+        if smi:
+            return smi
         try:
             d = _get(f"{PUG}/compound/cid/{cid}/property/ConnectivitySMILES,SMILES/JSON", "json")
         except LookupError:
