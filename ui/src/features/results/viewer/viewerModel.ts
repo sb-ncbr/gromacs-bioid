@@ -174,21 +174,31 @@ export function planScene(
   palette: Palette = LIGHT_PALETTE,
   selectors?: SegmentSelectors | null,
 ): ScenePlan {
-  const components = basePlan(molecules, showWaterIons, palette);
   const effective: CanvasMode = runStatus === "finished" ? mode : "highlight";
+  const hidden = (m: Molecule) => (m.kind === "water" || m.kind === "ion") && !showWaterIons;
+
+  // Every addressable molecule is drawn exactly ONCE in its own colour; the
+  // kind-level built-in layer only covers molecules that cannot be
+  // addressed. Drawing a neutral built-in cartoon AND a coloured component
+  // over the same residues z-fights — the protein stayed grey in both
+  // modes (live run c52b3df1, 2026-11-06).
+  const address = new Map(molecules.map((m) => [m.id, addressOf(m, selectors)] as const));
+  const components = basePlan(molecules.filter((m) => !address.get(m.id)), showWaterIons, palette);
+
+  for (const m of molecules) {
+    const a = address.get(m.id);
+    if (!a || hidden(m)) continue;
+    const selected = effective === "highlight" && m.id === selectedId;
+    components.push({
+      key: `${selected ? "sel" : "mol"}:${m.id}`,
+      ...a,
+      representation: KIND_REPRESENTATION[m.kind],
+      colorHex:
+        effective === "confidence" ? labelColor(m, palette) : selected ? palette.accent : kindColor(m.kind, palette),
+    });
+  }
 
   if (effective === "confidence") {
-    for (const m of molecules) {
-      if ((m.kind === "water" || m.kind === "ion") && !showWaterIons) continue;
-      const address = addressOf(m, selectors);
-      if (!address) continue;
-      components.push({
-        key: `mol:${m.id}`,
-        ...address,
-        representation: KIND_REPRESENTATION[m.kind],
-        colorHex: labelColor(m, palette),
-      });
-    }
     return {
       components,
       legend: [
@@ -202,16 +212,7 @@ export function planScene(
 
   const selected = molecules.find((m) => m.id === selectedId) ?? null;
   const legend: ScenePlan["legend"] = [];
-  const selectedAddress = selected ? addressOf(selected, selectors) : null;
-  if (selected && selectedAddress) {
-    components.push({
-      key: `sel:${selected.id}`,
-      ...selectedAddress,
-      representation: KIND_REPRESENTATION[selected.kind],
-      colorHex: palette.accent,
-    });
-    legend.push({ label: selected.display_name, colorHex: palette.accent });
-  }
+  if (selected && address.get(selected.id)) legend.push({ label: selected.display_name, colorHex: palette.accent });
   legend.push({ label: "Other", colorHex: palette.other });
   if (showWaterIons) {
     if (molecules.some((m) => m.kind === "water")) legend.push({ label: "Water", colorHex: palette.water });

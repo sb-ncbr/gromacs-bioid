@@ -9,14 +9,23 @@ const large = largeRaw as unknown as ViewModel;
 const chainA = navms.molecules[0];
 
 describe("planScene · highlight mode (SPEC.md §3.5b)", () => {
-  it("builds one component per kind present (A6 fix), water/ions hidden by default", () => {
+  it("draws addressable molecules once each; built-ins only for the rest, water/ions hidden by default", () => {
     const plan = planScene(navms.molecules, "finished", "highlight", chainA.id, false);
     const builtins = plan.components.filter((c) => c.builtin).map((c) => c.key);
-    expect(builtins).toContain("kind:protein");
+    // chains are addressable -> individual components, no overlapping
+    // built-in protein cartoon (it z-fought the coloured one, run c52b3df1)
+    expect(builtins).not.toContain("kind:protein");
+    const chains = navms.molecules.filter((m) => m.chain != null);
+    for (const m of chains) {
+      expect(plan.components.some((c) => c.key.endsWith(`:${m.id}`))).toBe(true);
+    }
     expect(builtins).not.toContain("kind:water");
     expect(builtins).not.toContain("kind:ion");
-    // lipids share the neutral "other" non-standard component (G9 note)
+    // unaddressable lipids keep the neutral built-in "other" component
     expect(builtins).toContain("kind:other");
+    // no molecule drawn twice
+    const keys = plan.components.map((c) => c.key);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   it("adds the selected molecule's chain in accent + a matching legend", () => {
