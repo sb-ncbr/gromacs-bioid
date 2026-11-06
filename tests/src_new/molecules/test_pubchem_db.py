@@ -299,6 +299,8 @@ class TestAnnotationPrefill:
         assert set(quality.signals) == {
             "canonical_smiles", "isomeric_smiles", "molecular_formula",
             "iupac_name", "synonyms"}
+        # G5 for ligands: the mirror's IUPAC name rides on the quality
+        assert quality.name == db.by_cid("2").iupac_name and quality.name
 
     def test_extended_mirror_absence_is_authoritative(
             self, ann_db: Path, monkeypatch) -> None:
@@ -319,6 +321,7 @@ class TestAnnotationPrefill:
         assert quality is not None
         assert set(quality.signals) == {
             "canonical_smiles", "isomeric_smiles", "molecular_formula"}
+        assert quality.name is None  # no IUPAC name: no display name
 
     def test_legacy_mirror_still_live_fills(self, tmp_path: Path, monkeypatch) -> None:
         import sqlite3

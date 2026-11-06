@@ -54,6 +54,7 @@ from ..models import (
     RunStageProgress,
     RunSummaryResponse,
 )
+from ..hit_names import hit_display_name
 from ..names import chain_of, segment_display_name, segment_resname, strip_seg
 from ..utils import build_database_url, normalize_identifier
 from ..tasks import run_pipeline_task
@@ -992,7 +993,7 @@ async def download_results_csv(run_id: str) -> PlainTextResponse:
             entry.get("type") or "unknown",
             copies,
             atoms,
-            best.get("name") or "",
+            (hit_display_name(best) if best else "") or "",
             best.get("database") or "",
             best.get("identifier") or "",
             conf_text,
@@ -1405,7 +1406,7 @@ async def get_verification(run_id: str, segment: Optional[str] = None) -> Verifi
                 ground_truth_override=hit.get("ground_truth_override"),
                 # v3.143 (BACKEND_GAPS G5): additive — display metadata the
                 # scorers thread onto the hit; null for older runs.
-                name=hit.get("name"),
+                name=hit_display_name(hit),
                 organism=hit.get("organism"),
             ))
     

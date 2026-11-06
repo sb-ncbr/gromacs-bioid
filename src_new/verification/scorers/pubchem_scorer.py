@@ -354,6 +354,8 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
                     database="pubchem",
                     score=min(_pubchem_schema_score(signals), 100.0),
                     signals=signals,
+                    # G5 for ligands: the mirror's IUPAC name (no extra I/O)
+                    name=getattr(row, "iupac_name", None) or None,
                 )
 
         # Mirror miss or mirror absent: full PUG path (budgeted live calls).
@@ -404,17 +406,22 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
         synonyms_data = self._live_get_json(_pug_synonyms_url(identifier, is_inchikey))
         if synonyms_data is None:
             return None
+        title = None
         info_list = synonyms_data.get("InformationList", {}).get("Information", [])
         if info_list and len(info_list) > 0:
             synonyms = info_list[0].get("Synonym", [])
             if synonyms and len(synonyms) > 0:
                 signals.append("synonyms")
                 score += 15.0
+                # PubChem lists its preferred name (the record title) first
+                title = synonyms[0] if isinstance(synonyms[0], str) else None
         
         return AnnotationQuality(
             database="pubchem",
             score=min(score, 100.0),
             signals=signals,
+            # G5 for ligands: PubChem title, else the IUPAC name
+            name=title or (prop_list[0].get("IUPACName") if prop_list else None) or None,
         )
 
     def _live_fill(self, identifier: str, is_inchikey: bool, signals: list,

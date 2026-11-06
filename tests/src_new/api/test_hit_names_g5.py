@@ -1,0 +1,62 @@
+"""G5 for chemical hits: read-time display names (live run e1605717 showed
+"PubChem PXXJHWLDUBFPOL-UHFFFAOYSA-N" and "Element CA")."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from src_new.api import hit_names
+
+
+class _FakeMirror:
+    rows = {"2332": "benzenecarboximidamide",
+            "PXXJHWLDUBFPOL-UHFFFAOYSA-N": "benzenecarboximidamide"}
+
+    def by_cid(self, cid):
+        n = self.rows.get(str(cid))
+        return SimpleNamespace(iupac_name=n) if n else None
+
+    def by_inchikey(self, key):
+        n = self.rows.get(key)
+        return SimpleNamespace(iupac_name=n) if n else None
+
+
+@pytest.fixture(autouse=True)
+def _mirror(monkeypatch):
+    hit_names._pubchem_name.cache_clear()
+    monkeypatch.setattr(hit_names, "_mirror", lambda: _FakeMirror())
+    yield
+    hit_names._pubchem_name.cache_clear()
+
+
+def test_existing_name_wins():
+    assert hit_names.hit_display_name(
+        {"ident_type": "PDB_ID", "identifier": "1AQ7", "name": "TRYPSIN"}) == "TRYPSIN"
+
+
+def test_element_symbol_to_name():
+    assert hit_names.hit_display_name({"ident_type": "ELEMENT", "identifier": "CA"}) == "Calcium"
+    assert hit_names.hit_display_name({"ident_type": "ELEMENT", "identifier": "Cl"}) == "Chlorine"
+    assert hit_names.hit_display_name({"ident_type": "ELEMENT", "identifier": "XX"}) is None
+
+
+def test_pubchem_from_mirror_by_cid_and_inchikey():
+    assert hit_names.hit_display_name({"ident_type": "PUBCHEM_CID", "identifier": "2332"}) \
+        == "benzenecarboximidamide"
+    assert hit_names.hit_display_name(
+        {"ident_type": "INCHIKEY", "identifier": "PXXJHWLDUBFPOL-UHFFFAOYSA-N"}) \
+        == "benzenecarboximidamide"
+
+
+def test_unknown_or_unsupported_stays_none():
+    assert hit_names.hit_display_name({"ident_type": "PUBCHEM_CID", "identifier": "1"}) is None
+    assert hit_names.hit_display_name({"ident_type": "CHEBI_ID", "identifier": "CHEBI:1"}) is None
+    assert hit_names.hit_display_name({"ident_type": "PUBCHEM_CID", "identifier": ""}) is None
+
+
+def test_no_mirror_is_not_an_error(monkeypatch):
+    hit_names._pubchem_name.cache_clear()
+    monkeypatch.setattr(hit_names, "_mirror", lambda: None)
+    assert hit_names.hit_display_name({"ident_type": "PUBCHEM_CID", "identifier": "2332"}) is None
