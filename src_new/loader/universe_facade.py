@@ -740,6 +740,7 @@ class LoadedUniverse:
         except MDAnalysis.exceptions.NoDataError:
             return []
         out = []
+        monomers = []
         for f in fragments:
             if len(set(f.atoms.segids)) != 1 or f.atoms.segids[0] != seg:
                 continue
@@ -750,14 +751,13 @@ class LoadedUniverse:
             except Exception:
                 continue
             # one WHOLE residue is a monomer, never a chain: a free amino
-            # acid (DCY/ARG/TRP ligands, 327 curated g1 compounds) is all
+            # acid (DCY/ARG/TRP ligands, 261 curated g1 compounds) is all
             # table resnames, so it passed as polymer and the class-union
             # representative swallowed it like the nucleotides below. A
             # residue PIECE cut off by a missed bond (2150: 4 atoms of a
             # chain MET) still belongs to its chain.
-            if (len(residues) == 1
-                    and len(residues[0].atoms) == len(f.atoms)):
-                continue
+            whole_monomer = (len(residues) == 1
+                             and len(residues[0].atoms) == len(f.atoms))
             # the sugar-phosphate signal admits CHAINS only: free nucleotides
             # (ATP, NAD, FAD, CoA) carry the same atom names but no 3'->5'
             # link (g1: 901 deposits had their nucleotide ligand unioned into
@@ -796,8 +796,37 @@ class LoadedUniverse:
                     if linked:
                         poly += n
             if total and poly / total >= 0.5:
-                out.append(f)
+                (monomers if whole_monomer else out).append(f)
+        if monomers and out:
+            out += [m for m in monomers if self._bonded_to_chain(m, out)]
+            out.sort(key=lambda f: int(f.indices[0]))
         return out
+
+    # heavy-atom contact below which a lone residue is a chain residue whose
+    # bond the topology/guesser missed (4659: an ACE cap at 1.34 A), not a
+    # ligand — free amino-acid ligands sit >= 2.44 A from the chain (g1 probe)
+    _MISSED_BOND_A = 2.0
+
+    def _bonded_to_chain(self, monomer: AtomGroup, chains: list) -> bool:
+        try:
+            import numpy as _np
+            from scipy.spatial import cKDTree
+
+            def _heavy(ag):
+                try:
+                    keep = [str(e).strip().upper() not in ("H", "D")
+                            for e in ag.elements]
+                except MDAnalysis.exceptions.NoDataError:
+                    keep = [not str(n).strip().upper().startswith("H")
+                            for n in ag.names]
+                sub = ag[_np.array(keep, dtype=bool)]
+                return sub if len(sub) else ag
+
+            tree = cKDTree(_heavy(sum(chains[1:], chains[0])).positions)
+            d, _ = tree.query(_heavy(monomer).positions, k=1)
+            return bool(len(d)) and float(d.min()) <= self._MISSED_BOND_A
+        except Exception:
+            return False
 
     def _polymer_fragments_by_class(self, selected: AtomGroup,
                                     seg: str) -> dict[str, list]:

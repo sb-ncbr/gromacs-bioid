@@ -297,3 +297,37 @@ class TestBrokenChainUnionGuards:
         segs = self._segments(u)
         assert len(segs) == 1, f"residue piece must stay with its chain: {segs}"
         assert next(iter(segs.values()))["atoms"] == n, segs
+
+    def test_lone_residue_at_bond_distance_stays_with_chain(self):
+        """b31 guard boundary (4659): a whole lone residue whose bond to the
+        chain the topology missed (an ACE cap 1.34 A from the chain) is a
+        chain residue, not a ligand; the same residue at ligand-contact
+        distance (>= 2.5 A) is its own segment."""
+        import MDAnalysis as mda
+        import numpy as np
+        prot = ["ALA", "GLY", "LYS", "SER"]
+        cap = ["CH3", "C", "O"]
+        n = len(prot) + len(cap)
+
+        def _universe(gap):
+            u = mda.Universe.empty(n, n_residues=len(prot) + 1,
+                                   atom_resindex=list(range(len(prot))) + [len(prot)] * len(cap),
+                                   trajectory=True)
+            u.add_TopologyAttr("resnames", prot + ["ACE"])
+            u.add_TopologyAttr("resids", list(range(1, len(prot) + 2)))
+            u.add_TopologyAttr("segids", ["SYSTEM"])
+            u.add_TopologyAttr("names", ["CA"] * len(prot) + cap)
+            u.add_TopologyAttr("elements", ["C"] * len(prot) + ["C", "C", "O"])
+            bonds = [(i, i + 1) for i in range(len(prot) - 1)]
+            bonds += [(len(prot), len(prot) + 1), (len(prot) + 1, len(prot) + 2)]
+            u.add_TopologyAttr("bonds", bonds)
+            pos = np.zeros((n, 3))
+            pos[:len(prot), 0] = np.arange(len(prot)) * 3.8          # chain along x
+            pos[len(prot):, 1] = gap + np.arange(len(cap)) * 1.5      # cap along y from CA 1
+            u.atoms.positions = pos
+            return u
+
+        segs = self._segments(_universe(1.34))
+        assert len(segs) == 1, f"missed-bond cap must stay with its chain: {segs}"
+        segs = self._segments(_universe(3.0))
+        assert len(segs) == 2, f"residue at contact distance is a ligand: {segs}"
