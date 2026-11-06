@@ -4,7 +4,7 @@
  * Why this exists (run a5b785cc, 2026-10-21): coordinates arriving in
  * nanometres collapse the system ~10x; Mol* then infers astronomically many
  * distance-based bonds and blocks the main thread until the tab dies — the
- * 25 s watchdog in MolstarViewer cannot fire because the load itself never
+ * 25 s watchdog in the viewer cannot fire because the load itself never
  * yields. The only safe answer is to NOT engage Mol* on degenerate input.
  *
  * Evidence behind the threshold (Phase-0 measurements):
