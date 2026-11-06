@@ -274,7 +274,10 @@ class LoadedUniverse:
         else:
             flags[SegmentProperty.HAS_UNIQUE_NAMES.value] = False
         
-        # IS_PROTEIN (use 80% threshold like _is_polymer_segment)
+        # IS_PROTEIN (use 80% threshold like _is_polymer_segment). A lone
+        # residue is a monomer: a free amino acid (or a ligand that merely
+        # carries an amino-acid resname, 4481's 114-atom "ASP") falls
+        # through to the composition rules like any other small molecule.
         if hasattr(flag_scope.atoms, 'resnames'):
             resnames = flag_scope.atoms.resnames
             known_count = sum(
@@ -282,6 +285,7 @@ class LoadedUniverse:
             )
             flags[SegmentProperty.IS_PROTEIN.value] = (
                 len(resnames) > 0 and known_count / len(resnames) >= 0.8
+                and len(flag_scope.residues) >= 2
             )
         else:
             flags[SegmentProperty.IS_PROTEIN.value] = False
@@ -744,6 +748,15 @@ class LoadedUniverse:
             try:
                 residues = list(f.residues)
             except Exception:
+                continue
+            # one WHOLE residue is a monomer, never a chain: a free amino
+            # acid (DCY/ARG/TRP ligands, 327 curated g1 compounds) is all
+            # table resnames, so it passed as polymer and the class-union
+            # representative swallowed it like the nucleotides below. A
+            # residue PIECE cut off by a missed bond (2150: 4 atoms of a
+            # chain MET) still belongs to its chain.
+            if (len(residues) == 1
+                    and len(residues[0].atoms) == len(f.atoms)):
                 continue
             # the sugar-phosphate signal admits CHAINS only: free nucleotides
             # (ATP, NAD, FAD, CoA) carry the same atom names but no 3'->5'

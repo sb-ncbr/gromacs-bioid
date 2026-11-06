@@ -218,3 +218,82 @@ class TestBrokenChainUnionGuards:
         segs = self._segments(u)
         assert len(segs) == 2, f"nucleotide must be its own segment: {segs}"
         assert sorted(s["atoms"] for s in segs.values()) == [3, len(nt_names)], segs
+
+    def test_free_amino_acid_not_unioned_into_protein(self):
+        """g1 regression (229 curated compounds, e.g. 4493 ARG, 7464 TRP):
+        a lone amino-acid residue is all table resnames, so it counted as
+        polymer and was unioned into the protein representative. A single
+        residue is a monomer ligand and must be its own segment."""
+        import MDAnalysis as mda
+        import numpy as np
+        prot = ["ALA", "GLY", "LYS", "SER"]
+        n = len(prot) + 2  # + a free two-atom ARG stand-in
+        u = mda.Universe.empty(n, n_residues=len(prot) + 1,
+                               atom_resindex=list(range(len(prot))) + [len(prot)] * 2,
+                               trajectory=True)
+        u.add_TopologyAttr("resnames", prot + ["ARG"])
+        u.add_TopologyAttr("resids", list(range(1, len(prot) + 2)))
+        u.add_TopologyAttr("segids", ["SYSTEM"])
+        u.add_TopologyAttr("names", ["CA"] * len(prot) + ["CA", "CB"])
+        u.add_TopologyAttr("elements", ["C"] * n)
+        bonds = [(i, i + 1) for i in range(len(prot) - 1)] + [(len(prot), len(prot) + 1)]
+        u.add_TopologyAttr("bonds", bonds)
+        u.atoms.positions = np.arange(n * 3, dtype=float).reshape(n, 3) * 4.0
+        segs = self._segments(u)
+        assert len(segs) == 2, f"free amino acid must be its own segment: {segs}"
+        assert sorted(s["atoms"] for s in segs.values()) == [2, len(prot)], segs
+
+    def test_free_amino_acid_is_not_typed_protein(self):
+        """g1 regression (4481: a 114-atom ligand named ASP): once a lone
+        residue is its own segment it must not carry IS_PROTEIN — a single
+        residue is a monomer, typed by composition like any ligand. The
+        chain keeps IS_PROTEIN."""
+        import MDAnalysis as mda
+        import numpy as np
+        from src_new.loader.universe_facade import LoadedUniverse, SegmentProperty
+        prot = ["ALA", "GLY", "LYS", "SER"]
+        lig = ["N", "CA", "C", "O", "OXT"]
+        n = len(prot) + len(lig)
+        u = mda.Universe.empty(n, n_residues=len(prot) + 1,
+                               atom_resindex=list(range(len(prot))) + [len(prot)] * len(lig),
+                               trajectory=True)
+        u.add_TopologyAttr("resnames", prot + ["ASP"])
+        u.add_TopologyAttr("resids", list(range(1, len(prot) + 2)))
+        u.add_TopologyAttr("segids", ["SYSTEM"])
+        u.add_TopologyAttr("names", ["CA"] * len(prot) + lig)
+        u.add_TopologyAttr("elements", ["C"] * len(prot) + ["N", "C", "C", "O", "O"])
+        bonds = [(i, i + 1) for i in range(len(prot) - 1)]
+        bonds += [(i, i + 1) for i in range(len(prot), n - 1)]
+        u.add_TopologyAttr("bonds", bonds)
+        u.atoms.positions = np.arange(n * 3, dtype=float).reshape(n, 3) * 4.0
+        fac = LoadedUniverse(universe=u, decision=None, repair_report=None,
+                             results=None, enhanced_nucleic_recognition=False)
+        flags = {name: fac.get_segment_properties(name).flags[SegmentProperty.IS_PROTEIN.value]
+                 for name in fac.get_segments()}
+        assert sorted(flags.values()) == [False, True], flags
+        assert flags["SYSTEM"] is True, flags
+
+    def test_split_residue_piece_stays_with_chain(self):
+        """g1/b31 guard boundary (2150): a PIECE of a chain residue cut off
+        by a missed bond is one residue but not the whole residue — it is
+        still chain, never a separate one-residue molecule."""
+        import MDAnalysis as mda
+        import numpy as np
+        prot = ["ALA", "GLY", "LYS"]
+        met = ["CA", "CB", "CG", "SD", "CE"]  # CA bonded into the chain, side chain cut off
+        n = len(prot) + len(met)
+        u = mda.Universe.empty(n, n_residues=len(prot) + 1,
+                               atom_resindex=list(range(len(prot))) + [len(prot)] * len(met),
+                               trajectory=True)
+        u.add_TopologyAttr("resnames", prot + ["MET"])
+        u.add_TopologyAttr("resids", list(range(1, len(prot) + 2)))
+        u.add_TopologyAttr("segids", ["SYSTEM"])
+        u.add_TopologyAttr("names", ["CA"] * len(prot) + met)
+        u.add_TopologyAttr("elements", ["C"] * len(prot) + ["C", "C", "C", "S", "C"])
+        bonds = [(i, i + 1) for i in range(len(prot))]  # ... LYS-CA - MET-CA
+        bonds += [(i, i + 1) for i in range(len(prot) + 1, n - 1)]  # CB-CG-SD-CE, no CA-CB
+        u.add_TopologyAttr("bonds", bonds)
+        u.atoms.positions = np.arange(n * 3, dtype=float).reshape(n, 3) * 4.0
+        segs = self._segments(u)
+        assert len(segs) == 1, f"residue piece must stay with its chain: {segs}"
+        assert next(iter(segs.values()))["atoms"] == n, segs
