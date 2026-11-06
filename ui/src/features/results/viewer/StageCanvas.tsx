@@ -217,17 +217,21 @@ export function StageCanvas({ runId, runStatus, molecules, selectedId, onSelect,
       });
     };
 
+    // ONE load per scene, raced against the timeout. The scene used to be
+    // loaded twice concurrently (once inside the race, once on its own):
+    // the two loadMVS calls replaced each other's state and, depending on
+    // timing, left an empty transparent canvas (w27, 2026-11-06).
     const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Mol* load timeout")), LOAD_TIMEOUT_MS));
-    void Promise.race([load(), timeout]).catch(async () => {
-      if (cancelled || gen !== generationRef.current) return;
-      const ok = await checkStatic();
-      if (gen === generationRef.current) setMode(ok ? "static" : "unavailable");
-    }).then(() => {
-      void 0; // mode set by the load/catch paths
-    });
-    void load()
-      .then(() => !cancelled && gen === generationRef.current && setMode("interactive"))
-      .catch(() => undefined);
+    void Promise.race([load(), timeout])
+      .then(() => {
+        if (!cancelled && gen === generationRef.current) setMode("interactive");
+      })
+      .catch(async (err: unknown) => {
+        if (cancelled || gen !== generationRef.current) return;
+        console.warn("Mol*: interactive load failed, falling back", err);
+        const ok = await checkStatic();
+        if (gen === generationRef.current) setMode(ok ? "static" : "unavailable");
+      });
 
     return () => {
       cancelled = true;
