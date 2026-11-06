@@ -330,3 +330,53 @@ class TestExportSegmentMmcif:
         export_segment_mmcif(facade, "seg_0_POPC", output, results)
         
         assert "popc.mmcif" in results.get_data("exports/segment_mmcif/seg_0_POPC")
+
+
+class TestInsertionCodes:
+    """g1 (2026-11-06): 3PTB trypsin uses chymotrypsin numbering with
+    insertion codes (184/184A, 188/188A, 221/221A). The builder dropped the
+    icode, Biopython raised "(' ', 184, ' ') defined twice" and the WHOLE
+    system export failed — no system.mmcif, no G9 selectors, no protein
+    segment export (live API run e1605717)."""
+
+    PDB = ("ATOM      1  N   GLY A 184      10.000  10.000  10.000  1.00  0.00           N\n"
+           "ATOM      2  CA  GLY A 184      11.400  10.000  10.000  1.00  0.00           C\n"
+           "ATOM      3  N   GLY A 184A     12.800  10.000  10.000  1.00  0.00           N\n"
+           "ATOM      4  CA  GLY A 184A     14.200  10.000  10.000  1.00  0.00           C\n"
+           "ATOM      5  N   ALA A 185      15.600  10.000  10.000  1.00  0.00           N\n"
+           "ATOM      6  CA  ALA A 185      17.000  10.000  10.000  1.00  0.00           C\n"
+           "END\n")
+
+    def test_system_export_keeps_insertion_codes(self, tmp_path: Path):
+        import MDAnalysis as mda
+        from src_new.loader.export_mmcif import _build_biopython_structure
+        pdb = tmp_path / "icode.pdb"
+        pdb.write_text(self.PDB)
+        u = mda.Universe(str(pdb))
+        assert sorted(set(u.atoms.icodes)) == ["", "A"]
+        structure = _build_biopython_structure(u)
+        ids = [r.id for r in structure.get_residues()]
+        assert ids == [(" ", 184, " "), (" ", 184, "A"), (" ", 185, " ")]
+
+    def test_duplicate_numbering_gets_free_letter(self):
+        from Bio.PDB import Chain, Residue
+        from src_new.loader.export_mmcif import _free_residue_id
+        chain = Chain.Chain("A")
+        chain.add(Residue.Residue((" ", 7, " "), "HOH", ""))
+        assert _free_residue_id(chain, 7, "") == (" ", 7, "A")
+        assert _free_residue_id(chain, 8, "") == (" ", 8, " ")
+
+    @pytest.mark.skipif(not Path("/home/tomsko/work/bat3_article_reviews/bioid_bughunt/"
+                                 "testcases/P04_3ptb_trypsin_benzamidine/input/3PTB.pdb").exists(),
+                        reason="P04 fixture absent")
+    def test_3ptb_whole_system_export_and_selectors(self, tmp_path: Path):
+        facade, results = _make_facade(
+            "/home/tomsko/work/bat3_article_reviews/bioid_bughunt/testcases/"
+            "P04_3ptb_trypsin_benzamidine/input", tmp_path)
+        out = export_system_mmcif(facade, tmp_path / "system.mmcif", results)
+        assert out.exists()
+        rows = [ln.split() for ln in out.read_text().splitlines() if ln.startswith("ATOM")]
+        # auth_seq_id 184 with insertion code A survives the round trip
+        assert any("184" in r and "A" in r for r in rows)
+        selectors = results.as_dict()["data"]["render"]["segment_selectors"]
+        assert selectors, "G9 selectors must be written once the export succeeds"

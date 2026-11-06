@@ -93,7 +93,9 @@ def _build_biopython_structure(universe: MDAnalysis.Universe, filter_segment: st
         if rindex in cached_residues:
             residue = cached_residues[rindex]
         else:
-            residue = Residue.Residue((' ', resid, ' '), resname, '')
+            residue = Residue.Residue(
+                _free_residue_id(chain, resid, getattr(atom, 'icode', '')),
+                resname, '')
             cached_residues[rindex] = residue
             chain.add(residue)
         
@@ -104,6 +106,32 @@ def _build_biopython_structure(universe: MDAnalysis.Universe, filter_segment: st
         residue.add(bp_atom)
     
     return structure
+
+
+_ICODE_FALLBACK = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def _free_residue_id(chain, resid: int, icode) -> tuple:
+    """Biopython residue id (hetfield, resseq, icode) not yet used in chain.
+
+    g1 (2026-11-06, 3PTB trypsin): the insertion code was dropped, so
+    chymotrypsin-numbered 184/184A became two (' ', 184, ' ') residues and
+    Biopython aborted the WHOLE system export ("defined twice") — no system
+    mmCIF, no protein segment export, no G9 selectors. The deposited icode
+    is kept; any remaining clash (two molecules sharing a number in one
+    chain) gets the first free insertion letter instead of failing."""
+    code = str(icode or "").strip()[:1] or " "
+    rid = (" ", resid, code)
+    if not chain.has_id(rid):
+        return rid
+    for letter in _ICODE_FALLBACK:
+        alt = (" ", resid, letter)
+        if not chain.has_id(alt):
+            return alt
+    n = 1
+    while chain.has_id((f"H_{n}", resid, " ")):
+        n += 1
+    return (f"H_{n}", resid, " ")
 
 
 def _indices_to_ranges(indices: list[int]) -> list[list[int]]:
