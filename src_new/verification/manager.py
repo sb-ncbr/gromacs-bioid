@@ -255,6 +255,28 @@ def _monoatomic_atom_count(results, segment: str):
     return None
 
 
+def _oxygen_only_water_smiles(results, segment: str) -> str | None:
+    """"O" for a water-typed segment without its own structure signatures.
+
+    Crystal-structure waters are deposited as a lone oxygen (no H atoms), so
+    no smiles/skeleton_fp is generated and every chemical candidate —
+    PubChem CID 962 included — was rejected as fingerprint_unavailable
+    (3PTB, live run e1605717: 62 waters "not identified"). The segment is
+    water by the loader's typing and its formula signature (H2O, or heavy
+    formula O), so water's own structure stands in for the molecule."""
+    if _molecule_skeleton_fp_hex(results, segment) or not _water_segment(results, segment):
+        return None
+    for key, expected in (("molecular_formula", {"H": 2, "O": 1}),
+                          ("molecular_formula_heavy", {"O": 1})):
+        try:
+            formula = results.get_data(f"signatures/{segment}/generated/{key}")
+        except Exception:
+            formula = None
+        if formula and _formula_parts(str(formula)) == expected:
+            return "O"
+    return None
+
+
 def _water_segment(results, segment: str) -> bool:
     """True when the analyzed segment is typed water (fragments/segments record
     written by analyze_universe via the loader facade's molecule typing).
@@ -389,20 +411,24 @@ def _chemical_corroboration(results, segment: str, canonical_signature):
     """
     if not canonical_signature or not isinstance(canonical_signature, str):
         return None, "fingerprint_unavailable", None
+    # oxygen-only crystal water (PDB HOH without H atoms) generates no
+    # smiles/skeleton_fp; its molecule is water by type + formula
+    water_smiles = _oxygen_only_water_smiles(results, segment)
     # tier-2 first: independent of the skeleton-signature path
     t2_sim = None
     try:
         cand_mol = from_smiles(canonical_signature)
-        mol_smiles = _molecule_smiles(results, segment)
+        mol_smiles = _molecule_smiles(results, segment) or water_smiles
         mol_mol = from_smiles(mol_smiles) if mol_smiles else None
         t2_sim = _t2tanimoto(_t2fp(mol_mol), _t2fp(cand_mol))
     except Exception:
         t2_sim = None
     mol_hex = _molecule_skeleton_fp_hex(results, segment)
-    if not mol_hex:
+    if not mol_hex and not water_smiles:
         return None, "fingerprint_unavailable", t2_sim
     try:
-        mol_fp = hex_to_fp(mol_hex)
+        mol_fp = (hex_to_fp(mol_hex) if mol_hex
+                  else _skel_fp(from_smiles(water_smiles)))
         cand_fp = _skel_fp(from_smiles(canonical_signature))
         if mol_fp is None or cand_fp is None:
             return None, "fingerprint_unavailable", t2_sim

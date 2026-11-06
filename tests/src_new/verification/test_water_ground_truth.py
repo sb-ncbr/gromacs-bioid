@@ -246,3 +246,41 @@ def test_non_plateau_confidence_preserved():
     # (M-a) keeps the composed value; unknown annotation now re-weights over
     # the present terms instead of contributing a 0.2*0 tax (was 60).
     assert hit.final_confidence == 75.0
+
+
+# --- oxygen-only crystal water (live run e1605717, 3PTB) ---------------------
+
+def _mk_o_only(seg="A__v3", seg_type="water", formula="H2O", heavy="O"):
+    results = MagicMock()
+
+    def get_data(path, default=None):
+        if path == "fragments/segments":
+            return [{"segment": seg, "type": seg_type, "copies": 62, "atoms_per_copy": 1}]
+        if path == f"signatures/{seg}/generated/molecular_formula":
+            return formula
+        if path == f"signatures/{seg}/generated/molecular_formula_heavy":
+            return heavy
+        return default  # no smiles / skeleton_fp: lone-O waters generate none
+    results.get_data.side_effect = get_data
+    return results
+
+
+def test_oxygen_only_water_compares_as_water():
+    """Crystal waters (HOH without H) produced no smiles/skeleton_fp, so
+    PubChem CID 962 itself was rejected as fingerprint_unavailable and the
+    62 waters of 3PTB stayed unidentified."""
+    from src_new.verification.manager import _chemical_corroboration
+    skel, method, _t2 = _chemical_corroboration(_mk_o_only(), "A__v3", "O")
+    assert method == "skelfp:v1" and skel == 1.0
+    skel_p, _m, _ = _chemical_corroboration(_mk_o_only(), "A__v3", "OO")
+    assert skel_p is not None and skel_p < 1.0
+
+
+def test_oxygen_fallback_only_for_water_segments():
+    from src_new.verification.manager import _chemical_corroboration
+    _s, method, _ = _chemical_corroboration(
+        _mk_o_only(seg_type="small_molecule"), "A__v3", "O")
+    assert method == "fingerprint_unavailable"
+    _s, method, _ = _chemical_corroboration(
+        _mk_o_only(formula="CH4O", heavy="CO"), "A__v3", "O")
+    assert method == "fingerprint_unavailable"
