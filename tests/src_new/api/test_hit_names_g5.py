@@ -44,10 +44,10 @@ def test_element_symbol_to_name():
 
 def test_pubchem_from_mirror_by_cid_and_inchikey():
     assert hit_names.hit_display_name({"ident_type": "PUBCHEM_CID", "identifier": "2332"}) \
-        == "benzenecarboximidamide"
+        == "Benzenecarboximidamide"
     assert hit_names.hit_display_name(
         {"ident_type": "INCHIKEY", "identifier": "PXXJHWLDUBFPOL-UHFFFAOYSA-N"}) \
-        == "benzenecarboximidamide"
+        == "Benzenecarboximidamide"
 
 
 def test_unknown_or_unsupported_stays_none():
@@ -60,3 +60,26 @@ def test_no_mirror_is_not_an_error(monkeypatch):
     hit_names._pubchem_name.cache_clear()
     monkeypatch.setattr(hit_names, "_mirror", lambda: None)
     assert hit_names.hit_display_name({"ident_type": "PUBCHEM_CID", "identifier": "2332"}) is None
+
+
+@pytest.mark.parametrize("raw, shown", [
+    ("oxidane", "Oxidane"),
+    ("benzenecarboximidamide", "Benzenecarboximidamide"),
+    ("[(2R)-3-hexadecanoyloxy-2-[(Z)-octadec-9-enoyl]oxypropyl] 2-(trimethylazaniumyl)ethyl phosphate",
+     "[(2R)-3-Hexadecanoyloxy-2-[(Z)-octadec-9-enoyl]oxypropyl] 2-(trimethylazaniumyl)ethyl phosphate"),
+    ("n-butane", "n-Butane"),
+    ("(2S)-2-aminopropanoic acid", "(2S)-2-Aminopropanoic acid"),
+    ("Serine protease 1", "Serine protease 1"),
+    ("TRYPSIN WITH INHIBITOR AERUGINOSIN 98-B", "TRYPSIN WITH INHIBITOR AERUGINOSIN 98-B"),
+    ("Calcium", "Calcium"),
+    ("2", "2"),
+])
+def test_names_are_capitalized(raw, shown):
+    assert hit_names.capitalize_name(raw) == shown
+
+
+def test_display_name_applies_capitalization():
+    assert hit_names.hit_display_name({"ident_type": "PUBCHEM_CID", "identifier": "2332"}) \
+        == "Benzenecarboximidamide"
+    assert hit_names.hit_display_name({"ident_type": "PDB_ID", "identifier": "1X",
+                                       "name": "beta-lactamase"}) == "Beta-lactamase"

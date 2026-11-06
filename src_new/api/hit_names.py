@@ -13,6 +13,7 @@ whole — some IUPAC names exceed 100 characters; the UI truncates for display.
 from __future__ import annotations
 
 import os
+import re
 from functools import lru_cache
 from typing import Optional
 
@@ -67,8 +68,33 @@ def _pubchem_name(ident_type: str, identifier: str) -> Optional[str]:
     return (getattr(row, "iupac_name", None) or None) if row is not None else None
 
 
+_FIRST_WORD = re.compile(r"[A-Za-z]{2,}")
+
+
+def capitalize_name(name: Optional[str]) -> Optional[str]:
+    """Upper-case the first letter of the name proper (user 2026-11-06:
+    "make sure all molecule names are capitalized" — IUPAC names came
+    lower-case: "oxidane", "benzenecarboximidamide"). Chemical convention:
+    the first letter of the first real word, not of locant/stereo/italic
+    prefixes — "[(2R)-3-hexadecanoyloxy..." -> "[(2R)-3-Hexadecanoyloxy...",
+    "n-butane" -> "n-Butane". Names already starting upper-case (UniProt,
+    element names, PDB titles) are unchanged."""
+    if not name:
+        return name
+    m = _FIRST_WORD.search(name)
+    if m is None or not m.group(0)[0].islower():
+        return name
+    i = m.start()
+    return name[:i] + name[i].upper() + name[i + 1:]
+
+
 def hit_display_name(hit: dict) -> Optional[str]:
-    """The hit's own name, else a read-time fill for chemical identifiers."""
+    """The hit's own name, else a read-time fill for chemical identifiers;
+    always capitalized."""
+    return capitalize_name(_raw_display_name(hit))
+
+
+def _raw_display_name(hit: dict) -> Optional[str]:
     name = hit.get("name")
     if name:
         return name
