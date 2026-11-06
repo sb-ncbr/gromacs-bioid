@@ -184,3 +184,16 @@ class TestD14MalformedHits:
             "overwrite each other (D-14)"
         )
         assert out["verified_hits"] == []
+
+
+def test_tiny_segments_signatured_first():
+    """b31 regression (8863): the Mg ion (SYSTEM__v2, 1 atom) came after a
+    155-atom monomer ligand whose bond-order ladder spent the whole stage
+    budget, so the ion never got signatures. Tiny segments go first; the
+    rest keep their order (protein before ligands)."""
+    from types import SimpleNamespace
+    from src_new.pipeline_steps import _tiny_segments_first
+    reps = [SimpleNamespace(segment_name=n, atom_count=a) for n, a in
+            (("SYSTEM", 5147), ("SYSTEM__v1", 155), ("SYSTEM__v2", 1), ("SYSTEM__v3", 3))]
+    order = [s.segment_name for s in _tiny_segments_first(reps)]
+    assert order == ["SYSTEM__v2", "SYSTEM__v3", "SYSTEM", "SYSTEM__v1"], order

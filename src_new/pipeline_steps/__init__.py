@@ -562,6 +562,15 @@ def _snapshot_group_key(snapshot) -> tuple:
     )
 
 
+def _tiny_segments_first(reps: list) -> list:
+    """b31: tiny segments (ions, waters: <= 3 atoms, generated in moments)
+    go first, so one heavy segment that spends the stage budget on bond-
+    order perception (8863: a 155-atom monomer ligand, 34 min) cannot
+    starve them — 12 g1 re-runs lost their Mg/Zn segment that way.
+    Stable: every other segment keeps its previous order."""
+    return sorted(reps, key=lambda s: 0 if (s.atom_count or 0) <= 3 else 1)
+
+
 def _generate_signatures(context):
     """Generate signatures for all segments with optional parallelism."""
     from ..signatures.registry import get_default_generators
@@ -636,7 +645,8 @@ def _generate_signatures(context):
         rep = members[0]
         reps.append(snapshot_by_segment[rep])
         group_members[rep] = members
-    
+    reps = _tiny_segments_first(reps)
+
     # Convert config to dict for workers
     config_dict = context.config.to_dict()
     deadline = budget_deadline(context)
