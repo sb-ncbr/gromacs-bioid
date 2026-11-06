@@ -745,6 +745,11 @@ class LoadedUniverse:
                 residues = list(f.residues)
             except Exception:
                 continue
+            # the sugar-phosphate signal admits CHAINS only: free nucleotides
+            # (ATP, NAD, FAD, CoA) carry the same atom names but no 3'->5'
+            # link (g1: 901 deposits had their nucleotide ligand unioned into
+            # the protein representative and never identified)
+            linked = None
             for res in residues:
                 try:
                     rn = str(res.resname or "").strip().upper()
@@ -773,7 +778,10 @@ class LoadedUniverse:
                     # modified/terminal nucleics the closed tables miss (ENAR
                     # tier-2 signal) — the chain stays polymer even when only
                     # its base atoms happen to carry table resnames
-                    poly += n
+                    if linked is None:
+                        linked = has_cross_residue_phosphodiester(f)
+                    if linked:
+                        poly += n
             if total and poly / total >= 0.5:
                 out.append(f)
         return out
@@ -804,7 +812,10 @@ class LoadedUniverse:
                 if rn in KNOWN_RESIDUE_CODES:
                     prot += n
                 elif (rn in KNOWN_NUCLEIC_ACIDS_CODES
-                      or normalize_nucleic_resname(rn)):
+                      or normalize_nucleic_resname(rn)
+                      or residue_has_sugar_phosphate(list(present.names))):
+                    # sugar-phosphate residues reach here only on linked
+                    # chains (_polymer_fragments); never default them to protein
                     nuc += n
             return "nucleic" if nuc > prot else "protein"
 

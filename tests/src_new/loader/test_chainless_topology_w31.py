@@ -189,3 +189,32 @@ class TestBrokenChainUnionGuards:
         total_copies = sum(s["copies"] or 1 for s in segs.values())
         assert len(segs) == 1, f"identical copies should be one segment, got {segs}"
         assert total_copies == 2, f"homo-oligomer must not collapse to 1: {segs}"
+
+    def test_free_nucleotide_not_unioned_into_protein(self):
+        """g1 regression (901 deposits, e.g. 7339 AMBER: protein + D51
+        nucleotide in segid SYSTEM): the sugar-phosphate signal admitted a
+        free nucleotide as 'polymer', the class picker defaulted it to
+        protein and the class-union representative swallowed it, so the
+        ligand was never its own molecule. Without a 3'->5' link it is a
+        ligand and must become a virtual segment of its own."""
+        import MDAnalysis as mda
+        import numpy as np
+        prot = ["ALA", "GLY", "LYS"]
+        nt_names = ["P", "OP1", "O5'", "C5'", "C4'", "O4'", "C3'", "O3'", "C2'", "C1'"]
+        n = len(prot) + len(nt_names)
+        u = mda.Universe.empty(n, n_residues=len(prot) + 1,
+                               atom_resindex=list(range(len(prot))) + [len(prot)] * len(nt_names),
+                               trajectory=True)
+        u.add_TopologyAttr("resnames", prot + ["D51"])
+        u.add_TopologyAttr("resids", list(range(1, len(prot) + 2)))
+        u.add_TopologyAttr("segids", ["SYSTEM"])
+        u.add_TopologyAttr("names", ["CA"] * len(prot) + nt_names)
+        u.add_TopologyAttr("elements", ["C"] * len(prot)
+                           + ["P", "O", "O", "C", "C", "O", "C", "O", "C", "C"])
+        bonds = [(i, i + 1) for i in range(len(prot) - 1)]
+        bonds += [(i, i + 1) for i in range(len(prot), n - 1)]
+        u.add_TopologyAttr("bonds", bonds)
+        u.atoms.positions = np.arange(n * 3, dtype=float).reshape(n, 3) * 4.0
+        segs = self._segments(u)
+        assert len(segs) == 2, f"nucleotide must be its own segment: {segs}"
+        assert sorted(s["atoms"] for s in segs.values()) == [3, len(nt_names)], segs
