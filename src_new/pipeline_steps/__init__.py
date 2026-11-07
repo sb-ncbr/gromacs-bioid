@@ -562,6 +562,20 @@ def _snapshot_group_key(snapshot) -> tuple:
     )
 
 
+def _smallest_segments_first(segments: list, props: dict) -> list:
+    """b33: verify segments in ascending atom count (stable for ties). A
+    protein representative can spend the whole verify budget on structure
+    verification (7448: 1,264 s for 33 of 100 candidates, never finishing),
+    so the ligands and ions behind it were never verified (13 g1 deposits,
+    27 segments). Small segments verify in seconds, so going first costs
+    the protein almost nothing. Unknown sizes keep their place at the end."""
+    def size(s):
+        p = props.get(s) or {}
+        n = p.get("atom_count_fragment") or p.get("atom_count_total")
+        return n if isinstance(n, (int, float)) else float("inf")
+    return sorted(segments, key=size)
+
+
 def _tiny_segments_first(reps: list) -> list:
     """b31: tiny segments (ions, waters: <= 3 atoms, generated in moments)
     go first, so one heavy segment that spends the stage budget on bond-
@@ -1352,7 +1366,10 @@ def _verify_results(context):
             if rep in identifiers_data:
                 member_to_rep[segment] = rep
     verify_targets = [s for s in sorted(identifiers_data) if s not in member_to_rep]
-    
+    verify_targets = _smallest_segments_first(
+        verify_targets,
+        {s: context.results.get_data(f"universe/segments/{s}/properties") for s in verify_targets})
+
     # Read signatures data once
     signatures_data = context.results.get_data('signatures') or {}
     

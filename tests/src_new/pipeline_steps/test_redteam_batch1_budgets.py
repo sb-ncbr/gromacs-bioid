@@ -197,3 +197,15 @@ def test_tiny_segments_signatured_first():
             (("SYSTEM", 5147), ("SYSTEM__v1", 155), ("SYSTEM__v2", 1), ("SYSTEM__v3", 3))]
     order = [s.segment_name for s in _tiny_segments_first(reps)]
     assert order == ["SYSTEM__v2", "SYSTEM__v3", "SYSTEM", "SYSTEM__v1"], order
+
+
+def test_smallest_segments_verified_first():
+    """b33 regression (7448): the protein spent the whole verify budget
+    (33/100 candidates) and the ligand SYSTEM__v1 / ion SYSTEM__v2 behind it
+    were never verified. Verify in ascending atom count; unknown sizes last."""
+    from src_new.pipeline_steps import _smallest_segments_first
+    segs = ["SYSTEM", "SYSTEM__v1", "SYSTEM__v2", "X"]
+    props = {"SYSTEM": {"atom_count_fragment": 9649},
+             "SYSTEM__v1": {"atom_count_fragment": 58},
+             "SYSTEM__v2": {"atom_count_fragment": 1}}
+    assert _smallest_segments_first(segs, props) == ["SYSTEM__v2", "SYSTEM__v1", "SYSTEM", "X"]
