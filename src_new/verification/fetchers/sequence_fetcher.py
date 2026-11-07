@@ -179,6 +179,53 @@ class SequenceSignatureFetcher(SignatureFetcher):
             logger.warning(f"PDB {pdb_id} entry fetch failed: {e}")
             return []
     
+    def pdb_entity_records(self, pdb_id: str) -> list[dict]:
+        """Display metadata for every polymer entity of a PDB entry.
+
+        Same cached RCSB URLs as _fetch_pdb_entities (entry + one payload per
+        polymer entity), so on a verified hit this normally costs no request.
+        Each record: entity_id, sequence, description (pdbx_description),
+        auth_asym_ids, asym_ids, organism — any field may be None/empty.
+        Empty list on any failure; never raises.
+        """
+        pdb_id = (pdb_id or "").split("_", maxsplit=1)[0].lower()
+        if not pdb_id:
+            return []
+        try:
+            r = rcsb_cache.get_cached(f"https://data.rcsb.org/rest/v1/core/entry/{pdb_id}", timeout=30)
+            if r is None:
+                return []
+            ids = (r.json().get("rcsb_entry_container_identifiers") or {}).get("polymer_entity_ids") or []
+        except Exception:
+            return []
+        records = []
+        for entity_id in ids:
+            try:
+                re_ = rcsb_cache.get_cached(
+                    f"https://data.rcsb.org/rest/v1/core/polymer_entity/{pdb_id}/{entity_id}", timeout=30)
+                if re_ is None:
+                    continue
+                d = re_.json()
+                if not isinstance(d, dict):
+                    continue
+                cont = d.get("rcsb_polymer_entity_container_identifiers") or {}
+                orgs = d.get("rcsb_entity_source_organism")
+                organism = None
+                if isinstance(orgs, list) and orgs and isinstance(orgs[0], dict):
+                    organism = orgs[0].get("scientific_name") or None
+                seq = (d.get("entity_poly") or {}).get("pdbx_seq_one_letter_code_can")
+                records.append({
+                    "entity_id": str(entity_id),
+                    "sequence": seq.replace("\n", "") if isinstance(seq, str) else None,
+                    "description": ((d.get("rcsb_polymer_entity") or {}).get("pdbx_description") or None),
+                    "auth_asym_ids": [str(x) for x in (cont.get("auth_asym_ids") or [])],
+                    "asym_ids": [str(x) for x in (cont.get("asym_ids") or [])],
+                    "organism": organism,
+                })
+            except Exception:
+                continue
+        return records
+
     def _fetch_pdb(self, pdb_id: str) -> str | None:
         """Fetch sequence from PDB (first polymer entity).
         

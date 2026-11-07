@@ -1267,6 +1267,15 @@ class VerificationManager:
             # F16: fidelity-first presentation order (stored order = display
             # order; ordering-only, deterministic tie-break chain).
             verified_hits = _fidelity_order_hits(verified_hits)
+            # UI pass 2026-11-07: the top PDB hits are named after the matched
+            # polymer entity (pdbx_description), not the entry's paper title.
+            # Display-only; cached RCSB payloads; any failure keeps the name.
+            try:
+                from .fetchers.sequence_fetcher import SequenceSignatureFetcher
+                from .pdb_entity_names import name_top_pdb_hits
+                name_top_pdb_hits(verified_hits, SequenceSignatureFetcher().pdb_entity_records)
+            except Exception as exc:
+                logger.warning("pdb entity naming skipped for %s: %s", segment, exc)
             # Store results back to ResultsManager
             output_path = f"verification/{segment}/verified_hits"
             hits_as_dicts = [dataclasses.asdict(hit) for hit in verified_hits]

@@ -97,12 +97,35 @@ _COMMON_NAMES = {
 }
 
 
+@lru_cache(maxsize=20000)
+def _pubchem_title(ident_type: str, identifier: str) -> Optional[str]:
+    """PubChem's common name (Title) for a chemical hit, from the optional
+    titles file beside the mirror. None when the file, the compound or a
+    usable title is missing — most lookups for obscure CIDs end here."""
+    try:
+        from ..molecules.pubchem_titles import default_titles
+        titles = default_titles()
+        if ident_type == "PUBCHEM_CID":
+            return titles.title(identifier) if identifier.isdigit() else None
+        db = _mirror()
+        row = db.by_inchikey(identifier) if db is not None else None
+        return titles.title(row.cid) if row is not None else None
+    except Exception:
+        return None
+
+
 def hit_display_name(hit: dict) -> Optional[str]:
-    """A common name where one is defined, else the hit's own name, else a
-    read-time fill for chemical identifiers; always capitalized."""
-    key = (str(hit.get("ident_type") or "").upper(), str(hit.get("identifier") or "").strip())
-    if key in _COMMON_NAMES:
-        return _COMMON_NAMES[key]
+    """Display name, first available of: a fixed common name (water), the
+    PubChem title (common name) for chemical hits, the hit's own name, a
+    read-time fill (IUPAC / element name). Always capitalized."""
+    ident_type = str(hit.get("ident_type") or "").upper()
+    identifier = str(hit.get("identifier") or "").strip()
+    if (ident_type, identifier) in _COMMON_NAMES:
+        return _COMMON_NAMES[(ident_type, identifier)]
+    if ident_type in ("PUBCHEM_CID", "INCHIKEY") and identifier:
+        title = _pubchem_title(ident_type, identifier)
+        if title:
+            return capitalize_name(title)
     return capitalize_name(_raw_display_name(hit))
 
 

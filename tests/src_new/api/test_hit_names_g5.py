@@ -92,3 +92,16 @@ def test_water_shows_its_common_name():
     assert hit_display_name({"ident_type": "PUBCHEM_CID", "identifier": "962", "name": "oxidane"}) == "Water"
     assert hit_display_name({"ident_type": "INCHIKEY", "identifier": "XLYOFNOQVPJJNP-UHFFFAOYSA-N"}) == "Water"
     assert hit_display_name({"ident_type": "PUBCHEM_CID", "identifier": "2244", "name": "aspirin"}) == "Aspirin"
+
+
+def test_pubchem_title_beats_iupac_and_misses_fall_back(monkeypatch):
+    """A PubChem title (common name) wins for chemical hits; with no title
+    the previous name (stored or IUPAC) is kept."""
+    import src_new.api.hit_names as hn
+    hn._pubchem_title.cache_clear()
+    monkeypatch.setattr(hn, "_pubchem_title", lambda t, i: "Adenosine-5'-triphosphate" if i == "5957" else None)
+    assert hn.hit_display_name({"ident_type": "PUBCHEM_CID", "identifier": "5957",
+                                "name": "[[(2r,3s,4r,5r)-5-(6-aminopurin-9-yl)..."}) == "Adenosine-5'-triphosphate"
+    assert hn.hit_display_name({"ident_type": "PUBCHEM_CID", "identifier": "999999999",
+                                "name": "benzenecarboximidamide"}) == "Benzenecarboximidamide"
+    assert hn.hit_display_name({"ident_type": "PDB_ID", "identifier": "1AQ7", "name": "Trypsin"}) == "Trypsin"
