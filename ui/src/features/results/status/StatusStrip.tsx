@@ -32,7 +32,7 @@ function SlimBar({ stages, progress }: { stages: Stage[]; progress: RunProgress 
         const fill = stepFill(s, progress);
         const tip = s.duration_s != null ? `${s.label} · ${humanDuration(s.duration_s)}` : s.label;
         return (
-          <li key={s.key} className="flex-1" aria-current={s.status === "active" ? "step" : undefined}>
+          <li key={s.key} className="min-w-0 flex-1" aria-current={s.status === "active" ? "step" : undefined}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="group" aria-label={`${s.label}: ${s.status}`}>
@@ -52,7 +52,7 @@ function SlimBar({ stages, progress }: { stages: Stage[]; progress: RunProgress 
                       <div className="absolute inset-y-0 w-1/3 rounded-full bg-(--vm-info) motion-safe:animate-[sweep_1.2s_ease-in-out_infinite]" />
                     )}
                   </div>
-                  <p className="mt-1 truncate text-center text-[12px] text-(--vm-muted) group-aria-[current=step]:font-semibold group-aria-[current=step]:text-(--vm-fg)">
+                  <p className="mt-1 truncate text-center text-[12px] text-(--vm-muted) max-[560px]:hidden group-aria-[current=step]:font-semibold group-aria-[current=step]:text-(--vm-fg)">
                     {s.label}
                   </p>
                 </div>
