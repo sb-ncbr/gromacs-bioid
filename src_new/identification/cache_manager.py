@@ -189,9 +189,15 @@ class ResolverCache:
             # "./resolver_cache.sqlite3" in the container's UNWRITABLE cwd,
             # silently disabling the cache in ~80% of production runs.
             # Fall back to a writable location instead of dying open.
-            cache_directory: str = (self._config.identifiers_cache.directory
-                                    or os.environ.get(
-                                        "BAT3_IDENTIFIERS_CACHE_DIR", ""))
+            # UI pass 2026-11-07: the deployment's own cache directory wins.
+            # API-created run configs carried directory=/app/runs (the shared
+            # NFS volume), so both UI workers wrote ONE SQLite file in WAL
+            # mode over NFS — unsupported by SQLite: it was corrupted and
+            # quarantined repeatedly and runs died with "disk I/O error" and
+            # SIGBUS (1KX5 nucleosome, twice). Workers set
+            # BAT3_IDENTIFIERS_CACHE_DIR to a pod-local emptyDir.
+            cache_directory: str = (os.environ.get("BAT3_IDENTIFIERS_CACHE_DIR", "")
+                                    or self._config.identifiers_cache.directory)
             if not cache_directory:
                 cache_directory = os.path.join(
                     tempfile.gettempdir(), "bat3_resolver_cache")

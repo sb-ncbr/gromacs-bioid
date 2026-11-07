@@ -202,3 +202,16 @@ class TestCacheDirectoryDefault:
         assert conn is not None, "cache must open with a writable default"
         assert os.path.isabs(cache._cache_path)
         assert not cache._cache_path.startswith("/app")
+
+    def test_deployment_cache_dir_beats_run_config(self, tmp_path, monkeypatch):
+        """UI pass 2026-11-07: API-created run configs said /app/runs (shared
+        NFS); the worker's pod-local BAT3_IDENTIFIERS_CACHE_DIR must win."""
+        local = tmp_path / "pod_local"
+        monkeypatch.setenv("BAT3_IDENTIFIERS_CACHE_DIR", str(local))
+        from src_new.config.loader import RunConfig
+        cfg = RunConfig()
+        cfg.identifiers_cache.directory = str(tmp_path / "shared_nfs")
+        from src_new.identification.cache_manager import ResolverCache
+        cache = ResolverCache(cfg)
+        assert cache._get_connection() is not None
+        assert cache._cache_path.startswith(str(local))
