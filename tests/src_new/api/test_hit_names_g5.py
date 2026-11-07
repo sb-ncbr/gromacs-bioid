@@ -83,3 +83,12 @@ def test_display_name_applies_capitalization():
         == "Benzenecarboximidamide"
     assert hit_names.hit_display_name({"ident_type": "PDB_ID", "identifier": "1X",
                                        "name": "beta-lactamase"}) == "Beta-lactamase"
+
+
+def test_water_shows_its_common_name():
+    """UI pass 2026-11-07: water verified as PubChem CID 962 showed as
+    "Oxidane" (the stored IUPAC name); the common name wins."""
+    from src_new.api.hit_names import hit_display_name
+    assert hit_display_name({"ident_type": "PUBCHEM_CID", "identifier": "962", "name": "oxidane"}) == "Water"
+    assert hit_display_name({"ident_type": "INCHIKEY", "identifier": "XLYOFNOQVPJJNP-UHFFFAOYSA-N"}) == "Water"
+    assert hit_display_name({"ident_type": "PUBCHEM_CID", "identifier": "2244", "name": "aspirin"}) == "Aspirin"

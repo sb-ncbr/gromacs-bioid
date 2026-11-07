@@ -155,11 +155,22 @@ export function catalog(code: string): CatalogEntry {
 
 /**
  * identifier_resolver_failed with `na_mode_unsupported` is a nucleotide
- * search on a protein: not applicable, hidden (COPY.md §3 / DATA.md §3.1).
+ * search on a protein, and with `no_polymer_payload` a structure search on
+ * a small molecule: both are declared "not applicable" outcomes, not
+ * failures, so they are hidden (COPY.md §3 / DATA.md §3.1). In g1 they were
+ * the notes on 96% and 48% of runs.
+ *
+ * pbc_unwrap_failed with "No box information" means the input has no
+ * periodic box, so nothing can be split across one; a real split is
+ * reported separately as pbc_unwrap_incomplete.
  */
 export function isHidden(code: string, message: string): boolean {
   if (HIDDEN_CODES.has(code)) return true;
-  if (code === "identifier_resolver_failed" && message.includes("na_mode_unsupported")) {
+  if (code === "identifier_resolver_failed"
+      && (message.includes("na_mode_unsupported") || message.includes("no_polymer_payload"))) {
+    return true;
+  }
+  if (code === "pbc_unwrap_failed" && message.includes("No box information")) {
     return true;
   }
   return false;

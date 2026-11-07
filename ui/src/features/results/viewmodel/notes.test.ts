@@ -43,6 +43,23 @@ describe("notes (DATA.md §3)", () => {
     expect(hidden).toBe(3);
   });
 
+  it("hides declared not-applicable outcomes and box-less unwrap notes", () => {
+    const { notes: out, hidden } = notes([
+      w("identifier_resolver_failed", "mmcif_struct@sim (mmcif): no_polymer_payload"),
+      w("pbc_unwrap_failed", "Periodic boundary unwrapping failed: No box information available."),
+    ]);
+    expect(out).toHaveLength(0);
+    expect(hidden).toBe(2);
+  });
+
+  it("still shows a real unwrap failure", () => {
+    const { notes: out } = notes([
+      w("pbc_unwrap_failed", "Periodic boundary unwrapping failed: molecules too far apart"),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].title).toBe("Could not make molecules whole");
+  });
+
   it("keeps error-severity codes out of the notes list", () => {
     const { notes: out, hidden } = notes([w("worker_lost", "celery worker died")]);
     expect(out).toHaveLength(0);

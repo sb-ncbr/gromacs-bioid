@@ -88,9 +88,21 @@ def capitalize_name(name: Optional[str]) -> Optional[str]:
     return name[:i] + name[i].upper() + name[i + 1:]
 
 
+# Common names that beat the stored/IUPAC name (UI pass 2026-11-07: water
+# showed as "Oxidane"). Keyed by identifier, so it also overrides the name
+# the scorer stored on runs verified before this change.
+_COMMON_NAMES = {
+    ("PUBCHEM_CID", "962"): "Water",
+    ("INCHIKEY", "XLYOFNOQVPJJNP-UHFFFAOYSA-N"): "Water",
+}
+
+
 def hit_display_name(hit: dict) -> Optional[str]:
-    """The hit's own name, else a read-time fill for chemical identifiers;
-    always capitalized."""
+    """A common name where one is defined, else the hit's own name, else a
+    read-time fill for chemical identifiers; always capitalized."""
+    key = (str(hit.get("ident_type") or "").upper(), str(hit.get("identifier") or "").strip())
+    if key in _COMMON_NAMES:
+        return _COMMON_NAMES[key]
     return capitalize_name(_raw_display_name(hit))
 
 
