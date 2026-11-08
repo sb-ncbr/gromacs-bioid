@@ -30,8 +30,12 @@ export function isOverInteractivityGate(totalAtoms: number | null | undefined,
  * Priority: per-segment PNG → system PNG from the API → legacy default path.
  */
 export function resolveStaticPngPath(renderPaths: RenderPathsLike,
-                                     segment: string): string {
+                                     segment: string): string | null {
   const segmentPng =
     segment !== "SYSTEM" ? renderPaths?.segment_pngs?.[segment] ?? null : null;
-  return segmentPng ?? renderPaths?.system_png ?? STATIC_PNG_LEGACY_PATH;
+  if (segmentPng) return segmentPng;
+  // v3.137+ responses carry system_png: null when no PNG was rendered (failed
+  // or cancelled runs) — do not probe the legacy path for a known 404.
+  if (renderPaths && "system_png" in renderPaths) return renderPaths.system_png ?? null;
+  return STATIC_PNG_LEGACY_PATH;
 }

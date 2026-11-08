@@ -248,9 +248,11 @@ function buildMolecules(bundle: ApiBundle, status: RunStatus, stageSearch = true
   const built = segments.map((id): Molecule => {
     const m = meta[id] ?? {};
     const named = baseName(id);
-    // Once verification data is loaded, a segment without an entry means
-    // "searched, nothing verified" — not "no data" (feeds not_identified).
-    const hits = bySeg.get(id) ?? (bundle.verification != null ? [] : undefined);
+    // Once a finished run's verification is loaded, a segment without an
+    // entry means "searched, nothing verified" (feeds not_identified). A run
+    // that failed or was cancelled before verifying it never searched it:
+    // that stays "Not searched", not "Not identified".
+    const hits = bySeg.get(id) ?? (bundle.verification != null && status === "finished" ? [] : undefined);
     const mine = sigs.get(id) ?? [];
     const find = (gen: string) => mine.find((s) => s.generator === gen)?.signature;
     const { result, matches, more, rejected } =
@@ -266,7 +268,7 @@ function buildMolecules(bundle: ApiBundle, status: RunStatus, stageSearch = true
     const residueNames = names(find("resname"));
     return {
       id,
-      display_name: m.display_name != null ? chainLabel(m.display_name, kind, residueNames) : named.name,
+      display_name: m.display_name != null ? chainLabel(m.display_name, kind, residueNames, m.type) : named.name,
       kind,
       chain: m.chain ?? named.chain,
       residue_names: residueNames,

@@ -158,6 +158,8 @@ describe("chainLabel (bare chain ids from PDB input)", () => {
   it("names other fragments by residue, else by kind", () => {
     expect(chainLabel("E", "unknown", ["NAG"])).toBe("NAG (chain E)");
     expect(chainLabel("A_2", "ion", [])).toBe("Ion (chain A)");
+    expect(chainLabel("E", "small_molecule", [], "carbohydrate")).toBe("Glycan (chain E)");
+    expect(chainLabel("L", "small_molecule", [])).toBe("Small molecule (chain L)");
   });
   it("keeps real names and one-letter residue names", () => {
     expect(chainLabel("POPC", "lipid", ["POPC"])).toBe("POPC");

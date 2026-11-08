@@ -20,7 +20,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
   Skeleton,
 } from "@e-infra/design-system";
 import {
@@ -235,7 +234,7 @@ export default function Recents() {
   return (
     <Card className="flex h-full flex-col">
       <CardHeader>
-        <CardTitle>Your annotations</CardTitle>
+        <h2 className="text-2xl font-semibold leading-none text-text-heading">Your annotations</h2>
         <CardDescription>
           Runs recently submitted from your network address, newest first.
         </CardDescription>

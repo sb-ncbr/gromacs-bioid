@@ -28,7 +28,8 @@ export function statusStyle(status: string | null | undefined): StatusStyle {
       return { variant: "default", className: "text-white", label: "Completed" };
     case "failed":
     case "error":
-      return { variant: "error", className: "", label: "Failed" };
+      // DS error badge is white on #f65a4f (3.2:1); darker red for AA.
+      return { variant: "error", className: "bg-[#c62828] text-white", label: "Failed" };
     case "warning":
       return { variant: "secondary", className: "text-amber-700", label: "Needs review" };
     case "cancelled":

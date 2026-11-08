@@ -223,7 +223,9 @@ export default function RunResultsPage() {
     return (
       <div className="mx-auto max-w-4xl p-6">
         <Alert variant="error">
-          <AlertTitle>Run not found</AlertTitle>
+          <AlertTitle>
+            <h1>Run not found</h1>
+          </AlertTitle>
           <AlertDescription>
             Could not load results for run <code className="font-mono text-sm">{runId.slice(0, 8)}</code>. The run may
             have been deleted or the ID is incorrect.

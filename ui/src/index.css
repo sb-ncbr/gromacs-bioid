@@ -142,3 +142,10 @@ html[data-theme="custom"].dark {
 .bioid-molstar .msp-logo {
   display: none !important;
 }
+
+/* Green text: the brand #2e7d32 is 4.3:1 on the card/footer surface
+   #eaebf1 (AA needs 4.5 for body text); the 700 shade is 6:1. Buttons keep
+   the brand colour (bg-primary). */
+html[data-theme="custom"] .text-primary {
+  color: var(--color-primary-700);
+}

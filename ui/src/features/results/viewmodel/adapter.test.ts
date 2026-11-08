@@ -238,3 +238,20 @@ describe("inputFilesOf · header lists submitted inputs only", () => {
       .toEqual(["navms_input.tpr", "frame.gro"]);
   });
 });
+
+describe("failed run: unreached molecules are not searched, not unidentified", () => {
+  it("keeps result null without hits when the run failed", () => {
+    const vm = adapt({
+      runId: "fdd4641a-0000",
+      summary: { status: "failed" },
+      status: { pipeline: { status: "failed" }, tasks: [], warnings: [], critical_errors: [] },
+      molecules: { segments: ["A_1"], segment_meta: { A_1: { type: "protein", display_name: "A_1" } } },
+      signatures: null,
+      verification: [],
+      queue: null,
+      files: null,
+    });
+    expect(vm.molecules[0].result).toBeNull();
+    expect(vm.notes.some((n) => n.code === "derived_not_identified")).toBe(false);
+  });
+});

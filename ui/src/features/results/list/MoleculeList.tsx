@@ -9,7 +9,6 @@ import {
   Card,
   CardContent,
   CardHeader,
-  CardTitle,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -279,7 +278,7 @@ export function MoleculeList({
   return (
     <Card className="flex min-h-0 flex-col">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-base">{stats}</CardTitle>
+        <h2 className="text-base font-semibold leading-none text-(--vm-fg)">{stats}</h2>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm" className="gap-1 text-xs text-(--vm-muted)">
@@ -325,7 +324,13 @@ export function MoleculeList({
             aria-label="Find a molecule"
           />
         </div>
-        <ScrollArea className="min-h-[240px] flex-1" style={{ maxHeight: "calc(100vh - 230px)" }}>
+        {/* Radix wraps the content in a display:table div that grows to the
+            widest row, so `truncate` never applied and scores were clipped
+            off the right edge; block keeps rows at the viewport width. */}
+        <ScrollArea
+          className="min-h-[240px] flex-1 [&_[data-radix-scroll-area-viewport]>div]:!block"
+          style={{ maxHeight: "calc(100vh - 230px)" }}
+        >
           <div ref={listRef} role="group" aria-label="Molecules" onKeyDown={onKeyDown} data-collapsed-prefix={COLLAPSED_STORAGE_PREFIX}>
             {molecules.length === 0 && (
               <p className="px-3 py-6 text-sm text-(--vm-muted)">

@@ -160,7 +160,8 @@ export function StageCanvas({ runId, runStatus, molecules, selectedId, onSelect,
     (path: string) => `/files/${encodeURIComponent(runId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
     [runId],
   );
-  const pngUrl = fileUrl(resolveStaticPngPath(v37, fallbackSegment));
+  const pngPath = resolveStaticPngPath(v37, fallbackSegment);
+  const pngUrl = pngPath ? fileUrl(pngPath) : null;
 
   const plan = useMemo(
     () => planScene(molecules, runStatus, canvasMode, selectedId, showWaterIons, readPalette(), selectors),
@@ -177,6 +178,7 @@ export function StageCanvas({ runId, runStatus, molecules, selectedId, onSelect,
     setMode("loading");
 
     const checkStatic = async (): Promise<boolean> => {
+      if (!pngUrl) return false;
       try {
         return (await fetch(pngUrl, { method: "HEAD" })).ok;
       } catch {
@@ -358,7 +360,7 @@ export function StageCanvas({ runId, runStatus, molecules, selectedId, onSelect,
       )}
       {mode === "static" && (
         <div className="absolute inset-0">
-          <img src={pngUrl} alt="Static molecular rendering" className="h-full w-full object-contain" />
+          {pngUrl && <img src={pngUrl} alt="Static molecular rendering" className="h-full w-full object-contain" />}
           {overGate && !forceInteractive && (
             <div className="absolute inset-0 flex items-center justify-center">
               <button

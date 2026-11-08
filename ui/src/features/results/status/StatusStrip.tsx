@@ -35,7 +35,7 @@ function SlimBar({ stages, progress }: { stages: Stage[]; progress: RunProgress 
           <li key={s.key} className="min-w-0 flex-1" aria-current={s.status === "active" ? "step" : undefined}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="group" aria-label={`${s.label}: ${s.status}`}>
+                <div className="group" role="img" aria-label={`${s.label}: ${s.status}`}>
                   <div
                     className={cn(
                       "relative h-1.5 overflow-hidden rounded-full bg-(--vm-line)",

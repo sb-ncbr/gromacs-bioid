@@ -54,14 +54,15 @@ export function baseName(id: string): { name: string; chain: string | null } {
  * read "Chain A"; other fragments name their residue: "NAG (chain E)".
  * Anything else is already a name and passes through.
  */
-export function chainLabel(name: string, kind: MoleculeKind, residueNames: string[]): string {
+export function chainLabel(name: string, kind: MoleculeKind, residueNames: string[], type?: string | null): string {
   const m = /^([A-Za-z0-9])(_\d+)?$/.exec(name);
   if (!m) return name;
   const chain = m[1];
   if (kind === "protein" || kind === "nucleic") return `Chain ${chain}`;
   const res = residueNames[0];
-  if (!m[2] && (!res || res === name)) return name; // a one-letter residue name, e.g. ion "K"
-  const what = res ?? KIND_LABELS[kind].charAt(0).toUpperCase() + KIND_LABELS[kind].slice(1);
+  if (res === name || (kind === "ion" && !m[2])) return name; // a one-letter residue name, e.g. ion "K"
+  const kindWord = type === "carbohydrate" ? "glycan" : KIND_LABELS[kind];
+  const what = res ?? kindWord.charAt(0).toUpperCase() + kindWord.slice(1);
   return `${what} (chain ${chain})`;
 }
 

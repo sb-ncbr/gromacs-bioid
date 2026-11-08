@@ -45,6 +45,10 @@ describe("resolveStaticPngPath", () => {
     expect(resolveStaticPngPath(paths as never, "SYSTEM")).toBe("render/system.png");
   });
 
+  it("returns null when the API says no PNG was rendered", () => {
+    expect(resolveStaticPngPath({ system_png: null } as never, "SYSTEM")).toBeNull();
+  });
+
   it("uses the legacy hard-coded path for pre-v3.137 responses", () => {
     expect(resolveStaticPngPath(undefined, "SYSTEM")).toBe(STATIC_PNG_LEGACY_PATH);
     expect(resolveStaticPngPath({} as never, "seg_x")).toBe(STATIC_PNG_LEGACY_PATH);

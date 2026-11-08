@@ -15,7 +15,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -128,7 +127,7 @@ export default function UploadForm() {
   return (
     <Card className="w-full">
       <CardHeader>
-        <CardTitle>Annotation request</CardTitle>
+        <h2 className="text-2xl font-semibold leading-none text-text-heading">Annotation request</h2>
         <CardDescription>
           Upload a molecular dynamics simulation and we will identify the
           biomolecules present.
@@ -160,7 +159,7 @@ export default function UploadForm() {
         {/* Run name */}
         <div className="flex flex-col gap-1">
           <Label htmlFor="run-name" className="text-sm text-text-muted">
-            Run name <span className="text-text-muted/70">(optional)</span>
+            Run name <span className="text-text-muted">(optional)</span>
           </Label>
           <Input
             id="run-name"
