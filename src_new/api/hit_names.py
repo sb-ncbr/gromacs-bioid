@@ -56,6 +56,27 @@ def element_name(symbol: str) -> Optional[str]:
         return None
 
 
+# An ELEMENT hit is a one-atom molecule, which in a simulation is an ion
+# (UI audit 2026-11-08: CHARMM CLA showed as "Chlorine", the Cl2 gas).
+_ANIONS = {"F": "Fluoride", "Cl": "Chloride", "Br": "Bromide", "I": "Iodide"}
+# One-atom species that are not ions: noble-gas fluids, and the nonmetals
+# whose lone atom has no single usual charge.
+_NOT_IONS = {"H", "He", "B", "C", "N", "O", "Ne", "Si", "P", "S", "Ar", "As",
+             "Se", "Kr", "Te", "Xe", "Rn"}
+
+
+def ion_name(symbol: str) -> Optional[str]:
+    """'CL' -> 'Chloride', 'NA' -> 'Sodium ion', 'AR' -> 'Argon'."""
+    name = element_name(symbol)
+    if name is None:
+        return None
+    sym = str(symbol).strip()
+    sym = sym[0].upper() + sym[1:].lower()
+    if sym in _ANIONS:
+        return _ANIONS[sym]
+    return name if sym in _NOT_IONS else f"{name} ion"
+
+
 @lru_cache(maxsize=20000)
 def _pubchem_name(ident_type: str, identifier: str) -> Optional[str]:
     db = _mirror()
@@ -116,12 +137,17 @@ def _pubchem_title(ident_type: str, identifier: str) -> Optional[str]:
 
 def hit_display_name(hit: dict) -> Optional[str]:
     """Display name, first available of: a fixed common name (water), the
-    PubChem title (common name) for chemical hits, the hit's own name, a
-    read-time fill (IUPAC / element name). Always capitalized."""
+    ion name for one-atom hits, the PubChem title (common name) for chemical
+    hits, the hit's own name, a read-time fill (IUPAC). Always capitalized."""
     ident_type = str(hit.get("ident_type") or "").upper()
     identifier = str(hit.get("identifier") or "").strip()
     if (ident_type, identifier) in _COMMON_NAMES:
         return _COMMON_NAMES[(ident_type, identifier)]
+    if ident_type == "ELEMENT" and identifier:
+        # Beats the stored name: scorers stored the element name ("Chlorine").
+        name = ion_name(identifier)
+        if name:
+            return name
     if ident_type in ("PUBCHEM_CID", "INCHIKEY") and identifier:
         title = _pubchem_title(ident_type, identifier)
         if title:

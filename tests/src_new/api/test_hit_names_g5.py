@@ -37,8 +37,13 @@ def test_existing_name_wins():
 
 
 def test_element_symbol_to_name():
-    assert hit_names.hit_display_name({"ident_type": "ELEMENT", "identifier": "CA"}) == "Calcium"
-    assert hit_names.hit_display_name({"ident_type": "ELEMENT", "identifier": "Cl"}) == "Chlorine"
+    # One-atom molecules in a simulation are ions (Cl2 gas is "Chlorine").
+    assert hit_names.hit_display_name({"ident_type": "ELEMENT", "identifier": "CA"}) == "Calcium ion"
+    assert hit_names.hit_display_name({"ident_type": "ELEMENT", "identifier": "Cl"}) == "Chloride"
+    assert hit_names.hit_display_name({"ident_type": "ELEMENT", "identifier": "NA"}) == "Sodium ion"
+    assert hit_names.hit_display_name({"ident_type": "ELEMENT", "identifier": "AR"}) == "Argon"
+    assert hit_names.hit_display_name(
+        {"ident_type": "ELEMENT", "identifier": "CL", "name": "Chlorine"}) == "Chloride"
     assert hit_names.hit_display_name({"ident_type": "ELEMENT", "identifier": "XX"}) is None
 
 
