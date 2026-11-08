@@ -27,7 +27,7 @@ export function eyebrow(m: Molecule): string {
   return parts.join(" · ");
 }
 
-export type BadgeKind = "high" | "medium" | "low" | "exact" | "none" | "status";
+export type BadgeKind = "high" | "medium" | "low" | "exact" | "none" | "status" | "stopped";
 
 export interface Badge {
   kind: BadgeKind;
@@ -36,9 +36,14 @@ export interface Badge {
   score: number | null;
 }
 
-/** The badge line (COPY.md §2.4). */
-export function badgeOf(m: Molecule, runStatusResolved: boolean, statusText?: string): Badge {
+/**
+ * The badge line (COPY.md §2.4). `stopped`: the run ended (failed or
+ * cancelled) before this molecule had a result — "Not searched", not a
+ * spinner that never stops.
+ */
+export function badgeOf(m: Molecule, runStatusResolved: boolean, statusText?: string, stopped = false): Badge {
   if (!runStatusResolved) {
+    if (stopped) return { kind: "stopped", text: "Not searched", score: null };
     return { kind: "status", text: statusText ?? "Searching databases…", score: null };
   }
   const r = m.result;

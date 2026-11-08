@@ -3,7 +3,7 @@
  * No API knowledge beyond the hit/segment shapes — adapter.ts wires the rest.
  */
 import type { MoleculeKind, MoleculeStatus, ResultState, RunStatus, Stage } from "./types";
-import { DB_LABELS, FORMAT_LABELS, KIND_MAP } from "./labels";
+import { DB_LABELS, FORMAT_LABELS, KIND_LABELS, KIND_MAP } from "./labels";
 
 /**
  * Local, permissive hit shape: the generated VerifiedHitItem plus additive
@@ -46,6 +46,23 @@ export function baseName(id: string): { name: string; chain: string | null } {
   const source = stripSeg(id);
   const chain = chainOf(source);
   return chain ? { name: `Chain ${chain}`, chain } : { name: source, chain: null };
+}
+
+/**
+ * Readable label for API display names that are bare chain ids: PDB input
+ * segments are named "A" (chain A) or "A_2" (chain A, fragment 2). Polymers
+ * read "Chain A"; other fragments name their residue: "NAG (chain E)".
+ * Anything else is already a name and passes through.
+ */
+export function chainLabel(name: string, kind: MoleculeKind, residueNames: string[]): string {
+  const m = /^([A-Za-z0-9])(_\d+)?$/.exec(name);
+  if (!m) return name;
+  const chain = m[1];
+  if (kind === "protein" || kind === "nucleic") return `Chain ${chain}`;
+  const res = residueNames[0];
+  if (!m[2] && (!res || res === name)) return name; // a one-letter residue name, e.g. ion "K"
+  const what = res ?? KIND_LABELS[kind].charAt(0).toUpperCase() + KIND_LABELS[kind].slice(1);
+  return `${what} (chain ${chain})`;
 }
 
 /** Loader type string → view-model kind (unknown/lipid quirk documented in G3). */

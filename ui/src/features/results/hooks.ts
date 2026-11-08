@@ -35,6 +35,28 @@ export type SignaturesResponse = components["schemas"]["SignaturesResponse"];
 export type IdentifiersResponse = components["schemas"]["IdentifiersResponse"];
 export type VerificationResponse = components["schemas"]["VerificationResponse"];
 export type RenderPathsResponse = components["schemas"]["RenderPathsResponse"];
+export type CapabilitiesResponse = components["schemas"]["CapabilitiesResponse"];
+
+/**
+ * Deployment capabilities (additive feature markers + config such as the
+ * typical run duration). Fetched once per session; a missing endpoint
+ * leaves every optional feature off.
+ */
+export function useCapabilities(): UseQueryResult<CapabilitiesResponse> {
+  return useQuery({
+    queryKey: ["capabilities"],
+    queryFn: () => api.get<CapabilitiesResponse>(endpoints.capabilities),
+    staleTime: Infinity,
+    retry: 0,
+  });
+}
+
+/** "2–8 min" from {min, max} minutes; null when not configured. */
+export function typicalDuration(caps: CapabilitiesResponse | undefined): string | null {
+  const t = caps?.typical_duration_minutes;
+  if (!t || t.min == null || t.max == null) return null;
+  return t.min === t.max ? `${t.min} min` : `${t.min}–${t.max} min`;
+}
 
 /**
  * v3.137 additive render fields (API wave C) — present in the live API ahead

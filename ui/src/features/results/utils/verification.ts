@@ -20,7 +20,7 @@ export interface VerifiedHit {
   rejection_reason?: string | null;
   supporting_evidence_count?: number;
   database_url?: string | null;
-  name?: string;
+  name?: string | null;
 }
 
 /**

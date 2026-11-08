@@ -133,6 +133,8 @@ export interface ViewModel {
     short_id: string;
     name: string;
     status: RunStatus;
+    /** The run was cancelled (shown as stopped, not as an error). */
+    cancelled: boolean;
     input: { format: string; files: string[]; atoms: number };
     submitted_at: string;
     started_at: string | null;

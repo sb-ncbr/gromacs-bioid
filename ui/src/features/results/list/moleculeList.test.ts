@@ -157,6 +157,12 @@ describe("default selection (SPEC.md §3.4)", () => {
   it("selects the first molecule that is not an ion or water", () => {
     expect(defaultSelection(navms.molecules)).toBe(navms.molecules[0].id);
   });
+  it("prefers the first identified molecule over an unidentified fragment", () => {
+    const miss = mol({ id: "frag", kind: "protein", result: { state: "not_identified", name: null, description: null, best: null, confidence: null } });
+    const hit = mol({ id: "rec", kind: "protein", result: { state: "identified", name: "Receptor", description: null, best: null, confidence: 84 } });
+    expect(defaultSelection([miss, hit])).toBe("rec");
+    expect(defaultSelection([miss])).toBe("frag");
+  });
   it("falls back to the first row when all are ions/water", () => {
     const ions = [mol({ id: "i1", kind: "ion" }), mol({ id: "w1", kind: "water" })];
     expect(defaultSelection(ions)).toBe("i1");

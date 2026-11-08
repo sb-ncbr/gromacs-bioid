@@ -88,11 +88,16 @@ export interface NotesResult {
 /**
  * The notes pipeline (DATA.md §3):
  *  1. drop hidden codes (count in `hidden`);
- *  2. group the rest by (code, service);
+ *  2. group the rest by (code, service as displayed): "blast_nr_protein"
+ *     and its "@sim" variant are one note ("NCBI nr protein ..."), not two;
  *  3. error-severity codes are NOT notes — they live in the run banner;
  *  4. attention notes sort before info notes.
  */
-export function notes(warnings: WarningView[] | null | undefined): NotesResult {
+export function notes(
+  warnings: WarningView[] | null | undefined,
+  /** Segment id → display name, for the {molecule} placeholder. */
+  nameOf: (segment: string) => string = (s) => s,
+): NotesResult {
   const list = Array.isArray(warnings) ? warnings : [];
   let hidden = 0;
   const groups = new Map<string, { code: string; svc: string | null; items: WarningView[] }>();
@@ -103,8 +108,9 @@ export function notes(warnings: WarningView[] | null | undefined): NotesResult {
       hidden += 1;
       continue;
     }
-    const svc = service(w.message);
-    const key = `${code}${svc ?? ""}`;
+    const detail = w.details?.service;
+    const svc = typeof detail === "string" && detail ? detail : service(w.message);
+    const key = `${code}|${serviceLabel(svc)}`;
     const group = groups.get(key) ?? { code, svc, items: [] };
     group.items.push(w);
     groups.set(key, group);
@@ -127,7 +133,7 @@ export function notes(warnings: WarningView[] | null | undefined): NotesResult {
           service: serviceLabel(svc),
           n: String(items.length),
           step: stepLabel(items[0]?.step_id),
-          molecule: affects[0] ?? "one molecule",
+          molecule: affects[0] != null ? nameOf(affects[0]) : "one molecule",
         },
         [...new Set(affects)],
         items.length,

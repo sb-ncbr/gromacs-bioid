@@ -10,7 +10,7 @@
     "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc -b --pretty",
-    "gen:api": "openapi-typescript ../.tmp/tasks/ui-rework/contracts/openapi-live-baseline.json -o src/lib/api/types.ts"
+    "gen:api": "openapi-typescript ../.tmp/tasks/ui-rework/contracts/openapi-live-20261109.json -o src/lib/api/types.ts"
   },
   "dependencies": {
     "@e-infra/design-system": "0.1.9",

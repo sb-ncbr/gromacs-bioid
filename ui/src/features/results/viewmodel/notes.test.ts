@@ -126,3 +126,22 @@ describe("unidentifiedNote (DATA.md §3.4)", () => {
     expect(unidentifiedNote([], [])).toBeNull();
   });
 });
+
+describe("notes merge what reads the same (live 3PTB, 2026-11-08)", () => {
+  const w = (service: string, generator: string) => ({
+    code: "identifier_resolver_failed",
+    message: `${service} (${generator}): BLAST timed out after 300s.`,
+    details: { segment: "A", service, generator },
+  });
+  it("one note for a service and its @sim variant", () => {
+    const { notes: out } = notes([
+      w("blast_nr_protein", "fasta_map_protein"),
+      w("blast_nr_protein@sim", "fasta_map_protein"),
+      w("blast_nr_protein", "fasta_resname_protein"),
+    ]);
+    const nr = out.filter((n) => n.title.includes("NCBI nr protein"));
+    expect(nr).toHaveLength(1);
+    expect(nr[0].raw_count).toBe(3);
+    expect(nr[0].affects).toEqual(["A"]);
+  });
+});

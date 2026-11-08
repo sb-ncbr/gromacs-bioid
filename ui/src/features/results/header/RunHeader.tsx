@@ -17,7 +17,7 @@ import {
   Button,
   cn,
 } from "@e-infra/design-system";
-import { Check, CircleX, Clock, Download, FileText, Link2, Loader2, SquarePen } from "lucide-react";
+import { Ban, Check, CircleX, Clock, Download, FileText, Link2, Loader2, SquarePen } from "lucide-react";
 import type { RunStatus, ViewModel } from "../viewmodel";
 import { CANCEL_CONFIRM, headerActions, metaLine, pageName } from "./headerModel";
 
@@ -27,6 +27,7 @@ const CHIP: Record<RunStatus, { label: string; icon: typeof Clock; cls: string }
   finished: { label: "Finished", icon: Check, cls: "border-(--vm-high) text-(--vm-high)" },
   failed: { label: "Failed", icon: CircleX, cls: "border-(--vm-none) text-(--vm-none)" },
 };
+const CANCELLED_CHIP = { label: "Cancelled", icon: Ban, cls: "border-(--vm-line) text-(--vm-muted)" };
 
 export interface RunHeaderProps {
   run: ViewModel["run"];
@@ -45,7 +46,7 @@ function copyLinkFallback() {
 }
 
 export function RunHeader({ run, runStatus, downloads, onCopyLink, onCancel, onRerun, onCite, onDownload, onReport }: RunHeaderProps) {
-  const chip = CHIP[runStatus];
+  const chip = run.cancelled ? CANCELLED_CHIP : CHIP[runStatus];
   const ChipIcon = chip.icon;
   const actions = headerActions(runStatus, downloads);
 

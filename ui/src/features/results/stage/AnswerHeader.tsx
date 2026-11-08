@@ -22,12 +22,17 @@ const BADGE_CLASSES: Record<string, string> = {
   exact: "border-(--vm-high) text-(--vm-high)",
   none: "border-(--vm-none) text-(--vm-none)",
   status: "border-(--vm-info) text-(--vm-info)",
+  stopped: "border-(--vm-line) text-(--vm-muted)",
 };
 
 function ConfBadge({ badge }: { badge: BadgeModel }) {
-  const Icon = CONFIDENCE_ICONS[badge.kind === "status" ? "searching" : badge.kind];
+  const Icon = CONFIDENCE_ICONS[badge.kind === "status" ? "searching" : badge.kind === "stopped" ? "not_searched" : badge.kind];
   const colorClass =
-    badge.kind === "status" ? "text-(--vm-info)" : CONFIDENCE_COLOR[badge.kind as keyof typeof CONFIDENCE_COLOR];
+    badge.kind === "status"
+      ? "text-(--vm-info)"
+      : badge.kind === "stopped"
+        ? "text-(--vm-muted)"
+        : CONFIDENCE_COLOR[badge.kind as keyof typeof CONFIDENCE_COLOR];
   return (
     <Badge variant="outline" className={cn("gap-1.5 px-3 py-1.5 text-sm whitespace-nowrap", BADGE_CLASSES[badge.kind])}>
       <Icon size={16} className={cn(colorClass, badge.kind === "status" && "motion-safe:animate-spin")} aria-hidden />
@@ -37,16 +42,19 @@ function ConfBadge({ badge }: { badge: BadgeModel }) {
 }
 
 export function AnswerHeader({ molecule, molecules, runStatus, onSelect }: AnswerHeaderProps) {
-  const resolved = runStatus === "finished";
+  // A failed or cancelled run still shows the results it got; molecules it
+  // never reached read "Not searched".
+  const stopped = runStatus === "failed";
+  const resolved = runStatus === "finished" || (stopped && molecule.result != null);
   const title = headline(molecule, resolved);
   const best = bestLine(molecule, resolved);
   const siblings = resolved ? sameAs(molecules, molecule.id) : [];
-  const badge = badgeOf(molecule, resolved, molecule.status === "searching" ? "Searching databases…" : undefined);
+  const badge = badgeOf(molecule, resolved, molecule.status === "searching" ? "Searching databases…" : undefined, stopped);
   const shown = siblings.slice(0, 5);
   const extra = siblings.length - shown.length;
 
   return (
-    <div className="flex items-start justify-between gap-4 px-5 pt-5 pb-4">
+    <div className="flex flex-col gap-3 px-5 pt-5 pb-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <div className="min-w-0">
         <p className="text-xs uppercase tracking-wide text-(--vm-muted)">{eyebrow(molecule)}</p>
         {/* PubChem IUPAC names can exceed 100 characters with long unbroken
@@ -96,7 +104,9 @@ export function AnswerHeader({ molecule, molecules, runStatus, onSelect }: Answe
           )}
         </div>
       </div>
-      <ConfBadge badge={badge} />
+      <div className="self-start sm:shrink-0">
+        <ConfBadge badge={badge} />
+      </div>
     </div>
   );
 }

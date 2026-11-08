@@ -22,6 +22,8 @@ import {
   useRunLoading,
   useRunFiles,
   useRunRender,
+  useCapabilities,
+  typicalDuration,
   pipelineStatus,
   isLive,
   isPending,
@@ -31,7 +33,7 @@ import {
   type VerificationResponse,
 } from "../features/results/hooks";
 import { adapt, type ApiBundle, type ViewModel } from "../features/results/viewmodel";
-import { MoleculeList } from "../features/results/list";
+import { MoleculeList, defaultSelection } from "../features/results/list";
 import { Stage } from "../features/results/stage";
 import { SystemStage, SYSTEM_SELECTION } from "../features/results/stage/SystemStage";
 import { StageCanvas } from "../features/results/viewer";
@@ -93,6 +95,9 @@ export default function RunResultsPage() {
   const filesQ = useRunFiles(runId, live);
   const loadingQ = useRunLoading(runId, live);
   const renderQ = useRunRender(runId, live);
+  const capsQ = useCapabilities();
+  const csvAvailable = capsQ.data?.additions?.includes("results_csv") ?? false;
+  const typical = typicalDuration(capsQ.data);
 
   // Whole-run signatures + verification drive the view model.
   const signaturesAllQ = useQuery({
@@ -123,14 +128,14 @@ export default function RunResultsPage() {
       queue: queueQ.data ?? null,
       files: filesQ.data ?? null,
     };
-    return adapt(bundle);
-  }, [runId, statusQ.data, summaryQ.data, moleculesQ.data, signaturesAllQ.data, verificationAllQ.data, queueQ.data, filesQ.data]);
+    return adapt(bundle, { csvAvailable, typical });
+  }, [runId, statusQ.data, summaryQ.data, moleculesQ.data, signaturesAllQ.data, verificationAllQ.data, queueQ.data, filesQ.data, csvAvailable, typical]);
 
   const molecules = vm?.molecules ?? [];
   // "Whole system" is its own selection; per-segment views (technical
   // fold, verification/identifier queries) keep the first molecule.
   const systemView = segment === SYSTEM_SELECTION && molecules.length > 0;
-  const selectedId = molecules.find((m) => m.id === segment)?.id ?? molecules[0]?.id ?? null;
+  const selectedId = molecules.find((m) => m.id === segment)?.id ?? defaultSelection(molecules);
   const selected = systemView ? null : molecules.find((m) => m.id === selectedId) ?? null;
   const onSelect = useCallback((id: string) => patchQuery({ segment: id }), [patchQuery]);
 
@@ -142,7 +147,7 @@ export default function RunResultsPage() {
   useEffect(() => {
     if (!vm) return;
     const name = pageName(vm.run);
-    document.title = pageTitle(name, vm.run.status);
+    document.title = pageTitle(name, vm.run.status, vm.run.cancelled);
     return () => {
       document.title = "MD BioID";
     };
@@ -191,8 +196,8 @@ export default function RunResultsPage() {
 
   const onDownload = useCallback(
     (key: "csv" | "json") => {
-      const file = key === "csv" ? "results.csv" : "results.json";
-      window.open(endpoints.runFileUrl(runId, file), "_blank", "noopener");
+      const url = key === "csv" ? endpoints.runResultsCsv(runId) : endpoints.runFileUrl(runId, "results.json");
+      window.open(url, "_blank", "noopener");
     },
     [runId],
   );
@@ -244,7 +249,7 @@ export default function RunResultsPage() {
         onReport={onReport}
       />
 
-      {vm.run.status === "failed" && vm.error && <ErrorBanner run={vm.run} error={vm.error} onRerun={onRerun} />}
+      {vm.run.status === "failed" && vm.error && <ErrorBanner run={vm.run} error={vm.error} />}
 
       <StatusStrip
         runStatus={vm.run.status}

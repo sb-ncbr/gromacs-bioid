@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   baseName,
+  chainLabel,
   chainOf,
   clause,
   confLabel,
@@ -146,5 +147,21 @@ describe("HitView structural typing", () => {
   it("accepts additive G5 fields the generated baseline lacks", () => {
     const hit: HitView = { identifier: "5HVX", name: "Lysosome", organism: "Homo sapiens" };
     expect(hit.name).toBe("Lysosome");
+  });
+});
+
+describe("chainLabel (bare chain ids from PDB input)", () => {
+  it("names polymer chains", () => {
+    expect(chainLabel("A", "protein", [])).toBe("Chain A");
+    expect(chainLabel("B_1", "nucleic", [])).toBe("Chain B");
+  });
+  it("names other fragments by residue, else by kind", () => {
+    expect(chainLabel("E", "unknown", ["NAG"])).toBe("NAG (chain E)");
+    expect(chainLabel("A_2", "ion", [])).toBe("Ion (chain A)");
+  });
+  it("keeps real names and one-letter residue names", () => {
+    expect(chainLabel("POPC", "lipid", ["POPC"])).toBe("POPC");
+    expect(chainLabel("K", "ion", ["K"])).toBe("K");
+    expect(chainLabel("K", "ion", [])).toBe("K");
   });
 });

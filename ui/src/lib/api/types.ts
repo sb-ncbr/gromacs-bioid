@@ -217,6 +217,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/download/results.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Results Csv
+         * @description v3.143 (BACKEND_GAPS G6): run-level CSV export — one clean row per
+         *     leaderboard molecule (every fragments/segments entry). Confidence
+         *     label thresholds match the UI exactly (>=80 high, >=50 medium);
+         *     Alternatives = top-3 verified hits after the best, as db:id. Empty
+         *     cells (never resolver names or internal chains) for unverified
+         *     molecules; `identified_name` fills in once G5 lands server-side.
+         */
+        get: operations["download_results_csv_runs__run_id__download_results_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/molecules/{segment}/info": {
         parameters: {
             query?: never;
@@ -713,6 +738,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/download/results.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Results Csv
+         * @description v3.143 (BACKEND_GAPS G6): run-level CSV export — one clean row per
+         *     leaderboard molecule (every fragments/segments entry). Confidence
+         *     label thresholds match the UI exactly (>=80 high, >=50 medium);
+         *     Alternatives = top-3 verified hits after the best, as db:id. Empty
+         *     cells (never resolver names or internal chains) for unverified
+         *     molecules; `identified_name` fills in once G5 lands server-side.
+         */
+        get: operations["download_results_csv_api_v1_runs__run_id__download_results_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/molecules/{segment}/info": {
         parameters: {
             query?: never;
@@ -1016,6 +1066,40 @@ export interface paths {
         };
         /** Health Check */
         get: operations["health_check_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Capabilities */
+        get: operations["get_capabilities_api_v1_capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Capabilities */
+        get: operations["get_capabilities_capabilities_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1570,6 +1654,38 @@ export interface components {
             status: string;
         };
         /**
+         * CapabilitiesResponse
+         * @description API capability advertisement (v3.143, BACKEND_GAPS contract §2).
+         *
+         *     Lets the redesigned UI feature-detect landed backend additions
+         *     instead of payload-shape sniffing. `api_version_marker` increments
+         *     once per additive wave; `additions` lists every landed feature key.
+         */
+        CapabilitiesResponse: {
+            /**
+             * Api Version Marker
+             * @description Additive-wave marker (>=1, bumps per wave)
+             */
+            api_version_marker: number;
+            /**
+             * Additions
+             * @description Landed additive feature keys
+             */
+            additions?: string[];
+            /**
+             * Typical Duration Minutes
+             * @description Deployment-level typical wall-clock range; null when unset
+             */
+            typical_duration_minutes?: {
+                [key: string]: number;
+            } | null;
+            /**
+             * Code Version
+             * @description Deployment code marker (BAT3_CODE_VERSION / git)
+             */
+            code_version: string;
+        };
+        /**
          * ErrorItem
          * @description An error recorded during pipeline execution.
          */
@@ -1788,6 +1904,11 @@ export interface components {
              * @description Error message if failed
              */
             error?: string | null;
+            /**
+             * Error Code
+             * @description Structured error code if failed (bughunt BH-014)
+             */
+            error_code?: string | null;
         };
         /**
          * LoadingInfoResponse
@@ -1835,6 +1956,13 @@ export interface components {
              * @description Loading warnings
              */
             warnings?: string[];
+            /**
+             * Failure Summary
+             * @description Structured failure reason (bughunt BH-014): reason, message, details
+             */
+            failure_summary?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * MoleculeInfoResponse
@@ -1882,6 +2010,11 @@ export interface components {
              * @description Segment IDs
              */
             segment_ids?: string[];
+            /**
+             * Segment Names
+             * @description All identical segments in the unique group
+             */
+            segment_names?: string[];
             /**
              * Molecule Type
              * @description Molecule type
@@ -2042,6 +2175,47 @@ export interface components {
             geometry?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Segment Selectors
+             * @description Per-segment selectors into the system mmCIF
+             */
+            segment_selectors?: {
+                [key: string]: components["schemas"]["RenderSegmentSelector"];
+            };
+        };
+        /**
+         * RenderSegmentSelector
+         * @description Per-segment selector into the system mmCIF (BACKEND_GAPS G9, additive).
+         *
+         *     Persisted at export under ``render/segment_selectors``.
+         *     ``atom_index_ranges`` are merged ``[start, end_exclusive)`` ranges of
+         *     the segment's rows in the exported file's atom_site loop (0-based;
+         *     ``_atom_site.id`` = row + 1, MMCIFIO numbering). Exact even for
+         *     virtual minority segments whose atoms share the parent
+         *     ``auth_asym_id`` chain (``chains``).
+         */
+        RenderSegmentSelector: {
+            /**
+             * Chains
+             * @description auth_asym_id value(s) the segment's atoms landed in
+             */
+            chains?: string[];
+            /**
+             * Atom Index Ranges
+             * @description Merged [start, end) atom_site row ranges (0-based; id = row+1)
+             */
+            atom_index_ranges?: number[][];
+            /**
+             * Atom Count
+             * @description Total atoms addressed by the ranges
+             * @default 0
+             */
+            atom_count: number;
+            /**
+             * Residue Ranges
+             * @description All copies as [auth_asym_id, beg_auth_seq_id, end_auth_seq_id] ranges (inclusive), exact: no other segment has a residue inside them; absent when numbers are shared (use the atom ranges)
+             */
+            residue_ranges?: (string | number)[][] | null;
         };
         /**
          * RerunAllResponse
@@ -2217,6 +2391,37 @@ export interface components {
             ahead?: number | null;
         };
         /**
+         * RunStageProgress
+         * @description Per-molecule identification progress (v3.143, BACKEND_GAPS G2).
+         *
+         *     Computed read-side from persisted state: a segment is "searched"
+         *     once its identifiers block exists, "searching" while the
+         *     identify_molecules stage is running for a segment that already has
+         *     signatures, and "waiting" otherwise. Only segments the pipeline
+         *     decided to identify (fragments/segments ∪ signature-bearing universe
+         *     segments) participate — checking-only and signature-less molecules
+         *     are excluded and keep the UI's own not_searched rendering.
+         */
+        RunStageProgress: {
+            /**
+             * Molecules Done
+             * @description Segments with identifiers recorded
+             */
+            molecules_done: number;
+            /**
+             * Molecules Total
+             * @description Segments the pipeline identified
+             */
+            molecules_total: number;
+            /**
+             * Per Segment
+             * @description waiting|searching|searched per segment name
+             */
+            per_segment?: {
+                [key: string]: string;
+            };
+        };
+        /**
          * RunStatusResponse
          * @description Full run status response.
          */
@@ -2253,6 +2458,8 @@ export interface components {
              * @description ISO 8601 timestamp when results were last updated
              */
             updated_at?: string | null;
+            /** @description Per-segment identification progress */
+            progress?: components["schemas"]["RunStageProgress"] | null;
         };
         /**
          * RunSummaryResponse
@@ -2289,6 +2496,11 @@ export interface components {
              * @description Type of input data
              */
             input_kind?: string | null;
+            /**
+             * Run Name
+             * @description Custom run name provided at submission
+             */
+            run_name?: string | null;
             /**
              * Task Count
              * @description Number of tasks in the pipeline
@@ -2463,6 +2675,11 @@ export interface components {
              */
             final_confidence?: number | null;
             /**
+             * Segment
+             * @description Segment this hit belongs to
+             */
+            segment?: string | null;
+            /**
              * Is Verified
              * @description Whether the hit passed verification
              */
@@ -2472,6 +2689,16 @@ export interface components {
              * @description Reason for rejection if not verified
              */
             rejection_reason?: string | null;
+            /**
+             * Name
+             * @description Hit display name (e.g. protein title)
+             */
+            name?: string | null;
+            /**
+             * Organism
+             * @description Source organism scientific name
+             */
+            organism?: string | null;
             /**
              * Supporting Evidence Count
              * @description Number of supporting evidence
@@ -2864,6 +3091,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MoleculeSummaryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_results_csv_runs__run_id__download_results_csv_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -3582,6 +3840,37 @@ export interface operations {
             };
         };
     };
+    download_results_csv_api_v1_runs__run_id__download_results_csv_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_molecule_info_api_v1_runs__run_id__molecules__segment__info_get: {
         parameters: {
             query?: never;
@@ -3972,6 +4261,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_capabilities_api_v1_capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilitiesResponse"];
+                };
+            };
+        };
+    };
+    get_capabilities_capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilitiesResponse"];
                 };
             };
         };

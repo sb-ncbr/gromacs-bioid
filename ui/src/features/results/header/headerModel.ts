@@ -18,8 +18,9 @@ export function pageName(run: Run): string {
 }
 
 /** Browser tab title per run state (SPEC §2). */
-export function pageTitle(name: string, status: RunStatus): string {
+export function pageTitle(name: string, status: RunStatus, cancelled = false): string {
   const suffix = `${name} · MD BioID`;
+  if (cancelled) return `Cancelled · ${suffix}`;
   switch (status) {
     case "queued":
       return `Queued · ${suffix}`;

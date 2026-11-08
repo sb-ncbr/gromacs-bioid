@@ -276,8 +276,11 @@ export function identGroups(molecules: Molecule[]): IdentRow[] {
 
 /** Default selection: first molecule that is not an ion or water (SPEC.md §3.4). */
 export function defaultSelection(molecules: Molecule[]): string | null {
-  const first = molecules.find((m) => m.kind !== "ion" && m.kind !== "water");
-  return (first ?? molecules[0])?.id ?? null;
+  const solute = molecules.filter((m) => m.kind !== "ion" && m.kind !== "water");
+  // Open on an answer: the first identified molecule, not a fragment that
+  // nothing matched (an 8-residue segment, a loader leftover).
+  const identified = solute.find((m) => m.result?.state === "identified");
+  return (identified ?? solute[0] ?? molecules[0])?.id ?? null;
 }
 
 export function applyQuery(molecules: Molecule[], bucket: Bucket | null, query: string, runStatus: RunStatus): Molecule[] {

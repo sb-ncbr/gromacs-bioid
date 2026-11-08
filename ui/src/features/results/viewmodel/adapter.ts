@@ -21,6 +21,7 @@ import { KIND_LABELS } from "./labels";
 import { catalog } from "./warningCatalog";
 import {
   baseName,
+  chainLabel,
   clause,
   elapsed,
   evidence,
@@ -137,6 +138,10 @@ function runStatus(bundle: ApiBundle): RunStatus {
   if (s === "success") return "finished";
   if (s === "failed" || s === "error" || s === "cancelled") return "failed";
   return "running";
+}
+
+function isCancelled(bundle: ApiBundle): boolean {
+  return (bundle.summary?.status ?? bundle.status?.pipeline?.status) === "cancelled";
 }
 
 function basename(path: string): string {
@@ -257,12 +262,14 @@ function buildMolecules(bundle: ApiBundle, status: RunStatus, stageSearch = true
             more: { verified: 0, related: 0, rejected: 0 },
             rejected: [],
           };
+    const kind = kindOf(m.type);
+    const residueNames = names(find("resname"));
     return {
       id,
-      display_name: m.display_name ?? named.name,
-      kind: kindOf(m.type),
+      display_name: m.display_name != null ? chainLabel(m.display_name, kind, residueNames) : named.name,
+      kind,
       chain: m.chain ?? named.chain,
-      residue_names: names(find("resname")),
+      residue_names: residueNames,
       copies: m.copies ?? 1,
       atoms_per_copy: m.atom_count ?? 0,
       residues_per_copy: m.residue_count ?? null,
@@ -298,8 +305,16 @@ function buildMolecules(bundle: ApiBundle, status: RunStatus, stageSearch = true
 /* Run-level pieces                                                     */
 /* ------------------------------------------------------------------ */
 
+/** Banner copy for a cancelled run: stopped on request, not an error. */
+const CANCELLED = {
+  title: "This run was cancelled",
+  body: "It stopped before every step finished, so the results below are incomplete.",
+  action: "Rerun to get the full results.",
+};
+
 function errorOf(bundle: ApiBundle, status: RunStatus, shortId: string) {
   if (status !== "failed") return null;
+  if (isCancelled(bundle)) return { ...CANCELLED, technical: "" };
   const errors = bundle.status?.critical_errors ?? [];
   const first = errors.find((e) => e.critical) ?? errors[0];
   const entry = catalog(first?.code ?? "pipeline_execution_failed");
@@ -357,7 +372,8 @@ export function adapt(bundle: ApiBundle, options: AdapterOptions = {}): ViewMode
   const stages = steps(bundle.status?.tasks ?? [], now);
   const molecules = buildMolecules(bundle, status);
 
-  const { notes: catalogNotes, hidden } = groupNotes(bundle.status?.warnings);
+  const nameById = new Map(molecules.map((m) => [m.id, m.display_name]));
+  const { notes: catalogNotes, hidden } = groupNotes(bundle.status?.warnings, (s) => nameById.get(s) ?? s);
   // Derived "not identified" note; only once results exist (SPEC.md §3.3).
   const missed = molecules.filter(
     (m) => m.result && (m.result.state === "not_identified" || m.result.state === "lead"),
@@ -379,6 +395,7 @@ export function adapt(bundle: ApiBundle, options: AdapterOptions = {}): ViewMode
       short_id: shortId,
       name: rawName ?? `Run ${shortId}`,
       status,
+      cancelled: isCancelled(bundle),
       input: {
         format: formatInput(bundle.summary?.input_kind),
         files: files.map(basename),

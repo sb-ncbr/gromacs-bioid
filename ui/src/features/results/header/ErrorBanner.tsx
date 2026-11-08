@@ -1,42 +1,35 @@
 /**
  * ErrorBanner (SPEC.md §3.2): role="alert", error colour role; title +
- * one-sentence body + What-to-do; [Rerun] [Copy details for a bug report];
- * the raw exception lives behind an in-banner Technical-detail fold.
+ * one-sentence body + What-to-do; the raw exception lives behind an
+ * in-banner Technical-detail fold. Rerun and the bug report are the run
+ * header's actions, so the banner does not repeat them. A cancelled run
+ * gets the same banner in neutral colours (stopped on request, not an error).
  */
-import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from "@e-infra/design-system";
-import { ChevronDown, Copy, RotateCw } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger, cn } from "@e-infra/design-system";
+import { ChevronDown } from "lucide-react";
 import type { RunError, ViewModel } from "../viewmodel";
-import { bugReport } from "./headerModel";
 
 export interface ErrorBannerProps {
   run: ViewModel["run"];
   error: RunError;
-  onRerun: () => void;
 }
 
-export function ErrorBanner({ run, error, onRerun }: ErrorBannerProps) {
+export function ErrorBanner({ run, error }: ErrorBannerProps) {
+  const cancelled = run.cancelled;
   return (
-    <div role="alert" className="mb-4 rounded-lg border border-(--vm-error-line) bg-(--vm-error-bg) px-4 py-3">
-      <p className="text-sm font-semibold text-(--vm-error)">{error.title}</p>
+    <div
+      role={cancelled ? "status" : "alert"}
+      className={cn(
+        "mb-4 rounded-lg border px-4 py-3",
+        cancelled ? "border-(--vm-line) bg-(--vm-surface-2)" : "border-(--vm-error-line) bg-(--vm-error-bg)",
+      )}
+    >
+      <p className={cn("text-sm font-semibold", cancelled ? "text-(--vm-fg)" : "text-(--vm-error)")}>{error.title}</p>
       <p className="mt-0.5 text-sm text-(--vm-fg-2)">{error.body}</p>
       {error.action && <p className="mt-1 text-sm font-medium text-(--vm-fg)">What to do: {error.action}</p>}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={onRerun}>
-          <RotateCw size={14} className="mr-1" aria-hidden /> Rerun
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            void navigator.clipboard?.writeText(bugReport(run, error)).then(() => {
-              import("sonner").then(({ toast }) => toast.success("Details copied")).catch(() => {});
-            });
-          }}
-        >
-          <Copy size={14} className="mr-1" aria-hidden /> Copy details for a bug report
-        </Button>
-        <Collapsible className="basis-full">
-          <CollapsibleTrigger className="inline-flex items-center gap-1 text-sm text-(--vm-muted) hover:text-(--vm-fg) [&[data-state=open]>svg]:rotate-180">
+      {error.technical && (
+        <Collapsible className="mt-2">
+          <CollapsibleTrigger className="inline-flex min-h-6 items-center gap-1 text-sm text-(--vm-muted) hover:text-(--vm-fg) [&[data-state=open]>svg]:rotate-180">
             Technical detail <ChevronDown size={14} aria-hidden className="transition-transform" />
           </CollapsibleTrigger>
           <CollapsibleContent>
@@ -45,7 +38,7 @@ export function ErrorBanner({ run, error, onRerun }: ErrorBannerProps) {
             </pre>
           </CollapsibleContent>
         </Collapsible>
-      </div>
+      )}
     </div>
   );
 }
