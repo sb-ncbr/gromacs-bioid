@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   useMutation,
@@ -97,7 +97,7 @@ function RunRow({ run }: { run: RunItem }) {
         <div className="min-w-0">
           <Link
             to={`/runs/${encodeURIComponent(run.run_id)}`}
-            className="truncate text-base font-medium text-text no-underline hover:text-primary"
+            className="block truncate text-base font-medium text-text no-underline hover:text-primary"
             title={title}
           >
             {title}
@@ -212,8 +212,12 @@ function RunRow({ run }: { run: RunItem }) {
   );
 }
 
-/** IP-bound recent annotations (GET /runs?mine=1). No re-run-all. */
+/** Rows shown before "Show N more". */
+const VISIBLE = 8;
+
+/** IP-bound recent annotations (GET /runs?mine=1), newest first. No re-run-all. */
 export default function Recents() {
+  const [showAll, setShowAll] = useState(false);
   const q = useQuery({
     queryKey: ["myRuns", { mine: 1 }],
     queryFn: () => api.get<RunListResponse>(endpoints.runs, { mine: 1 }),
@@ -221,14 +225,19 @@ export default function Recents() {
     refetchInterval: 20_000,
   });
 
-  const runs = q.data?.runs ?? [];
+  // The API lists runs in directory order; newest first is what people expect.
+  const runs = useMemo(
+    () => [...(q.data?.runs ?? [])].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")),
+    [q.data],
+  );
+  const shown = showAll ? runs : runs.slice(0, VISIBLE);
 
   return (
     <Card className="flex h-full flex-col">
       <CardHeader>
         <CardTitle>Your annotations</CardTitle>
         <CardDescription>
-          Recent runs from this browser.
+          Runs recently submitted from your network address, newest first.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-1">
@@ -242,15 +251,22 @@ export default function Recents() {
           <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-base-300 px-4 py-10 text-center">
             <Inbox className="h-8 w-8 text-text-muted" />
             <p className="text-sm text-text-muted">
-              No annotations from this browser yet.
+              No runs from your network address yet.
             </p>
           </div>
         ) : (
-          <ul className="flex flex-col gap-3">
-            {runs.map((run) => (
-              <RunRow key={run.run_id} run={run} />
-            ))}
-          </ul>
+          <>
+            <ul className="flex flex-col gap-3">
+              {shown.map((run) => (
+                <RunRow key={run.run_id} run={run} />
+              ))}
+            </ul>
+            {runs.length > VISIBLE && (
+              <Button type="button" variant="ghost" size="sm" className="mt-3" onClick={() => setShowAll((v) => !v)}>
+                {showAll ? "Show fewer" : `Show ${runs.length - VISIBLE} more`}
+              </Button>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

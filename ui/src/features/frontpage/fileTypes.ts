@@ -37,6 +37,36 @@ export const ACCEPT_MAP: Record<string, string[]> = {
   "text/plain": [".ini"],
 };
 
+const ACCEPTED = new Set<string>([...ACCEPTED_EXTENSIONS, "tar.gz", "tgz"]);
+
+/**
+ * Extension check. The `accept` map alone is not enough: react-dropzone also
+ * accepts any file whose MIME type matches a key, so text/plain (for .ini)
+ * let a notes.txt through.
+ */
+export function isAccepted(name: string): boolean {
+  return ACCEPTED.has(fileExtension(name).toLowerCase());
+}
+
+/**
+ * Non-blocking hints for an input set that is missing its other half
+ * (the loader decides; this only saves a failed run).
+ */
+export function inputHints(names: string[]): string[] {
+  const ext = new Set(names.map((n) => fileExtension(n).toLowerCase()));
+  const has = (...e: string[]) => e.some((x) => ext.has(x));
+  if (has("zip", "tar", "tar.gz", "tgz")) return [];
+  const hints: string[] = [];
+  const coords = has("gro", "pdb", "cif", "crd", "rst7", "inpcrd", "restrt", "nc", "mdcrd", "dcd", "xtc", "trr");
+  if (has("top") && !has("tpr") && !coords) hints.push("A .top needs coordinates: add the .gro.");
+  if (has("itp") && !has("top", "tpr")) hints.push(".itp files are includes: add the .top that includes them, or the .tpr.");
+  if (has("prmtop", "parm7") && !has("rst7", "inpcrd", "restrt", "nc", "mdcrd", "pdb")) hints.push("An AMBER topology needs coordinates: add the .rst7 or .inpcrd.");
+  if (has("psf") && !has("pdb", "crd", "dcd", "cif")) hints.push("A .psf needs coordinates: add the .pdb or .crd.");
+  if (has("rst7", "inpcrd", "restrt", "mdcrd", "nc") && !has("prmtop", "parm7")) hints.push("AMBER coordinates need their topology: add the .prmtop.");
+  if (has("xtc", "trr") && !has("tpr", "top", "gro", "pdb")) hints.push("A trajectory alone has no topology: add the .tpr (or .top and .gro).");
+  return hints;
+}
+
 /** Return the last extension segment, handling `.tar.gz` as one unit. */
 export function fileExtension(name: string): string {
   const base = name.toLowerCase();

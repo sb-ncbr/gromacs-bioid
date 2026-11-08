@@ -6,11 +6,11 @@
  * and polling never resets it.
  */
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle, Skeleton } from "@e-infra/design-system";
 import { toast } from "sonner";
-import { api, endpoints } from "../lib/api/client";
+import { api, endpoints, retryUnless404 } from "../lib/api/client";
 import { parseRunQuery } from "../lib/nav";
 import {
   useRunStatus,
@@ -104,14 +104,14 @@ export default function RunResultsPage() {
     queryKey: ["runSignaturesAll", runId],
     queryFn: () => api.get<SignaturesResponse>(endpoints.runSignatures(runId!)),
     enabled: !!runId,
-    retry: 1,
+    retry: retryUnless404,
     refetchInterval: () => payloadRefetchInterval(live),
   });
   const verificationAllQ = useQuery({
     queryKey: ["runVerificationAll", runId],
     queryFn: () => api.get<VerificationResponse>(endpoints.runVerification(runId!)),
     enabled: !!runId && !pending,
-    retry: 1,
+    retry: retryUnless404,
     refetchInterval: () => payloadRefetchInterval(live),
   });
 
@@ -229,6 +229,9 @@ export default function RunResultsPage() {
             have been deleted or the ID is incorrect.
           </AlertDescription>
         </Alert>
+        <Link to="/" className="mt-4 inline-block font-medium text-(--vm-accent) underline-offset-2 hover:underline">
+          Go to the BioID start page
+        </Link>
       </div>
     );
   }
@@ -338,10 +341,7 @@ export default function RunResultsPage() {
       {/* Citation + retention (SPEC §3.7) */}
       <footer className="mt-4 space-y-1 text-sm text-(--vm-muted)">
         <p>
-          Using these results? Please cite: {CITATION}.{" "}
-          <button type="button" onClick={onCite} className="text-(--vm-accent) underline-offset-2 hover:underline">
-            Copy citation
-          </button>
+          Using these results? Please cite: {CITATION}. The Cite button at the top copies it with a link to this run.
         </p>
         {vm.run.retention_days != null && (
           <p>Anyone with this link can see these results. They are kept for {vm.run.retention_days} days.</p>

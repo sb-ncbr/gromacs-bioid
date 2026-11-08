@@ -117,8 +117,11 @@ describe("config: applyFastMode", () => {
 
 describe("config: humanLabel", () => {
   it("title-cases snake_case keys", () => {
-    expect(humanLabel("signatures_parallel")).toBe("Signatures Parallel");
-    expect(humanLabel("global_timeout_s")).toBe("Global Timeout S");
+    expect(humanLabel("signatures_parallel")).toBe("Signatures parallel");
+    expect(humanLabel("global_timeout_s")).toBe("Global timeout (s)");
+    expect(humanLabel("tpr_resid_from_one")).toBe("TPR resid from one");
+    expect(humanLabel("bond_guess_vdw_factor")).toBe("Bond guess vdW factor");
+    expect(humanLabel("exact_match_min_identity_p")).toBe("Exact match min identity (%)");
   });
 });
 

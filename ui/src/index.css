@@ -21,6 +21,8 @@ html[data-theme="custom"] {
 
   /* Text */
   --text-heading: #1b5e20;
+  /* DS muted #6e6a82 is 4.36:1 on the card surface #eaebf1 (WCAG AA needs 4.5) */
+  --text-muted: #625e76;
 
   /* Borders */
   --border-focus: #2e7d32;
@@ -132,4 +134,11 @@ html[data-theme="custom"].dark {
   --vm-scene-other: #4a525b;
   --vm-scene-water: #2f5679;
   --vm-scene-ion: #a58ad8;
+}
+
+/* Mol* inside the stage canvas: the page's own overlay replaces Mol*'s
+   viewport toolbar and logo (the logo was an unnamed link in the Tab order). */
+.bioid-molstar .msp-viewport-controls,
+.bioid-molstar .msp-logo {
+  display: none !important;
 }

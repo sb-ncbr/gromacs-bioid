@@ -95,6 +95,14 @@ export function StageCanvas({ runId, runStatus, molecules, selectedId, onSelect,
           layoutShowLeftPanel: false,
           layoutShowSequence: false,
           layoutShowLog: false,
+          // Our overlay has its own reset / full-screen / water toggle; Mol*'s
+          // viewport toolbar duplicated them and added seven Tab stops.
+          viewportShowExpand: false,
+          viewportShowControls: false,
+          viewportShowSettings: false,
+          viewportShowSelectionMode: false,
+          viewportShowAnimation: false,
+          viewportShowTrajectoryControls: false,
         });
         if (cancelled) {
           v.plugin.dispose();
@@ -262,7 +270,7 @@ export function StageCanvas({ runId, runStatus, molecules, selectedId, onSelect,
       {/* Mol* container — always mounted to keep the WebGL context alive */}
       <div
         ref={containerRef}
-        className="absolute inset-0 h-full w-full"
+        className="bioid-molstar absolute inset-0 h-full w-full"
         style={{ opacity: interactive ? 1 : 0, pointerEvents: interactive ? "auto" : "none" }}
       />
 
@@ -274,11 +282,12 @@ export function StageCanvas({ runId, runStatus, molecules, selectedId, onSelect,
           onValueChange={(v) => v && setCanvasMode(v as CanvasMode)}
           className="rounded-md border border-(--vm-line) bg-white/90 p-0.5 text-xs shadow-sm dark:bg-(--vm-surface-2)"
         >
-          <ToggleGroupItem value="highlight" className="px-2 py-1 text-xs" aria-label="Highlight selected molecule">
+          <ToggleGroupItem value="highlight" className="min-h-7 px-2 py-1 text-xs" aria-label="Highlight selected molecule">
             Highlight
           </ToggleGroupItem>
-          <ToggleGroupItem value="confidence" disabled={!finished || !interactive} className="px-2 py-1 text-xs" aria-label="Colour by confidence">
-            By confidence
+          <ToggleGroupItem value="confidence" disabled={!finished || !interactive} className="min-h-7 px-2 py-1 text-xs" aria-label="Colour by confidence">
+            <span className="max-sm:hidden">By confidence</span>
+            <span className="sm:hidden">Confidence</span>
           </ToggleGroupItem>
         </ToggleGroup>
       </div>

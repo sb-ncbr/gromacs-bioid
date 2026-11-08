@@ -20,7 +20,7 @@
  * (`lib/api/types`); no `any`.
  */
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { api, endpoints } from "../../lib/api/client";
+import { api, endpoints, retryUnless404 } from "../../lib/api/client";
 import type { components } from "../../lib/api/types";
 
 /* ------------------------------------------------------------------ */
@@ -203,7 +203,7 @@ export function useRunStatus(runId?: string): UseQueryResult<RunStatusResponse> 
     queryFn: () => api.get<RunStatusResponse>(endpoints.runStatus(runId!)),
     enabled: !!runId,
     staleTime: 2000,
-    retry: 1,
+    retry: retryUnless404,
     refetchInterval: (query) => statusRefetchInterval(pipelineStatus(query.state.data ?? null)),
   });
 }
@@ -224,7 +224,7 @@ export function useRunSummary(runId?: string): UseQueryResult<RunSummaryWithTitl
     queryFn: () => api.get<RunSummaryWithTitle>(endpoints.run(runId!)),
     enabled: !!runId,
     staleTime: 30_000,
-    retry: 1,
+    retry: retryUnless404,
   });
 }
 
@@ -234,7 +234,7 @@ export function useRunMolecules(runId: string | undefined, live: boolean) {
     queryKey: ["runMolecules", runId],
     queryFn: () => api.get<MoleculeSummaryResponse>(endpoints.runMolecules(runId!)),
     enabled: !!runId,
-    retry: 1,
+    retry: retryUnless404,
     refetchInterval: () => payloadRefetchInterval(live),
   });
 }
@@ -245,7 +245,7 @@ export function useRunLoading(runId: string | undefined, live: boolean) {
     queryKey: ["runLoading", runId],
     queryFn: () => api.get<LoadingInfoResponse>(endpoints.runLoading(runId!)),
     enabled: !!runId,
-    retry: 1,
+    retry: retryUnless404,
     refetchInterval: () => payloadRefetchInterval(live),
   });
 }
@@ -256,7 +256,7 @@ export function useRunFiles(runId: string | undefined, live: boolean) {
     queryKey: ["runFiles", runId],
     queryFn: () => api.get<RunFilesResponse>(endpoints.runFiles(runId!)),
     enabled: !!runId,
-    retry: 1,
+    retry: retryUnless404,
     refetchInterval: () => payloadRefetchInterval(live),
   });
 }
@@ -267,7 +267,7 @@ export function useRunRender(runId: string | undefined, live: boolean) {
     queryKey: ["runRender", runId],
     queryFn: () => api.get<RenderPathsResponse>(endpoints.runRender(runId!)),
     enabled: !!runId,
-    retry: 1,
+    retry: retryUnless404,
     refetchInterval: () => payloadRefetchInterval(live),
   });
 }
@@ -287,7 +287,7 @@ export function useRunSignatures(
     queryFn: () =>
       api.get<SignaturesResponse>(endpoints.runSignatures(runId!), { segment }),
     enabled: !!runId && stageOn,
-    retry: 1,
+    retry: retryUnless404,
     refetchInterval: () => payloadRefetchInterval(live),
   });
 }
@@ -307,7 +307,7 @@ export function useRunIdentifiers(
     queryFn: () =>
       api.get<IdentifiersResponse>(endpoints.runIdentifiers(runId!), { segment }),
     enabled: !!runId && stageOn,
-    retry: 1,
+    retry: retryUnless404,
     refetchInterval: () => payloadRefetchInterval(live),
   });
 }
@@ -327,7 +327,7 @@ export function useRunVerification(
     queryFn: () =>
       api.get<VerificationResponse>(endpoints.runVerification(runId!), { segment }),
     enabled: !!runId && stageOn,
-    retry: 1,
+    retry: retryUnless404,
     refetchInterval: () => payloadRefetchInterval(live),
   });
 }

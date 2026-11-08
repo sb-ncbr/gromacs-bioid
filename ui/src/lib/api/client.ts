@@ -20,6 +20,11 @@ export class ApiError extends Error {
   }
 }
 
+/** Retry once, except on 404: a deleted run or wrong id is an answer, not a glitch. */
+export function retryUnless404(count: number, err: Error): boolean {
+  return !(err instanceof ApiError && err.status === 404) && count < 1;
+}
+
 export type QueryParams = Record<string, string | number | boolean | undefined>;
 
 function buildUrl(path: string, params?: QueryParams): string {

@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { useDropzone, type FileWithPath } from "react-dropzone";
 import { UploadCloud, X } from "lucide-react";
 import { Badge, Button } from "@e-infra/design-system";
-import { ACCEPT_MAP, fileExtension, truncateFileName } from "./fileTypes";
+import { ACCEPT_MAP, fileExtension, inputHints, isAccepted, truncateFileName } from "./fileTypes";
 
 interface DropzoneProps {
   files: FileWithPath[];
@@ -15,15 +16,20 @@ interface DropzoneProps {
  * json/yaml/yml, zip/tar/tar.gz, ini).
  */
 export default function Dropzone({ files, onFilesAdded, onRemove }: DropzoneProps) {
+  const [rejected, setRejected] = useState<string[]>([]);
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     accept: ACCEPT_MAP,
     multiple: true,
     noClick: true,
     noKeyboard: true,
-    onDrop: (accepted) => {
+    validator: (file) =>
+      isAccepted(file.name) ? null : { code: "unsupported-extension", message: "Not a supported simulation file" },
+    onDrop: (accepted, refused) => {
+      setRejected(refused.map((r) => r.file.name));
       if (accepted.length > 0) onFilesAdded(accepted);
     },
   });
+  const hints = inputHints(files.map((f) => f.name));
 
   return (
     <div className="flex flex-col gap-3">
@@ -35,7 +41,7 @@ export default function Dropzone({ files, onFilesAdded, onRemove }: DropzoneProp
             : "border-base-300 bg-surface-raised/40 hover:border-primary"
         }`}
       >
-        <input {...getInputProps()} />
+        <input {...getInputProps({ "aria-label": "Simulation files" })} />
         <UploadCloud className="h-10 w-10 text-primary" />
         <p className="text-base font-medium text-text">
           {isDragActive ? "Drop files to add them" : "Drag & drop simulation files here"}
@@ -55,6 +61,19 @@ export default function Dropzone({ files, onFilesAdded, onRemove }: DropzoneProp
         <p className="text-xs text-text-muted">
           GROMACS · AMBER · CHARMM/NAMD · LAMMPS · PDB/mmCIF — or .zip / .tar bundles
         </p>
+      </div>
+
+      <div aria-live="polite" className="flex flex-col gap-1 empty:hidden">
+        {rejected.length > 0 && (
+          <p className="text-sm text-error-600">
+            Not added: {rejected.join(", ")}. BioID reads the simulation formats listed above.
+          </p>
+        )}
+        {hints.map((h) => (
+          <p key={h} className="text-sm text-text-muted">
+            {h}
+          </p>
+        ))}
       </div>
 
       {files.length > 0 && (

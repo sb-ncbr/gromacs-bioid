@@ -222,10 +222,60 @@ export function applyFastMode(config: RunConfig, enabled: boolean): RunConfig {
 }
 
 /** `some_field_name` -> "Some Field Name" (label rendering). */
+/** Words shown in their usual spelling rather than title case. */
+const WORDS: Record<string, string> = {
+  tpr: "TPR", vdw: "vdW", smiles: "SMILES", pdb: "PDB", fasta: "FASTA", ca: "Cα", inchi: "InChI",
+  mmcif: "mmCIF", blast: "BLAST", nr: "nr", nt: "nt", uniprot: "UniProt", swissprot: "Swiss-Prot",
+  chembl: "ChEMBL", chebi: "ChEBI", pubchem: "PubChem", idsm: "IDSM", ccd: "CCD", alphafind: "AlphaFind",
+  rcsb: "RCSB", tm: "TM", tdi: "TDI", selfies: "SELFIES", aa: "aa", fp: "fingerprint", n: "number of",
+  tps: "TPS", api: "API", struct: "structure", hfamily: "H-family",
+};
+
+/**
+ * Config key → label: "global_timeout_s" → "Global timeout (s)",
+ * "tpr_resid_from_one" → "TPR resid from one". Sentence case, known
+ * acronyms kept, the unit suffix shown as a unit.
+ */
 export function humanLabel(key: string): string {
-  return key
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const unit = /_s$/.test(key) ? " (s)" : /_p$/.test(key) ? " (%)" : "";
+  const words = key.replace(/_(s|p)$/, "").split("_").filter(Boolean);
+  const text = words
+    .map((w, i) => {
+      const known = WORDS[w.toLowerCase()];
+      if (known) return known;
+      return i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w;
+    })
+    .join(" ");
+  return text + unit;
+}
+
+/** What each config section controls (one line under its heading). */
+export const SECTION_HELP: Record<string, string> = {
+  loader: "How the simulation files are read: missing elements, bonds and periodic unwrapping.",
+  executor: "Threads and which pipeline steps run in parallel.",
+  timeouts: "Time limits for each step, in seconds.",
+  signatures: "Which molecule descriptions (sequences, SMILES, fingerprints, structures) are generated.",
+  identifiers: "Which databases are searched, exactly and by similarity.",
+  blast: "Sequence-search thresholds.",
+  chembl: "ChEMBL similarity search.",
+  idsm: "IDSM chemical similarity search.",
+  pubchem: "PubChem similarity search and retries.",
+  alphafind: "AlphaFind structure search (remote).",
+  pdb: "PDB structure search.",
+  foldseek: "Foldseek structure search.",
+  verification: "How candidates are checked and scored into the confidence value.",
+};
+
+/**
+ * Deployment plumbing (executables, database paths, URLs, credentials):
+ * not meaningful to change per run, so not shown. The values are still
+ * submitted unchanged.
+ */
+export function isPlumbing(section: string, field: string): boolean {
+  if (section === "identifiers_cache" || section === "names") return true;
+  return /(_exec|_db|_db_path|^db_path|_path|_dir|^url|_url|^ssh_|^directory$|^file$|^curr_uuid$|^remote_database$|^use_deployment_file_access$)/.test(
+    field,
+  );
 }
 
 /**

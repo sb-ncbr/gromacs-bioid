@@ -10,8 +10,10 @@ import {
 } from "@e-infra/design-system";
 import {
   humanLabel,
+  isPlumbing,
   validateNumberInput,
   FIELD_HELP,
+  SECTION_HELP,
   normalizedWeights,
   type RunConfig,
   type WeightTriple,
@@ -121,13 +123,18 @@ export default function ConfigEditor({ config, onChange }: ConfigEditorProps) {
       {sections.map(([sectionName, sectionData]) => {
         const fields = Object.entries(
           sectionData as Record<string, unknown>,
-        ).filter(([k]) => !k.startsWith("_"));
+        ).filter(([k]) => !k.startsWith("_") && !isPlumbing(sectionName, k));
         if (fields.length === 0) return null;
         return (
-          <Accordion key={sectionName} type="single" collapsible defaultValue={sectionName}>
+          <Accordion key={sectionName} type="single" collapsible>
             <AccordionItem value={sectionName}>
               <AccordionTrigger className="text-sm font-semibold">
-                {humanLabel(sectionName)}
+                <span className="flex flex-col items-start gap-0.5 text-left">
+                  {humanLabel(sectionName)}
+                  {SECTION_HELP[sectionName] && (
+                    <span className="text-xs font-normal text-text-muted">{SECTION_HELP[sectionName]}</span>
+                  )}
+                </span>
               </AccordionTrigger>
               <AccordionContent>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

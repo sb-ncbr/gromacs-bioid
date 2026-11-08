@@ -74,8 +74,6 @@ function Row({ row, selected, onSelect }: { row: RowView; selected: boolean; onS
   return (
     <button
       type="button"
-      role="option"
-      aria-selected={selected}
       aria-current={selected ? "true" : undefined}
       data-list-item
       onClick={onSelect}
@@ -95,12 +93,24 @@ function Row({ row, selected, onSelect }: { row: RowView; selected: boolean; onS
         <span className="block truncate text-xs text-(--vm-muted)" title={row.line2 || undefined}>{row.line2}</span>
       </span>
       {row.score != null && (
-        <span className={cn("text-sm tabular-nums", CONFIDENCE_COLOR[row.icon as keyof typeof CONFIDENCE_COLOR] ?? "text-(--vm-muted)")}>
+        <span className={cn("shrink-0 text-sm tabular-nums", CONFIDENCE_COLOR[row.icon as keyof typeof CONFIDENCE_COLOR] ?? "text-(--vm-muted)")}>
           {row.score}
         </span>
       )}
     </button>
   );
+}
+
+/**
+ * Second line of a one-molecule identification row: the residue/segment
+ * name the user knows when the identified name differs ("POPC" under
+ * "1-Palmitoyl-2-oleoyl-sn-glycero-3-phosphocholine"), and the copy count.
+ */
+function singleLine2(group: IdentRow): string {
+  const label = group.memberLabels[0];
+  return [label && label !== group.name ? label : null, group.copies > 1 ? copiesText(group.copies) : null]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function IdentGroupRow({
@@ -128,18 +138,18 @@ function IdentGroupRow({
             data-list-item
             aria-expanded={open}
             onClick={onToggle}
-            className="flex flex-1 items-center gap-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-(--vm-accent) rounded-sm"
+            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-sm text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-(--vm-accent)"
           >
             {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
             <StatusIcon icon={group.icon} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium text-(--vm-fg)" title={group.name}>
                 {group.name}
-                <span className="ml-1.5 text-xs font-normal text-(--vm-muted)">{group.count}×</span>
+                <span className="ml-1.5 text-xs font-normal text-(--vm-muted)">{copiesText(group.count)}</span>
               </span>
               <span className="block truncate text-xs text-(--vm-muted)">{group.memberLabels.join(", ")}</span>
             </span>
-            {group.score != null && <span className="text-sm tabular-nums text-(--vm-muted)">{group.score}</span>}
+            {group.score != null && <span className="shrink-0 text-sm tabular-nums text-(--vm-muted)">{group.score}</span>}
           </button>
         ) : (
           <button
@@ -147,14 +157,15 @@ function IdentGroupRow({
             data-list-item
             aria-current={containsSelection ? "true" : undefined}
             onClick={() => onSelect(group.memberIds[0])}
-            className="flex flex-1 items-center gap-2.5 text-left focus:outline-none"
+            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-sm text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-(--vm-accent)"
             title={group.hint}
           >
             <StatusIcon icon={group.icon} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium text-(--vm-fg)" title={group.name}>{group.name}</span>
+              {singleLine2(group) && <span className="block truncate text-xs text-(--vm-muted)">{singleLine2(group)}</span>}
             </span>
-            {group.score != null && <span className="text-sm tabular-nums text-(--vm-muted)">{group.score}</span>}
+            {group.score != null && <span className="shrink-0 text-sm tabular-nums text-(--vm-muted)">{group.score}</span>}
           </button>
         )}
       </div>
@@ -168,7 +179,7 @@ function IdentGroupRow({
               aria-current={selectedId === id ? "true" : undefined}
               onClick={() => onSelect(id)}
               className={cn(
-                "block w-full px-3 py-1 text-left text-sm text-(--vm-fg-2) hover:bg-(--vm-surface-2)",
+                "block min-h-9 w-full px-3 py-1 text-left text-sm text-(--vm-fg-2) hover:bg-(--vm-surface-2) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--vm-accent)",
                 selectedId === id && "bg-(--vm-accent-soft)",
               )}
             >
@@ -307,15 +318,15 @@ export function MoleculeList({
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-(--vm-muted)" aria-hidden />
           <Input
             type="search"
-            placeholder="Find a molecule"
+            placeholder="Find a molecule…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="h-8 bg-(--vm-surface-2) pl-8 text-sm"
+            className="h-9 bg-(--vm-surface-2) pl-8 text-base sm:h-8 sm:text-sm"
             aria-label="Find a molecule"
           />
         </div>
         <ScrollArea className="min-h-[240px] flex-1" style={{ maxHeight: "calc(100vh - 230px)" }}>
-          <div ref={listRef} role="listbox" aria-label="Molecules" onKeyDown={onKeyDown} data-collapsed-prefix={COLLAPSED_STORAGE_PREFIX}>
+          <div ref={listRef} role="group" aria-label="Molecules" onKeyDown={onKeyDown} data-collapsed-prefix={COLLAPSED_STORAGE_PREFIX}>
             {molecules.length === 0 && (
               <p className="px-3 py-6 text-sm text-(--vm-muted)">
                 Molecules appear here once your files have been read (step 1).
