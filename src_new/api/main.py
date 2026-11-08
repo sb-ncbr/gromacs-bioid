@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import create_engine, func, text
@@ -62,6 +63,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# The ingress routes /api and /files straight here: without this every JSON
+# payload and the system mmCIF (22 MB text for a 240k-atom run) went out
+# uncompressed. Streams (text/event-stream) are excluded by Starlette.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
 app.include_router(runs_router, prefix="/runs", tags=["runs"])
 app.include_router(runs_router, prefix="/api/v1/runs", tags=["runs"])
