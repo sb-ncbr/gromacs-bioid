@@ -78,7 +78,7 @@ def test_export_writes_are_deferred(tmp_path, monkeypatch):
     N = 40
     segs = [f"seg_{i}" for i in range(N)]
 
-    def stub_system(facade, path, results):
+    def stub_system(facade, path, results, **kwargs):
         path.write_text("data_fake\n")
         results.add_artifact("SYSTEM", path, kind="mmcif")
         results.set_data("exports/system_mmcif", str(path))

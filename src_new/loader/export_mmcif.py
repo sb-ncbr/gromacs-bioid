@@ -55,12 +55,62 @@ def _build_biopython_structure_from_atoms(atoms) -> Structure.Structure:
     return _build_biopython_structure(w)
 
 
+def input_image_positions(universe: MDAnalysis.Universe, displacement) -> "Any | None":
+    """Positions with every molecule back in the periodic image of the input.
+
+    The PBC unwrap (reference="com") makes molecules whole and moves each
+    one's centre into the primary cell. For the 3D view that second move is
+    wrong whenever a molecule sat outside the cell next to its partner: a
+    crystal ligand at x = -1.9 A went to +53.0 A, out of its pocket (3PTB).
+    Per fragment (bonded molecule; residues without bonds), the whole-lattice
+    part of the recorded displacement is undone: atoms of a molecule that was
+    whole in the input return exactly to their input positions, and a
+    molecule split by the box stays whole, in the image most of its atoms
+    had. Identification never reads these positions. None when nothing moves.
+    """
+    import numpy as np
+
+    if displacement is None:
+        return None
+    disp = np.asarray(displacement, dtype=np.float64)
+    if disp.shape != (len(universe.atoms), 3):
+        return None
+    dims = _get_universe_dimensions(universe)
+    if dims is None or not np.all(np.asarray(dims[:3], dtype=float) > 0):
+        return None
+    from MDAnalysis.lib.mdamath import triclinic_vectors
+
+    box = np.asarray(triclinic_vectors(dims), dtype=np.float64)  # rows = cell vectors
+    inv = np.linalg.inv(box)
+    try:
+        groups = [f.indices for f in universe.atoms.fragments] if len(universe.bonds) else None
+    except Exception:  # noqa: BLE001 — no bonds topology
+        groups = None
+    if groups is None:
+        groups = [r.atoms.indices for r in universe.residues]
+    pos = universe.atoms.positions.astype(np.float64)
+    moved = 0
+    for idx in groups:
+        if len(idx) == 0:
+            continue
+        n = np.rint(disp[idx].mean(axis=0) @ inv)
+        if np.any(n):
+            pos[idx] -= n @ box
+            moved += 1
+    if not moved:
+        return None
+    logger.info(f"System export: {moved} molecules returned to their input periodic image")
+    return pos.astype(np.float32)
+
+
 def _build_biopython_structure(universe: MDAnalysis.Universe, filter_segment: str | None = None,
-                               residue_ids: dict | None = None) -> Structure.Structure:
+                               residue_ids: dict | None = None, positions=None) -> Structure.Structure:
     """Build a Biopython Structure from an MDAnalysis Universe.
 
     residue_ids, when given, is filled with atom index -> (chain id,
-    written auth_seq_id, insertion code) for the G9 residue-range selectors."""
+    written auth_seq_id, insertion code) for the G9 residue-range selectors.
+    positions, when given, replaces the universe positions (indexed by atom
+    index; input_image_positions)."""
     if not BIOPYTHON_AVAILABLE:
         raise ImportError("Biopython is required for mmCIF export. Install with: pip install biopython")
     
@@ -103,7 +153,10 @@ def _build_biopython_structure(universe: MDAnalysis.Universe, filter_segment: st
             cached_residues[rindex] = residue
             chain.add(residue)
         
-        pos = atom.position if hasattr(atom, 'position') else [0.0, 0.0, 0.0]
+        if positions is not None:
+            pos = positions[atom.index]
+        else:
+            pos = atom.position if hasattr(atom, 'position') else [0.0, 0.0, 0.0]
         bp_atom = Atom.Atom(
             atom_name, pos, 0.0, 0.0, '.', atom_name, atom.index, element=element.upper()
         )
@@ -272,8 +325,12 @@ def _segment_selectors(facade: LoadedUniverse, residue_ids: dict | None = None) 
     return selectors
 
 
-def export_system_mmcif(facade: LoadedUniverse, output_path: Path, results: ResultsManager | None = None) -> Path:
-    """Export the whole system to mmCIF."""
+def export_system_mmcif(facade: LoadedUniverse, output_path: Path, results: ResultsManager | None = None,
+                        unwrap_displacement=None) -> Path:
+    """Export the whole system to mmCIF.
+
+    unwrap_displacement: the per-atom PBC-unwrap displacement (PbcRepair);
+    molecules are written in their input periodic image (input_image_positions)."""
     if not BIOPYTHON_AVAILABLE:
         raise ImportError("Biopython is required for mmCIF export. Install with: pip install biopython")
     
@@ -281,7 +338,12 @@ def export_system_mmcif(facade: LoadedUniverse, output_path: Path, results: Resu
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     residue_ids: dict = {}
-    structure = _build_biopython_structure(facade.universe, residue_ids=residue_ids)
+    try:
+        positions = input_image_positions(facade.universe, unwrap_displacement)
+    except Exception as exc:  # noqa: BLE001 — display aid; never fail the export
+        logger.warning(f"Input-image positions skipped: {exc}")
+        positions = None
+    structure = _build_biopython_structure(facade.universe, residue_ids=residue_ids, positions=positions)
     
     # Use MMCIFIOWithCell to preserve box dimensions
     cell = _get_universe_dimensions(facade.universe)

@@ -357,7 +357,7 @@ def _unwrap_periodic_boundaries(context):
 
     return StepResult(
         summary={"unwrapped": report.unwrapped, "jumps_detected": report.jumps_detected},
-        context_updates={"pbc_report": report}
+        context_updates={"pbc_report": report, "unwrap_displacement": pbc.unwrap_displacement}
     )
 
 
@@ -1527,7 +1527,8 @@ def _export_results(context):
         # Export whole system
         system_path = output_dir / "system.mmcif"
         try:
-            export_system_mmcif(facade, system_path, context.results)
+            export_system_mmcif(facade, system_path, context.results,
+                                unwrap_displacement=context.get_value("unwrap_displacement"))
         except Exception as exc:
             logger.warning(f"Whole-system export failed: {exc}")
             context.add_warning("system_export_failed", str(exc))

@@ -81,6 +81,13 @@ class PbcRepair:
         self.u = universe
         self.config = config
         self.loader_config = config.loader
+        # Per-atom displacement applied by the unwrap (after - before), for
+        # the whole-system export only (export_mmcif.input_image_positions):
+        # unwrap(reference="com") moves every fragment's centre into the
+        # primary cell, which pulls a bound ligand out of its pocket in the
+        # 3D view (3PTB benzamidine +54.89 A, one cell length). None when
+        # nothing was unwrapped.
+        self.unwrap_displacement = None
 
     def run(self) -> PbcRepairReport:
         """Run periodic boundary unwrapping and jump detection."""
@@ -127,6 +134,7 @@ class PbcRepair:
             report.metal_coordination_bonds = (
                 bond_stranded_residue_metals(self.u))
 
+            before = self.u.atoms.positions.copy()
             # Try unwrapping with configured reference
             try:
                 ag.unwrap(
@@ -156,6 +164,12 @@ class PbcRepair:
         except Exception as exc:
             report.error = str(exc)
             report.warnings.append(f"PBC unwrapping failed: {exc}")
+
+        if report.unwrapped:
+            try:
+                self.unwrap_displacement = self.u.atoms.positions - before
+            except Exception:  # noqa: BLE001 — display aid only
+                self.unwrap_displacement = None
 
         # A-17.1 (red-team 3.7) / BH-052: lock the corrected frame into a
         # mutable single-frame snapshot. Never use transfer_to_memory for
