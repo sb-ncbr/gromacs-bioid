@@ -218,13 +218,17 @@ export type RunSummaryWithTitle = RunSummaryResponse & {
 };
 
 /** Static run summary (title, counts). Fetched once; no polling. */
-export function useRunSummary(runId?: string): UseQueryResult<RunSummaryWithTitle> {
+export function useRunSummary(runId?: string, live = false): UseQueryResult<RunSummaryWithTitle> {
   return useQuery({
     queryKey: ["runSummary", runId],
     queryFn: () => api.get<RunSummaryWithTitle>(endpoints.run(runId!)),
     enabled: !!runId,
-    staleTime: 30_000,
+    staleTime: 2000,
     retry: retryUnless404,
+    // Polled while live too: started/finished times and the final status
+    // come from here (it was fetched once, so a page opened mid-run never
+    // learned the run had finished).
+    refetchInterval: payloadRefetchInterval(live),
   });
 }
 

@@ -5,7 +5,7 @@
  * Selection lives in the `?segment=` URL param so links/deep-selects work
  * and polling never resets it.
  */
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle, Skeleton } from "@e-infra/design-system";
@@ -32,7 +32,7 @@ import {
   type SignaturesResponse,
   type VerificationResponse,
 } from "../features/results/hooks";
-import { adapt, type ApiBundle, type ViewModel } from "../features/results/viewmodel";
+import { adapt, elapsed, type ApiBundle, type ViewModel } from "../features/results/viewmodel";
 import { MoleculeList, defaultSelection } from "../features/results/list";
 import { Stage } from "../features/results/stage";
 import { SystemStage, SYSTEM_SELECTION } from "../features/results/stage/SystemStage";
@@ -85,10 +85,34 @@ export default function RunResultsPage() {
 
   /* ---------- Data hooks (adaptive polling: 10–15 s while live, §2) --- */
   const statusQ = useRunStatus(runId);
-  const summaryQ = useRunSummary(runId);
   const pStatus = pipelineStatus(statusQ.data);
   const live = isLive(pStatus);
   const pending = isPending(pStatus);
+  const summaryQ = useRunSummary(runId, live);
+
+  // The elapsed time is derived from "now"; the view model only recomputes
+  // when data changes, so without a tick it froze between polls ("0 s
+  // elapsed" 40 s into a run). Only the elapsed value ticks, not the model.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!live) return;
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [live]);
+
+  // Payload queries poll while live and stop at the terminal status; their
+  // last poll predates the final writes (verification, exports, render).
+  // Fetch everything once more when the run ends while the page is open.
+  const wasLive = useRef(false);
+  useEffect(() => {
+    if (live) wasLive.current = true;
+    else if (wasLive.current && pStatus) {
+      wasLive.current = false;
+      void queryClient.invalidateQueries({
+        predicate: (q) => Array.isArray(q.queryKey) && q.queryKey.includes(runId) && q.queryKey[0] !== "runStatus",
+      });
+    }
+  }, [live, pStatus, runId, queryClient]);
 
   const queueQ = useRunQueue(runId, pending);
   const moleculesQ = useRunMolecules(runId, live);
@@ -264,7 +288,7 @@ export default function RunResultsPage() {
       <StatusStrip
         runStatus={vm.run.status}
         progress={vm.progress}
-        elapsedS={vm.run.elapsed_s}
+        elapsedS={live ? elapsed(vm.run.status, vm.run.started_at, vm.run.finished_at, now) : vm.run.elapsed_s}
         notes={vm.notes}
         hiddenNoteCount={vm.hidden_note_count}
         molecules={molecules}

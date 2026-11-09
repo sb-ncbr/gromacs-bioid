@@ -140,14 +140,16 @@ export interface AdapterOptions {
 
 function runStatus(bundle: ApiBundle): RunStatus {
   if (bundle.queue?.state === "queued") return "queued";
-  const s = bundle.summary?.status ?? bundle.status?.pipeline?.status ?? "pending";
+  // The polled status first: the summary is fetched less often, and a page
+  // opened mid-run kept "Running" after the run had finished (live 6b21b4ec).
+  const s = bundle.status?.pipeline?.status ?? bundle.summary?.status ?? "pending";
   if (s === "success") return "finished";
   if (s === "failed" || s === "error" || s === "cancelled") return "failed";
   return "running";
 }
 
 function isCancelled(bundle: ApiBundle): boolean {
-  return (bundle.summary?.status ?? bundle.status?.pipeline?.status) === "cancelled";
+  return (bundle.status?.pipeline?.status ?? bundle.summary?.status) === "cancelled";
 }
 
 function basename(path: string): string {

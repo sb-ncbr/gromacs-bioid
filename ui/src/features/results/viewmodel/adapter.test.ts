@@ -277,3 +277,19 @@ describe("running run: rows follow per-segment progress (G2)", () => {
     expect(vm.molecules.map((m) => m.status)).toEqual(["searched", "searching"]);
   });
 });
+
+describe("run status comes from the polled status first", () => {
+  it("finished status beats a stale running summary", () => {
+    const vm = adapt({
+      runId: "6b21b4ec-0000",
+      summary: { status: "running" },
+      status: { pipeline: { status: "success" }, tasks: [], warnings: [], critical_errors: [] },
+      molecules: { segments: [], segment_meta: {} },
+      signatures: null,
+      verification: [],
+      queue: null,
+      files: null,
+    });
+    expect(vm.run.status).toBe("finished");
+  });
+});
