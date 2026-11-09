@@ -1,0 +1,77 @@
+# One-shot Job: build a UniRef50 BLAST protein database on the shared
+# databases PVC (new path only: /app/databases/.staging/uniref50-<stamp>,
+# symlinked as /app/databases/uniref50 when complete). Nothing existing is
+# touched; until the symlink exists the blast_uniref50 resolver is inactive.
+# Download is verified (size + gzip -t) before makeblastdb, so a truncated
+# transfer can never produce a partial database.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bat3-uniref50-blastdb-20261109
+  namespace: ceitec-biodata-ns
+  labels:
+    app: bat3-uniref50-blastdb
+spec:
+  ttlSecondsAfterFinished: 172800
+  activeDeadlineSeconds: 28800
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: bat3-uniref50-blastdb
+    spec:
+      restartPolicy: Never
+      securityContext:
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: uniref50-blastdb
+          image: "cerit.io/tomsko/bat3-validation-api@sha256:ae8df43f3f2e144c12c4fc832305135e83fe53112b7ea9a66a093c168a857645"
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              URL=https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz
+              STAMP=$(date +%Y%m%d-%H%M%S)
+              DST=/app/databases/.staging/uniref50-$STAMP
+              mkdir -p "$DST"
+              cd "$DST"
+              curl -fsSI "$URL" > headers.txt
+              want=$(awk 'tolower($1)=="content-length:"{print $2}' headers.txt | tr -d '\r' | tail -1)
+              curl -fsSL --retry 5 --retry-delay 30 -C - -o uniref50.fasta.gz "$URL"
+              have=$(stat -c %s uniref50.fasta.gz)
+              echo "size want=$want have=$have"
+              [ "$want" = "$have" ]
+              gzip -t uniref50.fasta.gz
+              zcat uniref50.fasta.gz | makeblastdb -in - -dbtype prot -parse_seqids \
+                -title "UniRef50 $(awk 'tolower($1)=="last-modified:"{$1="";print}' headers.txt | tr -d '\r')" \
+                -out "$DST/uniref50"
+              blastdbcmd -db "$DST/uniref50" -info | tee info.txt
+              blastdbcmd -db "$DST/uniref50" -entry UniRef50_P00760 | head -2
+              rm -f uniref50.fasta.gz
+              ln -sfn ".staging/uniref50-$STAMP" /app/databases/uniref50
+              ls -la /app/databases/uniref50/
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsUser: 1000
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+            limits:
+              cpu: "4"
+              memory: 16Gi
+          volumeMounts:
+            - name: databases-data
+              mountPath: /app/databases
+      volumes:
+        - name: databases-data
+          persistentVolumeClaim:
+            claimName: bat3-databases-data-ceitec

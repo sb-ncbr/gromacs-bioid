@@ -1,0 +1,69 @@
+# One-shot Job: build the SIFTS, SwissLipids and ChEBI SQLite indexes for
+# the supplementary resolvers (new paths only: /app/databases/{sifts,
+# swisslipids,chebi}/). Each index is written to *.tmp and renamed into
+# place only when complete (scripts/build_reference_indexes.py); until then
+# the resolver is inactive. Re-apply (new name) to refresh.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bat3-reference-indexes-20261109
+  namespace: ceitec-biodata-ns
+  labels:
+    app: bat3-reference-indexes
+spec:
+  ttlSecondsAfterFinished: 172800
+  activeDeadlineSeconds: 7200
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: bat3-reference-indexes
+    spec:
+      restartPolicy: Never
+      securityContext:
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: reference-indexes
+          image: "IMAGE"
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -eux
+              DL=/app/databases/.staging/reference-$(date +%Y%m%d-%H%M%S)
+              mkdir -p "$DL" /app/databases/sifts /app/databases/swisslipids /app/databases/chebi
+              cd "$DL"
+              get() { curl -fsSL --retry 5 --retry-delay 20 -o "$1" "$2"; gzip -t "$1"; }
+              get sifts.tsv.gz https://ftp.ebi.ac.uk/pub/databases/msd/sifts/flatfiles/tsv/pdb_chain_uniprot.tsv.gz
+              get lipids.tsv.gz "https://www.swisslipids.org/api/file.php?cas=download_files&file=lipids.tsv"
+              get compounds.tsv.gz https://ftp.ebi.ac.uk/pub/databases/chebi/flat_files/compounds.tsv.gz
+              get structures.tsv.gz https://ftp.ebi.ac.uk/pub/databases/chebi/flat_files/structures.tsv.gz
+              B="python /app/scripts/build_reference_indexes.py"
+              $B sifts sifts.tsv.gz /app/databases/sifts/sifts.sqlite
+              $B swisslipids lipids.tsv.gz /app/databases/swisslipids/swisslipids.sqlite
+              $B chebi compounds.tsv.gz structures.tsv.gz /app/databases/chebi/chebi.sqlite
+              ls -la /app/databases/sifts /app/databases/swisslipids /app/databases/chebi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsUser: 1000
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 6Gi
+          volumeMounts:
+            - name: databases-data
+              mountPath: /app/databases
+      volumes:
+        - name: databases-data
+          persistentVolumeClaim:
+            claimName: bat3-databases-data-ceitec

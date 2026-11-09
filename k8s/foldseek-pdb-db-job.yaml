@@ -1,0 +1,64 @@
+# One-shot Job: seed a local Foldseek PDB database next to the existing
+# AlphaFold/Swiss-Prot one (new prefix only: /app/databases/foldseek/pdb*,
+# built in a staging dir and moved in when complete). The existing
+# /app/databases/foldseek/swissprot* files are not touched; until pdb.dbtype
+# exists the foldseek_pdb resolver is inactive.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bat3-foldseek-pdb-db-20261109
+  namespace: ceitec-biodata-ns
+  labels:
+    app: bat3-foldseek-pdb-db
+spec:
+  ttlSecondsAfterFinished: 172800
+  activeDeadlineSeconds: 14400
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: bat3-foldseek-pdb-db
+    spec:
+      restartPolicy: Never
+      securityContext:
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: foldseek-pdb-db
+          image: "cerit.io/tomsko/bat3-validation-api@sha256:ae8df43f3f2e144c12c4fc832305135e83fe53112b7ea9a66a093c168a857645"
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -eux
+              STAGE=/app/databases/.staging/foldseek-pdb-$(date +%Y%m%d-%H%M%S)
+              mkdir -p "$STAGE" /tmp/foldseek-tmp
+              foldseek databases PDB "$STAGE/pdb" /tmp/foldseek-tmp
+              ls -la "$STAGE"
+              head -3 "$STAGE/pdb.lookup" || true
+              [ -e /app/databases/foldseek/pdb.dbtype ] && { echo "pdb already present"; exit 1; }
+              for f in "$STAGE"/pdb*; do mv "$f" /app/databases/foldseek/; done
+              ls -la /app/databases/foldseek/
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsUser: 1000
+          resources:
+            requests:
+              cpu: "4"
+              memory: 8Gi
+            limits:
+              cpu: "8"
+              memory: 32Gi
+          volumeMounts:
+            - name: databases-data
+              mountPath: /app/databases
+      volumes:
+        - name: databases-data
+          persistentVolumeClaim:
+            claimName: bat3-databases-data-ceitec
