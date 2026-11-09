@@ -420,3 +420,35 @@ def test_second_pass_runs_deferred_after_all_supplementary(tmp_path, monkeypatch
                                  lambda: False)
     assert calls == [("supp", "KA"), ("supp", "KB"), ("slow", "KA"), ("slow", "KB")]
     assert [o["fragment_name"] for o in out] == ["A", "B"]
+
+
+def test_deferred_evidence_does_not_take_regular_window_slots(tmp_path):
+    """M01 (run 032d9704): nr finishing in the second pass must not push
+    first-pass UniProt groups out of the 100-slot window."""
+    def seed(results, with_nr):
+        _seed(results, 150, None)
+        if with_nr:
+            results.set_data("identifiers/S/fasta_map_protein/blast_nr_protein", {
+                "signature": SEQ, "hit_type": "identity",
+                "hits": [f"NR{i:04d}" for i in range(60)],
+                "ident_type": "NR_ID", "signature_type": "residue_sequence_protein"})
+
+    def verified_ids(results, deferred):
+        mgr = _manager()
+        mgr.config = RunConfig()
+        mgr.config.identifiers.deferred_resolvers = deferred
+        mgr.verify_all(results, deadline_epoch=time.time() + 300)
+        return [h["identifier"] for h in results.get_data("verification/S/verified_hits")]
+
+    plain = ResultsManager(tmp_path / "a.json")
+    seed(plain, False)
+    base = verified_ids(plain, "blast_nr_protein")
+    with_nr = ResultsManager(tmp_path / "b.json")
+    seed(with_nr, True)
+    ids = verified_ids(with_nr, "blast_nr_protein")
+    assert set(base) <= set(ids)
+    assert sum(i.startswith("NR") for i in ids) == 20
+    # not deferred (the historical behaviour): nr competes for the window
+    hist = ResultsManager(tmp_path / "c.json")
+    seed(hist, True)
+    assert not set(base) <= set(verified_ids(hist, ""))

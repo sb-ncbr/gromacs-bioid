@@ -619,12 +619,24 @@ def _family_interleave(sorted_groups, top_n: int):
     return window, stats
 
 
-def _extend_window(window, deduped_all, structure_only, n_extra: int):
+def _deferred_names(config) -> frozenset:
+    if config is None:
+        return frozenset()
+    from ..identification.registry import deferred_resolver_names
+    try:
+        return deferred_resolver_names(config)
+    except Exception:
+        return frozenset()
+
+
+def _extend_window(window, deduped_all, structure_only, n_extra: int,
+                   second_pass=SUPPLEMENTARY_RESOLVERS):
     """Window for a segment with supplementary evidence.
 
     The regular window keeps its groups and order; each carries the scores
-    of ALL its evidence (supplementary sources can only raise them). Then up
-    to n_extra groups that only supplementary sources produced follow, best
+    of ALL its evidence (second-pass sources can only raise them). Then up
+    to n_extra groups outside it that second-pass sources (supplementary or
+    deferred resolvers) contributed to follow, best
     consensus first, structure-only groups excluded as for the regular
     window. Returns (window, number of appended groups).
     """
@@ -635,7 +647,7 @@ def _extend_window(window, deduped_all, structure_only, n_extra: int):
         if key in keys:
             continue
         sources = {r.split("@", 1)[0] for r in (meta or {}).get("source_resolvers") or []}
-        if not sources or not sources & SUPPLEMENTARY_RESOLVERS or sources <= structure_only:
+        if not sources or not sources & second_pass or sources <= structure_only:
             continue
         extra.append((key, meta))
     extra.sort(key=lambda km: km[1]["consensus_score"], reverse=True)
@@ -800,13 +812,17 @@ class VerificationManager:
             # window is chosen from the regular evidence exactly as before;
             # groups only supplementary sources produced are verified after
             # it. Segments without supplementary hits take the unchanged path.
+            # Deferred resolvers (slow databases moved to the second pass)
+            # are treated the same way: their evidence never takes a slot
+            # the first-pass evidence would have had.
+            second_pass = SUPPLEMENTARY_RESOLVERS | _deferred_names(getattr(self, "config", None))
             supp_hits = [h for h in raw_hits
-                         if h.resolver_name.split("@", 1)[0] in SUPPLEMENTARY_RESOLVERS]
+                         if h.resolver_name.split("@", 1)[0] in second_pass]
             deduped_all = None
             if supp_hits:
                 deduped_all = deduplicate_and_score(raw_hits, structure_mode=_struct_mode)
                 raw_hits = [h for h in raw_hits
-                            if h.resolver_name.split("@", 1)[0] not in SUPPLEMENTARY_RESOLVERS]
+                            if h.resolver_name.split("@", 1)[0] not in second_pass]
             deduped = deduplicate_and_score(raw_hits, structure_mode=_struct_mode)
             if not deduped and not deduped_all:
                 continue
@@ -880,7 +896,7 @@ class VerificationManager:
             if deduped_all is not None:
                 top_groups, window_stats["n_supplementary"] = _extend_window(
                     top_groups, deduped_all, _STRUCT_ONLY,
-                    self._verification_config.verify_top_n_supplementary)
+                    self._verification_config.verify_top_n_supplementary, second_pass)
             # D-03: persist window composition/truncation additively (legacy
             # runs simply lack the key).
             results.set_data(f"verification/{segment}/window", window_stats)
