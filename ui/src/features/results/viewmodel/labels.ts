@@ -14,6 +14,7 @@ export const DB_LABELS: Record<string, string> = {
   pubchem: "PubChem",
   chembl: "ChEMBL",
   chebi: "ChEBI",
+  swisslipids: "SwissLipids",
   alphafold: "AlphaFold DB",
   element: "Element",
 };

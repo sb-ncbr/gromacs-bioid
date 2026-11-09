@@ -20,6 +20,7 @@ const BASE_URLS = {
   chebi: "https://www.ebi.ac.uk/chebi/searchId.do?chebiId=CHEBI:",
   ccd: "https://www.wwpdb.org/data/ccd/",
   alphafind: "https://alphafind.fi.muni.cz/",
+  swisslipids: "https://www.swisslipids.org/#/entity/",
 } as const;
 
 /** Strip the `_CHAIN` suffix from a PDB id (e.g. "1ABC_A" → "1ABC"). */
@@ -80,6 +81,8 @@ export function buildDatabaseUrl(
     case "ALPHAFIND_ID":
     case "ALPHAFIND":
       return `${BASE_URLS.alphafind}${id}`;
+    case "SLM_ID":
+      return `${BASE_URLS.swisslipids}${id}/`;
     default:
       return null;
   }

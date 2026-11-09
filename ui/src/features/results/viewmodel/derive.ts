@@ -123,7 +123,7 @@ export function stateOf(top: HitView | null, hasVerified: boolean): ResultState 
 }
 
 const SEQUENCE_DBS = new Set(["pdb", "pdb_id", "uniprot", "uniprot_id", "alphafold"]);
-const CHEMICAL_DBS = new Set(["pubchem", "pubchem_cid", "chembl", "chebi"]);
+const CHEMICAL_DBS = new Set(["pubchem", "pubchem_cid", "chembl", "chebi", "swisslipids"]);
 
 /** Percent helper: similarity scores are fractions (0–1) or percents. */
 function pct(value: number | null | undefined): number | null {

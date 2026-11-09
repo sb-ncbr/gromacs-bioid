@@ -27,7 +27,7 @@ export interface CatalogCode {
 }
 
 /**
- * Human-readable names for resolver identifiers (v2 catalog, 21 entries).
+ * Human-readable names for resolver identifiers (v2 catalog plus the 2026-11 supplementary databases).
  * Used to translate internal resolver keys into plain-language descriptions.
  */
 export const RESOLVER_HUMAN_NAMES: Record<string, string> = {
@@ -50,6 +50,11 @@ export const RESOLVER_HUMAN_NAMES: Record<string, string> = {
   formula_hfamily: "formula search (host-guest family)",
   mmcif_struct: "mmCIF structure search",
   foldseek_3di: "foldseek structure similarity search (AlphaFold DB)",
+  foldseek_pdb: "foldseek structure similarity search (PDB)",
+  blast_uniref50: "BLAST search of UniRef50",
+  swisslipids: "SwissLipids lookup",
+  chebi_local: "ChEBI lookup",
+  sifts_uniprot: "PDB-to-UniProt mapping (SIFTS)",
   name_ccd: "ligand name lookup (CCD)",
   name_maps: "name lookup",
   name_manual: "manual name lookup",
