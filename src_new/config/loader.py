@@ -203,6 +203,30 @@ class IdentifiersConfig:
     # docs/PLAN_PUBCHEM_MIRROR.md). Default on: auto-degrades with one warning
     # when the DB file is absent at pubchem.local_db_path.
     formula_local: bool = True
+    # Supplementary databases (2026-11-09, UI runs). Declared OFF so a config
+    # that does not name them (the MDDBR evaluation's config_shared.ini)
+    # enables nothing new: an undeclared toggle would read as ON through the
+    # resolver's getattr(..., True) default. config.ini turns them on. They
+    # run in a second identify pass after every existing resolver
+    # (identification/supplementary.py), so they can only add evidence.
+    blast_uniref50: bool = False
+    blast_uniref50_similarity: bool = False
+    foldseek_pdb: bool = False
+    foldseek_pdb_similarity: bool = False
+    swisslipids: bool = False
+    swisslipids_similarity: bool = False
+    chebi_local: bool = False
+    chebi_local_similarity: bool = False
+    # SIFTS: UniProt accessions of identity-matched PDB chains.
+    # "corroborate" adds them as UniProt candidates (PDB sequence evidence);
+    # "xref" only records the cross-reference, scores untouched.
+    sifts_uniprot: bool = False
+    sifts_mode: str = "corroborate"
+    # Local SQLite indexes (scripts/build_reference_indexes.py,
+    # k8s/reference-indexes-job.yaml). A missing file = resolver inactive.
+    sifts_db: str = "/app/databases/sifts/sifts.sqlite"
+    swisslipids_db: str = "/app/databases/swisslipids/swisslipids.sqlite"
+    chebi_db: str = "/app/databases/chebi/chebi.sqlite"
 
 
 @dataclass
@@ -212,6 +236,11 @@ class BlastConfig:
     nr_aa_db: str = "/app/databases/nr/nr"           # non-redundant protein
     swissprot_aa_db: str = "/app/databases/swissprot/swissprot"  # curated protein
     pdb_aa_db: str = "/app/databases/pdbaa/pdbaa"       # PDB protein sequences
+    # UniRef50 (supplementary, blast_uniref50): own threads and per-search
+    # limit, so enabling it changes nothing for the other BLAST databases.
+    uniref50_aa_db: str = "/app/databases/uniref50/uniref50"
+    uniref50_num_threads: int = 1
+    uniref50_timeout_s: int = 900
     pdb_nt_db: str = "/app/databases/pdbnt/pdbnt"       # PDB nucleotide sequences
     core_nt_db: str = "/app/databases/core_nt/core_nt"    # core nucleotide
     nt_db: str = "/app/databases/nt/nt"              # full nucleotide
@@ -305,6 +334,8 @@ class FoldseekConfig:
     # the cluster PVC by a one-shot bootstrap Job). Missing/empty disables
     # local mode; the resolver then falls back to remote (see `mode`).
     db_path: str = "/app/databases/foldseek/swissprot"
+    # Local PDB database (supplementary foldseek_pdb; local only).
+    pdb_db_path: str = "/app/databases/foldseek/pdb"
     # "local" (subprocess vs db_path, falls back to remote on local failure),
     # "remote" (public foldseek REST only), "off" (resolver disabled).
     mode: str = "local"
@@ -336,6 +367,9 @@ class NamesConfig:
 @dataclass
 class VerificationConfig:
     verify_top_n: int = 100
+    # Candidate groups that only supplementary sources produced are verified
+    # AFTER the regular verify_top_n window, at most this many per segment.
+    verify_top_n_supplementary: int = 20
     similarity_top_n: int = 10
     enable_annotation_quality: bool = True
     # v3.142 (1c): bounded live-API enrichment for annotation signals the

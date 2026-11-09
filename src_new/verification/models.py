@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 CHEMICAL_IDENT_TYPES = frozenset({
     "PUBCHEM_CID", "CHEMBL_ID", "CHEBI_ID", "CHEBI", "INCHIKEY",
     "SMILES", "SELFIES", "PUBCHEM_SID",
-    "LM_ID", "LIPIDMAPS_ID", "GLYTOUCAN_ID",
+    "LM_ID", "LIPIDMAPS_ID", "GLYTOUCAN_ID", "SLM_ID",
 })
 
 # Minimum molecule-vs-candidate skeleton Tanimoto for chemical verification.

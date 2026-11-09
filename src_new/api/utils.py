@@ -89,4 +89,6 @@ def build_database_url(identifier: Optional[str], ident_type: Optional[str]) -> 
         return f"https://www.ebi.ac.uk/chebi/searchId.do?chebiId=CHEBI:{chebi_id}"
     if ident_upper in ("ALPHAFOLD_ID", "ALPHAFOLD"):
         return f"https://alphafold.ebi.ac.uk/entry/{identifier}"
+    if ident_upper == "SLM_ID":
+        return f"https://www.swisslipids.org/#/entity/{identifier}/"
     return None

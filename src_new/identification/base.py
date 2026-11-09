@@ -47,6 +47,9 @@ class IdentifierResolver(ABC):
     name: str = ""
     identifier_type: str = ""  # e.g. "PDB_ID", "CHEMBL_ID"
     accepted_signatures: list[str] = []  # e.g. ["smiles", "inchikey"]
+    # Supplementary resolvers run in a second identify pass after all regular
+    # ones (identification/supplementary.py); never in get_default_resolvers.
+    supplementary: bool = False
 
     def __init__(self, config: RunConfig) -> None:
         """Initialize the resolver with configuration.

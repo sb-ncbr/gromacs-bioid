@@ -186,7 +186,7 @@ class CompoundSignatureFetcher(SignatureFetcher):
     """Fetches canonical SMILES for compound identifiers."""
     
     SUPPORTED_TYPES = {"PUBCHEM_CID", "CHEMBL_ID", "CHEBI_ID", "INCHIKEY", "INCHI_KEY",
-                       "LM_ID", "LIPIDMAPS_ID"}
+                       "LM_ID", "LIPIDMAPS_ID", "SLM_ID"}
     
     def supports(self, ident_type: str) -> bool:
         """Check if this fetcher supports the given identifier type."""
@@ -209,6 +209,8 @@ class CompoundSignatureFetcher(SignatureFetcher):
                 return self._fetch_inchikey(identifier)
             if norm in ("LM_ID", "LIPIDMAPS_ID"):
                 return self._fetch_lipidmaps(identifier)
+            if norm == "SLM_ID":
+                return self._fetch_swisslipids(identifier)
             if ident_type == "PUBCHEM_CID":
                 return self._fetch_pubchem(identifier)
             elif ident_type == "CHEMBL_ID":
@@ -380,6 +382,18 @@ class CompoundSignatureFetcher(SignatureFetcher):
         else:
             logger.warning(f"ChEBI {chebi_id} fetch SMILES failed")
         return smiles
+
+    @staticmethod
+    def _fetch_swisslipids(slm_id: str) -> str | None:
+        """SMILES of a SwissLipids entry from the local index (no network).
+
+        The fetcher has no run config; it reads the deployment path, which is
+        where swisslipids (the only SLM_ID source) reads it too.
+        """
+        from ...config.loader import IdentifiersConfig
+        from ...identification.reference_indexes import swisslipids_record
+        rec = swisslipids_record(IdentifiersConfig.swisslipids_db, slm_id)
+        return rec[3] if rec and rec[3] else None
 
     def _fetch_lipidmaps(self, lm_id: str) -> str | None:
         """Fetch the SMILES for a LipidMaps LM_ID via the LMSD REST API.

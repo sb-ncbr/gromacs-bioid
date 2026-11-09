@@ -133,6 +133,7 @@ class IdentifierResolutionManager:
         working_directory: str = "",
         errors: list[dict] | None = None,
         deadline_epoch: float | None = None,
+        merge_attempted: bool = False,
     ) -> bool:
         """Attempt identity then similarity resolution for one signature.
 
@@ -146,6 +147,9 @@ class IdentifierResolutionManager:
             deadline_epoch: Optional wall-clock deadline (time.time() seconds);
                 when exceeded, no further resolvers are invoked (cooperative
                 stage-time-budget policy, wave-3 stall fix).
+            merge_attempted: Append to an existing ``attempted`` list instead
+                of replacing it (the supplementary second pass resolves the
+                same generator again with other resolvers).
 
         Returns:
             True if any hit was found, False otherwise.
@@ -331,10 +335,13 @@ class IdentifierResolutionManager:
         
         # Record attempted resolvers
         if attempted_resolvers:
-            results.set_data(
-                f"identifiers/{segment}/{signature_generator_name}/attempted",
-                attempted_resolvers
-            )
+            attempted_path = f"identifiers/{segment}/{signature_generator_name}/attempted"
+            if merge_attempted:
+                previous = results.get_data(attempted_path) or []
+                if isinstance(previous, list):
+                    attempted_resolvers = previous + [
+                        r for r in attempted_resolvers if r not in previous]
+            results.set_data(attempted_path, attempted_resolvers)
         
         return hits_found
     

@@ -167,4 +167,17 @@ def _raw_display_name(hit: dict) -> Optional[str]:
         return element_name(identifier)
     if ident_type in ("PUBCHEM_CID", "INCHIKEY"):
         return _pubchem_name(ident_type, identifier)
+    if ident_type == "SLM_ID":
+        return _swisslipids_name(identifier)
     return None
+
+
+def _swisslipids_name(identifier: str) -> Optional[str]:
+    """SwissLipids name from the local index (no scorer records one)."""
+    try:
+        from ..config.loader import IdentifiersConfig
+        from ..identification.reference_indexes import swisslipids_record
+        rec = swisslipids_record(IdentifiersConfig.swisslipids_db, identifier)
+    except Exception:
+        return None
+    return rec[2] if rec and rec[2] else None

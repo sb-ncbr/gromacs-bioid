@@ -1211,6 +1211,27 @@ def _identify_molecules(context):
             for path, value in result["results"].items():
                 context.results.set_data(path, value)
     
+    # Supplementary databases (2026-11-09): a second pass over the same
+    # representatives, after every regular resolver has run, on whatever is
+    # left of the stage budget. Only adds listings; returns [] (no-op) when
+    # no supplementary resolver is enabled, e.g. under the evaluation config.
+    # Never on a budget cut (the merge grace above is for pass-1 partials).
+    if not budget_hit and not _budget_exceeded(context):
+        from ..identification.supplementary import run_supplementary_pass
+        with _deferred_writes(context.results):
+            for supp in run_supplementary_pass(
+                    context.results, items_serial, context.config, sig_type_map,
+                    str(getattr(context, "working_directory", "") or ""), budget_deadline(context),
+                    lambda: _budget_exceeded(context)):
+                for error in supp["errors"]:
+                    context.add_warning(
+                        "identifier_resolver_failed",
+                        f"{error.get('resolver', 'unknown')} ({error.get('generator', 'unknown')}): "
+                        f"{error.get('error', 'unknown error')}",
+                        details={"segment": supp["fragment_name"],
+                                 "service": error.get("resolver", "unknown"),
+                                 "generator": error.get("generator", "unknown")})
+
     # A7 (BH-046) / W3.1-3: members inherit the group's identifiers (one
     # payload per group; _shared_with records the representative name).
     # Runs INSIDE the deferred-writes window — per-member flushes were the

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 from .base import VerificationWorker, SignatureFetcher, AnnotationQualityScorer, TransientFetchError
 from .dedup import RawHit, collect_hits, deduplicate_and_score, BELIEF_RHO, BELIEF_KAPPA
+from ..identification.supplementary import SUPPLEMENTARY_RESOLVERS
 from .fetchers.compound_fetcher import resolve_cids_offline
 from .models import VerifiedHit, VerificationScore, AnnotationQuality, similarity_meets_floor
 
@@ -445,6 +446,7 @@ def _database_name(ident_type: str) -> str:
         "PUBCHEM_CID": "pubchem", "INCHIKEY": "pubchem",
         "PUBCHEM_FORMULA": "pubchem", "PUBCHEM_STRUCT": "pubchem",
         "CHEMBL_ID": "chembl",
+        "SLM_ID": "swisslipids",
     }
     return _MAP.get(ident_type, ident_type.replace("_ID", "").lower())
 
@@ -541,7 +543,7 @@ def _ident_family(ident_type: str) -> str:
     if it in ("NR_ID", "NT_ID", "CORE_NT_ID"):
         return "ncbi"
     if it in CHEMICAL_IDENT_TYPES or it.startswith("CHEBI") or it in (
-            "LM_ID", "GLYTOUCAN_ID", "LIPIDMAPS_ID"):
+            "LM_ID", "GLYTOUCAN_ID", "LIPIDMAPS_ID", "SLM_ID"):
         return "chemical"
     _FAMILIES = {
         "PDB_ID": "pdb",
@@ -615,6 +617,30 @@ def _family_interleave(sorted_groups, top_n: int):
         "n_dropped_by_type": {fam: len(q) for fam, q in families.items() if q},
     }
     return window, stats
+
+
+def _extend_window(window, deduped_all, structure_only, n_extra: int):
+    """Window for a segment with supplementary evidence.
+
+    The regular window keeps its groups and order; each carries the scores
+    of ALL its evidence (supplementary sources can only raise them). Then up
+    to n_extra groups that only supplementary sources produced follow, best
+    consensus first, structure-only groups excluded as for the regular
+    window. Returns (window, number of appended groups).
+    """
+    keys = {k for k, _m in window}
+    out = [(k, deduped_all.get(k, m)) for k, m in window]
+    extra = []
+    for key, meta in deduped_all.items():
+        if key in keys:
+            continue
+        sources = {r.split("@", 1)[0] for r in (meta or {}).get("source_resolvers") or []}
+        if not sources or not sources & SUPPLEMENTARY_RESOLVERS or sources <= structure_only:
+            continue
+        extra.append((key, meta))
+    extra.sort(key=lambda km: km[1]["consensus_score"], reverse=True)
+    extra = extra[:max(0, n_extra)]
+    return out + extra, len(extra)
 
 
 def _compose_confidence(
@@ -770,8 +796,19 @@ class VerificationManager:
             _struct_mode = getattr(
                 getattr(getattr(self, "config", None), "identifiers", None),
                 "mmcif_struct_mode", None) or "full"
+            # Supplementary databases (identification/supplementary.py): the
+            # window is chosen from the regular evidence exactly as before;
+            # groups only supplementary sources produced are verified after
+            # it. Segments without supplementary hits take the unchanged path.
+            supp_hits = [h for h in raw_hits
+                         if h.resolver_name.split("@", 1)[0] in SUPPLEMENTARY_RESOLVERS]
+            deduped_all = None
+            if supp_hits:
+                deduped_all = deduplicate_and_score(raw_hits, structure_mode=_struct_mode)
+                raw_hits = [h for h in raw_hits
+                            if h.resolver_name.split("@", 1)[0] not in SUPPLEMENTARY_RESOLVERS]
             deduped = deduplicate_and_score(raw_hits, structure_mode=_struct_mode)
-            if not deduped:
+            if not deduped and not deduped_all:
                 continue
             
             # Sort groups by consensus_score descending (tiebreak mode: a
@@ -825,7 +862,7 @@ class VerificationManager:
             # attribution; the window simply ignores them.
             _STRUCT_ONLY = frozenset({
                 "mmcif_struct", "pdb_struct_protein", "pdb_struct_nucleotide",
-                "foldseek_3di", "alphafind_struct",
+                "foldseek_3di", "alphafind_struct", "foldseek_pdb",
             })
             window_groups = [
                 (k, m) for k, m in sorted_groups
@@ -840,6 +877,10 @@ class VerificationManager:
             top_groups, window_stats = _family_interleave(window_groups, top_n)
             window_stats["n_groups_total"] = len(sorted_groups)
             window_stats["n_structure_only_excluded"] = n_structure_only_excluded
+            if deduped_all is not None:
+                top_groups, window_stats["n_supplementary"] = _extend_window(
+                    top_groups, deduped_all, _STRUCT_ONLY,
+                    self._verification_config.verify_top_n_supplementary)
             # D-03: persist window composition/truncation additively (legacy
             # runs simply lack the key).
             results.set_data(f"verification/{segment}/window", window_stats)

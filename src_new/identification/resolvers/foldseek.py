@@ -86,6 +86,7 @@ class Foldseek3DiResolver(IdentifierResolver):
 
         self.config = config
         self.foldseek_config = config.foldseek
+        self._db_path = self.foldseek_config.db_path
 
         self._binary_available = self._check_binary()
 
@@ -115,7 +116,7 @@ class Foldseek3DiResolver(IdentifierResolver):
             return False
 
     def _local_db_present(self) -> bool:
-        db_path = (self.foldseek_config.db_path or "").strip()
+        db_path = (self._db_path or "").strip()
         if not db_path:
             return False
         return any(
@@ -153,7 +154,7 @@ class Foldseek3DiResolver(IdentifierResolver):
         if not self._local_db_present():
             logger.warning(
                 "Foldseek local DB missing at '%s'; falling back to remote mode",
-                self.foldseek_config.db_path,
+                self._db_path,
             )
             return self._remote_search(signature) or []
 
@@ -199,7 +200,7 @@ class Foldseek3DiResolver(IdentifierResolver):
                 return None
 
             search = subprocess.run(
-                [exe, "search", query_db, self.foldseek_config.db_path, result_db, tmp_dir],
+                [exe, "search", query_db, self._db_path, result_db, tmp_dir],
                 capture_output=True, text=True,
                 timeout=self.foldseek_config.search_timeout_s, cwd=tmp_dir,
             )
@@ -208,7 +209,7 @@ class Foldseek3DiResolver(IdentifierResolver):
                 return None
 
             convert = subprocess.run(
-                [exe, "convertalis", query_db, self.foldseek_config.db_path,
+                [exe, "convertalis", query_db, self._db_path,
                  result_db, output_m8, "--format-output", _M8_FORMAT_OUTPUT],
                 capture_output=True, text=True, timeout=120, cwd=tmp_dir,
             )
@@ -226,6 +227,9 @@ class Foldseek3DiResolver(IdentifierResolver):
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
+    def _normalize_target(self, target: str) -> str | None:
+        return normalize_foldseek_target(target)
+
     def _parse_m8(self, m8_path: str) -> list[tuple[str, float]]:
         """Parse query,target,fident TSV rows into (UniProt acc, 0-100) tuples."""
         results: list[tuple[str, float]] = []
@@ -238,7 +242,7 @@ class Foldseek3DiResolver(IdentifierResolver):
                     parts = line.split("\t")
                     if len(parts) < 3:
                         continue
-                    acc = normalize_foldseek_target(parts[1])
+                    acc = self._normalize_target(parts[1])
                     if acc is None:
                         continue
                     try:
@@ -341,3 +345,70 @@ class Foldseek3DiResolver(IdentifierResolver):
                     if len(results) >= self.foldseek_config.max_target_hits:
                         return results
         return results
+
+
+# PDB targets of `foldseek databases PDB` are entry/assembly/chain names
+# ("1abc-assembly1.cif.gz_A", "1abc_A", "1abc"); the 4-character entry id
+# is what the rest of the pipeline keys PDB hits on.
+_PDB_TARGET_RE = re.compile(r"^([0-9][A-Za-z0-9]{3})(?=$|[-_.\s])")
+
+
+def normalize_foldseek_pdb_target(target: str) -> str | None:
+    m = _PDB_TARGET_RE.match((target or "").strip())
+    return m.group(1).upper() if m else None
+
+
+class FoldseekPDBResolver(Foldseek3DiResolver):
+    """Supplementary: Foldseek structure search against a local PDB database.
+
+    Same input as the AlphaFold/Swiss-Prot search (the Cα model) and the
+    same fident score, reported as PDB entries. Local only: a missing binary
+    or database means no search, never the public server.
+    """
+
+    supplementary = True
+
+    def __init__(self, config: RunConfig) -> None:
+        super().__init__(config)
+        self.name = "foldseek_pdb"
+        self.identifier_type = "PDB_ID"
+        self._db_path = self.foldseek_config.pdb_db_path
+
+    def available(self) -> bool:
+        return self._binary_available and self._local_db_present()
+
+    def _normalize_target(self, target: str) -> str | None:
+        return normalize_foldseek_pdb_target(target)
+
+    def _resolve_similarity(self, signature: str, working_directory: str) -> list[tuple[str, float]]:
+        if (self.foldseek_config.mode or "local").strip().lower() == "off" or not self.available():
+            return []
+        try:
+            return self._local_search(signature, working_directory) or []
+        except Exception as exc:  # a resolver must never kill a run
+            logger.warning(f"Foldseek PDB search raised: {exc}")
+            return []
+
+    def _parse_m8(self, m8_path: str) -> list[tuple[str, float]]:
+        """One row per PDB entry (best chain/assembly), up to max_target_hits."""
+        best: dict[str, float] = {}
+        try:
+            with open(m8_path, "r") as f:
+                for line in f:
+                    parts = line.strip().split("\t")
+                    if len(parts) < 3 or parts[0].startswith("#"):
+                        continue
+                    pdb_id = self._normalize_target(parts[1])
+                    if pdb_id is None:
+                        continue
+                    try:
+                        fident = float(parts[2]) * 100.0
+                    except ValueError:
+                        continue
+                    if pdb_id in best:
+                        best[pdb_id] = max(best[pdb_id], fident)
+                    elif len(best) < self.foldseek_config.max_target_hits:
+                        best[pdb_id] = fident
+        except IOError as exc:
+            logger.error(f"Failed to read M8 output: {exc}")
+        return list(best.items())

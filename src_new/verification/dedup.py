@@ -85,6 +85,15 @@ RESOLVER_SOURCES: dict[str, str] = {
     "alphafind_struct": "alphafind-struct",
     "atom": "atom",
     "name": "name-lookup",
+    # Supplementary databases (identification/supplementary.py). UniRef50 is
+    # built from UniProtKB and local ChEBI is the database idsm_chebi
+    # searches, so neither counts as a new family where those already hit;
+    # SIFTS carries the PDB sequence evidence into the UniProt namespace.
+    "blast_uniref50": "uniprot-seq",
+    "chebi_local": "chebi-structure",
+    "sifts_uniprot": "rcsb-seq",
+    "foldseek_pdb": "foldseek-pdb-struct",
+    "swisslipids": "swisslipids",
 }
 # Sources that emit CANDIDATE LISTS (formula/composition index hits): an
 # "identity" assertion coming exclusively from these is a candidate
@@ -97,7 +106,7 @@ FORMULA_SOURCES = frozenset(
 # belief and may only order equal-consensus rows (corpus c13 item 2).
 _STRUCTURE_MODE_RESOLVERS = frozenset(
     {"mmcif_struct", "pdb_struct_protein", "pdb_struct_nucleotide",
-     "foldseek_3di", "alphafind_struct"})
+     "foldseek_3di", "alphafind_struct", "foldseek_pdb"})
 
 # D-08 pooling: SWISSPROT_ID and UNIPROT_ID name the SAME accession
 # namespace searched by the same source (Swiss-Prot); their rows must pool

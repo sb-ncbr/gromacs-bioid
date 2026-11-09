@@ -263,6 +263,19 @@ class BLASTResolver(IdentifierResolver):
         
         return self._run_blast_similarity(signature, working_directory)
 
+    def _num_threads(self) -> int:
+        return self.blast_config.blastp_num_threads if self.is_protein else self.blast_config.blastn_num_threads
+
+    def _search_timeout_s(self) -> int:
+        return self.blast_config.timeout_s
+
+    def database_present(self) -> bool:
+        try:
+            self._preflight_check()
+        except IdentifierResolutionError:
+            return False
+        return True
+
     def _run_blast_local(self, sequence: str, working_directory: str) -> list[dict] | None:
         """
         Execute BLAST search locally.
@@ -293,9 +306,9 @@ class BLASTResolver(IdentifierResolver):
                 short_search = ['-task', 'blastp-short'] if self.is_protein else ['-task', 'blastn-short']
 
             # Build BLAST command with performance and safety options
-            num_threads = self.blast_config.blastp_num_threads if self.is_protein else self.blast_config.blastn_num_threads
+            num_threads = self._num_threads()
             max_target_seqs = self.blast_config.max_target_seqs
-            timeout_s = self.blast_config.timeout_s
+            timeout_s = self._search_timeout_s()
             
             cmd = [
                 executable_path, 
@@ -334,7 +347,7 @@ class BLASTResolver(IdentifierResolver):
             return json_files
         except subprocess.TimeoutExpired:
             raise IdentifierResolutionError(
-                f"BLAST timed out after {self.blast_config.timeout_s}s. "
+                f"BLAST timed out after {self._search_timeout_s()}s. "
                 f"Database: {self.db_path}. "
                 f"Executable: {executable_path}."
             )
@@ -814,3 +827,53 @@ class BLASTResolverNT(BLASTResolver):
             identifier_type="NT_ID"
         )
 
+
+_UNIREF50_PREFIX = "UniRef50_"
+
+
+def uniref50_accession(accession: str) -> str | None:
+    """UniProt accession of a UniRef50 cluster id; None for UniParc
+    representatives (UniRef50_UPI...), which have no UniProtKB entry."""
+    if not accession.startswith(_UNIREF50_PREFIX):
+        return None
+    acc = accession[len(_UNIREF50_PREFIX):]
+    if not acc or acc.startswith("UPI"):
+        return None
+    return acc.upper()
+
+
+class BLASTResolverUNIREF50(BLASTResolver):
+    """Supplementary: BLAST against UniRef50 (UniProtKB clustered at 50 %).
+
+    Hits are cluster representatives, reported as their UniProt accession.
+    Covers proteins absent from Swiss-Prot and the PDB at a fraction of nr's
+    size. Own thread count and per-search limit ([blast] uniref50_*), so
+    enabling it changes nothing for the other BLAST databases.
+    """
+
+    D14_SCOV_DROPPED = True  # representatives are full-length UniProt entries
+    supplementary = True
+
+    def __init__(self, config: RunConfig) -> None:
+        super().__init__(
+            config=config,
+            db_path=getattr(config.blast, "uniref50_aa_db", ""),
+            is_protein=True,
+            resolver_name="blast_uniref50",
+            identifier_type="UNIPROT_ID",
+        )
+
+    def _num_threads(self) -> int:
+        return self.blast_config.uniref50_num_threads
+
+    def _search_timeout_s(self) -> int:
+        return self.blast_config.uniref50_timeout_s
+
+    def _process_blast_results(self, json_files: list[dict]) -> list[BlastHit]:
+        kept: list[BlastHit] = []
+        for hit in super()._process_blast_results(json_files):
+            accessions = [a for a in (uniref50_accession(x) for x in hit.accessions) if a]
+            if accessions:
+                hit.accessions = accessions
+                kept.append(hit)
+        return kept
