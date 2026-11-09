@@ -222,6 +222,12 @@ class IdentifiersConfig:
     # "xref" only records the cross-reference, scores untouched.
     sifts_uniprot: bool = False
     sifts_mode: str = "corroborate"
+    # Comma-separated resolver names moved from the first identify pass to
+    # the end of the second one: they run after every other search on every
+    # segment, on what is left of the stage budget, so a slow database (nr
+    # at a long per-search limit) cannot starve the searches after it.
+    # Empty = historical order (the evaluation configs do not set it).
+    deferred_resolvers: str = ""
     # Local SQLite indexes (scripts/build_reference_indexes.py,
     # k8s/reference-indexes-job.yaml). A missing file = resolver inactive.
     sifts_db: str = "/app/databases/sifts/sifts.sqlite"

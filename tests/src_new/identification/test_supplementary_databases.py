@@ -365,3 +365,58 @@ def test_swisslipids_display_name_and_link(indexes, monkeypatch):
         "https://www.swisslipids.org/#/entity/SLM:000000651/"
     assert CompoundSignatureFetcher._fetch_swisslipids("SLM:000000651") == "CCC"
     assert CompoundSignatureFetcher._fetch_swisslipids("SLM:404") is None
+
+
+# -- deferred slow resolvers -----------------------------------------------------
+
+def test_deferral_is_off_in_the_evaluation_config():
+    from src_new.identification.registry import deferred_resolver_names, get_default_resolvers
+    cfg = RunConfig.from_ini_path(EVAL_CONFIG)
+    assert deferred_resolver_names(cfg) == frozenset()
+    names = [r.name for r in get_default_resolvers(cfg)]
+    assert names == [r.name for r in get_default_resolvers(cfg, include_deferred=True)]
+
+
+def test_deferred_resolvers_leave_the_first_pass():
+    from src_new.identification.registry import get_default_resolvers, get_deferred_resolvers
+    cfg = RunConfig()
+    cfg.identifiers.deferred_resolvers = "blast_nr_protein, blast_nt"
+    first = {r.name for r in get_default_resolvers(cfg)}
+    assert "blast_nr_protein" not in first and "blast_nt" not in first
+    assert "blast_swissprot_protein" in first
+    assert sorted(r.name for r in get_deferred_resolvers(cfg)) == ["blast_nr_protein", "blast_nt"]
+    ui = RunConfig.from_ini_path(REPO / "config.ini")
+    assert {"blast_nr_protein", "blast_nt", "blast_core_nt"} <= {
+        r.name for r in get_deferred_resolvers(ui)}
+
+
+def test_second_pass_runs_deferred_after_all_supplementary(tmp_path, monkeypatch):
+    from src_new.identification import registry, supplementary
+    from src_new.identification.base import IdentifierResolver
+    calls = []
+
+    class Fake(IdentifierResolver):
+        accepted_signatures = ["inchikey"]
+
+        def __init__(self, name):
+            super().__init__(RunConfig())
+            self.name = name
+
+        def _is_applicable(self, signature):
+            return True
+
+        def _resolve_identity(self, signature, wd):
+            calls.append((self.name, signature))
+            return []
+
+        def _resolve_similarity(self, signature, wd):
+            return []
+
+    monkeypatch.setattr(supplementary, "get_supplementary_resolvers", lambda c: [Fake("supp")])
+    monkeypatch.setattr(registry, "get_deferred_resolvers", lambda c: [Fake("slow")])
+    results = ResultsManager(tmp_path / "r.json")
+    out = run_supplementary_pass(results, [("A", {"inchi_key": "KA"}), ("B", {"inchi_key": "KB"})],
+                                 RunConfig(), {"inchi_key": "inchikey"}, str(tmp_path), None,
+                                 lambda: False)
+    assert calls == [("supp", "KA"), ("supp", "KB"), ("slow", "KA"), ("slow", "KB")]
+    assert [o["fragment_name"] for o in out] == ["A", "B"]

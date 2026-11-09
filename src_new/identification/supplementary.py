@@ -11,7 +11,10 @@ UI runs). They are kept out of get_default_resolvers on purpose:
 - verification picks its window from the existing evidence first and
   verifies groups found only by these sources after it (manager.py).
 
-With none of them enabled run_supplementary_pass does nothing.
+The same pass then runs the resolvers named in [identifiers]
+deferred_resolvers (slow databases such as nr, moved out of the first pass so
+they cannot starve the searches after them). With none of them enabled and
+nothing deferred, run_supplementary_pass does nothing.
 """
 from __future__ import annotations
 
@@ -131,6 +134,46 @@ def derive_sifts_hits(results, segment: str, config: RunConfig) -> int:
     return written
 
 
+def _sweep(results, items, resolvers, config, signature_type_map, working_directory,
+           deadline_epoch, budget_exceeded, after_segment=None) -> dict[str, list[dict]]:
+    """One pass of `resolvers` over every item; errors per segment."""
+    from .cache_manager import ResolverCache
+    from .registry import IdentifierRegistry
+    from .resolution_manager import IdentifierResolutionManager
+
+    manager = IdentifierResolutionManager(IdentifierRegistry(resolvers), config,
+                                          signature_type_map=signature_type_map)
+    cache = ResolverCache(config)
+    errors_by_segment: dict[str, list[dict]] = {}
+    for fragment_name, valid_sigs in items:
+        if budget_exceeded():
+            logger.warning("second identify pass: stage budget exhausted at %s", fragment_name)
+            break
+        errors = errors_by_segment.setdefault(fragment_name, [])
+        seen: set[tuple] = set()
+        for generator_name, signature in (valid_sigs.items() if resolvers else ()):
+            if budget_exceeded():
+                break
+            pair = ((signature_type_map or {}).get(generator_name), signature)
+            if pair in seen:
+                continue
+            seen.add(pair)
+            manager.resolve(
+                results=results,
+                segment=fragment_name,
+                signature_generator_name=generator_name,
+                signature=signature,
+                cache=cache,
+                working_directory=working_directory,
+                errors=errors,
+                deadline_epoch=deadline_epoch,
+                merge_attempted=True,
+            )
+        if after_segment is not None:
+            after_segment(fragment_name)
+    return errors_by_segment
+
+
 def run_supplementary_pass(
     results,
     items: list[tuple[str, dict]],
@@ -140,50 +183,32 @@ def run_supplementary_pass(
     deadline_epoch: float | None,
     budget_exceeded: Callable[[], bool],
 ) -> list[dict]:
-    """Resolve every (segment, signatures) item with the supplementary
-    resolvers, then derive SIFTS listings. Returns per-segment
-    {"fragment_name", "errors"} records; [] when nothing is enabled."""
-    resolvers = get_supplementary_resolvers(config)
-    sifts_on = bool(config.identifiers.sifts_uniprot) and index_available(config.identifiers.sifts_db)
-    if not resolvers and not sifts_on:
-        return []
-    from .cache_manager import ResolverCache
-    from .registry import IdentifierRegistry
-    from .resolution_manager import IdentifierResolutionManager
+    """The second identify pass, in two sweeps over every segment:
+    1. supplementary resolvers, then SIFTS listings;
+    2. the resolvers named in [identifiers] deferred_resolvers (slow
+       databases moved out of the first pass).
+    Returns per-segment {"fragment_name", "errors"} records; [] when
+    nothing is enabled."""
+    from .registry import get_deferred_resolvers
 
-    manager = IdentifierResolutionManager(IdentifierRegistry(resolvers), config,
-                                          signature_type_map=signature_type_map)
-    cache = ResolverCache(config)
-    out: list[dict] = []
-    for fragment_name, valid_sigs in items:
-        if budget_exceeded():
-            logger.warning("supplementary pass: stage budget exhausted at %s", fragment_name)
-            break
-        errors: list[dict] = []
-        if resolvers:
-            seen: set[tuple] = set()
-            for generator_name, signature in valid_sigs.items():
-                if budget_exceeded():
-                    break
-                pair = ((signature_type_map or {}).get(generator_name), signature)
-                if pair in seen:
-                    continue
-                seen.add(pair)
-                manager.resolve(
-                    results=results,
-                    segment=fragment_name,
-                    signature_generator_name=generator_name,
-                    signature=signature,
-                    cache=cache,
-                    working_directory=working_directory,
-                    errors=errors,
-                    deadline_epoch=deadline_epoch,
-                    merge_attempted=True,
-                )
-        if sifts_on:
-            try:
-                derive_sifts_hits(results, fragment_name, config)
-            except Exception as exc:  # never fail the step over a cross-reference
-                logger.warning("SIFTS derivation failed for %s: %s", fragment_name, exc)
-        out.append({"fragment_name": fragment_name, "errors": errors})
-    return out
+    resolvers = get_supplementary_resolvers(config)
+    deferred = get_deferred_resolvers(config)
+    sifts_on = bool(config.identifiers.sifts_uniprot) and index_available(config.identifiers.sifts_db)
+    if not resolvers and not deferred and not sifts_on:
+        return []
+
+    def _sifts(segment: str) -> None:
+        try:
+            derive_sifts_hits(results, segment, config)
+        except Exception as exc:  # never fail the step over a cross-reference
+            logger.warning("SIFTS derivation failed for %s: %s", segment, exc)
+
+    errors: dict[str, list[dict]] = {}
+    if resolvers or sifts_on:
+        errors = _sweep(results, items, resolvers, config, signature_type_map, working_directory,
+                        deadline_epoch, budget_exceeded, _sifts if sifts_on else None)
+    if deferred:
+        for segment, errs in _sweep(results, items, deferred, config, signature_type_map,
+                                    working_directory, deadline_epoch, budget_exceeded).items():
+            errors.setdefault(segment, []).extend(errs)
+    return [{"fragment_name": name, "errors": errors[name]} for name, _s in items if name in errors]

@@ -72,11 +72,28 @@ class IdentifierRegistry:
         return applicable
 
 
-def get_default_resolvers(config: RunConfig) -> list[IdentifierResolver]:
+def deferred_resolver_names(config: RunConfig) -> frozenset[str]:
+    """[identifiers] deferred_resolvers as a set of resolver names."""
+    raw = getattr(config.identifiers, "deferred_resolvers", "") or ""
+    return frozenset(n.strip() for n in raw.split(",") if n.strip())
+
+
+def get_deferred_resolvers(config: RunConfig) -> list[IdentifierResolver]:
+    """The default resolvers named in deferred_resolvers (second pass only)."""
+    names = deferred_resolver_names(config)
+    if not names:
+        return []
+    return [r for r in get_default_resolvers(config, include_deferred=True) if r.name in names]
+
+
+def get_default_resolvers(config: RunConfig, include_deferred: bool = False) -> list[IdentifierResolver]:
     """Get default list of identifier resolvers.
     
     Args:
         config: RunConfig instance for resolver initialization.
+        include_deferred: Keep the resolvers named in [identifiers]
+            deferred_resolvers (by default they are left to the second
+            identify pass, identification/supplementary.py).
         
     Returns:
         List of default IdentifierResolver instances.
@@ -142,4 +159,7 @@ def get_default_resolvers(config: RunConfig) -> list[IdentifierResolver]:
     resolvers.append(NameResolverMAPS(config))
     resolvers.append(NameResolverMANUAL(config))
 
+    deferred = deferred_resolver_names(config)
+    if deferred and not include_deferred:
+        resolvers = [r for r in resolvers if r.name not in deferred]
     return resolvers
