@@ -16,9 +16,18 @@ the name it had. Lookups reuse the sequence fetcher's cached RCSB payloads.
 
 from __future__ import annotations
 
+import os
+import time
 from typing import Optional
 
 from .models import ref_seq_sha1
+
+# Operational knobs (env, deployment-time). Naming is display-only, so every
+# limit errs on the side of keeping the entry title.
+PDB_NAME_LIMIT = int(os.environ.get("BAT3_PDB_NAME_LIMIT", "50"))          # hits per segment
+PDB_NAME_BUDGET_S = float(os.environ.get("BAT3_PDB_NAME_BUDGET_S", "30"))  # wall per segment
+PDB_NAME_RUN_CAP_S = float(os.environ.get("BAT3_PDB_NAME_RUN_CAP_S", "180"))  # wall per run
+PDB_NAME_MAX_FAILURES = 3   # consecutive failed lookups: RCSB is down or slow, stop
 
 
 def matched_entity(records: list[dict], details: Optional[dict]) -> Optional[dict]:
@@ -55,18 +64,26 @@ def entity_name(records: list[dict], details: Optional[dict]) -> tuple[Optional[
     return desc, (rec.get("organism") or None)
 
 
-def name_top_pdb_hits(hits: list, fetch_records, limit: int = 3) -> int:
-    """Rename the first `limit` verified PDB hits in place (display order).
+def name_pdb_hits(hits: list, fetch_records, limit: int = PDB_NAME_LIMIT,
+                  budget_s: float = PDB_NAME_BUDGET_S,
+                  max_failures: int = PDB_NAME_MAX_FAILURES, clock=time.monotonic) -> int:
+    """Rename verified PDB hits in place (display order), within limits.
 
-    Only a name the hit already has (the entry title) is replaced: a hit the
-    annotation scorer could not describe stays unnamed, and the lookup then
-    only touches entries whose RCSB payloads were already fetched.
-    fetch_records(pdb_id) -> list of entity records. Returns how many hits
-    were renamed. Never raises: a failure leaves the hit as it was."""
+    At most `limit` hits and `budget_s` seconds of wall time; stops after
+    `max_failures` consecutive failed lookups (RCSB down or slow). Only a
+    name the hit already has (the entry title) is replaced: a hit the
+    annotation scorer could not describe stays unnamed. fetch_records(pdb_id)
+    -> list of entity records (empty on failure). Returns how many hits were
+    renamed. Never raises: a failure or an exhausted budget leaves the
+    remaining hits as they were.
+    (Until 2026-11-09 only the top 3 were named; the rest of the matches
+    table showed entry titles: "RECRUITING ZINC TO MEDIATE POTENT, ...".)"""
     renamed = 0
     seen = 0
+    failures = 0
+    start = clock()
     for h in hits:
-        if seen >= limit:
+        if seen >= limit or failures >= max_failures or clock() - start >= budget_s:
             break
         if not getattr(h, "is_verified", False) or str(getattr(h, "ident_type", "")).upper() != "PDB_ID":
             continue
@@ -74,7 +91,15 @@ def name_top_pdb_hits(hits: list, fetch_records, limit: int = 3) -> int:
         if not getattr(h, "name", None):
             continue
         try:
-            desc, organism = entity_name(fetch_records(h.identifier), h.similarity_details)
+            records = fetch_records(h.identifier)
+        except Exception:
+            records = []
+        if not records:
+            failures += 1
+            continue
+        failures = 0
+        try:
+            desc, organism = entity_name(records, h.similarity_details)
         except Exception:
             continue
         if desc:

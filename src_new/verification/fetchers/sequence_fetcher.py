@@ -179,30 +179,37 @@ class SequenceSignatureFetcher(SignatureFetcher):
             logger.warning(f"PDB {pdb_id} entry fetch failed: {e}")
             return []
     
-    def pdb_entity_records(self, pdb_id: str) -> list[dict]:
+    def pdb_entity_records(self, pdb_id: str, timeout: int = 30, tries: int = 4,
+                           max_entities: int | None = None) -> list[dict]:
         """Display metadata for every polymer entity of a PDB entry.
 
         Same cached RCSB URLs as _fetch_pdb_entities (entry + one payload per
         polymer entity), so on a verified hit this normally costs no request.
         Each record: entity_id, sequence, description (pdbx_description),
         auth_asym_ids, asym_ids, organism — any field may be None/empty.
-        Empty list on any failure; never raises.
+        Empty list on any failure; never raises. timeout/tries apply to
+        uncached requests (display naming passes short ones); entries with
+        more than max_entities polymer entities return [] (one request each).
         """
         pdb_id = (pdb_id or "").split("_", maxsplit=1)[0].lower()
         if not pdb_id:
             return []
         try:
-            r = rcsb_cache.get_cached(f"https://data.rcsb.org/rest/v1/core/entry/{pdb_id}", timeout=30)
+            r = rcsb_cache.get_cached(f"https://data.rcsb.org/rest/v1/core/entry/{pdb_id}",
+                                      timeout=timeout, tries=tries)
             if r is None:
                 return []
             ids = (r.json().get("rcsb_entry_container_identifiers") or {}).get("polymer_entity_ids") or []
         except Exception:
             return []
+        if max_entities is not None and len(ids) > max_entities:
+            return []
         records = []
         for entity_id in ids:
             try:
                 re_ = rcsb_cache.get_cached(
-                    f"https://data.rcsb.org/rest/v1/core/polymer_entity/{pdb_id}/{entity_id}", timeout=30)
+                    f"https://data.rcsb.org/rest/v1/core/polymer_entity/{pdb_id}/{entity_id}",
+                    timeout=timeout, tries=tries)
                 if re_ is None:
                     continue
                 d = re_.json()

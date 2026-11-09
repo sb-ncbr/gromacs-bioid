@@ -710,6 +710,9 @@ class VerificationManager:
         def _remaining_budget_s():
             return (deadline_epoch - _time.time()) if deadline_epoch is not None else None
 
+        # Wall time spent naming PDB hits in this call (display-only, capped).
+        _pdb_name_spent = [0.0]
+
         # Get all segment names from identifiers data
         identifiers_data = results.get_data("identifiers")
         if not identifiers_data or not isinstance(identifiers_data, dict):
@@ -1267,13 +1270,28 @@ class VerificationManager:
             # F16: fidelity-first presentation order (stored order = display
             # order; ordering-only, deterministic tie-break chain).
             verified_hits = _fidelity_order_hits(verified_hits)
-            # UI pass 2026-11-07: the top PDB hits are named after the matched
+            # UI pass 2026-11-07/09: PDB hits are named after the matched
             # polymer entity (pdbx_description), not the entry's paper title.
-            # Display-only; cached RCSB payloads; any failure keeps the name.
+            # Display-only and fail-safe: short uncached requests without
+            # retries, a per-segment and a per-run wall budget, and never
+            # more than a quarter of what is left of the stage budget above
+            # a 60 s reserve, so naming cannot cause a verification budget
+            # cut. Any failure keeps the entry title.
             try:
                 from .fetchers.sequence_fetcher import SequenceSignatureFetcher
-                from .pdb_entity_names import name_top_pdb_hits
-                name_top_pdb_hits(verified_hits, SequenceSignatureFetcher().pdb_entity_records)
+                from .pdb_entity_names import PDB_NAME_BUDGET_S, PDB_NAME_RUN_CAP_S, name_pdb_hits
+                remaining = _remaining_budget_s()
+                budget = min(PDB_NAME_BUDGET_S, PDB_NAME_RUN_CAP_S - _pdb_name_spent[0])
+                if remaining is not None:
+                    budget = min(budget, (remaining - 60.0) * 0.25)
+                if budget > 0:
+                    fetcher = SequenceSignatureFetcher()
+                    t_name = _time.monotonic()
+                    name_pdb_hits(verified_hits,
+                                  lambda pid: fetcher.pdb_entity_records(
+                                      pid, timeout=8, tries=1, max_entities=12),
+                                  budget_s=budget)
+                    _pdb_name_spent[0] += _time.monotonic() - t_name
             except Exception as exc:
                 logger.warning("pdb entity naming skipped for %s: %s", segment, exc)
             # Store results back to ResultsManager

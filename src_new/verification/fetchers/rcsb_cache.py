@@ -89,7 +89,7 @@ def _polite_get(url: str, timeout: int = 30, tries: int = 4) -> requests.Respons
     return None
 
 
-def get_cached(url: str, timeout: int = 30) -> requests.Response | _CachedResponse | None:
+def get_cached(url: str, timeout: int = 30, tries: int = 4) -> requests.Response | _CachedResponse | None:
     """GET with NFS cache for RCSB URLs.
 
     On cache HIT: return a shim object with .text/.json()/.status_code=200/.raise_for_status() no-op.
@@ -108,7 +108,7 @@ def get_cached(url: str, timeout: int = 30) -> requests.Response | _CachedRespon
         logger.debug(f"RCSB cache HIT: {url}")
         return _CachedResponse(text, data)
 
-    r = _polite_get(url, timeout=timeout)
+    r = _polite_get(url, timeout=timeout, tries=tries)
     if r is None:
         return None
 
