@@ -299,7 +299,14 @@ function buildMolecules(bundle: ApiBundle, status: RunStatus, stageSearch = true
       more,
       rejected,
       descriptor: {
-        sequence: sequence(find("fasta_map_protein")),
+        // Nucleic acids carry theirs under the nucleic generators (the DNA of
+        // a protein–DNA run showed "No sequence was recorded" while the
+        // technical details listed fasta_map_nucleic).
+        sequence:
+          sequence(find("fasta_map_protein")) ??
+          sequence(find("fasta_map_nucleic")) ??
+          sequence(find("fasta_resname_protein")) ??
+          sequence(find("fasta_resname_nucleic")),
         formula: text(find("molecular_formula"), ["formula", "value"]) ?? undefined,
         smiles: text(find("smiles"), ["smiles", "value"]) ?? undefined,
         inchikey: text(find("inchi_key"), ["inchikey", "inchi_key", "value"]) ?? undefined,

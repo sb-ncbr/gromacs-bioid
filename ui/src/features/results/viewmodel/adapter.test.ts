@@ -293,3 +293,19 @@ describe("run status comes from the polled status first", () => {
     expect(vm.run.status).toBe("finished");
   });
 });
+
+describe("sequence for nucleic acids", () => {
+  it("reads fasta_map_nucleic when there is no protein sequence", () => {
+    const vm = adapt({
+      runId: "6b21b4ec-0000",
+      summary: { status: "success" },
+      status: { pipeline: { status: "success" }, tasks: [], warnings: [], critical_errors: [] },
+      molecules: { segments: ["SYSTEM__v1"], segment_meta: { SYSTEM__v1: { type: "nucleic" } } },
+      signatures: { signatures: [{ segment: "SYSTEM__v1", generator: "fasta_map_nucleic", signature: "TGCTTATCAATTTGTTGCA" }] },
+      verification: [],
+      queue: null,
+      files: null,
+    });
+    expect(vm.molecules[0].descriptor.sequence).toBe("TGCTTATCAATTTGTTGCA");
+  });
+});
