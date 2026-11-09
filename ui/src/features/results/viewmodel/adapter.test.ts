@@ -255,3 +255,25 @@ describe("failed run: unreached molecules are not searched, not unidentified", (
     expect(vm.notes.some((n) => n.code === "derived_not_identified")).toBe(false);
   });
 });
+
+describe("running run: rows follow per-segment progress (G2)", () => {
+  it("uses progress.per_segment over the step-level guess", () => {
+    const vm = adapt({
+      runId: "8338ea32-0000",
+      summary: { status: "running" },
+      status: {
+        pipeline: { status: "running" },
+        tasks: [{ task_id: "identify_molecules", status: "running" } as never],
+        warnings: [],
+        critical_errors: [],
+        progress: { molecules_done: 1, molecules_total: 2, per_segment: { a: "searched", b: "searching" } },
+      },
+      molecules: { segments: ["a", "b"], segment_meta: { a: { type: "protein" }, b: { type: "lipid" } } },
+      signatures: null,
+      verification: null,
+      queue: null,
+      files: null,
+    });
+    expect(vm.molecules.map((m) => m.status)).toEqual(["searched", "searching"]);
+  });
+});

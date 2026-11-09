@@ -25,6 +25,13 @@ const BADGE_CLASSES: Record<string, string> = {
   stopped: "border-(--vm-line) text-(--vm-muted)",
 };
 
+/** Badge text while the run is live, by molecule status (follows the list rows). */
+const LIVE_BADGE_TEXT: Partial<Record<Molecule["status"], string>> = {
+  waiting: "Waiting",
+  searching: "Searching databases…",
+  searched: "Checking matches…",
+};
+
 function ConfBadge({ badge }: { badge: BadgeModel }) {
   const Icon = CONFIDENCE_ICONS[badge.kind === "status" ? "searching" : badge.kind === "stopped" ? "not_searched" : badge.kind];
   const colorClass =
@@ -49,7 +56,7 @@ export function AnswerHeader({ molecule, molecules, runStatus, onSelect }: Answe
   const title = headline(molecule, resolved);
   const best = bestLine(molecule, resolved);
   const siblings = resolved ? sameAs(molecules, molecule.id) : [];
-  const badge = badgeOf(molecule, resolved, molecule.status === "searching" ? "Searching databases…" : undefined, stopped);
+  const badge = badgeOf(molecule, resolved, LIVE_BADGE_TEXT[molecule.status], stopped);
   const shown = siblings.slice(0, 5);
   const extra = siblings.length - shown.length;
 

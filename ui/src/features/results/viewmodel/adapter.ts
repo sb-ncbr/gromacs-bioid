@@ -63,7 +63,12 @@ export interface StatusView {
   warnings?: WarningView[];
   critical_errors?: ErrorView[];
   /** G2 additive progress block. */
-  progress?: { molecules_done?: number | null; molecules_total?: number | null } | null;
+  progress?: {
+    molecules_done?: number | null;
+    molecules_total?: number | null;
+    /** segment → "waiting" | "searching" | "searched" (G2). */
+    per_segment?: Record<string, string> | null;
+  } | null;
 }
 
 export interface MetaView {
@@ -238,6 +243,8 @@ function buildMolecules(bundle: ApiBundle, status: RunStatus, stageSearch = true
   const segments = bundle.molecules?.segments ?? [];
   const meta = bundle.molecules?.segment_meta ?? {};
   const searchStage = steps(bundle.status?.tasks ?? [], 0).find((s) => s.key === "search");
+  const perSegment = bundle.status?.progress?.per_segment ?? {};
+  const LIVE_SEGMENT_STATES = new Set(["waiting", "searching", "searched"]);
   const bySeg = new Map((bundle.verification ?? []).map((v) => [v.segment ?? "", v.hits ?? []]));
   const sigs = new Map<string, SignatureView[]>();
   for (const s of bundle.signatures?.signatures ?? []) {
@@ -276,7 +283,15 @@ function buildMolecules(bundle: ApiBundle, status: RunStatus, stageSearch = true
       copies: m.copies ?? 1,
       atoms_per_copy: m.atom_count ?? 0,
       residues_per_copy: m.residue_count ?? null,
-      status: hits != null && status === "finished" ? "done" : statusOf(status, searchStage),
+      // While running, the API's per-molecule progress (G2) beats the
+      // step-level guess: live, "2 of 2 molecules searched" sat above rows
+      // that all still said "Searching databases…".
+      status:
+        hits != null && status === "finished"
+          ? "done"
+          : status === "running" && LIVE_SEGMENT_STATES.has(perSegment[id] ?? "")
+            ? (perSegment[id] as Molecule["status"])
+            : statusOf(status, searchStage),
       result,
       matches,
       more,
