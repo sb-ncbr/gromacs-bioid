@@ -1572,7 +1572,14 @@ async def download_ca_only_pdb(
     return PlainTextResponse(pdb_content, media_type="chemical/x-pdb")
 
 
-def _create_single_rerun(old_run_dir: Path) -> Optional[str]:
+def _rerun_name(old_run_name: str) -> str:
+    """'Name' -> 'Name (re-run)'; 'Title>Description' keeps its description:
+    'Title (re-run)>Description'."""
+    title, sep, desc = old_run_name.partition(TITLE_DESC_SEP)
+    return f"{title.rstrip()} (re-run){sep}{desc}" if sep else f"{old_run_name} (re-run)"
+
+
+def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None) -> Optional[str]:
     """Create a new run reusing the input and config of an existing run.
 
     Copies input files and config.ini (or writes the default config) into a
@@ -1581,6 +1588,8 @@ def _create_single_rerun(old_run_dir: Path) -> Optional[str]:
 
     Args:
         old_run_dir: Path to the existing run directory to re-run.
+        creator_ip: The requester's IP, recorded like a new submission so the
+            rerun appears in their "Your annotations" (GET /runs?mine=1).
 
     Returns:
         The new run id, or None if the run cannot be re-run (missing
@@ -1642,7 +1651,9 @@ def _create_single_rerun(old_run_dir: Path) -> Optional[str]:
         },
     }
     if old_run_name:
-        initial_results["pipeline"]["run_name"] = f"{old_run_name} (re-run)"
+        initial_results["pipeline"]["run_name"] = _rerun_name(old_run_name)
+    if creator_ip:
+        initial_results["pipeline"]["creator_ip"] = creator_ip
 
     with open(new_results_path, "w", encoding="utf-8") as f:
         json.dump(initial_results, f, indent=2)
@@ -1667,7 +1678,7 @@ def _create_single_rerun(old_run_dir: Path) -> Optional[str]:
 
 
 @router.post("/rerun-all", response_model=RerunAllResponse)
-async def rerun_all() -> RerunAllResponse:
+async def rerun_all(request: Request) -> RerunAllResponse:
     """
     Re-run all existing runs by copying their input files and config into new run directories.
 
@@ -1694,7 +1705,7 @@ async def rerun_all() -> RerunAllResponse:
             continue
 
         old_run_id = entry.name
-        new_run_id = _create_single_rerun(entry)
+        new_run_id = _create_single_rerun(entry, creator_ip=_requester_ip(request))
         if new_run_id is None:
             skipped.append(old_run_id)
         else:
@@ -1708,7 +1719,7 @@ async def rerun_all() -> RerunAllResponse:
 
 
 @router.post("/{run_id}/rerun", response_model=RunCreateResponse)
-async def rerun_single_run(run_id: str) -> RunCreateResponse:
+async def rerun_single_run(run_id: str, request: Request) -> RunCreateResponse:
     """
     Re-run a single existing run by copying its input files and config into a
     new run directory and enqueuing a new Celery pipeline task.
@@ -1730,7 +1741,7 @@ async def rerun_single_run(run_id: str) -> RunCreateResponse:
     if not old_run_dir.is_dir():
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
 
-    new_run_id = _create_single_rerun(old_run_dir)
+    new_run_id = _create_single_rerun(old_run_dir, creator_ip=_requester_ip(request))
     if new_run_id is None:
         raise HTTPException(
             status_code=404,
