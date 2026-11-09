@@ -33,6 +33,7 @@ import {
   type HitView,
 } from "./derive";
 import { steps, type TaskView } from "./steps";
+import { splitRunName } from "../../../lib/runName";
 import { notes as groupNotes, unidentifiedNote, type WarningView } from "./notes";
 
 /* ------------------------------------------------------------------ */
@@ -388,7 +389,8 @@ export function adapt(bundle: ApiBundle, options: AdapterOptions = {}): ViewMode
 
   const files = inputFilesOf(bundle.files?.files ?? []);
   const atoms = molecules.reduce((sum, m) => sum + m.atoms_per_copy * m.copies, 0);
-  const rawName = bundle.summary?.run_name ?? (files[0] ? basename(files[0]) : null);
+  const named = splitRunName(bundle.summary?.run_name);
+  const rawName = named.title || (files[0] ? basename(files[0]) : null);
   const progressBlock = bundle.status?.progress ?? null;
 
   return {
@@ -396,6 +398,7 @@ export function adapt(bundle: ApiBundle, options: AdapterOptions = {}): ViewMode
       id: bundle.runId,
       short_id: shortId,
       name: rawName ?? `Run ${shortId}`,
+      description: named.description,
       status,
       cancelled: isCancelled(bundle),
       input: {

@@ -132,6 +132,8 @@ export interface ViewModel {
     id: string;
     short_id: string;
     name: string;
+    /** Text after ">" in the run name ("Title>Description"); null when none. */
+    description: string | null;
     status: RunStatus;
     /** The run was cancelled (shown as stopped, not as an error). */
     cancelled: boolean;

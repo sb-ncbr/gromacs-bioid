@@ -4,6 +4,7 @@
  * coloured Badge (pending gray / running blue / success green / failed red /
  * warning amber). No raw codes, paths or exception text reach the user.
  */
+import { splitRunName } from "../../lib/runName";
 
 export type StatusVariant = "default" | "error" | "secondary" | "outline";
 
@@ -48,7 +49,8 @@ export function runTitle(run: {
   input_kind?: string | null;
   run_id: string;
 }): string {
-  if (run.run_name && run.run_name.trim()) return run.run_name.trim();
+  const { title } = splitRunName(run.run_name);
+  if (title) return title;
   if (run.input_kind && run.input_kind.trim()) {
     return run.input_kind
       .replace(/[_-]+/g, " ")

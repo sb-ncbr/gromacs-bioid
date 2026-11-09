@@ -120,6 +120,7 @@ export function RunHeader({ run, runStatus, downloads, onCopyLink, onCancel, onR
           })}
         </div>
       </div>
+      {run.description && <p className="mt-1 text-base text-(--vm-fg-2)">{run.description}</p>}
       <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-(--vm-muted)">
         <span>{metaLine(run)}</span>
         <button

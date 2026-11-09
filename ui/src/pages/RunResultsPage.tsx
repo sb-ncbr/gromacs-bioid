@@ -219,7 +219,10 @@ export default function RunResultsPage() {
     );
   }
 
-  if (statusQ.isError || !vm) {
+  // A failed refetch keeps the data TanStack already has (isError is set
+  // with data present); only a run that never loaded is "not found". Live
+  // 2026-11-09: a finishing 3PTB run flipped to "Run not found" for good.
+  if ((statusQ.isError && !statusQ.data) || !vm) {
     return (
       <div className="mx-auto max-w-4xl p-6">
         <Alert variant="error">
@@ -227,8 +230,10 @@ export default function RunResultsPage() {
             <h1>Run not found</h1>
           </AlertTitle>
           <AlertDescription>
-            Could not load results for run <code className="font-mono text-sm">{runId.slice(0, 8)}</code>. The run may
-            have been deleted or the ID is incorrect.
+            <p>
+              Could not load results for run <code className="font-mono text-sm">{runId.slice(0, 8)}</code>. The run
+              may have been deleted or the ID is incorrect.
+            </p>
           </AlertDescription>
         </Alert>
         <Link to="/" className="mt-4 inline-block font-medium text-(--vm-accent) underline-offset-2 hover:underline">
