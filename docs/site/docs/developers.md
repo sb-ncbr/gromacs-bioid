@@ -1,82 +1,99 @@
 # Developers
 
-Working on the codebase itself.
+Working on the code. Repository:
+[github.com/sb-ncbr/gromacs-bioid](https://github.com/sb-ncbr/gromacs-bioid)
+(branch `master`).
 
-## Repository map (verified 2026-10-04)
+## Repository map
 
+```text
+src_new/                 the pipeline and the BioID API (in every backend image)
+  api/                   FastAPI app (src_new.api.main:app), runs router, Celery task, run reaper
+  config/                loader.py (ini schema, defaults), presets.py (per-run allowlist, presets)
+  input/ loader/ molecules/   file discovery, MDAnalysis loading and repair, segmentation
+  signatures/            generators, registry, bond-order perception, fingerprints
+  identification/        registry.py, resolution_manager.py, supplementary.py, resolvers/
+  verification/          manager.py, dedup.py, fetchers/, scorers/, workers/
+  pipeline_steps/        stage wiring, budgets, stage_errors
+  executor/ results/ export/ render/   stage executor, results.json, mmCIF export, PNG renders
+  celery_app.py          Celery app and broker hardening
+ui/                      web application (React, Vite, Mol*)
+mcp_server/              MCP server (python -m mcp_server)
+tests/                   pytest suites (tests/src_new/, tests/mcp_server/, …)
+scripts/                 database builders, statistics and audit tools (scripts/stats/)
+docs/site/               this documentation (mkdocs)
+bat3-chart/ deploy/ k8s/ Helm chart, extra manifests, database build Jobs
+config.ini               settings of web/API runs
+main.py, queue_processor.py, models.py, tasks.py, mddbr_client.py
+                         campaign control plane (validation-api), dormant
+Dockerfile.full, .frontend, .mcp, .docs   images in use
 ```
-bat3/
-├── src_new/                 # THE pipeline package (baked into all backend images)
-│   ├── api/                 #   FastAPI: uvicorn src_new.api.main:app (ceitec runs API)
-│   ├── celery_app.py        #   Celery app + broker transport hardening
-│   ├── config/loader.py     #   ini schema + env overrides (defaults live HERE)
-│   ├── executor/            #   PipelineExecutor (stages, budgets, conditions)
-│   ├── input|loader|molecules/  # discovery, MDAnalysis loading/repair, segmentation
-│   ├── signatures/          #   19 generators + registry + snapshot/parallel workers
-│   ├── identification/      #   registry, resolution_manager, cache, 16 resolvers
-│   ├── verification/        #   manager, dedup, fetchers, scorers, workers
-│   ├── pipeline_steps/      #   stage wiring (serial + parallel worker forks)
-│   └── results/             #   ResultsManager (results.json contract)
-├── main.py                  # LIVE validation-api (FastAPI "BAT3 Validation v1.0.0")
-├── queue_processor.py       # LIVE dispatcher/settler/sweeper (APScheduler brain)
-├── models.py, mddbr_client.py, tasks.py  # LIVE: DB models, MDDBR REST, worker app
-├── src/                     # older generation, PARTIALLY load-bearing (F-27):
-│                            #   src_new imports src.constants — do not delete
-├── scripts/                 # stats/GT tooling partially dual-homed on NFS (F-28)
-├── tests/                   # pytest: tests/src_new/**, n1_wave/, fixtures/data
-├── validation -> ../bat3_validation/   # symlink to the web/mdfind app repo
-├── docs/  (+ docs/site/)    # legacy corpus (this site supersedes selected pages)
-└── Dockerfile.{worker,api,...}    # COPY . /app; role via container command
-```
 
-!!! note "Naming traps"
-    Root files look like leftovers but are production (validation-api).
-    `validation/api/main.py` (v2.5 lineage) currently has **no live deployment**.
+Legacy, not used by anything deployed: `src/` (the previous pipeline; its
+constants were copied into `src_new/constants.py`, F-27), `web/` (old React
+UI, see `web/DEPRECATED.md`), `cli/`, `api/`, `__old_deployment/`,
+`Dockerfile.{api,worker,web,ui}`, and most Markdown files at the root and in
+`docs/` (written for older states of the code). `validation` is a symlink to a
+separate repository (`bat3_validation`, the validation UI).
 
-## Local development
+## Setup and tests
 
 ```bash
-python3.11 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
-pip install pytest          # NOTE: pytest is NOT in requirements (F-27-era)
-python -m pytest tests/src_new -q
+python3.11 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -e '.[dev]'            # pytest, pytest-xdist
+
+.venv/bin/python -m pytest tests/src_new -q   # run from the repository root
+.venv/bin/python -m pytest tests/mcp_server -q
+cd ui && npm ci && npx vitest run
 ```
 
-- Tests must run **from the repo root** (`tests/data/` paths are CWD-relative —
-  running from a subdirectory manufactures red suites, V-21).
-- Regression-proofing pattern (V-21): diff the FAILED-set against a baseline
-  image run; identical red sets = zero behavioral regression.
-- The `tests/n1_wave/` suite carries the campaign-era gates (e2e fixture,
-  strand-select, short-identity, allow-delta list for resolver-generated
-  signature diversification).
+Run tests from the repository root: fixture paths under `tests/data/` are
+relative to it. Some tests need BLAST databases, GROMACS fixtures or network
+access and fail without them; compare the set of failures with the same run
+on the previous commit rather than expecting zero.
 
-## Invariants to respect when changing code
+## Running locally
 
-1. **Never silently drop a channel**: generator/resolver failures must land in
-   `stage_errors` (bounded) — log-only failure swallowed the RCSB outage for a
-   whole campaign once.
-2. **Config schema**: add new behavior behind ini keys with safe defaults;
-   document effective keys (and mark dead ones). Do not add more environment
-   variables for things the ini owns.
-3. **results.json is the contract**: schema consumers include the stats
-   tooling, the UI, the settle loop, and the replay harnesses. Additive changes
-   only; never rename/restructure existing branches.
-4. **Serial-first**: keep the serial stage path the reference implementation;
-   the parallel worker forks must delegate to it (they currently fork — F-15 —
-   unify when touching them).
-5. **Snapshot discipline**: anything that mutates campaign data requires
-   prerequeue snapshots + a replay-derived impact estimate first.
+```bash
+# API (runs are written to ./runs; Celery needs a Redis broker)
+docker run -d -p 6379:6379 redis:8-alpine
+export CELERY_BROKER_URL=redis://localhost:6379/0 CELERY_RESULT_BACKEND=redis://localhost:6379/0
+.venv/bin/uvicorn src_new.api.main:app --port 8000
 
-## Findings register
+# a worker, in another shell (same env)
+.venv/bin/celery -A src_new.celery_app worker --pool=threads --concurrency=2
 
-The 2026-10-04 read-only audit produced F-01…F-28 (bugs, methodology and
-consistency items) — pinned in `docs/CHEMISTRY_FIX_TODO.md` (FINAL AUDIT
-sections); dispositions are per-item project-lead decisions. Ops lessons
-V-13…V-23 live in `.opencode/context/bat3/errors/common-issues.md`.
+# web application: Vite proxies /api, /runs, /files, /health to localhost:8000
+cd ui && npx vite
 
-## Known stale docs (do not trust blindly — slated for refresh)
+# MCP server against the local API
+BIOID_API_URL=http://localhost:8000 BIOID_PUBLIC_URL=http://localhost:5173 .venv/bin/python -m mcp_server
+```
 
-- `docs/ARCHITECTURE.md`, `docs/src_new_backbone.md`... describe the older
-  tree/api surfaces; this site is the corrected geometry.
-- `docs/CODE_HEALTH_REPORT.md` audited the old tree; findings #1 (no packaging)
-  and #2 (pytest undeclared) remain valid today.
+Without the local databases (`/app/databases`) only the remote resolvers
+and the bundled name tables work; paths are set in `config.ini`.
+
+## Rules for changes
+
+1. **No silent channels**: a generator or database failure must land in
+   `stage_errors` (bounded), not only in the log.
+2. **Config**: new behaviour goes behind a declared ini field with a safe
+   default (undeclared keys are ignored). A field users may change per run
+   must be added to `TUNABLE` in `src_new/config/presets.py`, with bounds.
+3. **results.json is a contract** read by the API, the web application, the
+   MCP server and the statistics tools: add fields, never rename or
+   restructure existing ones.
+4. **Serial path is the reference**: the parallel stage workers delegate to
+   the serial implementation (F-15); keep it that way.
+5. **Campaign data**: anything that changes campaign results needs a
+   snapshot and a replay-measured impact first.
+
+## Findings registers
+
+- `docs/CHEMISTRY_FIX_TODO.md`: the 2026-10-04 audit, F-01…F-28.
+- `.opencode/context/bat3/`: operational lessons (V-xx), deployment facts,
+  design records of later waves.
+- Commit messages carry the identifiers used in the code comments
+  (`BH-xxx` bug hunt, `D-xx`/`C-xx` red-team items, `G1`…`G9` API additions,
+  `W3.x` waves); `git log --grep` finds the reasoning behind a change.

@@ -1,114 +1,154 @@
 # Configuration
 
-Precedence (highest wins): **environment variable → ini file → code default**.
-Campaign ini lives at `/data/validation/config_shared.ini` (mounted into api and
-workers); the same schema applies to any run-local `config.ini`.
+## Where settings come from
 
-## ini sections (schema: `src_new/config/loader.py`)
+| Layer | Applies to |
+|---|---|
+| code defaults (`src_new/config/loader.py`, dataclasses) | everything not named elsewhere |
+| `config.ini` at the repository root (baked into the image) | web, API and MCP runs: `RunConfig.from_default_ini()` |
+| campaign config (`/data/validation/config_<label>.ini`, `config_shared.ini`) | campaign runs; not in the repository |
+| run preset, then the user's overrides | web, API and MCP runs (below) |
+| environment variables | a few paths and service URLs (e.g. `DEPLOYMENT_FILE_URL`), and process behaviour (budgets, breaker, cache) |
 
-### `[executor]`
+The ini loader reads **declared fields only**; an unknown key is silently
+ignored. A run's effective configuration is written to
+`runs/<id>/config.ini`.
+
+## Per-run settings and presets
+
+Since 2026-11-10 (`src_new/config/presets.py`), a web/API/MCP run may change
+only the fields in `TUNABLE`:
+
+- `[identifiers]`: every database switch (except `overwrite_existing` and
+  `formula_chembl`);
+- `[verification]`: `verify_top_n` (1–200), `verify_top_n_supplementary`
+  (0–100), `similarity_top_n` (1–50), the three weights (0–100),
+  `tm_score_threshold`, `min_final_confidence` (0–100),
+  `enable_annotation_quality`, `annotation_live_fetch`;
+- `[blast]`: the `exact_match_*` and `similarity_match_*` thresholds;
+- `[chembl]`, `[idsm]`, `[pubchem]`: `similarity_threshold` (0–100);
+- `[pdb]`: `rcsb_include_mixed_complexes`;
+- `[signatures]`: `smiles_maximum_number_of_atoms`, the FASTA partial/strict
+  modes, `enhanced_nucleic_acid_recognition`;
+- `[loader]`: the `guess_missing_*` switches, `tpr_resid_from_one`,
+  `quick_structure_search`, `unwrap_periodic_boundaries`,
+  `element_mass_tolerance`, `bond_guess_vdw_factor`.
+
+Anything else (paths, executables, URLs, threads, timeouts, the
+`[executor] *_parallel` flags) is rejected with 422, unless the value equals
+the server's. Presets (`balanced`, `quick`, `exact`, `deep`) are overrides in
+the same module; `GET /api/v1/runs/config/options` serves both. A test
+checks that every preset key is tunable.
+
+## Sections
+
+Defaults below are the code defaults; where the web application's
+`config.ini` differs, its value is given as *ini*.
+
+### `[identifiers]` — database switches
+
+Each database `<key>` (see [Databases](databases.md)) has two switches,
+read on every attempt: `<key>` for identity searches and `<key>_similarity`
+for similarity searches. Defaults are `yes`, except:
+
+- `atom_similarity`, `name_ccd_similarity`, `name_maps_similarity`,
+  `name_manual_similarity`: `no`;
+- `formula_chembl`: `no` (the resolver is also built when
+  `VALIDATION_SKIP_PUG=1`);
+- supplementary `blast_uniref50`, `foldseek_pdb`, `swisslipids`,
+  `chebi_local`, `sifts_uniprot` (both switches): `no` in code; *ini* `yes`
+  except `foldseek_pdb` (identity) `no`.
+
+Other keys:
+
 | Key | Default | Meaning |
 |---|---|---|
-| `n_threads` | 10 | worker parallelism when `*_parallel` enabled |
-| `signatures_parallel` / `identifiers_parallel` / `verification_parallel` | false | stage parallelism. Campaign ran **all serial**; the ceitec-API `/config/parallel-default` route returns a config enabling all three (incl. identifiers) |
-| `TPS` | 100 | legacy throttle hint |
-
-!!! success "Parallel identify unified (F-15, 2026-10-05, v3.128)"
-    The parallel identify worker **no longer forks** the resolution loops: it
-    delegates to `IdentifierResolutionManager.resolve()` per generator against
-    a temp ResultsManager seeded with the fragment's persisted identifiers, so
-    parallel and serial share one implementation — including the **PubChem
-    circuit breaker**, the **`overwrite_existing` skip**, and per-resolver
-    toggles (F-21). Verified offline (10/10: equivalence/breaker/overwrite)
-    and live in-image. The parallel paths have not been validated on
-    production runs (contention: concurrent nr BLASTs on NFS, spawned
-    signature processes), so the web UI no longer offers Fast Mode and the
-    API rejects per-run changes to the `*_parallel` flags (2026-11-10).
-
-### `[identifiers]` — per-resolver pair toggles (F-21 corrected 2026-10-04)
-Every resolver honors a **pair** of toggles, read per attempt:
-
-| Key pattern | Gates | Default |
-|---|---|---|
-| `<resolver_name>` | **identity** attempts | `yes` |
-| `<resolver_name>_similarity` | **similarity** attempts | `yes`, except `atom_similarity` and `name_*_similarity` (default `no`) |
-
-So `<name>: no` suppresses identity attempts while similarity attempts keep
-running under `<name>_similarity: yes` — this pair semantics (not dead code)
-explains the old V-20 observation of "resolver still ran despite `no`".
-
-All 27 resolver names are valid keys: `pubchem_struct`, `chembl_struct`,
-`idsm_pubchem/chembl/chebi`, `inchikey_pubchem`, `inchikey_self`,
-`formula_pubchem`, `formula_hfamily`, `blast_pdb_protein`, `blast_uniprot`,
-`blast_nr_protein`, `blast_swissprot_protein`, `blast_pdb_nucleic`,
-`blast_core_nt`, `blast_nt`, `pdb_struct_protein`, `pdb_struct_nucleotide`,
-`alphafind_struct`, `foldseek_3di`, `mmcif_struct`, `lipid_maps`,
-`glycan_composition`, `atom`, `name_ccd`, `name_maps`, `name_manual`.
-
-!!! warning "ini keys only work if declared"
-    The ini loader reads **declared config fields only** — unknown keys are
-    silently ignored. F-21 completion (2026-10-04) declared the 8 previously
-    missing pairs; before that, toggling e.g. `mmcif_struct: no` did nothing.
-    Unrecognized keys still do nothing — the table above is the valid set.
-
-Special keys:
-
-| Key | Effect |
-|---|---|
-| `overwrite_existing` | if `no`, resolvers skip signatures that already have hits in results.json |
-| `formula_local` | construction gate for the local PubChem mirror resolver (also needs the mirror DB file) |
-| `formula_chembl` | the ChEMBL exact-formula resolver: construction needs this `yes` **or** `VALIDATION_SKIP_PUG=1`, identity attempts need the field `yes`. **Resolved era (OQ-11, 2026-10-06)**: upstream REST formula support is dead — the resolver is local-mirror-first via `[chembl] local_db_path` (revived: caffeine→CHEMBL113 live-verified) with one-warning REST degrade |
+| `deferred_resolvers` | `""`; *ini* `blast_nr_protein, blast_nt, blast_core_nt` | databases moved from the first identify pass to the end of the second |
+| `sifts_mode` | `corroborate` | `corroborate`: SIFTS UniProt accessions become candidates; `xref`: only recorded |
+| `sifts_db`, `swisslipids_db`, `chebi_db` | `/app/databases/{sifts,swisslipids,chebi}/*.sqlite` | supplementary indexes |
+| `formula_local` | `yes` | use the local PubChem mirror for formula search (needs `[pubchem] local_db_path`) |
+| `mmcif_struct_mode` | `full` | how structure-search evidence (`mmcif_struct`, `pdb_struct_*`, `foldseek_3di`, `alphafind_struct`) scores: `full` counts it as a corroborating source; `tiebreak` strips it from scoring so it only orders otherwise equal candidates |
+| `overwrite_existing` | `no` | re-search signatures that already have hits (resumed runs) |
 
 ### `[verification]`
-| Key | Campaign value | Meaning |
+
+| Key | Default | Meaning |
 |---|---|---|
-| `verify_top_n` | 100 | candidates verified per segment |
-| `similarity_top_n` | 10 | per-resolver similarity hit cap |
-| `verify_rerank_max_candidates` | 60000 | cap for the structure re-rank pass |
-| `resolver_weight` / `similarity_weight` / `annotation_weight` | 0.4 / 0.4 / 0.2 | aggregation weights |
-| `min_final_confidence` | **0.0** | currently vacuous (see F-17) |
-| `tm_score_threshold` | 0.5 | structure-worker gate |
-| `enable_annotation_quality` | yes | scorer stage |
+| `verify_top_n` | 100 | candidates verified per molecule |
+| `verify_top_n_supplementary` | 20; *ini* 40 | extra candidates found only by the second identify pass |
+| `similarity_top_n` | 10 | similarity hits kept per database search |
+| `resolver_weight` / `similarity_weight` / `annotation_weight` | 0.4 / 0.4 / 0.2 | confidence weights, normalised to sum 1 |
+| `min_final_confidence` | 0.0 | confidence (0–100) a hit needs to be verified; 0 = no gate |
+| `tm_score_threshold` | 0.5 | structural comparison gate |
+| `enable_annotation_quality` | yes | compute the annotation term |
+| `annotation_live_fetch`, `annotation_live_budget_per_segment`, `annotation_fetch_timeout_s` | yes, 25, 3.0 | live record fetches for the annotation term |
+| `verify_rerank_max_candidates`, `verify_rerank_wall_cap_s` | 25000, 30 | limits of the chemical skeleton re-rank |
+| `belief_source_normalize` | no | experimental agreement normalisation (off) |
 
-### `[pdb]` — the RCSB wire
-| Key | Meaning |
-|---|---|
-| `use_deployment_file_access` | publish input files via this deployment's `/files` route (preferred) |
-| `deployment_file_url` | public base URL of **this** deployment's file route; mis-set value kills the RCSB channel (404). Env `DEPLOYMENT_FILE_URL` overrides |
-| `ssh_host/user/key/remote_path/public_url` | SSH-upload fallback when deployment serving is disabled |
-| `rcsb_include_mixed_complexes` | F-24 additive mixed-complex channel: when `yes`, an **extra** RCSB query (`Protein/NA` entity class) runs after the base query and unique hits are appended (deduped, identity-neutral on real data). Code default `no` (legacy behavior); **campaign `config_shared.ini` = `yes` since 2026-10-06** |
+### `[blast]`
 
-### `[chembl]` — ChEMBL channel
-| Key | Meaning |
-|---|---|
-| `similarity_threshold` | similarity-phase score pass (default 60) |
-| `local_db_path` | OQ-11: local ChEMBL formula mirror (`/app/databases/chembl/current/chembl.sqlite`); resolver goes local-first when present, else auto-degrades to the (dead-upstream) EBI REST path with one warning |
-
-## Environment variables with behavioral effects
-
-| Variable | Scope | Effect |
+| Key | Default | Meaning |
 |---|---|---|
-| `DATABASE_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` | api/worker | core wiring (code defaults point at cluster services) |
-| `DEPLOYMENT_FILE_URL` | worker/api | RCSB publish base (see above) |
-| `VALIDATION_FILES_ROOT` | ceitec api | NFS root for `/files/validation-*` serving |
-| `VALIDATION_DISPATCH_ENABLED`, `VALIDATION_DISPATCH_CONCURRENCY` | validation-api | dispatch loop gate/throttle |
-| `VALIDATION_STALE_HOURS` | validation-api | sweeper horizon (12 in prod) |
-| `VALIDATION_RESULTS_TRUTH_SETTLE`, `..._MIN_AGE_S`, `..._PER_TICK` | validation-api | NFS-truth settle tuning |
-| `VALIDATION_STAGE_BUDGETS` / `VALIDATION_STAGE_BUDGET_DEFAULT_S` | worker | per-stage wall-clock budgets; `"off"` disables |
-| `VALIDATION_SKIP_PUG` | worker | skip PubChem REST (mirror/offline paths only) |
-| `VALIDATION_PUBCHEM_BREAKER` | worker | `0` disables the breaker |
-| `VALIDATION_UI_QUEUE`, `VALIDATION_UI_BATCH_PREFIX` | api | UI batch routing (`validation.ui.celery`) |
-| `MDDBR_API_BASE` | api/worker | MDDBR REST base |
-| `SPIN_DEBUG` | worker | per-120s thread-stack dumps (postmortem probe; currently armed fleet-wide — F-10) |
-| `BAT3_SRC` | gate scripts | **overlay-gate selector** (see warning) |
-| `PIPELINE_RESUME_STAGES` | worker | resume-skip switch; `0` forces full re-run. Active since v3.126-audit2 (revised F-03 semantics): only `generate_signatures`/`identify_molecules`/`verify_results` skip, and only on persisted `success` |
-| `CELERY_BROKER_TRANSPORT_OPTIONS` | deploy env | **dead config** — nothing reads it (F-08); transport opts are set in code |
+| `*_db` | `/app/databases/<name>/<name>` | database prefixes |
+| `timeout_s` | 300; *ini* 3600 | per-search limit (also clipped to the stage budget) |
+| `uniref50_num_threads`, `uniref50_timeout_s` | 1, 900; *ini* 4, 900 | UniRef50's own limits |
+| `max_target_seqs` | 500 | hits per search |
+| `exact_match_*` | e-value 1e-50, bits 51, identity 0.99, query coverage 0.99 | identity thresholds |
+| `similarity_match_*` | e-value 0.1, bits 20, identity 0.4, query coverage 0.15 | similarity thresholds |
+| `local_instance_run_short_search_if_under_X_residues` | 30 | short-query BLAST task below this length |
 
-!!! danger "`BAT3_SRC` shadowing (V-18)"
-    `n1_run_gates.py`-style overlay gates do
-    `sys.path.insert(0, os.environ.get("BAT3_SRC", "/app"))`. Running them
-    **without** `BAT3_SRC=/tmp/gate_src` silently executes the baked image code —
-    `PYTHONPATH`, `cd`, and bytecode purges do NOT protect you. Any PYTHONPATH
-    pointing at an NFS code tree is an era-mix booby trap of the same class
-    (real case: `/data/validation/patched_src` pre-W4 shadow tree on ui-worker
-    — removed 2026-10-04, F-09).
+### `[pdb]` — RCSB structure search
+
+| Key | Default | Meaning |
+|---|---|---|
+| `use_deployment_file_access` | yes | publish query structures through this deployment's `/files` route |
+| `deployment_file_url` | `https://bioid.dyn.cloud.e-infra.cz` | public base URL of that route; **must** be this deployment (env `DEPLOYMENT_FILE_URL` overrides; set on every worker) |
+| `ssh_*`, `[PDB_UPLOAD_*]` | — | SCP fallback when deployment serving is off |
+| `rcsb_include_mixed_complexes` | no | an additional query for mixed protein/nucleic-acid entries (F-24); on in the *Deep search* preset |
+
+### Other sections
+
+- `[chembl]` `similarity_threshold` 60, `local_db_path` (ChEMBL mirror);
+  `[idsm]` `similarity_threshold` 80; `[pubchem]` `similarity_threshold` 95,
+  `local_db_path` (PubChem mirror), `hfamily_local_max_*`.
+- `[foldseek]` `mode` (`local` / `remote` / `off`), `db_path` (AlphaFold
+  Swiss-Prot), `pdb_db_path` (for `foldseek_pdb`), `remote_url`,
+  `max_target_hits` 20, `search_timeout_s` 300.
+- `[alphafind]` `url` (the AlphaFind search API), retry and polling limits.
+- `[names]` `ccd_db`, `maps_db`, `manual_db` (JSON tables under `databases/`).
+- `[identifiers_cache]` `directory` (empty: `BAT3_IDENTIFIERS_CACHE_DIR`,
+  pod-local), `file`.
+- `[executor]` `n_threads`, `signatures_parallel` / `identifiers_parallel` /
+  `verification_parallel` (all `no`). The parallel paths share the serial
+  implementation (F-15) but have not been validated on production runs;
+  they cannot be enabled per run.
+- `[loader]`, `[signatures]`: input repair, periodic-boundary unwrapping and
+  generator switches.
+
+## Environment variables
+
+| Variable | Where | Effect |
+|---|---|---|
+| `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `DATABASE_URL` | API, workers | service wiring |
+| `DEPLOYMENT_FILE_URL` | workers | RCSB publishing base (above) |
+| `VALIDATION_UI_QUEUE` | API | queue for web/API runs (`validation.ui.celery`) |
+| `VALIDATION_STAGE_BUDGETS`, `VALIDATION_STAGE_BUDGET_DEFAULT_S` | workers | stage budgets: JSON map over the defaults 1200 s (signatures, identify, verify) and 900 s (others); `off` disables. The UI worker sets `{"identify_molecules": 4500}` |
+| `VALIDATION_SKIP_PUG` | workers | skip PubChem REST in compound fetches; also builds `formula_chembl`. Set on the production workers |
+| `VALIDATION_PUBCHEM_BREAKER` | workers | `0` disables the PubChem circuit breaker |
+| `BLASTDB_MEM_MAP` | workers | keep `0` on NFS (see [Architecture](architecture.md#invariants)) |
+| `BAT3_IDENTIFIERS_CACHE_DIR` | workers | pod-local resolver cache (wins over the run config) |
+| `BAT3_RUNS_DIR`, `BAT3_ADHOC_DIR`, `BAT3_ADHOC_RETENTION_DAYS` | API, workers | run and RCSB-query directories |
+| `BAT3_CODE_VERSION` | API, workers | stamped into `pipeline.code_version` and `/capabilities` (`git-<sha>`, set by the release) |
+| `BAT3_EXAMPLE_RUNS`, `BAT3_TYPICAL_DURATION_MIN/MAX` | API | front-page examples, advertised run duration |
+| `BAT3_RUN_REAPER`, `BAT3_RUN_REAPER_INTERVAL_S` | API | zombie-run reaper |
+| `PIPELINE_RESUME_STAGES` | workers | `0` disables skipping stages that already succeeded |
+| `SPIN_DEBUG` | workers | `1` dumps thread stacks every 120 s (diagnostics; set on the UI workers) |
+| `VALIDATION_FILES_ROOT` | API | NFS root for `/files/validation-*` |
+| `VALIDATION_DISPATCH_ENABLED`, `VALIDATION_DISPATCH_CONCURRENCY`, `VALIDATION_STALE_HOURS`, `VALIDATION_LEGACY_DISPATCH` | validation-api | campaign control plane (dormant) |
+| `MDDBR_API_BASE` | validation-api, workers | MDposit REST base |
+| `CELERY_BROKER_TRANSPORT_OPTIONS` | fleet worker | not read by any code (F-08); transport options are set in `src_new/celery_app.py` |
+
+!!! danger "`BAT3_SRC` and code shadowing (V-18)"
+    Overlay gate scripts do `sys.path.insert(0, os.environ.get("BAT3_SRC",
+    "/app"))`. Without `BAT3_SRC=<overlay dir>` they silently run the image's
+    code. Any `PYTHONPATH` pointing at a code tree on NFS is the same trap.

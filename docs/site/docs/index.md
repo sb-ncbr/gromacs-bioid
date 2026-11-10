@@ -26,7 +26,8 @@ On the front page, drop your files into **Annotation request** (or use
 | Structures | `.pdb` / `.cif` |
 | Bundles | `.zip` / `.tar` / `.tar.gz` of the above |
 
-Each file may be up to 128 MiB. BioID analyses the starting structure, so
+Each file may be up to 128 MiB, and one submission up to 128 MiB in total.
+BioID analyses the starting structure, so
 you do not need to upload a trajectory.
 
 A run takes from a few minutes (a small structure) to about an hour (a large
@@ -53,7 +54,8 @@ preset, then fine-tune if you need to:
 Below the presets you can change individual settings:
 
 - **Databases** — for each database, whether it is searched for identical
-  entries (*Exact*) and for similar ones (*Similar*).
+  entries (*Exact*) and for similar ones (*Similar*). The
+  [Databases](databases.md) page says what each one searches.
 - **Verification** — how many candidates per molecule are checked against
   their database records, how many similar matches are kept, the minimum
   confidence for a match to be marked verified, and the weights of the three
@@ -84,7 +86,9 @@ every database hit and the run log.
 
 Everything the web application does is available over HTTP. The interactive
 reference (Swagger) is at
-[/docs](https://bioid-ceitec.dyn.cloud.e-infra.cz/docs).
+[/docs](https://bioid-ceitec.dyn.cloud.e-infra.cz/docs); the
+[REST API](rest-api.md) page walks through submitting, polling, reading the
+results, settings, limits and error codes.
 
 ```bash
 BIOID=https://bioid-ceitec.dyn.cloud.e-infra.cz/api/v1
@@ -107,7 +111,7 @@ change, with their defaults. To change a setting, post only what differs, as
 
 ```bash
 curl -F files=@system.pdb -F preset=exact \
-     -F 'config_json={"verification": {"min_final_confidence": 0.5}}' \
+     -F 'config_json={"verification": {"min_final_confidence": 50}}' \
      "$BIOID/runs"
 ```
 

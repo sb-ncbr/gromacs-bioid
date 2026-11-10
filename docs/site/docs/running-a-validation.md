@@ -1,90 +1,106 @@
 # Running validations
 
-Three submission surfaces, all funnelling into the same `validation_queue` table
-unless noted:
+A validation campaign runs the pipeline over many repository deposits and
+scores the results against the deposits' annotations. Single runs (web
+application, REST API, MCP server) are covered in [Using BioID](index.md).
 
-| Surface | Where | Use for |
+## Two ways to dispatch a campaign
+
+| Path | Used for | State (2026-11-10) |
 |---|---|---|
-| Validation UI | `https://validation-ui host` | Interactive browsing, batches, rerun/retry buttons |
-| Queue REST API | validation-api `/api/queue/*` | Scripted batches (`POST /api/queue/files`, bulk actions) |
-| Interactive runs | ceitec API `POST /runs` (or `/api/v1/runs`) | Ad-hoc uploads outside the campaign queue |
+| **Direct dispatch** to the fleet worker: `run_pipeline_task` sent to the `celery` queue of `bat3-ceitec-bat3-worker`, with a campaign config file on NFS | the g1 campaign (Nov 2026) and targeted re-runs | current method |
+| **Queue control plane**: `validation-api` (repo-root `main.py` + `queue_processor.py`) dispatching rows of its Postgres `validation_queue` to `validation-worker` | campaigns v1–v14 (Aug–Oct 2026) | dormant: `VALIDATION_DISPATCH_ENABLED=0` since 2026-10-09, `validation-worker` at 0 replicas |
 
-## What a single run costs
+### Direct dispatch (g1 method)
 
-- Contract: ~10 minutes per entry on a healthy worker (heavier systems longer).
-- Per-stage wall-clock budgets (defaults: signatures/identify/verify 1200s each,
-  other stages 900s) cap worst-case burn; a stage that hits its budget records a
-  `stage_time_budget` warning and continues with partial output.
-- Dispatcher concurrency is throttled (`VALIDATION_DISPATCH_CONCURRENCY`, default
-  12 per 15s tick in code; production sets 4).
+Each deposit is one Celery task, `src_new.api.tasks.run_pipeline_task`, with
 
-## Lifecycle states (queue row)
+- `input_dir=/data/validation/<eid>/input` (inputs downloaded once from
+  MDposit),
+- `results_path=/data/validation/<eid>/results-<label>.json` (one file per
+  campaign label, so campaigns never overwrite each other),
+- `run_id=<label>-<eid>`,
+- the campaign's config file, e.g. `/data/validation/config_<label>.ini`.
 
-`queued → processing → completed`
-&nbsp;&nbsp;`↘ failed` (dispatch exhausted retries or explicit failure)
-&nbsp;&nbsp;`↘ requeued by 12h stale sweeper` (see Operations § stragglers)
+The dispatch script used for g1 is kept with the paper's analysis material,
+not in this repository. Its rules are worth keeping: skip deposits whose
+results file already exists (resume-safe); before re-sending a deposit, move
+its previous result aside as `results-<label>.json.attempt<N>`; re-send only
+a selection chosen by a measured defect (failed runs, lost RCSB evidence,
+a listed set).
 
-Entry-level mirror states live on the entries table; batch counters are
-recomputed by the sweeper (never trust stale counters mid-run).
+### Queue control plane (dormant)
+
+The `validation-api` loops are described in [Operations](operations.md#the-queue-control-plane-dormant).
+Its UI (`validation-ui`, `bat3-validation.dyn.cloud.e-infra.cz`) still
+serves the campaign history. To revive it, scale `validation-worker` up on the
+current image and set `VALIDATION_DISPATCH_ENABLED=1` on `validation-api`;
+both still run the older `v3.132` image, so rebuild first (era-unity rule,
+[Operations](operations.md#rollout)).
+
+## What a run costs
+
+g1 campaign, 15,034 deposits with complete timing: median 3.8 min, p95
+10.1 min, slowest 71 min per deposit. Identification takes about three
+quarters of the time (external services and BLAST), verification about a
+seventh. CPU per deposit is modest (median 4.7 CPU-minutes); peak memory of
+the whole process tree is about 4 GB.
+
+Stage budgets (`VALIDATION_STAGE_BUDGETS`, JSON map, seconds): code default
+1200 s for `generate_signatures`, `identify_molecules` and `verify_results`,
+`VALIDATION_STAGE_BUDGET_DEFAULT_S` (900 s) for the other stages. The web
+application's worker (`bat3-ui-worker`) raises identification to 4500 s,
+because its configuration searches more databases.
 
 ## Reading a results.json
 
-Top-level branches (all paths slash-delimited):
-
-| Branch | Content |
-|---|---|
-| `pipeline` | run status/timestamps, config snapshot, input files |
-| `tasks` | per-stage status (`success`/`warning`/`failed`/`skipped`), summaries |
-| `signatures/<segment>/generated/<generator>` | raw signature strings the fragment produced |
-| `identifiers/<segment>/<generator>/<resolver>` | resolver output: `hits`, `hit_type` (`identity`/`similarity`), metadata |
-| `identifiers/<segment>/<generator>/attempted` | resolver names actually attempted |
-| `verification/<segment>/verified_hits` | **ranked final table** (see below) |
-| `stage_errors/signatures/<segment>`, `stage_errors/identifiers/<segment>` | bounded failure records (observability contract) |
-| `warnings`, `critical_errors`, `events` | run journal |
+Campaign results are ordinary `results.json` files (one per deposit and
+label); their structure is described in the
+[results.json reference](results-json.md). For campaign analysis the
+branches that matter most are `pipeline.code_version` (which build produced
+the file), `tasks` (stage statuses), `stage_errors` (bounded per-molecule
+failure records: a database or generator that failed shows up here, never
+only in the log) and `verification/<molecule>/verified_hits`.
 
 ### The verified_hits table
 
-Stored order **is** display order (backend owns ranking). Each record:
+Stored order **is** display order. Each record carries
 
-- `identifier`, `ident_type` (PDB_ID / UNIPROT_ID / PUBCHEM_CID / CHEMBL_ID / ...)
-- `is_verified` — see semantics note below
-- `final_confidence` (0–100), `resolver_score`, `similarity_score`,
-  `annotation_quality_score`, `skeleton_sim`
-- `supporting_evidence_count` (distinct resolvers), and for rejected candidates
-  `rejection_reason` (`verification_failed`, `no_worker`, `fingerprint_mismatch`,
-  `fingerprint_unavailable`, `below_threshold`)
+- `identifier`, `ident_type` (`PDB_ID`, `UNIPROT_ID`, `PUBCHEM_CID`,
+  `CHEMBL_ID`, `CHEBI_ID`, `ALPHAFOLD_ID`, `ELEMENT`, …), `database`, `name`,
+  `organism`, `hit_type`;
+- `final_confidence` (0–100) and its terms: `belief` / `resolver_score`
+  (database agreement), `similarity_score` with `similarity_details`,
+  `annotation_quality_score`; for chemicals `skeleton_sim` and
+  `skeleton_method`;
+- `supporting_evidence_count` (distinct sources), `equivalence_class_id`
+  (rows describing the same structure; the UI collapses them);
+- `is_verified`, and for rejected candidates `rejection_reason`:
+  `fingerprint_mismatch`, `fingerprint_unavailable`, `below_similarity_floor`,
+  `below_threshold`, `verification_failed`, `no_worker`,
+  `similarity_unmeasured`, `water_duplicate_identity`;
+- `ground_truth_override` (`element_monoatomic`, `water_triatomic`) where
+  the confidence was set to 100 by rule;
+- `verified_without_corroboration`: a non-chemical identity hit that
+  verified without any similarity measurement (see below).
 
-Chemical candidates additionally pass a hard skeleton-fingerprint gate
-(Tanimoto ≥ threshold against the simulated molecule); structure-blind floods
-are re-ranked by skeleton similarity before the verify window is cut
-(raise-only: chemistry can only be rescued, never demoted).
+!!! note "What `is_verified` means"
+    A candidate is verified when its confidence is at least
+    `min_final_confidence` (0–100; default 0, so in practice no gate) **and**
+    there is positive evidence: chemical candidates need skeleton-fingerprint
+    Tanimoto ≥ 0.7; other candidates need a non-degenerate similarity
+    measurement, or an identity claim from the database search. In the last
+    case (F-17, ruled 2026-10-04: identity stays identity) the hit is flagged
+    `verified_without_corroboration: true`; the flag changes no score or count.
 
-!!! warning "`is_verified` semantics (F-17)"
-    `min_final_confidence` defaults to `0.0`, so the aggregate-confidence gate is
-    **vacuous**. For non-chemical *identity* hits, `is_verified` currently means
-    "a resolver classified this as an identity match" — corroboration failure
-    (fetch/worker outage) does not flip it to false; only `similarity_score: null`
-    betrays the case. Chemical identity always requires the skeleton gate.
-    Treat `is_verified` + null `similarity_score` as "verified on
-    self-assertion". A hardening change is pending decision.
+## Re-runs
 
-## Re-runs and reprocessing
-
-- Re-queueing an entry creates a **new attempt with a fresh timestamped run id**;
-  old artifacts remain on NFS until cleaned (results.json is overwritten on the
-  next attempt).
-- `skip_if_output_exists` stage caching applies within a run directory only.
-- A restarted run (≥ v3.126-audit2) re-executes the **context chain**
-  (`discover→load→repair→unwrap→analyze`) plus `export`, and **skips**
-  `generate_signatures`/`identify_molecules`/`verify_results` *only* where the
-  persisted status is exactly `success` — the expensive resolution compute is
-  what resume saves (measured 45s → 15s on a completed entry). Warning/failed/
-  pending statuses always re-execute. Disable via `PIPELINE_RESUME_STAGES=0`.
-- Never requeue while any worker runs a different image era (era-unity rule).
-
-## Where to watch progress
-
-- UI dashboard (queue counts, batch progress, failure analysis)
-- `GET /api/queue/status`, `/api/queue/worker-stats`, `/api/stats/throughput`
-- Logs: API pod (dispatch/settle/sweep lines), worker pods (stage logs;
-  `stage_time_budget` and resolver-failure warnings are searchable).
+- Web/API runs: `POST /runs/{id}/rerun` creates a new run with a new id.
+- Campaign runs: re-dispatch with the same label after moving the result
+  aside (see above), or under a new label.
+- A restarted run re-executes the context chain (discover → load → repair →
+  unwrap → analyze) and export, and skips `generate_signatures`,
+  `identify_molecules` and `verify_results` only where their persisted status
+  is exactly `success`. `PIPELINE_RESUME_STAGES=0` forces a full run.
+- Never re-run part of a campaign while workers run different images
+  (era-unity rule).

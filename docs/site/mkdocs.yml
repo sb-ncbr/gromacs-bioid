@@ -1,5 +1,8 @@
 site_name: BioID documentation
 site_description: Identification of biomolecules in molecular dynamics simulations (BioID / BAT3)
+repo_url: https://github.com/sb-ncbr/gromacs-bioid
+repo_name: sb-ncbr/gromacs-bioid
+edit_uri: edit/master/docs/site/docs/
 # G2 (2026-10-06): pages moved to docs/ subdir (mkdocs 1.6 rejects docs_dir ".").
 theme:
   name: material
@@ -20,13 +23,16 @@ markdown_extensions:
       permalink: true
 nav:
   - Using BioID:
-      - Web application & REST API: index.md
+      - Web application: index.md
+      - REST API: rest-api.md
+      - Databases: databases.md
       - MCP server (AI assistants): mcp.md
+      - results.json reference: results-json.md
   - Validation & internals:
       - Overview: validation.md
       - Running validations: running-a-validation.md
       - Architecture: architecture.md
-      - API: api.md
+      - Internal API: api.md
       - Identification & verification: identifiers.md
       - Configuration: configuration.md
       - Methodology & statistics: methodology.md

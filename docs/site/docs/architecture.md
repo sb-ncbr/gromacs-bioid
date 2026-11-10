@@ -1,95 +1,102 @@
 # Architecture
 
-Component geometry as running in production (namespace `ceitec-biodata-ns`,
-cluster `kuba-cluster`), verified 2026-10-04. One container image serves every
-backend role: `cerit.io/tomsko/bat3-validation-api:v3.125-N1` (the repo root is
-copied to `/app`; role is chosen by the container command).
+Components as deployed in namespace `ceitec-biodata-ns` (cluster
+`kuba-cluster`, CERIT-SC), checked with `kubectl get deploy,ingress` on
+2026-11-10. One backend image, `cerit.io/tomsko/bat3-validation-api`
+(built from `Dockerfile.full`; the repository is copied to `/app`), serves
+every backend role; the role is chosen by the container command.
 
-```
-                        +----------------------+
-   MDDBR (mdposit) <--->|  mddbr_client (HTTP) |
-                        +----------+-----------+
+```text
+ bioid-ceitec.dyn.cloud.e-infra.cz                      bat3-validation.dyn.cloud.e-infra.cz
+ ---------------------------------                      ------------------------------------
+  /              -> bat3-ceitec-bat3-web  (ui/, nginx)    /      -> validation-ui (nginx)
+  /api /files /health /docs /openapi.json                         proxies -> validation-api
+                 -> bat3-ceitec-bat3-api  (src_new FastAPI)  /docs  -> validation-docs
+  /mcp           -> bioid-mcp             (mcp_server/)
+  /documentation -> validation-docs       (this site)
+
+  bioid-mcp --HTTP--> bat3-ceitec-bat3-api --Celery--> bat3-redis (broker + results)
+                                                          |
+                     queue validation.ui.celery           |  queue celery
+                 +----------------------------------------+-------------------------+
+                 v                                                                  v
+         bat3-ui-worker  (web/API/MCP runs)                    bat3-ceitec-bat3-worker (campaigns)
+                 \                                                                  /
+                  +--> src_new pipeline: load -> segment -> signatures -> identify --+
+                       (2 passes) -> verify -> export -> render
                                    |
-        +----------------+   +-----v------+        +--------------------+
-        | validation-api |-->|  Postgres  |<-------| APScheduler loops  |
-        | root main.py   |   | (queue DB) |        | (in validation-api)|
-        | queue_processor|   +-----+------+        | 15s dispatch /     |
-        | models.py      |                         | 30s settle+sweep   |
-        +-------+--------+                         +---------+----------+
-                |  REST (/api/queue, /entries,               |
-                |   /api/stats, /api/queue/files)            | send_task
-        +-------v--------+        +-----------------+        |
-        | validation-ui  |        | bat3-redis      |<-------+
-        | (v7.43, nginx) |        | (Celery broker) |
-        +----------------+        +--------+--------+
-                                           |
-              +----------------------------+-------------------+
-              |                            |                   |
-     +--------v---------+       +----------v----------+ +------v------------+
-     | validation-worker|       | bat3-ceitec-worker  | | bat3-ui-worker    |
-     | x164  -A tasks   |       | x15  -A src_new.    | | x2  -A src_new.   |
-     | (campaign queue) |       |   celery_app        | |   celery_app      |
-     +--------+---------+       | (default queue)     | | -Q validation.ui. |
-              |                 +----------+----------+ |   celery          |
-              |                            |            +-------------------+
-              v                            v
-     +---------------------------------------------------------+
-     | src_new pipeline: loader -> signatures -> identify ->    |
-     | verify -> export   (serial per entry; stage budgets)     |
-     +---------------------------+-----------------------------+
-                                 |
-        +----------------+-------+---------+-------------------+
-        |  NFS /data/validation  |  bat3-ceitec-bat3-api       |
-        |  <eid>/input+results,  |  src_new FastAPI (runs API, |
-        |  sim_cache, stats,     |  /files serving for RCSB)   |
-        |  config_shared.ini     |  x1, bioid-ceitec host      |
-        +------------------------+----------------------------+
+     volumes: /app/databases (BLAST, Foldseek, PubChem/ChEMBL mirrors, indexes)
+              /app/runs (web/API runs)   /data/validation (campaign entries)
+     external: RCSB, AlphaFind, PubChem, ChEMBL, IDSM, LIPID MAPS, GlyCosmos
+
+  validation-api (root main.py) --> validation-postgres;  dispatch OFF since 2026-10-09
 ```
 
-## Roles (all mutable only via image + deployment)
+## Deployments
 
-| Deployment | Code entrypoint | Job |
+| Deployment | Replicas (2026-11-10) | Runs | Job |
+|---|---|---|---|
+| `bat3-ceitec-bat3-api` | 1 | `uvicorn src_new.api.main:app --workers 4` (command pinned in the deployment; the image's default CMD is the validation API) | public runs API, `/files` serving, run reaper |
+| `bat3-ui-worker` | 10 | `celery -A src_new.celery_app worker --pool=threads --concurrency=2 -Q validation.ui.celery` | executes every run submitted through the web application, the REST API or the MCP server (`VALIDATION_UI_QUEUE` on the API routes them here) |
+| `bat3-ceitec-bat3-worker` | 8 | `celery -A src_new.celery_app worker --pool=threads --concurrency=2 --prefetch-multiplier=1` (default queue `celery`) | campaign runs (directly dispatched), re-runs |
+| `bat3-ceitec-bat3-web` | 1 | `bat3-frontend` image (`Dockerfile.frontend`: `ui/` built with Vite, served by nginx) | the web application; proxies `/api` and `/files` to the API |
+| `bioid-mcp` | 1 | `bioid-mcp` image (`Dockerfile.mcp`, `python -m mcp_server`) | MCP server, a client of the public API |
+| `validation-docs` | 1 | `bat3-docs` image (`Dockerfile.docs`) | this site, at `/documentation/` on the BioID host and `/docs/` on the validation host |
+| `bat3-redis` | 1 | `redis:8-alpine` | Celery broker and result backend (`bat3-ceitec-bat3-redis` is an unused leftover at 0) |
+| `validation-api` | 1 | `uvicorn main:app` (image `v3.132`) | campaign queue control plane; dispatch disabled |
+| `validation-worker` | 0 | `celery -A tasks worker` | campaign worker of the queue path (scaled to 0 on 2026-10-09) |
+| `validation-ui` | 1 | static nginx (`Dockerfile.validation-ui`, source in the separate `bat3_validation` repository) | campaign dashboards |
+| `validation-postgres` | 1 | `postgres:15-alpine` | queue and entry state of the campaign control plane |
+
+Replica counts change with load; the workers' resource limits are 4 CPU and
+20 GiB (fleet) or 10 GiB (UI workers). Other deployments in the namespace
+(`mdpc-*`, `pdbcharges-toolkit-2`, `bat3-darkmatter-worker`) belong to
+other projects or to the separate dark-matter study and are not part of BioID.
+
+Kubernetes manifests: the Helm chart in `bat3-chart/` (release
+`bat3-ceitec`: API, web, fleet worker, PVCs, the main ingress, and the
+unused chart Redis), plus `deploy/` for what lives outside the chart
+(`ui-worker.yaml`, `mcp-server.yaml`, `validation-docs.yaml`,
+`bioid-ingress-extras.yaml` for the `/mcp` and `/documentation` paths, nginx
+configs) and `k8s/` for the database build Jobs. Live deployments have drifted
+from the chart (images and env set with `kubectl set`); compare with the
+live object before a `helm upgrade`.
+
+## Storage
+
+| Volume | Mounted at | Holds |
 |---|---|---|
-| validation-api ×1 | repo-root `main.py` (FastAPI "BAT3 Validation API v1.0.0") + `queue_processor.py` | Campaign control plane: queue/state DB API, background dispatch (gated by `VALIDATION_DISPATCH_ENABLED=1`), completion settle, stale sweep |
-| validation-worker ×164 | `celery -A tasks worker --concurrency=2 --prefetch-multiplier=1` | Executes `schedule_validation` (download inputs) and `src_new.api.tasks.run_pipeline_task` (the pipeline) |
-| bat3-ceitec-bat3-api ×1 | `uvicorn src_new.api.main:app` | Interactive runs API (UI), `/files/...` public file serving used by RCSB structure search |
-| bat3-ceitec-bat3-worker ×15 | `celery -A src_new.celery_app ...` | Interactive/UI run execution (default queue) |
-| bat3-ui-worker ×2 | `celery -A src_new.celery_app -Q validation.ui.celery` | UI-tagged batches (dedicated queue) |
-| validation-ui / bat3-web | static frontends (nginx) | Dashboards; no compute |
-| validation-postgres, bat3-redis | infra | Queue/state DB; broker+result backend |
+| databases PVC | `/app/databases` | BLAST databases (nr, nt, core_nt, pdbaa, pdbnt, Swiss-Prot, UniRef50), Foldseek databases, PubChem and ChEMBL SQLite mirrors, SIFTS/SwissLipids/ChEBI indexes |
+| runs PVC | `/app/runs` | one directory per web/API run: `input/`, `config.ini`, `results.json`, logs, `render/`; `_adhoc/` for RCSB query files |
+| validation PVC (NFS) | `/data/validation` | campaign entries `<eid>/input/`, `<eid>/results*.json`, campaign configs, statistics artifacts, backups |
+| pod-local | `/app/cache` | resolver cache (`BAT3_IDENTIFIERS_CACHE_DIR`; SQLite WAL does not work on NFS) |
 
-## Data layout (NFS `/data/validation`)
+## Life of a run
 
-- `<eid>/input/` downloaded simulation inputs per MDDBR entry (served publicly as
-  `/files/validation-<eid>-<ts>/input/<name>` by the ceitec API for RCSB fetches)
-- `<eid>/results.json` the single source of truth per entry (no DB copy of results)
-- `sim_cache/` external-API caches (RCSB etc., no TTL)
-- `config_shared.ini` campaign configuration (mounted into api+workers)
-- `backups/`, `logs/`, stats tooling and figure artifacts (see Methodology)
+1. `POST /api/v1/runs` validates the upload and settings, writes
+   `runs/<id>/input/`, `config.ini` and a `queued` `results.json`, and sends
+   `run_pipeline_task` to `validation.ui.celery`.
+2. A UI worker takes a per-run Redis lock and runs the pipeline in a child
+   process with a wall-clock limit. Stages run serially; each expensive stage
+   has a budget.
+3. Progress and results are written **only** to `results.json`
+   (`ResultsManager`, atomic writes). Celery task state is not a completion
+   signal.
+4. The API reads `results.json` for every response; the reaper marks runs
+   failed whose task disappeared (worker killed).
 
-## Execution lifecycle of one entry
+Campaign runs follow the same steps on the fleet worker, with inputs and
+results under `/data/validation/<eid>/` (see
+[Running validations](running-a-validation.md)).
 
-1. Dispatcher (`process_validation_queue`, 15s tick) claims a `queued` row
-   (SELECT ... FOR UPDATE SKIP LOCKED), creates a `bat3_runs` row, dispatches
-   `run_pipeline_task` with a **timestamped** run id `validation-<eid>-<14-digit ts>`.
-2. Worker downloads inputs (mddbr_client) if absent, then runs the pipeline
-   stages: discover input → load/repair → segment → generate signatures →
-   identify → verify → export mmCIF. Serial per entry; each stage has a wall-clock
-   budget (default 900–1200s, `VALIDATION_STAGE_BUDGETS`).
-3. Progress and results persist **only** to `<eid>/results.json`
-   (`ResultsManager`, atomic writes). Celery task state is not a completion signal.
-4. Settlement (30s tick): `check_task_completions` from Celery metadata +
-   `settle_by_results_truth` (NFS-truth): all stages success/skipped/warning,
-   file mtime ≥ attempt start − 600s, file ≥ 15 min old → queue row `completed`.
-5. Sweep (same tick): rows stuck `processing` > `VALIDATION_STALE_HOURS` (12h)
-   → requeued (see known limitations, Operations).
+## Invariants
 
-## Hard-won invariants (do not violate)
-
-- **Era unity**: during any re-queue, ALL components that execute pipeline code
-  (every worker class) must run the same image. Mixed-era fleets corrupt comparisons.
-- **Results are truth**: never mark completion from queue/Celery alone (V-17).
-- **No silent channels**: every generator/resolver failure must reach
-  `results.json` `stage_errors` (bounded), not just logs (F-N1e contract).
-- **`BAT3_SRC=/tmp/gate_src` required** when running overlay gate scripts, or the
-  baked image code silently executes instead (V-18 mechanism).
+- **Era unity**: during a campaign or re-run wave, every worker that executes
+  pipeline code runs the same image. Mixed-image fleets corrupt comparisons.
+- **Results are the truth**: never mark completion from queue or Celery state
+  alone.
+- **No silent channels**: every generator or database failure must reach
+  `results.json` `stage_errors`, not just the log.
+- **Workers that run BLAST keep `BLASTDB_MEM_MAP=0`**: BLAST then reads the
+  NFS volume with `read()`; a memory-mapped page on a stalled NFS mount kills
+  the process with SIGBUS (OQ-16, 2026-10-19).

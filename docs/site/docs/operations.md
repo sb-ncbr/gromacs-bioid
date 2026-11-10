@@ -1,56 +1,103 @@
 # Operations
 
-Running the fleet day-to-day; failure taxonomy; when to worry.
+Running the BioID service on the CEITEC cluster (namespace
+`ceitec-biodata-ns`). Component layout: [Architecture](architecture.md).
 
-## Fleet layout (steady state)
+## Images
 
-- 1× validation-api (control plane brain: dispatch gate + settle + sweep)
-- 164× validation-worker, 15× ceitec-worker, 2× ui-worker — all on one image
-  (`bat3-validation-api:v3.125-N1`), `--concurrency=2 --prefetch-multiplier=1`
-- 2× static UIs, postgres, redis (single broker `bat3-redis`; the second
-  `bat3-ceitec-bat3-redis` is dormant at 0/0 — F-13)
+| Image | Built from | Deployed to |
+|---|---|---|
+| `cerit.io/tomsko/bat3-validation-api` | `docker build -f Dockerfile.full .` (includes BLAST, Foldseek, PyMOL, RDKit) | `bat3-ceitec-bat3-api`, `bat3-ceitec-bat3-worker`, `bat3-ui-worker` |
+| `cerit.io/tomsko/bat3-frontend` | `docker build -f Dockerfile.frontend .` (`ui/`) | `bat3-ceitec-bat3-web` |
+| `cerit.io/tomsko/bioid-mcp` | `docker build -f Dockerfile.mcp .` | `bioid-mcp` |
+| `cerit.io/tomsko/bat3-docs` | `docker build -f Dockerfile.docs docs/site` (`mkdocs build --strict`) | `validation-docs` |
 
-## The three background loops (validation-api)
+Build from a clean checkout of the commit you release (a detached worktree),
+never from a working tree with local changes. Use a new tag for every build:
+`kubectl set image` to an identical string is a no-op, and nodes may serve a
+cached image for a re-pushed tag. Prefer digest references
+(`image@sha256:…`) for the backend.
 
-| Loop | Cadence | What it does | Failure signature |
+## Rollout
+
+The backend release sets **one** backend image on the API, the fleet worker
+and the UI worker (and optionally a new frontend tag), in one step:
+
+1. **Refuse if busy**: every Celery queue (`celery`, `validation.ui.celery`,
+   and any campaign queue) must be empty and no task active (a rollout
+   kills running pipelines).
+2. **Snapshot** each deployment's YAML before changing it.
+3. `kubectl set image` on `bat3-ceitec-bat3-worker` (containers `worker` and
+   `cache-seed`), `bat3-ui-worker`, `bat3-ceitec-bat3-api`, and set
+   `BAT3_CODE_VERSION=git-<short sha>` on each; frontend:
+   `set image deploy/bat3-ceitec-bat3-web web=…`.
+4. Wait for `kubectl rollout status` on all of them.
+5. **Verify**: each pod's `imageID` digest, the served `index-*.js` hash of
+   the web application, and `code_version` in
+   `GET https://bioid-ceitec.dyn.cloud.e-infra.cz/api/v1/capabilities`.
+
+The maintainer's script for this (`release.sh <digest> <short sha> [frontend
+tag]`) is kept outside the repository. Not covered by it, and deployed
+separately:
+
+- **Docs**: build `Dockerfile.docs`, then
+  `kubectl -n ceitec-biodata-ns set image deploy/validation-docs docs=cerit.io/tomsko/bat3-docs:<tag>`.
+- **MCP server**: `Dockerfile.mcp`, manifest `deploy/mcp-server.yaml`
+  (deployment `bioid-mcp`).
+- Their paths on the BioID host (`/documentation`, `/mcp`) are separate
+  Ingresses in `deploy/bioid-ingress-extras.yaml`, because the main ingress
+  `bat3-ceitec-bat3-ingress` is managed by Helm and a path patched into it
+  would be lost on the next `helm upgrade`.
+
+Never mix images across worker classes during a campaign or re-run wave
+(era unity). The dark-matter worker (`bat3-darkmatter-worker`) belongs to a
+separate study and is not touched by a BioID release.
+
+## Scaling
+
+UI workers (`bat3-ui-worker`) execute every web, API and MCP run, two at a
+time per pod; scale them with the expected interactive load. The fleet
+worker (`bat3-ceitec-bat3-worker`) only matters for campaigns: g1 ran on 24
+pods (4 vCPU, 20 GiB each, two pipelines per pod). With a large fleet,
+restrict which pods consume the `celery` queue so that RCSB structure search
+is not overloaded.
+
+## Health checks
+
+- `kubectl -n ceitec-biodata-ns get deploy` — all ready; API and both worker
+  classes on the same image.
+- `GET /api/v1/capabilities` — answers, with the expected `code_version`.
+- Run an example: submit a small PDB file with the `quick` preset and check
+  that it reaches `success` with verified hits.
+- `stage_errors` and `identification/structure_search_unavailable` in recent
+  results — a database channel that dies shows up here first.
+- Free space on the runs and databases volumes; runs are not cleaned up
+  automatically, the resolver cache has no TTL.
+- Log volume of `stage_time_budget` warnings.
+
+## Known failure classes
+
+| Class | Symptom | Cause | Handling |
 |---|---|---|---|
-| Dispatch | 15s | claims `queued` rows (SKIP LOCKED), creates bat3_runs, sends celery tasks; gated by `VALIDATION_DISPATCH_ENABLED=1`, throttle 4–12/tick | queue grows while workers idle → check gate env + api logs |
-| Completion + truth-settle | 30s | celery metadata settle; NFS-truth settle (all stages done in results.json, mtime ≥ start−600s, file ≥15min old) | stuck `processing` with done results.json — check NFS mounts/clock skew |
-| Stale sweep | 30s | >`VALIDATION_STALE_HOURS`(12h) `processing` rows → requeued; runs → failed; counters reconciled | repeats of the same entries = pathology class below |
+| Broker wedge | throughput collapses without restarts | the network keeps dead TCP connections open | socket timeouts, keepalive and health checks in `src_new/celery_app.py`; `visibility_timeout` 6 h |
+| Worker OOM | pods killed on large systems | big pipelines × prefetch | `--prefetch-multiplier=1`, `--concurrency=2` |
+| Stalls | a stage runs for hours | slow external services, large searches | stage budgets; slow databases deferred to the second pass |
+| SIGBUS / lost tasks | a run vanishes mid-stage | memory-mapped BLAST database on a stalled NFS mount | `BLASTDB_MEM_MAP=0`; late acks; the run reaper marks orphaned runs failed |
+| Wrong file URL | RCSB evidence missing on every run | `DEPLOYMENT_FILE_URL` not this deployment | fix the env; see [Internal API](api.md#the-rcsb-file-serving-contract) |
+| RCSB overload | `structure_search_unavailable` records | too many concurrent structure searches | per-process cap and backoff; fewer fleet consumers |
+| Clock skew | Celery ETA warnings, odd mtimes | NFS server clock ahead of the pods | harmless for result handling |
 
-## Known failure classes (from the incident registry)
+## The queue control plane (dormant)
 
-| Class | Symptom | Mechanism | Response |
-|---|---|---|---|
-| Broker wedge | throughput collapses, 0 restarts | cluster middlebox keeps dead TCP ESTABLISHED | fixed in code (socket timeouts, keepalive, health checks); visibility_timeout=6h |
-| Poison entries | worker OOMKills | multi-GB pipelines × prefetch | prefetch=1, concurrency=2 (fixed) |
-| Stalls | stages parked hours | resolver/fetch fan-out | stage budgets (fixed); budget warnings are searchable |
-| Stragglers (pathological) | same entries requeue every 12h | underlying cause = per-entry hard hangs outside budgeted stages | **quarantine deployed (F-05, v3.126-audit2):** each stale cycle consumes `retry_count`; at `MAX_RETRIES` (3) the item + entry fail permanently (`stale_timeout … cycle K/3`) — no more infinite loops |
-| Clock skew (NFS vs pods, ~7200s) | celery ETA warnings; settle delayed | NFS server clock ahead | benign for settle (conservative); keep in mind when reading mtimes |
-| Replay-vs-serve 404s | offline replay "invalid entry_id" | derived payloads not under served input/ (V-22) | prove wire changes publicly, separately |
+`validation-api` (repository-root `main.py` + `queue_processor.py`) ran the
+v1–v14 campaigns. Its loops, all inside the API process (APScheduler):
 
-## Rollout procedure (era rule)
+| Loop | Cadence | Does |
+|---|---|---|
+| Dispatch | 15 s | claims `queued` rows (`SELECT … FOR UPDATE SKIP LOCKED`), creates the run record, sends `run_pipeline_task` with run id `validation-<eid>-<timestamp>`; gated by `VALIDATION_DISPATCH_ENABLED=1`, throttled by `VALIDATION_DISPATCH_CONCURRENCY` (code 12, production 4) |
+| Settle | 30 s | marks rows completed from Celery state, or from `results.json` itself (all stages finished, file at least 15 min old) |
+| Stale sweep | 30 s | re-queues rows `processing` longer than `VALIDATION_STALE_HOURS` (code 24, production 12); after 3 such cycles the row fails permanently |
 
-1. Build & push a single image tag; never mix tags across worker classes.
-2. Update **apis first** (they only dispatch), then validation-worker fleet,
-   then ceitec workers, then ui-worker — last executor class finishes the era flip.
-3. Verify: pod image uniform, `config_shared.ini [pdb] deployment_file_url`
-   matches the serving instance, public smoke (a `/files/validation-...` GET 200
-   + an RCSB 204 fetched-ok POST).
-4. Keep rollback: deployment yamls snapshotted pre-change (`.tmp/w6b/*.bak.yaml`).
-
-## Health checks worth running weekly
-
-- `kubectl get deploy` — all ready, image uniform
-- Queue: no batch stuck `running` with all rows terminal; straggler requeue count flat
-- `stage_errors` volume sample (dead-channel early warning — the N1 lesson)
-- sim_cache growth on NFS (no TTL — watch capacity)
-- Log scan for `[SPIN_DEBUG]` noise level and `stage_time_budget` frequency trend
-
-## Current parked decisions (owner: project lead)
-
-- NA-mode RCSB containment (dead-by-design attempts → short-circuit?)
-- W10 all-class RCSB-benefit requeue (expected yield bounds from audit:
-  channel serves protein-only entries, 10-row truncation)
-- Audit fix queue F-01…F-28 dispositions (see `docs/CHEMISTRY_FIX_TODO.md`,
-  FINAL AUDIT section)
+Dispatch has been off since 2026-10-09 and `validation-worker` is at 0
+replicas; `validation-ui` and the Postgres database remain as the record of
+those campaigns. Its routes are listed on [Internal API](api.md).

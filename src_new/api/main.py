@@ -58,7 +58,7 @@ API_DESCRIPTION = """
 Identify the biomolecules in a molecular dynamics simulation: upload the
 files, poll the run, read the identifications.
 
-* **Guide and examples**: [/documentation/](/documentation/) (REST API section)
+* **REST API guide**: [/documentation/rest-api/](/documentation/rest-api/)
 * **results.json structure**: [/documentation/results-json/](/documentation/results-json/)
 * **For AI assistants**: the MCP server at `/mcp` ([guide](/documentation/mcp/))
 

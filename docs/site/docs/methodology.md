@@ -1,89 +1,96 @@
 # Methodology & statistics
 
-How campaign-wide trust numbers are produced, and how to reproduce/audit them.
+How the validation figures are produced, and how to reproduce or audit them.
+This covers the MDDBR/MDposit validation only; other studies run on the same
+cluster (such as the dark-matter survey of unannotated deposits) are separate
+and never mixed into these numbers.
 
-## Ground truth (GT)
+## Ground truth
 
-MDDBR annotations per simulation entry (PDB IDs, UniProt, InChIKeys,
-ion names...), harvested by `scripts/harvest_chemical_gt.py` /
-`gt_rules.py` into frozen GT sets at the start of a statistics era.
-**Frozen denominator rule**: an era's GT annotation/attempted counts never
-change inside the era (the InChIKey window 5,784 annotations / 5,768 attempted
-was held exact from v11 to v12); growth waves advance GT deliberately, in a
-documented step.
+The curated annotations of each MDposit deposit — PDB IDs, UniProt
+accessions, InChIKeys, ion names — harvested by
+`scripts/stats/harvest_chemical_gt.py` and `scripts/stats/gt_rules.py`. For g1: PDB and
+UniProt harvested 4–6 Aug 2026, InChIKeys 10 Sep 2026.
 
-## Metric: similarity hit@K
+**Frozen denominators**: within one statistics era the annotation set does
+not change; it grows only in a documented step between eras.
 
-Per entry, per GT annotation: does any pipeline hit (merged over the entry's
-fragments) cover this annotation within the top-K candidates?
-The family-aware scorer checks each annotation against **its own identifier
-family first** (a same-family candidate anywhere in the list counts), falling
-back to a shallow global window (depth 25) only when no same-family candidate
-exists. Raw row = (entry, annotation, hit@1/5/10, matched identifier...).
+## Metric: validated hit@K (S7)
 
-Reported in two forms, always together:
+Every annotation of a scanned deposit with at least one verified hit is
+compared with the deposit's **verified** hits of the matching family (PDB,
+UniProt, small molecule, ion), in BioID's reported order; it counts as
+validated at K if one of the first K hits describes the annotated entity
+(same identifier, or sequence/structure equivalence above the threshold;
+ions by element). If no same-family hit exists, a shallow global window is
+searched. Annotation–hit pairs whose identities cannot be resolved score
+0 and stay in the denominator, so unresolvable pairs can only understate the
+result.
 
-- **raw** — e.g. 5,358/5,768 verified hits @10
-- **normalized (pct)** — e.g. 92.9%
+Always report the count next to the percentage (e.g. 6,389 of 6,736). Some
+blocks are computed over deposits that ran in the current era and have at
+least one hit; when such a window grows, a percentage can dip while the
+count rises — that is a moving window, not a regression.
 
-## The S7 run-window caveat (V-23)
+Complementary views used in the paper:
 
-Some blocks (chemical verified percentages, ion counts) are computed over
-**entries that ran in the current era and have ≥1 hit** — denominators grow
-legitimately when requeue waves add entries. Always present absolute numbers
-next to percentages when comparing eras; a pct dip with an abs rise (e.g.
-pdb @10 99.6%→99.5% while 11,035→11,130) usually means the window moved, not
-regression.
+- **Equivalence**: does the top hit describe the molecule as well as the
+  curated entry does (`v4_equivalence_*.json`).
+- **Funnel**: molecules → signatured → with a candidate → verified, per
+  molecule class.
+- **Failure analysis**: for annotations not validated at rank 1, whether
+  the annotation is not accessible (does not resolve in PubChem/ChEMBL),
+  below threshold, or absent from the files.
 
-## Tooling (figure-data pipeline)
+## Tooling
 
-Official generators (run against NFS results):
+`scripts/stats/` holds the statistics generators under version control (tag
+`v12-stats-generators` marks the v12 code era); the cluster keeps execution
+copies and data under `/data/validation/`.
 
 | Tool | Purpose |
 |---|---|
-| `campaign_stats.py` (also `scripts/` in repo, md5-synced) | throughput + S7 hit@K vs GT (`--full --sim`) |
-| `bag_funnel.py` / `bag_funnel_v12_run.py` | funnel: entries → molecules → hits → verified, with why-missing classes |
-| `coverability_probe.py` | chem residual scoring: regen candidates vs **anchor** era; hard gate that previously-published rows never flip (`PROBE_ANCHOR_JSON` selects the anchor, e.g. v11 after the v12 wave) |
-| `assemble_stats_package(_v12).py` | merges the above into `stats_package_vNN.{json,md}` |
-| `n1_*.py` | N1-wave audit/gates/replay harnesses |
+| `scripts/stats/campaign_stats.py` (+ `validation_similarity.py`) | throughput and S7 hit@K against ground truth |
+| `scripts/stats/bag_funnel*.py` | molecule funnel with why-missing classes |
+| `scripts/stats/coverability_probe.py` | small-molecule residual: candidates against an anchor era; previously published rows must not flip |
+| `scripts/stats/failure_mode_audit.py` | per-type decomposition of the residual |
+| `scripts/stats/assemble_stats_package*.py` | merges the above into `stats_package_vNN.{json,md}` |
+| `scripts/stats/sigstage_*.py`, `molecule_export.py` | signature-stage audit and the per-molecule export |
+| `scripts/stats/replay_identify_verify.py`, `scripts/stats/replay_verification.py`, `replay_gate_*.py` | identify/verify replays in shadow directories, no mutation |
 
-Figure artifacts land on NFS (`/data/validation/stats_package_v12.*`,
-`campaign_stats_v12.json`, `bag_funnel_v12.json`, `coverability_probe.json`,
-`residual_failing_rows_v8.jsonl`, `n1_*.json`).
+The g1 figure data (`s7_full_g1_verified.json`, `fig2_panels_cd_g1*.json`,
+`fig3_basis_g1.json`, …) were produced with these tools plus scripts kept
+with the manuscript; they are not in this repository.
 
-!!! success "Tooling provenance (F-28, resolved 2026-10-05)"
-    Statistics/wave tooling is now under version control at
-    **`scripts/stats/`** (34 byte-identical md5-verified copies of the NFS set
-    + adopted audit tools; tag **`v12-stats-generators`** marks the exact
-    code era). Gold e2e: the repo-copy `assemble_stats_package_v12.py`
-    regenerates the official `stats_package_v12.json/.md` byte-identically
-    (timestamp-normalized). Repo is edit-first; NFS keeps execution copies
-    and data. `bag_funnel.py`/`bag_funnel_v12_run.py` are a known hand-fork
-    pair, pinned as-is.
+## Rules followed during campaigns
 
-## Guardrails in force (campaign rules)
+- **Ground-truth-blind tuning**: thresholds and ordering are changed on
+  hit-level evidence and anomaly audits, never fitted to the ground-truth
+  numbers.
+- **Snapshots before mutation**: result tarballs and database dumps before
+  every re-run wave; previous results kept as `*.attemptN`.
+- **Replay first**: before a re-run, a replay measures the expected change and
+  shows that nothing is lost.
+- **Era unity**: one image for every worker during a wave; each targeted
+  re-run set is chosen by a measured defect and recorded with its commit.
+- **Non-regression of the residual**: previously validated rows must not
+  fail in a new era; changes in either direction are reported.
 
-- **GT-blind tuning**: thresholds/order changes are validated on hit-level
-  evidence and anomaly audits, never fitted against GT numbers directly.
-- **Snapshots before mutation**: prerequeue result tarballs + PG dumps exist
-  under `/data/validation/backups/` for every wave.
-- **Replay-first**: before any requeue, the W7 replay harness
-  (`n1_w7_replay.py`: identify+verify in shadow roots, zero mutation) measures
-  expected deltas and proves *nothing is lost*.
-- **Era unity**: a wave's requeued entries must be processed by a single image
-  era (fleet-wide canary → rollout order: api → validation workers → ceitec
-  workers).
-- **Coverability non-regression**: the chem residual set (410 rows) is a hard
-  gate at every statistics era — new pairs allowed, previously-failing rows
-  must not re-fail... and must not be silently "fixed" either (both directions
-  are reported).
+## Reading the g1 figures
 
-## Interpreting headline numbers (v12)
+The current figures are on the [overview](validation.md#current-figures-campaign-g1-2026-11-07).
 
-- InChIKey @10 92.9% exact — frozen window, comparable across eras.
-- UniProt/PDB ≈ 98–99.5% — the structural class channels (BLAST/AlphaFind) are
-  saturated; remaining misses are content-absence classes.
-- Nucleic 19.75% — bounded by verifiable content: short designed oligos have no
-  exact-matchable deposit (e-value floor physics) and mixed assemblies lack
-  RCSB coverage (see identifiers page); strata detail lives in
-  `n1_postwave_rate.json`.
+- PDB and UniProt are close to saturation; the remaining UniProt misses are
+  mostly antibody constant regions and near-identical histone paralogs just
+  under the identity threshold.
+- About 226 curated small-molecule InChIKeys resolve in neither PubChem nor
+  ChEMBL ("not accessible"); they bound the small-molecule rate.
+- Nucleic acids (39.7 % of molecules identified) are bounded by content:
+  most hitless ones are short designed oligonucleotides (≤ 25 nt) without an
+  exact database record.
+
+!!! note "History"
+    The v12 (2026-10-04) and v14 (2026-10-09) campaigns used the
+    `validation-api` queue path and earlier scoring rules (v12: hit@10 over
+    all candidates). Their packages (`stats_package_v12.*`,
+    `campaign_stats_v14.json`) remain on the validation volume.
