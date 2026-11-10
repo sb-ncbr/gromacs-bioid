@@ -50,7 +50,8 @@ async def test_list_presets_old_server(call, api):
 
 def _created(request: httpx.Request):
     return httpx.Response(200, json={"run_id": "new-run-1", "status": "queued",
-                                     "message": "ok", "results_url": "/runs/new-run-1/status"})
+                                     "message": "ok", "results_url": "/runs/new-run-1/status",
+                                     "owner_token": "tok-1"})
 
 
 async def test_submit_files_text_and_base64(call, api):
@@ -62,6 +63,7 @@ async def test_submit_files_text_and_base64(call, api):
         "preset": "quick", "run_name": "my run"})
     assert not err, out
     assert out["run_id"] == "new-run-1"
+    assert out["owner_token"] == "tok-1" and "cancel_run" in out["owner_token_note"]
     assert out["preset"] == "quick"
     assert out["results_page"] == f"{PUBLIC}/runs/new-run-1"
     assert "2-8 minutes" in out["next"]
@@ -434,14 +436,24 @@ async def test_list_examples_limit_validated(call, api):
 
 async def test_cancel_run(call, api):
     route = api.post(f"https://api.test/api/v1/runs/{RUN}/cancel").respond(json={"run_id": RUN, "status": "cancelled"})
-    err, out = await call("cancel_run", {"run_id": RUN})
+    err, out = await call("cancel_run", {"run_id": RUN, "owner_token": "tok"})
     assert not err and out["status"] == "cancelled" and route.called
+    assert route.calls.last.request.headers["X-Owner-Token"] == "tok"
+
+
+async def test_cancel_needs_owner_token(call, api):
+    err, text = await call("cancel_run", {"run_id": RUN, "owner_token": " "})
+    assert err and "owner_token is required" in text
+    api.post(f"https://api.test/api/v1/runs/{RUN}/cancel").respond(
+        403, json={"detail": "Only the submitter of this run can have it cancelled."})
+    err, text = await call("cancel_run", {"run_id": RUN, "owner_token": "wrong"})
+    assert err and "Only the submitter" in text
 
 
 async def test_cancel_finished_run(call, api):
     api.post(f"https://api.test/api/v1/runs/{RUN}/cancel").respond(
         400, json={"detail": "Run is already in terminal state: success"})
-    err, text = await call("cancel_run", {"run_id": RUN})
+    err, text = await call("cancel_run", {"run_id": RUN, "owner_token": "tok"})
     assert err and "already finished (success)" in text
 
 

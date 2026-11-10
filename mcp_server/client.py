@@ -198,7 +198,8 @@ class BioIDClient:
     async def examples(self, limit: int) -> dict[str, Any]:
         return await self._json("/api/v1/runs/examples", params={"limit": limit})
 
-    async def cancel(self, run_id: str) -> dict[str, Any]:
+    async def cancel(self, run_id: str, owner_token: str) -> dict[str, Any]:
         resp = await self._request("POST", f"/api/v1/runs/{run_id}/cancel",
-                                   not_found=self._run_missing(run_id))
+                                   not_found=self._run_missing(run_id),
+                                   headers={"X-Owner-Token": owner_token})
         return resp.json()

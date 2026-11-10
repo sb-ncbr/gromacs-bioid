@@ -18,10 +18,11 @@ with `/files`.
 ```bash
 BIOID=https://bioid-ceitec.dyn.cloud.e-infra.cz/api/v1
 
-# 1. submit
-RUN_ID=$(curl -s -F files=@topol.tpr -F files=@conf.gro \
-              -F run_name="lysozyme in water" -F preset=balanced \
-              "$BIOID/runs" | python3 -c 'import sys,json; print(json.load(sys.stdin)["run_id"])')
+# 1. submit (keep the answer: its owner_token is needed to cancel or delete the run)
+curl -s -F files=@topol.tpr -F files=@conf.gro \
+     -F run_name="lysozyme in water" -F preset=balanced \
+     "$BIOID/runs" > submitted.json
+RUN_ID=$(python3 -c 'import json; print(json.load(open("submitted.json"))["run_id"])')
 
 # 2. wait: poll every minute or two
 curl -s "$BIOID/runs/$RUN_ID/queue"      # {"state": "queued", "position": 3, "ahead": 2}
@@ -40,7 +41,7 @@ curl -o results.json "$BIOID/runs/$RUN_ID/download/results.json"
 
 | Field | Required | Meaning |
 |---|---|---|
-| `files` | yes, repeat for each file | the simulation files (formats in [Submitting a simulation](index.md#submitting-a-simulation)); a `.zip` / `.tar` / `.tar.gz` bundle also works |
+| `files` | yes, repeat for each file | the simulation files (formats in [Submitting a simulation](index.md#submitting-a-simulation)); a `.zip` / `.tar` / `.tar.gz` bundle also works; at most 50 files |
 | `run_name` | no | a label shown in the run list and the results page |
 | `preset` | no | `balanced` (the default settings), `quick`, `exact` or `deep`; see [Presets](index.md#presets-and-advanced-configuration) |
 | `config_json` | no | settings to change, as JSON `{"section": {"field": value}}`; applied after the preset |
@@ -51,8 +52,13 @@ The response comes at once; the run is queued:
 ```json
 {"run_id": "1c2a4d4b-…", "status": "queued",
  "message": "Run 1c2a4d4b-… queued successfully",
- "results_url": "/runs/1c2a4d4b-…/status"}
+ "results_url": "/runs/1c2a4d4b-…/status",
+ "owner_token": "q3J…"}
 ```
+
+`owner_token` is shown only here. Keep it: cancelling or deleting the run
+needs it, sent as the `X-Owner-Token` header. (The web application keeps it
+in your browser.)
 
 The results page in the web application is
 `https://bioid-ceitec.dyn.cloud.e-infra.cz/runs/<run_id>`.
@@ -100,7 +106,7 @@ recorded as `pipeline.preset` in results.json.
 | `GET /runs/{id}` | a short summary: status, times, input kind, run name, counts of tasks, warnings and errors |
 | `GET /runs/{id}/loading` | how the input files were read: strategy, attempts, topology files, why a load failed |
 | `GET /runs/{id}/logs` | the run log as text (`?type=debug` for the verbose log) |
-| `POST /runs/{id}/cancel` | cancels a queued or running run (400 if it already finished) |
+| `POST /runs/{id}/cancel` | cancels a queued or running run; needs `X-Owner-Token` (403 without it, 400 if the run already finished) |
 
 `pipeline.status` ends as `success`, `failed` or `cancelled`. A finished run
 can still carry warnings, for example a database search that timed out; the
@@ -136,9 +142,17 @@ How to read the confidence and the verified flag is explained in
 | Call | Returns |
 |---|---|
 | `GET /runs/examples` | the finished example runs shown on the front page (`?limit=`) |
-| `GET /runs?mine=1` | runs submitted from your network address (what *Your annotations* shows) |
-| `POST /runs/{id}/rerun` | a new run with the same input files and settings; returns the new `run_id` |
-| `DELETE /runs/{id}` | deletes the run and its files |
+| `GET /runs` | the runs submitted from your network address (what *Your annotations* shows); other people's runs are never listed |
+| `POST /runs/{id}/rerun` | a new run with the same input files and settings; returns the new `run_id` and its `owner_token` |
+| `DELETE /runs/{id}` | deletes the run and its files; needs `X-Owner-Token` |
+
+```bash
+curl -X POST   -H "X-Owner-Token: $TOKEN" "$BIOID/runs/$RUN_ID/cancel"
+curl -X DELETE -H "X-Owner-Token: $TOKEN" "$BIOID/runs/$RUN_ID"
+```
+
+Runs submitted before 10 November 2026 and the example runs have no owner
+token and cannot be cancelled or deleted through the API.
 | `GET /capabilities` | API feature markers, typical run duration, deployed code version |
 | `GET /health` | service health |
 
@@ -146,16 +160,23 @@ How to read the confidence and the verified flag is explained in
 
 - **Upload size**: at most 128 MiB per file, and the whole request is also
   limited to 128 MiB by the web server; larger requests fail with 413.
-- **No rate limit** is enforced, and runs share a queue with everyone
-  else's. Please keep a few runs in flight at a time and poll no more than
-  about once a minute. For large batches, write to the contact below first.
+- **Files**: at most 50 per run; only simulation, structure, configuration
+  and archive files (the formats above) are accepted.
+- **Submissions**: at most 30 runs (new or re-runs) per hour from one network
+  address, and none while 40 runs are already waiting in the queue. Both
+  answer **429** with a `Retry-After` header (seconds) and a message saying
+  when to try again. Poll no more than about once a minute; for large
+  batches, write to the contact below first.
 - **Retention**: runs are not deleted automatically.
 
 | Status | When |
 |---|---|
 | 404 | unknown run id, or a molecule (`segment`) that is not in the run |
-| 413 | a file (or the request) is larger than 128 MiB |
-| 422 | no usable file names, duplicate file names, invalid `config_json`, an unknown preset, an unknown or non-changeable setting, a value of the wrong type or out of range |
+| 413 | a file (or the request) is larger than 128 MiB, or more than 50 files |
+| 422 | no usable file names, duplicate file names, a file type BioID does not read, invalid `config_json`, an unknown preset, an unknown or non-changeable setting, a value of the wrong type or out of range, a malformed run id |
+| 429 | too many submissions from your address this hour, or the queue is full; see `Retry-After` |
+| 403 | cancelling or deleting without the run's owner token |
+| 409 | `run_id` given for a run that already exists |
 | 400 | cancelling a run that already finished; a PDB download without `segment` when the run has several molecules |
 | 500 | a server-side failure; please report it |
 
@@ -164,8 +185,10 @@ Error responses are JSON: `{"detail": "<message>"}`.
 ## Privacy
 
 Runs are not tied to an account: **anyone who has a run's id can open its
-results, cancel it, re-run it or delete it**. The service records the address
-a run was submitted from (to list *Your annotations*). Sequences and
+results and re-run it**; only the holder of its owner token can cancel or
+delete it. Run ids are random and are not listed to others. The service keeps
+a keyed hash of the address a run was submitted from (to list *Your
+annotations* and apply the limits), not the address itself. Sequences and
 structures of your molecules are sent to public search services (for
 example RCSB PDB, PubChem, AlphaFind) to find matches. Do not submit data you
 are not allowed to share.

@@ -18,7 +18,7 @@ the REST API also serves the parts separately (`/molecules`, `/verification`,
 {
   "created_at": "2026-11-08T23:50:46+00:00",
   "updated_at": "…",
-  "pipeline":  { run_id, run_name, status, started_at, finished_at, input_kind, preset? },
+  "pipeline":  { run_id, run_name, status, started_at, finished_at, input_kind, preset?, … },
   "tasks":     { <task_id>: { name, status, started_at, finished_at, summary } },
   "warnings":  [ { code, message, severity, step_id, details, recorded_at } ],
   "critical_errors": [ … same shape … ],
@@ -33,6 +33,7 @@ the REST API also serves the parts separately (`/molecules`, `/verification`,
 | `pipeline.status` | `queued`, `running`, `success`, `failed` or `cancelled`. Results are complete only at `success`. |
 | `pipeline.input_kind` | What was uploaded, e.g. `pdb`, `gromacs_tpr`, `amber`. |
 | `pipeline.preset` | The preset the run was submitted with, if any. |
+| `pipeline.creator_ip_hash`, `pipeline.owner_token_sha256` | A keyed hash of the submitter's network address and the hash of the run's owner token (not the token). Removed from the API download. |
 | `tasks` | One entry per pipeline stage, in order: `discover_input`, `load_simulation`, `repair_topology`, `unwrap_periodic_boundaries`, `analyze_universe`, `generate_signatures`, `identify_molecules`, `verify_results`, `export_results`, `render_png`. `status` is `success`, `warning` (finished, with something to report) or `failed`; `summary` holds a few counts. A `summary.partial: true` means the stage hit its time budget and the results of that stage are incomplete. |
 | `warnings` | Things worth knowing, with a stable `code` (e.g. `insufficient_bonds`, `stage_time_budget`) and `details`. |
 | `artifacts` | Files the run produced (mmCIF exports, PNG renders); `path` is server-side — the same files are served under `/files/<run_id>/<file>`. |

@@ -69,7 +69,7 @@ Some clients call the type `streamable-http`, or only support local
 | `get_molecule_details` | Everything about one molecule: its sequence or SMILES, formula and InChIKey, every verified hit ranked by confidence, the hits that were rejected and why. |
 | `get_results_json` | The complete record of a run, [results.json](results-json.md): its download link, the link to its documentation and a guide to its structure; or, given a path such as `data/verification/A`, that part of it. |
 | `list_examples` | The finished example runs from the front page, to try the tools without submitting anything. |
-| `cancel_run` | Cancels a queued or running run. |
+| `cancel_run` | Cancels a queued or running run, given the `owner_token` the submit tool returned. |
 
 The server also provides two resources, `bioid://guide` on reading the
 results and `bioid://results-json` on the structure of results.json, and a
@@ -150,13 +150,18 @@ web page or the REST API's `config_json` for that.
     not allowed to share.
 
 - Runs are not tied to an account. **Anyone who has a run's `run_id` or link
-  can open its results**, and cancel it while it is running.
+  can open its results**. Only the holder of its `owner_token` (returned by
+  the submit tool) can cancel it.
 - Molecule sequences and structures are sent to public databases and search
   services (for example RCSB PDB and PubChem) to find matches.
 - Results are not deleted automatically. To have a run removed, write to the
-  contact below, or use **Your annotations** on the web page. Runs submitted
-  through a cloud assistant (Claude.ai, Claude Desktop) usually do not appear
-  there, because they come from the assistant's network address, not yours.
+  contact below. Runs submitted through the MCP server do not appear under
+  **Your annotations** on the web page with a delete button: the owner token
+  is with the assistant, not in your browser.
+- Submissions are limited per network address (30 per hour) and paused
+  while the queue is full; the tools then report when to try again. Cloud
+  assistants (Claude.ai, Claude Desktop) share their provider's addresses, so
+  that limit is shared too.
 - Your assistant's provider also sees what you send through it. That is
   covered by your agreement with that provider.
 

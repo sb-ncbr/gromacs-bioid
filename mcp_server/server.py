@@ -162,7 +162,7 @@ def build_server(settings: Optional[Settings] = None, *,
         run_id = created.get("run_id")
         if not run_id:
             raise BioIDError(f"The BioID API did not return a run id: {_dumps(created)[:200]}")
-        return {
+        out = {
             "run_id": run_id,
             "status": created.get("status", "queued"),
             "preset": preset or "balanced",
@@ -170,6 +170,11 @@ def build_server(settings: Optional[Settings] = None, *,
             "results_page": settings.results_page(run_id),
             "next": "Call get_run_status with this run_id in 1-2 minutes. " + await duration_hint(),
         }
+        if created.get("owner_token"):
+            out["owner_token"] = created["owner_token"]
+            out["owner_token_note"] = ("Secret needed to cancel this run (cancel_run). It is shown only "
+                                       "once; keep it in the conversation and do not publish it.")
+        return out
 
     # -- tools -------------------------------------------------------------
 
@@ -610,7 +615,8 @@ def build_server(settings: Optional[Settings] = None, *,
             return _dumps({
                 "curl": curl,
                 "python": python,
-                "returns": '{"run_id": "...", "status": "queued", ...}',
+                "returns": '{"run_id": "...", "status": "queued", "owner_token": "...", ...} '
+                       '(keep owner_token: cancelling the run needs it)',
                 "next": "Run the command where the files are, then call get_run_status with the run_id.",
                 "limits": "128 MiB per file; GROMACS, AMBER, CHARMM/NAMD, LAMMPS, PDB/mmCIF or a zip/tar bundle.",
                 "api_docs": settings.api_docs,
@@ -671,13 +677,18 @@ def build_server(settings: Optional[Settings] = None, *,
     @mcp.tool(annotations=CANCEL)
     async def cancel_run(
         run_id: Annotated[str, Field(description="Run id to cancel.")],
+        owner_token: Annotated[str, Field(
+            description="The owner_token returned when the run was submitted.")],
     ) -> str:
-        """Cancel a queued or running run (for example one submitted by mistake).
-        Finished runs cannot be cancelled."""
+        """Cancel a queued or running run you submitted (for example by mistake).
+        Needs the owner_token the submit tool returned. Finished runs cannot be
+        cancelled."""
         try:
             run_id = check_run_id(run_id)
+            if not (owner_token or "").strip():
+                raise BioIDError("owner_token is required: use the one the submit tool returned.")
             try:
-                result = await client.cancel(run_id)
+                result = await client.cancel(run_id, owner_token.strip())
             except BioIDError as e:
                 if "terminal state" in str(e):
                     state = str(e).rsplit(":", 1)[-1].strip().rstrip(".")
