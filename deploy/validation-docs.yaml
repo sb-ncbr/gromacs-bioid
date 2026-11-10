@@ -22,7 +22,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: docs
-          image: cerit.io/tomsko/bat3-docs:v3.143-docs1
+          image: cerit.io/tomsko/bat3-docs:v3.143-docs2
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

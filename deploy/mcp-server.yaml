@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: mcp
-          image: cerit.io/tomsko/bioid-mcp:0.1.0
+          image: cerit.io/tomsko/bioid-mcp:0.2.0
           imagePullPolicy: IfNotPresent
           env:
             # In-cluster BioID API (helm release bat3-ceitec, svc port 8000).
