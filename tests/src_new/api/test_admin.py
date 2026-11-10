@@ -33,6 +33,10 @@ class FakeRedis:
     def delete(self, k):
         self.lists.pop(k, None)
 
+    def lrange(self, k, a, b):
+        n = self.lists.get(k, 0)
+        return [json.dumps({"headers": {"id": rid}}).encode() for rid in (["busy", "done", "gone"] + ["x"] * n)[:n]]
+
     def sadd(self, k, v):
         self.sets.setdefault(k, set()).add(v)
 
@@ -148,11 +152,17 @@ def test_queue_actions(env, client, monkeypatch):
                                    add_consumer=lambda q: sent.append(("resume", q)))
     monkeypatch.setattr("src_new.celery_app.celery.control", fake_control, raising=False)
     h = token(client)
-    assert client.post("/api/v1/admin/queues/validation.ui.celery/purge", headers=h).json()["removed"] == 3
+    monkeypatch.setattr("src_new.results.results_manager.ResultsManager.finish_run",
+                        lambda self, status: sent.append(("finish", self.path.parent.name, status)),
+                        raising=False)
+    env.redis.lists["validation.ui.celery"] = 3
+    (env.runs / "busy" / "results.json").write_text(json.dumps({"pipeline": {"status": "queued"}}))
+    out = client.post("/api/v1/admin/queues/validation.ui.celery/purge", headers=h).json()
+    assert out["removed"] == 3 and out["cancelled"] == ["busy"]  # done: finished; gone: no run
     assert client.post("/api/v1/admin/queues/celery/pause", headers=h).status_code == 200
     assert client.post("/api/v1/admin/queues/celery/resume", headers=h).status_code == 200
     assert client.post("/api/v1/admin/queues/other/purge", headers=h).status_code == 404
-    assert sent == [("pause", "celery"), ("resume", "celery")]
+    assert sent == [("finish", "busy", "cancelled"), ("pause", "celery"), ("resume", "celery")]
 
 
 def test_admin_routes_not_published(client):

@@ -284,12 +284,13 @@ def _runs_overview() -> dict[str, Any]:
     public = [{k: v for k, v in r.items() if not k.startswith("_")} | {"example": r["run_id"] in examples}
               for r in runs]
     public.sort(key=lambda r: str(r["created_at"]), reverse=True)
-    expiring = sorted((r for r in public if r["retention"]["expires_at"]),
+    expiring = sorted((r for r in public if r["retention"]["expires_at"] and not r["example"]),
                       key=lambda r: r["retention"]["expires_at"])
     return {
         "total": len(runs), "by_status": by_status,
         "submitted_24h": sum(1 for r in runs if since(r, 1)),
         "submitted_7d": sum(1 for r in runs if since(r, 7)),
+        "failed_24h": sum(1 for r in runs if r["status"] == "failed" and since(r, 1)),
         "active": [r for r in public if r["status"] in ("queued", "running", "pending", "created")],
         "recent_failures": [r for r in public if r["status"] == "failed"][:15],
         "recent": public[:50],
@@ -327,7 +328,7 @@ async def overview() -> dict:
             "time": time.time(),
             "code_version": os.environ.get("BAT3_CODE_VERSION", ""),
             "queues": _section(lambda: _cached("queues", 3, _queues)),
-            "workers": _section(lambda: _cached("workers", 5, _workers)),
+            "workers": _section(lambda: _cached("workers", 15, _workers)),
             "deployments": _section(lambda: _cached("deployments", 5, _deployments)),
             "runs": _section(lambda: _cached("runs", 10, _runs_overview)),
             "storage": _section(lambda: _cached("storage", 600, _storage)),
@@ -416,9 +417,12 @@ async def queue_action(name: str, action: str) -> dict:
         raise HTTPException(status_code=503, detail="Redis not configured")
     from src_new.celery_app import celery
     if action == "purge":
-        removed = int(client.llen(name))
+        # The queued runs' results.json still say "queued": mark them
+        # cancelled, or they would show as waiting forever.
+        messages = client.lrange(name, 0, -1)
         client.delete(name)
-        result: dict[str, Any] = {"queue": name, "removed": removed}
+        cancelled = _cancel_purged(messages)
+        result: dict[str, Any] = {"queue": name, "removed": len(messages), "cancelled": cancelled}
     elif action == "pause":
         celery.control.cancel_consumer(name)
         client.sadd("bioid:admin:paused", name)
@@ -431,6 +435,25 @@ async def queue_action(name: str, action: str) -> dict:
         raise HTTPException(status_code=404, detail="Unknown action.")
     _drop_cache("queues", "workers")
     return result
+
+
+def _cancel_purged(messages: list) -> list[str]:
+    """Mark the runs of purged Celery messages cancelled (if still queued)."""
+    from src_new.results.results_manager import ResultsManager
+    done = []
+    for raw in messages:
+        try:
+            run_id = json.loads(raw).get("headers", {}).get("id")
+            d = security.run_dir(_runs_dir(), str(run_id))
+            results = d / "results.json"
+            status = json.loads(results.read_text()).get("pipeline", {}).get("status")
+        except Exception:
+            continue
+        if status in ("queued", "pending", "created"):
+            ResultsManager(str(results)).finish_run("cancelled")
+            done.append(run_id)
+    _drop_cache("runs")
+    return done
 
 
 def _run_dir(run_id: str) -> Path:
