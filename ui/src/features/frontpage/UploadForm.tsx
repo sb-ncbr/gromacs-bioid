@@ -37,24 +37,16 @@ import {
   resolveConfigToPost,
   type RunConfig,
 } from "./config";
-import { ApiError, api, endpoints } from "../../lib/api/client";
+import { api, apiErrorMessage, endpoints } from "../../lib/api/client";
+import { rememberOwnerToken } from "../../lib/ownerTokens";
 
 interface RunCreateResponse {
   run_id: string;
   status?: string;
   message?: string;
   results_url?: string;
-}
-
-/** The API's message for a rejected config (422), else null. */
-function rejectionDetail(err: unknown): string | null {
-  if (!(err instanceof ApiError) || err.status !== 422) return null;
-  try {
-    const detail = (JSON.parse(err.body) as { detail?: unknown }).detail;
-    return typeof detail === "string" ? detail : null;
-  } catch {
-    return null;
-  }
+  /** Needed to delete or cancel the run; kept in this browser. */
+  owner_token?: string | null;
 }
 
 export default function UploadForm() {
@@ -118,6 +110,7 @@ export default function UploadForm() {
       return api.postForm<RunCreateResponse>(endpoints.runs, form);
     },
     onSuccess: (res) => {
+      rememberOwnerToken(res.run_id, res.owner_token);
       qc.invalidateQueries({ queryKey: ["myRuns"] });
       navigate(`/runs/${encodeURIComponent(res.run_id)}`);
     },
@@ -214,9 +207,11 @@ export default function UploadForm() {
           <Alert variant="error">
             <AlertTitle>Could not start the annotation</AlertTitle>
             <AlertDescription>
-              {rejectionDetail(submit.error)
-                ? `The configuration was not accepted: ${rejectionDetail(submit.error)}.`
-                : "Something went wrong while submitting your files. Please try again."}
+              {/* limits (429), rejected files or settings (413/422) come with the reason */}
+              {apiErrorMessage(
+                submit.error,
+                "Something went wrong while submitting your files. Please try again.",
+              )}
             </AlertDescription>
           </Alert>
         )}

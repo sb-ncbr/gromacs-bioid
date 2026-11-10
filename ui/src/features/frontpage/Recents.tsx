@@ -35,7 +35,9 @@ import {
   runTitle,
   statusStyle,
 } from "./status";
-import { api, endpoints } from "../../lib/api/client";
+import { toast } from "sonner";
+import { api, apiErrorMessage, endpoints } from "../../lib/api/client";
+import { forgetOwnerToken, ownerHeaders, rememberOwnerToken } from "../../lib/ownerTokens";
 
 interface RunItem {
   run_id: string;
@@ -80,13 +82,26 @@ function RunRow({ run }: { run: RunItem }) {
   const st = statusStyle(run.status);
   const title = runTitle(run);
 
+  // Only the browser that submitted a run holds its owner token.
+  const canDelete = ownerHeaders(run.run_id) !== undefined;
   const rerun = useMutation({
-    mutationFn: () => api.postJson(endpoints.runRerun(run.run_id), {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["myRuns"] }),
+    mutationFn: () =>
+      api.postJson<{ run_id: string; owner_token?: string | null }>(endpoints.runRerun(run.run_id), {}),
+    onSuccess: (res) => {
+      rememberOwnerToken(res.run_id, res.owner_token);
+      toast.success("Run queued again");
+      void qc.invalidateQueries({ queryKey: ["myRuns"] });
+    },
+    onError: (err) => toast.error(apiErrorMessage(err, "Could not rerun this annotation.")),
   });
   const del = useMutation({
-    mutationFn: () => api.delete(endpoints.run(run.run_id)),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["myRuns"] }),
+    mutationFn: () => api.delete(endpoints.run(run.run_id), ownerHeaders(run.run_id)),
+    onSuccess: () => {
+      forgetOwnerToken(run.run_id);
+      toast.success("Annotation deleted");
+      void qc.invalidateQueries({ queryKey: ["myRuns"] });
+    },
+    onError: (err) => toast.error(apiErrorMessage(err, "Could not delete this annotation.")),
   });
   const busy = rerun.isPending || del.isPending;
 
@@ -137,16 +152,18 @@ function RunRow({ run }: { run: RunItem }) {
           <RefreshCw className="mr-1 h-3.5 w-3.5" />
           Rerun
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={busy}
-          onClick={() => setPending("delete")}
-        >
-          <Trash2 className="mr-1 h-3.5 w-3.5" />
-          Delete
-        </Button>
+        {canDelete && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => setPending("delete")}
+          >
+            <Trash2 className="mr-1 h-3.5 w-3.5" />
+            Delete
+          </Button>
+        )}
       </div>
 
       {/* Rerun confirm */}

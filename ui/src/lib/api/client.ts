@@ -11,13 +11,36 @@ export const API_BASE = "/api/v1";
 export class ApiError extends Error {
   public readonly status: number;
   public readonly body: string;
+  /** Seconds from a Retry-After header (429 / 503), if any. */
+  public readonly retryAfter: number | null;
 
-  constructor(status: number, body: string) {
+  constructor(status: number, body: string, retryAfter: number | null = null) {
     super(`API request failed with status ${status}`);
     this.name = "ApiError";
     this.status = status;
     this.body = body;
+    this.retryAfter = retryAfter;
   }
+}
+
+/**
+ * A message for the person: the API's own `detail` when it sent one (limits,
+ * rejected files or settings, missing owner token), else a plain fallback.
+ */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  if (!(err instanceof ApiError)) return fallback;
+  try {
+    const detail = (JSON.parse(err.body) as { detail?: unknown }).detail;
+    if (typeof detail === "string" && detail.trim()) return detail;
+  } catch {
+    // not JSON (e.g. the ingress's own error page)
+  }
+  if (err.status === 413) return "The upload is too large: at most 128 MiB per file.";
+  if (err.status === 429) {
+    const minutes = err.retryAfter ? Math.max(1, Math.round(err.retryAfter / 60)) : null;
+    return `BioID is busy. Please try again${minutes ? ` in about ${minutes} minutes` : " later"}.`;
+  }
+  return fallback;
 }
 
 /** Retry once, except on 404: a deleted run or wrong id is an answer, not a glitch. */
@@ -41,7 +64,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new ApiError(res.status, body);
+    const retry = Number(res.headers.get("retry-after"));
+    throw new ApiError(res.status, body, Number.isFinite(retry) && retry > 0 ? retry : null);
   }
   const contentType = res.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
@@ -53,15 +77,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   get: <T>(path: string, params?: QueryParams): Promise<T> =>
     request<T>(buildUrl(path, params)),
-  postJson: <T>(path: string, body: unknown): Promise<T> =>
+  postJson: <T>(path: string, body: unknown, headers?: Record<string, string>): Promise<T> =>
     request<T>(path, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(body),
     }),
   postForm: <T>(path: string, form: FormData): Promise<T> =>
     request<T>(path, { method: "POST", body: form }),
-  delete: <T>(path: string): Promise<T> => request<T>(path, { method: "DELETE" }),
+  delete: <T>(path: string, headers?: Record<string, string>): Promise<T> =>
+    request<T>(path, { method: "DELETE", headers }),
 };
 
 /**

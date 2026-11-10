@@ -1,4 +1,5 @@
 import { Outlet } from "react-router-dom";
+import { Toaster } from "@e-infra/design-system";
 import Header from "./Header";
 import Footer from "./Footer";
 
@@ -18,6 +19,8 @@ export default function Layout() {
         </main>
       </div>
       <Footer />
+      {/* Notifications (toast()) from anywhere in the app. */}
+      <Toaster position="bottom-right" closeButton />
     </div>
   );
 }

@@ -35,6 +35,8 @@ export interface RunHeaderProps {
   downloads: ViewModel["downloads"];
   onCopyLink: () => void;
   onCancel: () => void;
+  /** Cancelling needs the run's owner token, which only the submitting browser has. */
+  canCancel?: boolean;
   onRerun: () => void;
   onCite: () => void;
   onDownload: (key: "csv" | "json") => void;
@@ -45,10 +47,10 @@ function copyLinkFallback() {
   void navigator.clipboard?.writeText(window.location.href);
 }
 
-export function RunHeader({ run, runStatus, downloads, onCopyLink, onCancel, onRerun, onCite, onDownload, onReport }: RunHeaderProps) {
+export function RunHeader({ run, runStatus, downloads, onCopyLink, onCancel, canCancel = true, onRerun, onCite, onDownload, onReport }: RunHeaderProps) {
   const chip = run.cancelled ? CANCELLED_CHIP : CHIP[runStatus];
   const ChipIcon = chip.icon;
-  const actions = headerActions(runStatus, downloads);
+  const actions = headerActions(runStatus, downloads).filter((a) => a.kind !== "cancel" || canCancel);
 
   return (
     <header className="mb-4">

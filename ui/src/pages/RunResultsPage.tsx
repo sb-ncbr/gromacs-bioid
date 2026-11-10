@@ -10,7 +10,8 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle, Skeleton } from "@e-infra/design-system";
 import { toast } from "sonner";
-import { api, endpoints, retryUnless404 } from "../lib/api/client";
+import { api, apiErrorMessage, endpoints, retryUnless404 } from "../lib/api/client";
+import { ownerHeaders, rememberOwnerToken } from "../lib/ownerTokens";
 import { parseRunQuery } from "../lib/nav";
 import {
   useRunStatus,
@@ -188,22 +189,23 @@ export default function RunResultsPage() {
 
   const onCancel = useCallback(() => {
     void api
-      .postJson(endpoints.runCancel(runId), {})
+      .postJson(endpoints.runCancel(runId), {}, ownerHeaders(runId))
       .then(() => {
         toast.success("Run cancelled");
         void queryClient.invalidateQueries({ queryKey: ["runStatus", runId] });
       })
-      .catch(() => toast.error("Could not cancel the run"));
+      .catch((err) => toast.error(apiErrorMessage(err, "Could not cancel the run")));
   }, [runId, queryClient]);
 
   const onRerun = useCallback(() => {
     void api
-      .postJson<{ run_id: string }>(endpoints.runRerun(runId), {})
+      .postJson<{ run_id: string; owner_token?: string | null }>(endpoints.runRerun(runId), {})
       .then((res) => {
+        rememberOwnerToken(res.run_id, res.owner_token);
         toast.success("Run queued");
         if (res?.run_id) window.location.assign(`/runs/${res.run_id}`);
       })
-      .catch(() => toast.error("Could not rerun"));
+      .catch((err) => toast.error(apiErrorMessage(err, "Could not rerun")));
   }, [runId]);
 
   const onCite = useCallback(() => {
@@ -277,6 +279,7 @@ export default function RunResultsPage() {
         downloads={vm.downloads}
         onCopyLink={copyLink}
         onCancel={onCancel}
+        canCancel={ownerHeaders(runId) !== undefined}
         onRerun={onRerun}
         onCite={onCite}
         onDownload={onDownload}
