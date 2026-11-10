@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -9,7 +9,7 @@ import {
   CardTitle,
   Skeleton,
 } from "@e-infra/design-system";
-import { ExternalLink, FlaskConical } from "lucide-react";
+import { ArrowRight, FlaskConical } from "lucide-react";
 import { api, endpoints } from "../../lib/api/client";
 
 /** One landing-page example card (API wave C, 2026-10-19). */
@@ -26,6 +26,23 @@ interface ExamplesResponse {
 }
 
 const EXAMPLE_COUNT = 3;
+
+/** The run's system render; a flask placeholder if it is missing. */
+function ExampleImage({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return <FlaskConical className="absolute inset-0 m-auto h-10 w-10 text-gray-300" aria-hidden />;
+  }
+  return (
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      className="h-full w-full scale-110 object-contain transition-transform duration-300 group-hover:scale-[1.16]"
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 /**
  * Landing "Example analyses" section: three big cards driven by
@@ -60,34 +77,30 @@ const Examples: React.FC = () => {
       <h2 className="mb-4 text-lg font-semibold text-text">Example analyses</h2>
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
         {examples.slice(0, EXAMPLE_COUNT).map((ex) => (
-          <Card key={ex.run_id} className="flex h-full flex-col overflow-hidden">
-            <div className="relative h-48 w-full bg-gray-50">
-              <img
-                src={ex.image_url}
-                alt={ex.title}
-                className="h-full w-full object-contain"
-                onError={(e) => {
-                  // Broken/missing render: fall back to a neutral mono panel.
-                  e.currentTarget.style.display = "none";
-                }}
-              />
-              <FlaskConical className="absolute inset-0 m-auto -z-10 h-10 w-10 text-gray-300" />
-            </div>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">{ex.title}</CardTitle>
-              {ex.description && (
-                <CardDescription className="line-clamp-3">{ex.description}</CardDescription>
-              )}
-            </CardHeader>
-            <CardContent className="mt-auto">
-              <Link
-                to={`/runs/${ex.run_id}`}
-                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-              >
-                Open run <ExternalLink className="h-3.5 w-3.5" />
-              </Link>
-            </CardContent>
-          </Card>
+          <Link
+            key={ex.run_id}
+            to={`/runs/${ex.run_id}`}
+            className="group rounded-xl no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            <Card className="flex h-full flex-col gap-0 overflow-hidden pt-0 transition-shadow group-hover:shadow-md">
+              {/* Renders have a transparent background: a soft radial wash
+                  behind them, cropped slightly (the PNG keeps a margin). */}
+              <div className="relative aspect-[4/3] w-full overflow-hidden bg-[radial-gradient(ellipse_at_center,var(--color-base-100)_0%,var(--surface-raised)_100%)]">
+                <ExampleImage src={ex.image_url} />
+              </div>
+              <CardHeader className="pt-5 pb-2">
+                <CardTitle className="text-base text-text-heading">{ex.title}</CardTitle>
+                {ex.description && (
+                  <CardDescription className="line-clamp-3">{ex.description}</CardDescription>
+                )}
+              </CardHeader>
+              <CardContent className="mt-auto">
+                <span className="inline-flex items-center gap-1 text-sm font-medium text-primary group-hover:underline">
+                  Open analysis <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                </span>
+              </CardContent>
+            </Card>
+          </Link>
         ))}
       </div>
     </div>
