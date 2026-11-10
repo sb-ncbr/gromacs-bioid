@@ -177,14 +177,20 @@ for i, (ch, sg) in enumerate(dict.fromkeys(keys)):
     cmd.color(palette[i %% len(palette)], "prot and chain '%%s' and segi '%%s'" %% (ch, sg))
 python end"""
 
-# Membrane systems: side view of the slab around the macromolecules;
+# Membrane systems: a side view of the membrane patch around the
+# macromolecules (bulk residues within BULK_PATCH_A of them; the whole slab
+# of a periodic box runs off the frame when the protein sits near its edge);
 # otherwise the macromolecules (and ligands/ions) fill the frame.
+BULK_PATCH_A = 25
+
 _FRAME = """python
 from pymol import cmd
 if cmd.count_atoms("bulk") and cmd.count_atoms("prot or na or ligand"):
-    cmd.orient("bulk")
+    cmd.select("patch", "byres (bulk within %(patch)d of (prot or na or ligand))")
+    cmd.hide("everything", "bulk and not patch")
+    cmd.orient("patch")
     cmd.turn("x", -90)
-    cmd.zoom("prot or na or ligand", 22, complete=1)
+    cmd.zoom("prot or na or ligand or patch", 1, complete=1)
 elif cmd.count_atoms("prot or na or ligand or ion"):
     cmd.orient("prot or na or ligand or ion")
     cmd.zoom("prot or na or ligand or ion", 0.5, complete=1)
@@ -242,7 +248,7 @@ def build_pymol_script(spec: RenderSpec, cfg: RenderConfig) -> str:
             f"color {LIPID_HEAD_COLOR}, bulk and elem P",
         ]
     lines += [
-        _FRAME,
+        _FRAME % {"patch": BULK_PATCH_A},
         "set ray_trace_mode, 1",
         "set ray_trace_color, 0x2a2f36",
         "set ray_trace_gain, 0.08",

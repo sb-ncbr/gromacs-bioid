@@ -123,6 +123,8 @@ def test_script_full_style_content(tmp_path):
     assert "show cartoon, prot or na" in s
     assert "show sticks, ligand" in s
     assert "show spheres, ion" in s
+    # membranes: only the patch around the macromolecules is framed
+    assert "byres (bulk within 25 of (prot or na or ligand))" in s
     assert "set opaque_background, 0" in s
     assert "png " in s and "ray=1" in s
     assert "width=1600, height=1200" in s
