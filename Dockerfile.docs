@@ -1,5 +1,6 @@
 # G2 mkdocs hosting (2026-10-06): docs image = build stage + nginx.
-# Serves the site under /docs/ on the existing validation UI host
+# Serves the site under /docs/ on the existing validation UI host and under
+# /documentation/ on the BioID host
 # (ingress maps /docs Prefix -> validation-docs svc; backend serves docroot/docs).
 
 # NOTE: build context = docs/site (repo-root .dockerignore excludes docs/;
@@ -16,4 +17,7 @@ RUN mkdocs build --strict --site-dir /out
 FROM nginxinc/nginx-unprivileged:1.27-alpine
 RUN sed -i 's/^worker_processes  auto;/worker_processes  2;/' /etc/nginx/nginx.conf
 COPY --from=build /out /usr/share/nginx/html/docs
+# Same site under /documentation/ for the BioID host, where /docs is the API's
+# Swagger page (mkdocs links are relative, so one build serves both).
+COPY --from=build /out /usr/share/nginx/html/documentation
 EXPOSE 8080

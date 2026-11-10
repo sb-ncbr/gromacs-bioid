@@ -1,5 +1,5 @@
-site_name: BAT3 / BioID Validation
-site_description: Molecular identification & validation pipeline for MD simulation data
+site_name: BioID documentation
+site_description: Identification of biomolecules in molecular dynamics simulations (BioID / BAT3)
 # G2 (2026-10-06): pages moved to docs/ subdir (mkdocs 1.6 rejects docs_dir ".").
 theme:
   name: material
@@ -19,12 +19,16 @@ markdown_extensions:
   - toc:
       permalink: true
 nav:
-  - Home: index.md
-  - Running validations: running-a-validation.md
-  - Architecture: architecture.md
-  - API: api.md
-  - Identification & verification: identifiers.md
-  - Configuration: configuration.md
-  - Methodology & statistics: methodology.md
-  - Operations: operations.md
-  - Developers: developers.md
+  - Using BioID:
+      - Web application & REST API: index.md
+      - MCP server (AI assistants): mcp.md
+  - Validation & internals:
+      - Overview: validation.md
+      - Running validations: running-a-validation.md
+      - Architecture: architecture.md
+      - API: api.md
+      - Identification & verification: identifiers.md
+      - Configuration: configuration.md
+      - Methodology & statistics: methodology.md
+      - Operations: operations.md
+      - Developers: developers.md

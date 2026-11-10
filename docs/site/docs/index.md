@@ -1,47 +1,116 @@
-# BAT3 / BioID Validation Pipeline
+# Using BioID
 
-BAT3 identifies the molecular contents of molecular-dynamics (MD) simulations —
-proteins, nucleic acids, small molecules, ions, lipids, glycans — and **validates**
-those identifications against ground-truth annotations (MDDBR) at campaign scale.
+BioID reads the files of a molecular dynamics simulation and reports which
+molecules it contains — proteins, nucleic acids, ligands, ions, lipids,
+glycans — with matching database entries and a confidence for each match.
+The public instance is
+[bioid-ceitec.dyn.cloud.e-infra.cz](https://bioid-ceitec.dyn.cloud.e-infra.cz/).
 
-In one sentence per stage:
+There are three ways to use it:
 
-1. **Load** simulation inputs (topology + trajectory), repair and normalize them.
-2. **Segment** the system into per-molecule fragments (with strand-aware splitting
-   for mixed/multi-component assemblies).
-3. **Generate signatures** per fragment: sequences (FASTA), structures (PDB/mmCIF),
-   SMILES/InChI/fingerprints, formulas, names, element counts.
-4. **Resolve identifiers** by querying local and remote databases with those
-   signatures (BLAST, RCSB, PubChem/ChEMBL/ChEBI/IDSM, AlphaFind, Foldseek, CCD).
-5. **Verify** candidates by re-fetching canonical data and scoring agreement,
-   producing a ranked, deduplicated hit table per fragment.
-6. **Report** standardized `results.json` per entry plus campaign-wide statistics.
+- the **web application** (this page),
+- the **[REST API](#rest-api)** for scripts and pipelines,
+- the **[MCP server](mcp.md)** for AI assistants such as Claude.
 
-## Current trust level (campaign v12, 2026-10-04)
+## Submitting a simulation
 
-14,624 simulation entries processed. Headline similarity-validation metrics
-(hit@10, verified):
+On the front page, drop your files into **Annotation request** (or use
+*Browse files*), optionally name the run, and press **Start annotation**.
 
-| Ground truth family | verified hit@10 |
+| Engine | Files |
 |---|---|
-| InChIKey (chemicals, frozen window 5,768 attempted) | **92.9% exact** (window held v11→v12) |
-| PDB annotations | 99.5% pct / 11,130 of 11,181 abs |
-| UniProt annotations | 98.2% |
-| Any-molecule @10 | 99.5% |
-| Nucleic acids (post-N1 wave) | 1.89% → **19.75%** (413/2,091 hit; 412 verified) |
+| GROMACS | `.tpr`, or `.top` with its `.itp` includes, plus `.gro` coordinates |
+| AMBER | `.prmtop`/`.parm7` plus `.rst7`/`.inpcrd`/`.nc`/`.mdcrd` coordinates |
+| CHARMM / NAMD | `.psf` plus `.pdb`/`.crd` coordinates (a `.dcd` works as the starting frame) |
+| LAMMPS | a single `.data` file |
+| Structures | `.pdb` / `.cif` |
+| Bundles | `.zip` / `.tar` / `.tar.gz` of the above |
 
-Chemical residual: 410 candidate rows under continuous coverability watch;
-zero drift v11→v12.
+Each file may be up to 128 MiB. BioID analyses the starting structure, so
+you do not need to upload a trajectory.
 
-## Quickstart
+A run takes from a few minutes (a small structure) to about an hour (a large
+system with many distinct molecules, with every database searched). You can
+close the page: runs submitted from your network address are listed under
+**Your annotations**, where you can open, rerun or delete them.
 
-- **Run one validation** → [Running validations](running-a-validation.md)
-- **Understand the stack** → [Architecture](architecture.md)
-- **Interpret a results.json** → [Identification & verification](identifiers.md)
-- **Trust the numbers** → [Methodology & statistics](methodology.md)
-- **Operate the fleet** → [Operations](operations.md)
+!!! tip "Try it without uploading"
+    The **Example analyses** at the bottom of the front page are finished runs
+    you can open directly.
 
-!!! note "Status of this site"
-    Built 2026-10-04 from a full read-only code audit (findings F-01…F-28 in
-    `docs/CHEMISTRY_FIX_TODO.md`). Where behavior and intent differ, this site
-    documents **behavior as verified live**, with pointers to the finding.
+## Presets and advanced configuration
+
+**Advanced configuration → Edit** opens the run settings. Start from a
+preset, then fine-tune if you need to:
+
+| Preset | What it does | When to use it |
+|---|---|---|
+| **Balanced** (default) | Every database, exact and similar matches. | Most runs. |
+| **Quick look** | Skips the slowest searches (NCBI nr/nt, UniRef50, the AlphaFind, Foldseek and RCSB structure searches) and verifies 30 candidates per molecule instead of 100. | A first look at a large system; minutes rather than up to an hour. |
+| **Exact matches** | Every similarity search is off; only identical database entries are reported. | You expect known molecules and do not want homologues or analogues. |
+| **Deep search** | Verifies 150 candidates per molecule (plus 60 from the supplementary databases) and keeps 20 similar matches; also searches mixed protein/nucleic-acid PDB complexes. | Unusual or engineered molecules where the best match is not obvious. Slowest. |
+
+Below the presets you can change individual settings:
+
+- **Databases** — for each database, whether it is searched for identical
+  entries (*Exact*) and for similar ones (*Similar*).
+- **Verification** — how many candidates per molecule are checked against
+  their database records, how many similar matches are kept, the minimum
+  confidence for a match to be marked verified, and the weights of the three
+  confidence terms.
+- **BLAST**, **ChEMBL**, **IDSM**, **PubChem** — when a sequence or chemical
+  match counts as exact or as similar.
+- **PDB**, **Signatures**, **Loader** — structure search and how the files
+  are read.
+
+Settings that belong to the deployment (database locations, programs,
+service addresses, parallelism) cannot be changed per run.
+
+## Reading the results
+
+The run page lists the molecules found. For each one it shows the best
+identification, its database entries (with links), and a **confidence**
+from 0 to 100. The confidence combines three terms: how strongly the
+databases agree on the match, how closely the molecule matches the entry
+(sequence identity and coverage, fingerprint similarity or structural
+TM-score), and how complete the database record is. **Verified** means the
+candidate was re-fetched from its database and checked against the molecule.
+
+The buttons in the run header download the identifications as CSV or the
+full results as JSON; the *Technical details* fold shows the signatures,
+every database hit and the run log.
+
+## REST API
+
+Everything the web application does is available over HTTP. The interactive
+reference (Swagger) is at
+[/docs](https://bioid-ceitec.dyn.cloud.e-infra.cz/docs).
+
+```bash
+BIOID=https://bioid-ceitec.dyn.cloud.e-infra.cz/api/v1
+
+# submit (optional: run_name, preset, config_json)
+curl -F files=@topol.tpr -F files=@conf.gro -F preset=quick "$BIOID/runs"
+# -> {"run_id": "…", "status": "queued", …}
+
+# poll until pipeline.status is "success" (or "failed")
+curl "$BIOID/runs/$RUN_ID/status"
+
+# molecules and their identifications
+curl "$BIOID/runs/$RUN_ID/molecules"
+curl -o results.csv "$BIOID/runs/$RUN_ID/download/results.csv"
+```
+
+`GET /runs/config/options` lists the presets and the settings a run may
+change, with their defaults. To change a setting, post only what differs, as
+`config_json`:
+
+```bash
+curl -F files=@system.pdb -F preset=exact \
+     -F 'config_json={"verification": {"min_final_confidence": 0.5}}' \
+     "$BIOID/runs"
+```
+
+## Contact
+
+Questions and bug reports: [tomas.pavlik@muni.cz](mailto:tomas.pavlik@muni.cz).

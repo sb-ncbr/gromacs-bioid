@@ -33,8 +33,21 @@ Routers mounted twice (`/runs` and `/api/v1/runs`).
 |---|---|---|
 | Runs | `POST /runs`, `GET /runs`, `GET /runs/{id}` (+`/status`, `/loading`, `/molecules`, `/signatures`, `/identifiers`, `/verification`, `/render`, `/files`, `/logs`) | full per-run introspection |
 | Actions | `POST /runs/{id}/cancel`, `POST /runs/{id}/rerun`, `POST /runs/rerun-all`, `DELETE /runs/{id}` | reruns create fresh run dirs |
-| Config | `GET /runs/config/default`, `GET /runs/config/parallel-default` | parallel-default enables signature multiprocessing |
+| Config | `GET /runs/config/options`, `GET /runs/config/default`, `GET /runs/config/parallel-default` | `options`: the per-run tunable fields with the server defaults, and the presets (`balanced`, `quick`, `exact`, `deep`); parallel-default enables signature multiprocessing |
 | Files | `GET /files/{path}` (runs dir), `GET /files/validation-<eid>-<ts>/input/...` | the second form is the **RCSB-facing** public file channel |
+
+### Per-run configuration (2026-11-10)
+
+`POST /runs` takes an optional `preset` form field and either `config_json`
+(nested `{section: {field: value}}`) or a `config_file` (ini). The server
+starts from its config.ini, applies the preset, then the overrides. Only the
+fields in `src_new/config/presets.py::TUNABLE` may change (database toggles,
+BLAST/similarity thresholds, the verification window and weights, a few loader
+and sequence options); a change to anything else (executables, database
+paths, URLs, threads, the `*_parallel` flags, timeouts) is rejected with 422
+before the run directory is created. Values equal to the server's are
+accepted and ignored, so posting the whole default config back still works.
+The preset id is recorded as `pipeline.preset` in results.json.
 
 ### The RCSB file-serving contract (F-N1a)
 

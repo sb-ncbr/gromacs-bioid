@@ -20,8 +20,10 @@ workers); the same schema applies to any run-local `config.ini`.
     parallel and serial share one implementation — including the **PubChem
     circuit breaker**, the **`overwrite_existing` skip**, and per-resolver
     toggles (F-21). Verified offline (10/10: equivalence/breaker/overwrite)
-    and live in-image. `identifiers_parallel` is safe to enable; the UI
-    parallel-default config already sets it true.
+    and live in-image. The parallel paths have not been validated on
+    production runs (contention: concurrent nr BLASTs on NFS, spawned
+    signature processes), so the web UI no longer offers Fast Mode and the
+    API rejects per-run changes to the `*_parallel` flags (2026-11-10).
 
 ### `[identifiers]` — per-resolver pair toggles (F-21 corrected 2026-10-04)
 Every resolver honors a **pair** of toggles, read per attempt:
