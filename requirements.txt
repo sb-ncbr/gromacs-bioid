@@ -4,6 +4,11 @@ sqlalchemy==2.0.0
 psycopg2-binary==2.9.9
 redis==5.0.0
 celery==5.3.0
+# Celery's transport libraries, pinned: an unpinned rebuild pulled kombu 5.7,
+# which refuses redis-py < 6.1 (all workers crash-looped on 2026-11-10).
+kombu==5.6.2
+amqp==5.4.1
+billiard==4.3.1
 requests==2.32.3
 pydantic==2.11.1
 kubernetes==28.1.0
