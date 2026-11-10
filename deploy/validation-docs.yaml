@@ -1,0 +1,61 @@
+# G2 mkdocs hosting (2026-10-06): static docs site (Dockerfile.docs image)
+# served under the validation UI host at /docs (see ingress patch).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: validation-docs
+  labels:
+    app: validation-docs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: validation-docs
+  template:
+    metadata:
+      labels:
+        app: validation-docs
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: docs
+          image: cerit.io/tomsko/bat3-docs:v3.143-docs1
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /docs/
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /docs/
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: validation-docs
+spec:
+  selector:
+    app: validation-docs
+  ports:
+    - port: 80
+      targetPort: 8080
