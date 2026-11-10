@@ -53,6 +53,14 @@ Never mix images across worker classes during a campaign or re-run wave
 (era unity). The dark-matter worker (`bat3-darkmatter-worker`) belongs to a
 separate study and is not touched by a BioID release.
 
+### Before every backend release
+
+Run `deploy/smoke-worker.sh cerit.io/tomsko/bat3-validation-api:<tag>`: it
+starts a Celery worker from the image against a throwaway Redis and fails
+unless the worker reaches "ready". Unit tests do not catch dependency drift
+in the image (2026-11-10: a rebuild pulled kombu 5.7, which refuses
+redis-py 5.0; every worker crash-looped and the release was rolled back).
+
 ## Admin page
 
 `https://bioid-ceitec.dyn.cloud.e-infra.cz/admin` is the operations
