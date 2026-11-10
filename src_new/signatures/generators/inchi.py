@@ -122,7 +122,8 @@ def _fragment_to_rdkit_bonds(
     molecule: EditableMol,
 ) -> None:
     """Add bonds from fragment to RDKit molecule."""
-    for atom_idx1, atom_idx2 in fragment.bonds.indices:
+    from ._perceive_cache import _intra_bond_pairs
+    for atom_idx1, atom_idx2 in _intra_bond_pairs(fragment):
         atom_idx1_rdkit = atom_idx_to_rdkit_idx[atom_idx1]
         atom_idx2_rdkit = atom_idx_to_rdkit_idx[atom_idx2]
         molecule.AddBond(atom_idx1_rdkit, atom_idx2_rdkit, Chem.BondType.SINGLE)

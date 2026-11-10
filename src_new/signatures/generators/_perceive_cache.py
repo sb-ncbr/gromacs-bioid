@@ -1152,12 +1152,25 @@ def assign_stereo_from_3d(mol, fragment) -> None:
 def _intra_bond_pairs(fragment):
     """AtomGroup.bonds returns every bond with >=1 endpoint in the group;
     cross-segment bonds must not reach perception. Returns the list of
-    (a1, a2) universe indices with BOTH endpoints inside the fragment."""
-    idxset = set(int(a) for a in fragment.atoms.indices)
+    (a1, a2) universe indices with BOTH endpoints inside the fragment.
+
+    H-H bonds are dropped except in H2 itself: rigid water models (AMBER
+    TIP3P/SPC, CHARMM TIP3) carry an H-H "bond" that only holds the angle,
+    and perceived as chemistry it turned water into a three-membered ring
+    ([H]1[H]O1): no database water matched (run 575c8fe7)."""
+    indices = [int(a) for a in fragment.atoms.indices]
+    idxset = set(indices)
+    hydrogens = set()
+    if len(indices) > 2:
+        try:
+            hydrogens = {i for i, el in zip(indices, fragment.atoms.elements)
+                         if str(el).strip().upper() in ("H", "D")}
+        except Exception:  # no elements: keep every bond
+            hydrogens = set()
     out = []
     for a1, a2 in fragment.bonds.indices:
         a1, a2 = int(a1), int(a2)
-        if a1 in idxset and a2 in idxset:
+        if a1 in idxset and a2 in idxset and not (a1 in hydrogens and a2 in hydrogens):
             out.append((a1, a2))
     return out
 
