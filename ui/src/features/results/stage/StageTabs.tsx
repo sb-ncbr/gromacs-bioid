@@ -233,12 +233,20 @@ function DescriptorTab({ molecule: m }: { molecule: Molecule }) {
     const seq = m.descriptor.sequence;
     const payload = fasta(m);
     if (!seq) return <p className="px-5 py-4 text-sm text-(--vm-muted)">No sequence was recorded for this molecule.</p>;
+    const chains = m.descriptor.chains ?? [{ label: "", sequence: seq }];
     return (
       <div className="px-5 py-4">
-        <p className="text-sm text-(--vm-muted)">{seq.length.toLocaleString()} residues, as read from your files</p>
-        <pre className="mt-2 max-h-[9.5rem] overflow-auto rounded-md border border-(--vm-line) bg-(--vm-surface-2) p-3 font-mono text-[13px] leading-6 whitespace-pre-wrap break-all">
-          {seq}
-        </pre>
+        {chains.map((c) => (
+          <div key={c.label || "seq"} className="mb-3">
+            <p className="text-sm text-(--vm-muted)">
+              {c.label ? `Chain ${c.label}: ` : ""}
+              {c.sequence.length.toLocaleString()} residues, as read from your files
+            </p>
+            <pre className="mt-2 max-h-[9.5rem] overflow-auto rounded-md border border-(--vm-line) bg-(--vm-surface-2) p-3 font-mono text-[13px] leading-6 whitespace-pre-wrap break-all">
+              {c.sequence}
+            </pre>
+          </div>
+        ))}
         <div className="mt-2 flex gap-2">
           <Button variant="outline" size="sm" onClick={() => payload && copy(payload, "FASTA copied")}>
             <Copy size={14} className="mr-1" aria-hidden /> Copy FASTA

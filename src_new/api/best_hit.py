@@ -21,6 +21,8 @@ DB_LABELS = {
     "pdb": "PDB", "pdb_id": "PDB", "uniprot": "UniProt", "uniprot_id": "UniProt",
     "pubchem_cid": "PubChem", "pubchem": "PubChem", "chembl": "ChEMBL", "chebi": "ChEBI",
     "swisslipids": "SwissLipids", "alphafold": "AlphaFold DB", "element": "Element",
+    "nr": "NCBI protein", "nt": "NCBI nucleotide", "core_nt": "NCBI nucleotide",
+    "lm": "LIPID MAPS", "lipidmaps": "LIPID MAPS", "glytoucan": "GlyTouCan",
 }
 
 STATE_LABELS = {"identified": "identified", "lead": "lead", "exact": "exact",

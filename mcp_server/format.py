@@ -19,6 +19,7 @@ DB_LABELS = {
     "pubchem": "PubChem", "pubchem_cid": "PubChem", "chembl": "ChEMBL", "chebi": "ChEBI",
     "swisslipids": "SwissLipids", "alphafold": "AlphaFold DB", "element": "Element",
     "lipidmaps": "LIPID MAPS", "glytoucan": "GlyTouCan", "rnacentral": "RNAcentral",
+    "nr": "NCBI protein", "nt": "NCBI nucleotide", "core_nt": "NCBI nucleotide", "lm": "LIPID MAPS",
 }
 
 _CHEMICAL_DBS = {"pubchem", "pubchem_cid", "chembl", "chebi", "swisslipids", "lipidmaps"}

@@ -113,3 +113,12 @@ class TestOtherTypes:
 
     def test_unknown_type(self):
         assert build_database_url("ABC", "SOME_UNKNOWN_TYPE") is None
+
+
+def test_ncbi_lipidmaps_glytoucan_links():
+    assert build_database_url("HMW90543", "NR_ID") == "https://www.ncbi.nlm.nih.gov/protein/HMW90543"
+    assert build_database_url("XP_011540840.1", "NR_ID") == "https://www.ncbi.nlm.nih.gov/protein/XP_011540840.1"
+    assert build_database_url("NM_000546.6", "NT_ID") == "https://www.ncbi.nlm.nih.gov/nuccore/NM_000546.6"
+    assert build_database_url("CP000001.1", "CORE_NT_ID") == "https://www.ncbi.nlm.nih.gov/nuccore/CP000001.1"
+    assert build_database_url("LMGP01010005", "LM_ID") == "https://www.lipidmaps.org/databases/lmsd/LMGP01010005"
+    assert build_database_url("G00031MO", "GLYTOUCAN_ID") == "https://glytoucan.org/Structures/Glycans/G00031MO"

@@ -9,7 +9,7 @@
  * name → first input file; copies hidden; notes without "Affects"; hit
  * names fall back to "DB ID"; CSV hidden until available.
  */
-import type {
+import type { MoleculeDescriptor,
   DownloadEntry,
   Molecule,
   MoleculeResult,
@@ -183,6 +183,31 @@ function sequence(sig: unknown): string | undefined {
     .trim() || undefined;
 }
 
+const SEQUENCE_GENERATORS = [
+  "fasta_map_protein", "fasta_map_nucleic", "fasta_resname_protein", "fasta_resname_nucleic",
+];
+
+/**
+ * A polymer's sequences. Multi-chain molecules carry one per chain, as
+ * `<generator>[<chain>]` (B-05); chains that are only "X" (residues the
+ * reader could not name) are left out.
+ */
+function polymerSequences(mine: SignatureView[]): Pick<MoleculeDescriptor, "sequence" | "chains"> {
+  for (const gen of SEQUENCE_GENERATORS) {
+    const chains = mine
+      .filter((s) => s.generator === gen || (s.generator ?? "").startsWith(`${gen}[`))
+      .map((s) => ({
+        label: /\[(.+)\]$/.exec(s.generator ?? "")?.[1] ?? "",
+        sequence: sequence(s.signature) ?? "",
+      }))
+      .filter((c) => c.sequence.replace(/X/gi, "").length >= 2);
+    if (chains.length > 0) {
+      return { sequence: chains[0].sequence, chains: chains.length > 1 ? chains : undefined };
+    }
+  }
+  return {};
+}
+
 function names(sig: unknown): string[] {
   if (Array.isArray(sig)) return sig.map(String);
   const raw = text(sig, ["residues", "names", "value"]);
@@ -302,11 +327,7 @@ function buildMolecules(bundle: ApiBundle, status: RunStatus, stageSearch = true
         // Nucleic acids carry theirs under the nucleic generators (the DNA of
         // a protein–DNA run showed "No sequence was recorded" while the
         // technical details listed fasta_map_nucleic).
-        sequence:
-          sequence(find("fasta_map_protein")) ??
-          sequence(find("fasta_map_nucleic")) ??
-          sequence(find("fasta_resname_protein")) ??
-          sequence(find("fasta_resname_nucleic")),
+        ...polymerSequences(mine),
         formula: text(find("molecular_formula"), ["formula", "value"]) ?? undefined,
         smiles: text(find("smiles"), ["smiles", "value"]) ?? undefined,
         inchikey: text(find("inchi_key"), ["inchikey", "inchi_key", "value"]) ?? undefined,

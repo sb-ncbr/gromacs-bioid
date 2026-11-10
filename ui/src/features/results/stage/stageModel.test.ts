@@ -146,3 +146,11 @@ describe("moleculeNotes", () => {
     expect(moleculeNotes(m, all).map((n) => n.id)).toEqual(["n1", "n2"]);
   });
 });
+
+describe("fasta for several chains", () => {
+  it("writes one record per chain", () => {
+    const out = fasta(mol({ display_name: "CYS", descriptor: {
+      sequence: "AAA", chains: [{ label: "A", sequence: "AAA" }, { label: "C", sequence: "CCC" }] } }));
+    expect(out).toBe(">CYS chain A\nAAA\n>CYS chain C\nCCC\n");
+  });
+});

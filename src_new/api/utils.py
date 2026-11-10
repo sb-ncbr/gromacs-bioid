@@ -91,4 +91,12 @@ def build_database_url(identifier: Optional[str], ident_type: Optional[str]) -> 
         return f"https://alphafold.ebi.ac.uk/entry/{identifier}"
     if ident_upper == "SLM_ID":
         return f"https://www.swisslipids.org/#/entity/{identifier}/"
+    if ident_upper == "NR_ID":  # GenBank / RefSeq protein accession (NCBI nr)
+        return f"https://www.ncbi.nlm.nih.gov/protein/{quote(identifier, safe='._')}"
+    if ident_upper in ("NT_ID", "CORE_NT_ID"):  # nucleotide accession (NCBI nt / core_nt)
+        return f"https://www.ncbi.nlm.nih.gov/nuccore/{quote(identifier, safe='._')}"
+    if ident_upper == "LM_ID":
+        return f"https://www.lipidmaps.org/databases/lmsd/{quote(identifier, safe='')}"
+    if ident_upper == "GLYTOUCAN_ID":
+        return f"https://glytoucan.org/Structures/Glycans/{quote(identifier, safe='')}"
     return None

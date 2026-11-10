@@ -101,12 +101,15 @@ export function isPolymer(m: Molecule): boolean {
   return m.kind === "protein" || m.kind === "nucleic";
 }
 
-/** FASTA payload for copy/download: ">Chain A" + sequence wrapped at 80. */
+/** FASTA payload for copy/download: one record per chain, wrapped at 80. */
 export function fasta(m: Molecule): string | null {
-  const seq = m.descriptor.sequence;
-  if (!seq) return null;
-  const lines = [`>${m.display_name}`];
-  for (let i = 0; i < seq.length; i += 80) lines.push(seq.slice(i, i + 80));
+  const chains = m.descriptor.chains ?? (m.descriptor.sequence ? [{ label: "", sequence: m.descriptor.sequence }] : []);
+  if (chains.length === 0) return null;
+  const lines: string[] = [];
+  for (const c of chains) {
+    lines.push(`>${m.display_name}${c.label ? ` chain ${c.label}` : ""}`);
+    for (let i = 0; i < c.sequence.length; i += 80) lines.push(c.sequence.slice(i, i + 80));
+  }
   return lines.join("\n") + "\n";
 }
 

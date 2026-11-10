@@ -73,7 +73,10 @@ export interface MoleculeResult {
 }
 
 export interface MoleculeDescriptor {
+  /** The (first) chain's sequence. */
   sequence?: string;
+  /** Every chain's sequence, when the molecule has more than one. */
+  chains?: { label: string; sequence: string }[];
   formula?: string;
   smiles?: string;
   inchikey?: string;

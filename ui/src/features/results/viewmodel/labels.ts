@@ -17,6 +17,12 @@ export const DB_LABELS: Record<string, string> = {
   swisslipids: "SwissLipids",
   alphafold: "AlphaFold DB",
   element: "Element",
+  nr: "NCBI protein",
+  nt: "NCBI nucleotide",
+  core_nt: "NCBI nucleotide",
+  lm: "LIPID MAPS",
+  lipidmaps: "LIPID MAPS",
+  glytoucan: "GlyTouCan",
 };
 
 /** Loader molecule type → view-model kind. */

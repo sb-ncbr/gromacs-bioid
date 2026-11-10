@@ -309,3 +309,33 @@ describe("sequence for nucleic acids", () => {
     expect(vm.molecules[0].descriptor.sequence).toBe("TGCTTATCAATTTGTTGCA");
   });
 });
+
+describe("sequence for multi-chain molecules", () => {
+  // run 4bc17f8d (CYS): one sequence per chain, chains B-D unreadable ("X")
+  const vm = adapt({
+    runId: "4bc17f8d-0000",
+    summary: { status: "success" },
+    status: { pipeline: { status: "success" }, tasks: [], warnings: [], critical_errors: [] },
+    molecules: { segments: ["CYS"], segment_meta: { CYS: { type: "protein" } } },
+    signatures: {
+      signatures: [
+        { segment: "CYS", generator: "fasta_map_protein[A]", signature: "CPFGEVFNAT" },
+        { segment: "CYS", generator: "fasta_map_protein[B]", signature: "X" },
+        { segment: "CYS", generator: "fasta_map_protein[C]", signature: "MKTAYIAKQR" },
+        { segment: "CYS", generator: "fasta_resname_protein[A]", signature: "CPFGEVFNAT" },
+      ],
+    },
+    verification: [],
+    queue: null,
+    files: null,
+  });
+
+  it("reads the per-chain sequences and drops unreadable chains", () => {
+    const d = vm.molecules[0].descriptor;
+    expect(d.sequence).toBe("CPFGEVFNAT");
+    expect(d.chains).toEqual([
+      { label: "A", sequence: "CPFGEVFNAT" },
+      { label: "C", sequence: "MKTAYIAKQR" },
+    ]);
+  });
+});
