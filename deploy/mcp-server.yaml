@@ -1,0 +1,92 @@
+# BioID MCP server (mcp_server/, image from Dockerfile.mcp).
+# Namespace ceitec-biodata-ns (PodSecurity "restricted").
+#   kubectl -n ceitec-biodata-ns apply -f deploy/mcp-server.yaml
+# Replace TAG first. The server is stateless (Streamable HTTP, stateless mode,
+# JSON responses), so it scales horizontally without session affinity.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bioid-mcp
+  labels:
+    app: bioid-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bioid-mcp
+  template:
+    metadata:
+      labels:
+        app: bioid-mcp
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mcp
+          image: cerit.io/tomsko/bioid-mcp:TAG
+          imagePullPolicy: IfNotPresent
+          env:
+            # In-cluster BioID API (helm release bat3-ceitec, svc port 8000).
+            - name: BIOID_API_URL
+              value: http://bat3-ceitec-bat3-api:8000
+            # Public host used for links in tool output.
+            - name: BIOID_PUBLIC_URL
+              value: https://bioid-ceitec.dyn.cloud.e-infra.cz
+            - name: BIOID_MCP_MAX_UPLOAD_MB
+              value: "50"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 20m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              # a 50 MB submission is held in memory (base64 request + decoded
+              # file + multipart upload to the API)
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bioid-mcp
+  labels:
+    app: bioid-mcp
+spec:
+  selector:
+    app: bioid-mcp
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+# Ingress for /mcp (and /documentation): deploy/bioid-ingress-extras.yaml.

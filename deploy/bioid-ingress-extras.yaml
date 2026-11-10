@@ -1,0 +1,60 @@
+# Extra paths on the BioID host, outside the helm-managed
+# bat3-ceitec-bat3-ingress (a path patched into it would be lost on the next
+# helm upgrade). TLS reuses that ingress's certificate secret; no
+# cert-manager annotations here (the main ingress owns the certificate).
+#   kubectl -n ceitec-biodata-ns apply -f deploy/bioid-ingress-extras.yaml
+#
+# /mcp           -> bioid-mcp       (deploy/mcp-server.yaml)
+# /documentation -> validation-docs (deploy/validation-docs.yaml; the docs
+#                   image serves the mkdocs site under /docs/ and
+#                   /documentation/, /docs on this host is the API's Swagger)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bioid-mcp
+  annotations:
+    # 50 MB of files arrive base64-encoded inside JSON (~67 MB)
+    nginx.ingress.kubernetes.io/proxy-body-size: 100m
+    # tool calls are short JSON requests; headroom for slow uploads / RCSB
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - bioid-ceitec.dyn.cloud.e-infra.cz
+      secretName: bioid-ceitec-d-bat3-ceitec-bat3-tls
+  rules:
+    - host: bioid-ceitec.dyn.cloud.e-infra.cz
+      http:
+        paths:
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: bioid-mcp
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bioid-documentation
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - bioid-ceitec.dyn.cloud.e-infra.cz
+      secretName: bioid-ceitec-d-bat3-ceitec-bat3-tls
+  rules:
+    - host: bioid-ceitec.dyn.cloud.e-infra.cz
+      http:
+        paths:
+          - path: /documentation
+            pathType: Prefix
+            backend:
+              service:
+                name: validation-docs
+                port:
+                  number: 80

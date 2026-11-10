@@ -1,0 +1,27 @@
+# BioID MCP server (mcp_server/): a thin MCP client of the BioID REST API.
+# Build from the repo root:  docker build -f Dockerfile.mcp -t cerit.io/tomsko/bioid-mcp:TAG .
+# Runs as a numeric non-root user (PodSecurity "restricted"), listens on 8080,
+# MCP endpoint /mcp, probe /healthz. Config: BIOID_API_URL, BIOID_PUBLIC_URL
+# (see mcp_server/config.py).
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PORT=8080
+
+WORKDIR /app
+
+COPY mcp_server/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+COPY mcp_server/ /app/mcp_server/
+RUN find /app -type d -name __pycache__ -prune -exec rm -rf {} + \
+    && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin bioid
+
+USER 10001:10001
+
+EXPOSE 8080
+
+CMD ["python", "-m", "mcp_server"]

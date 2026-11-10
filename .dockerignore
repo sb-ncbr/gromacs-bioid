@@ -26,6 +26,10 @@
 .git
 .gitignore
 
+# Local worktrees / agent state (hundreds of MB, never part of an image)
+.wt
+.claude
+
 # Data directories (mounted as volumes)
 runs
 databases
