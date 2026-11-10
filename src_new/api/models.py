@@ -332,6 +332,9 @@ class RunCreateResponse(BaseModel):
     status: str = Field(..., description="Run status: queued")
     message: str = Field(..., description="Human-readable message")
     results_url: str = Field(..., description="URL to check run status")
+    owner_token: Optional[str] = Field(
+        None, description="Secret for deleting or cancelling this run (X-Owner-Token header); "
+                          "shown only once, keep it")
 
 
 class RunQueueResponse(BaseModel):

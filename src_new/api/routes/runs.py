@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, Query
+from fastapi import APIRouter, Form, Header, HTTPException, Request, UploadFile, Query
 from fastapi.responses import PlainTextResponse
 import csv
 import io
@@ -58,6 +58,10 @@ from ..hit_names import hit_display_name
 from ..names import chain_of, segment_display_name, segment_resname, strip_seg
 from ..utils import build_database_url, normalize_identifier
 from ..tasks import run_pipeline_task
+from ..security import (
+    MAX_FILES, OWNER_HEADER, RunId, allowed_upload, check_submit_limits, ip_hash,
+    new_owner_token, require_owner, run_dir as safe_run_dir, same_submitter,
+)
 
 router = APIRouter()
 
@@ -119,8 +123,7 @@ def _requester_ip(request: Request) -> Optional[str]:
 
 def load_results_json(run_id: str) -> Dict[str, Any]:
     """Load results.json for a given run_id."""
-    runs_dir = get_runs_dir()
-    results_path = runs_dir / run_id / "results.json"
+    results_path = safe_run_dir(get_runs_dir(), run_id) / "results.json"
     
     if not results_path.exists():
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
@@ -192,6 +195,8 @@ async def create_run(
         run_id = str(uuid.uuid4())
     elif not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", run_id) or ".." in run_id:
         raise HTTPException(status_code=422, detail="Invalid run_id")
+    elif (get_runs_dir() / run_id).exists():
+        raise HTTPException(status_code=409, detail=f"Run '{run_id}' already exists")
     
     runs_dir = get_runs_dir()
     run_dir = runs_dir / run_id
@@ -203,7 +208,15 @@ async def create_run(
     # final component. Empty/dot-only names and duplicates are rejected.
     # Content is read and size-checked up front too, so a rejected upload
     # (413/422) leaves NO run directory behind.
-    sanitised: dict[str, tuple[UploadFile, bytes]] = {}
+    if len(files) > MAX_FILES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Too many files ({len(files)}): at most {MAX_FILES} per run; "
+                   "bundle them as a .zip or .tar.gz."
+        )
+    # Uploads arrive spooled to temporary files; they are copied to the run
+    # directory in chunks below, never read into memory whole.
+    sanitised: dict[str, UploadFile] = {}
     for file in files:
         raw_name = file.filename or ""
         name = Path(raw_name).name
@@ -217,17 +230,23 @@ async def create_run(
                 status_code=422,
                 detail=f"Duplicate file name after sanitisation: {name!r}"
             )
-        file_content = await file.read()
-        if len(file_content) > MAX_UPLOAD_BYTES:
+        if not allowed_upload(name):
+            raise HTTPException(
+                status_code=422,
+                detail=f"'{name}' is not a file type BioID reads (simulation, "
+                       "structure, config or .zip/.tar archive files)"
+            )
+        size = file.size
+        if size is None:
+            file.file.seek(0, os.SEEK_END)
+            size = file.file.tell()
+        file.file.seek(0)
+        if size > MAX_UPLOAD_BYTES:
             raise HTTPException(
                 status_code=413,
                 detail=f"File '{name}' exceeds 128 MiB limit"
             )
-        # BH-017: strip a UTF-8 BOM so the first record (often ATOM) is
-        # not corrupted for downstream parsers.
-        if file_content[:3] == b"\xef\xbb\xbf":
-            file_content = file_content[3:]
-        sanitised[name] = (file, file_content)
+        sanitised[name] = file
     if not sanitised:
         raise HTTPException(
             status_code=422,
@@ -269,26 +288,27 @@ async def create_run(
         config.override("signatures.topology_less_pdb", True)
         config.override("signatures.ca_only_pdb", True)
 
+    creator_ip = _requester_ip(request)
+    check_submit_limits(creator_ip)
+
     # Create run directory structure (after validation)
     input_dir.mkdir(parents=True, exist_ok=True)
     
     # Save uploaded files to input directory
     saved_files = {}
-    for name, (file, file_content) in sanitised.items():
+    for name, file in sanitised.items():
         file_path = input_dir / name
         with open(file_path, "wb") as f:
-            f.write(file_content)
+            # BH-017: strip a UTF-8 BOM so the first record (often ATOM) is
+            # not corrupted for downstream parsers.
+            head = file.file.read(3)
+            if head != b"\xef\xbb\xbf":
+                f.write(head)
+            shutil.copyfileobj(file.file, f, 1024 * 1024)
         saved_files[name] = str(file_path)
     
     config_path = run_dir / "config.ini"
     config.to_ini_path(config_path)
-
-    # Extract creator IP: first hop of X-Forwarded-For, fallback to client.host
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        creator_ip = xff.split(",")[0].strip()
-    else:
-        creator_ip = request.client.host if request.client else None
 
     # Create results manager and write initial "queued" status
     results_path = run_dir / "results.json"
@@ -305,7 +325,8 @@ async def create_run(
     if preset:
         initial_results["pipeline"]["preset"] = preset
     if creator_ip:
-        initial_results["pipeline"]["creator_ip"] = creator_ip
+        initial_results["pipeline"]["creator_ip_hash"] = ip_hash(creator_ip)
+    owner_token, initial_results["pipeline"]["owner_token_sha256"] = new_owner_token()
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(initial_results, f, indent=2)
     
@@ -331,26 +352,25 @@ async def create_run(
         status="queued",
         message=f"Run {run_id} queued successfully",
         results_url=f"/runs/{run_id}/status",
+        owner_token=owner_token,
     )
 
 
 @router.get("", response_model=RunListResponse)
-async def list_runs(request: Request, mine: int = Query(0)) -> RunListResponse:
-    """List all runs with basic metadata.
+async def list_runs(request: Request, mine: int = Query(1)) -> RunListResponse:
+    """Runs submitted from the caller's network address, with basic metadata.
 
-    When ``mine=1``, only runs whose ``creator_ip`` matches the current
-    requester's IP are returned (default behavior is unchanged).
+    Other people's runs are never listed (``mine`` is accepted for
+    compatibility and ignored).
     """
     runs_dir = get_runs_dir()
 
     if not runs_dir.exists():
         return RunListResponse(runs=[])
 
-    requester_ip = None
-    if mine:
-        requester_ip = _requester_ip(request)
-        if requester_ip is None:
-            return RunListResponse(runs=[])
+    requester_ip = _requester_ip(request)
+    if requester_ip is None:
+        return RunListResponse(runs=[])
 
     runs = []
     for entry in runs_dir.iterdir():
@@ -377,9 +397,7 @@ async def list_runs(request: Request, mine: int = Query(0)) -> RunListResponse:
 
             pipeline_data = data.get("pipeline", {})
             created_at = data.get("created_at", "")
-            creator_ip = pipeline_data.get("creator_ip")
-
-            if mine and creator_ip != requester_ip:
+            if not same_submitter(pipeline_data, requester_ip):
                 continue
 
             runs.append(RunListItem(
@@ -388,7 +406,6 @@ async def list_runs(request: Request, mine: int = Query(0)) -> RunListResponse:
                 created_at=created_at,
                 input_kind=pipeline_data.get("input_kind"),
                 run_name=pipeline_data.get("run_name"),
-                creator_ip=creator_ip,
             ))
         except (json.JSONDecodeError, IOError):
             # Skip malformed results files
@@ -488,19 +505,20 @@ async def get_run_examples(limit: int = 3) -> ExamplesResponse:
 
 
 @router.delete("/{run_id}")
-async def delete_run(run_id: str) -> dict:
-    """Delete a run and its associated directory."""
-    runs_dir = get_runs_dir()
-    run_dir = runs_dir / run_id
-    
-    if not run_dir.exists():
+async def delete_run(
+    run_id: RunId,
+    owner_token: Optional[str] = Header(None, alias=OWNER_HEADER),
+) -> dict:
+    """Delete a run and its associated directory (owner token required)."""
+    run_dir = safe_run_dir(get_runs_dir(), run_id)
+    if not run_dir.is_dir():
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
-    
+    require_owner(load_results_json(run_id).get("pipeline", {}), owner_token, "deleted")
     shutil.rmtree(run_dir)
     return {"message": f"Run '{run_id}' deleted successfully"}
 
 @router.get("/{run_id}", response_model=RunSummaryResponse)
-async def get_run_summary(run_id: str) -> RunSummaryResponse:
+async def get_run_summary(run_id: RunId) -> RunSummaryResponse:
     """Get a summary of a specific run."""
     data = load_results_json(run_id)
     
@@ -546,7 +564,7 @@ def _parse_iso_datetime(dt_str: str) -> datetime:
 
 
 @router.get("/{run_id}/status", response_model=RunStatusResponse)
-async def get_run_status(run_id: str, since: Optional[str] = None) -> RunStatusResponse:
+async def get_run_status(run_id: RunId, since: Optional[str] = None) -> RunStatusResponse:
     """Get full run status including pipeline, tasks, warnings, errors, and events.
     
     Args:
@@ -726,7 +744,10 @@ def _segment_progress(data: Dict[str, Any],
 
 
 @router.post("/{run_id}/cancel", response_model=CancelRunResponse)
-async def cancel_run(run_id: str) -> CancelRunResponse:
+async def cancel_run(
+    run_id: RunId,
+    owner_token: Optional[str] = Header(None, alias=OWNER_HEADER),
+) -> CancelRunResponse:
     """Cancel a running or queued run.
     
     Revokes the Celery task and sets pipeline status to "cancelled".
@@ -748,6 +769,7 @@ async def cancel_run(run_id: str) -> CancelRunResponse:
     
     # Check current pipeline status
     pipeline_data = data.get("pipeline", {})
+    require_owner(pipeline_data, owner_token, "cancelled")
     current_status = pipeline_data.get("status", "unknown")
     
     # Cannot cancel if already in a terminal state
@@ -772,7 +794,7 @@ async def cancel_run(run_id: str) -> CancelRunResponse:
 
 
 @router.get("/{run_id}/loading", response_model=LoadingInfoResponse)
-async def get_loading_info(run_id: str) -> LoadingInfoResponse:
+async def get_loading_info(run_id: RunId) -> LoadingInfoResponse:
     """Get loading information including strategy, attempts, and topology files."""
     data = load_results_json(run_id)
     
@@ -838,7 +860,7 @@ async def get_loading_info(run_id: str) -> LoadingInfoResponse:
 
 
 @router.get("/{run_id}/molecules", response_model=MoleculeSummaryResponse)
-async def get_molecules(run_id: str) -> MoleculeSummaryResponse:
+async def get_molecules(run_id: RunId) -> MoleculeSummaryResponse:
     """Get molecule summary including unique molecules and type counts."""
     data = load_results_json(run_id)
     
@@ -935,7 +957,7 @@ async def get_molecules(run_id: str) -> MoleculeSummaryResponse:
 
 
 @router.get("/{run_id}/download/results.json")
-async def download_results_json(run_id: str):
+async def download_results_json(run_id: RunId):
     """The run's complete results document (documented at
     /documentation/results-json/), without the submitter's address."""
     from fastapi.responses import JSONResponse
@@ -943,13 +965,14 @@ async def download_results_json(run_id: str):
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
     data = load_results_json(run_id)
     if isinstance(data.get("pipeline"), dict):
-        data["pipeline"].pop("creator_ip", None)
+        for key in ("creator_ip", "creator_ip_hash", "owner_token_sha256"):
+            data["pipeline"].pop(key, None)
     return JSONResponse(data, headers={
         "Content-Disposition": f'attachment; filename="bioid-{run_id[:8]}-results.json"'})
 
 
 @router.get("/{run_id}/download/results.csv")
-async def download_results_csv(run_id: str) -> PlainTextResponse:
+async def download_results_csv(run_id: RunId) -> PlainTextResponse:
     """v3.143 (BACKEND_GAPS G6): run-level CSV export — one clean row per
     leaderboard molecule (every fragments/segments entry). Confidence
     label thresholds match the UI exactly (>=80 high, >=50 medium);
@@ -1022,7 +1045,7 @@ async def download_results_csv(run_id: str) -> PlainTextResponse:
 
 
 @router.get("/{run_id}/molecules/{segment}/info", response_model=MoleculeInfoResponse)
-async def get_molecule_info(run_id: str, segment: str) -> MoleculeInfoResponse:
+async def get_molecule_info(run_id: RunId, segment: str) -> MoleculeInfoResponse:
     """Get detailed info for a specific molecule segment."""
     data = load_results_json(run_id)
     
@@ -1098,7 +1121,7 @@ async def get_molecule_info(run_id: str, segment: str) -> MoleculeInfoResponse:
 
 
 @router.get("/{run_id}/render", response_model=RenderPathsResponse)
-async def get_render_paths(run_id: str) -> RenderPathsResponse:
+async def get_render_paths(run_id: RunId) -> RenderPathsResponse:
     """Get render paths for system and segment mmCIF files."""
     data = load_results_json(run_id)
     
@@ -1186,7 +1209,7 @@ def _extract_segment_pngs(segments_data: Dict[str, Any], run_id: str) -> Dict[st
 
 
 @router.get("/{run_id}/signatures", response_model=SignaturesResponse)
-async def get_signatures(run_id: str, segment: Optional[str] = None) -> SignaturesResponse:
+async def get_signatures(run_id: RunId, segment: Optional[str] = None) -> SignaturesResponse:
     """Get signatures for all segments or a specific segment."""
     data = load_results_json(run_id)
     
@@ -1224,7 +1247,7 @@ async def get_signatures(run_id: str, segment: Optional[str] = None) -> Signatur
 
 
 @router.get("/{run_id}/identifiers", response_model=IdentifiersResponse)
-async def get_identifiers(run_id: str, segment: Optional[str] = None) -> IdentifiersResponse:
+async def get_identifiers(run_id: RunId, segment: Optional[str] = None) -> IdentifiersResponse:
     """Get identifier hits for all segments or a specific segment."""
     data = load_results_json(run_id)
     
@@ -1366,7 +1389,7 @@ async def get_identifiers(run_id: str, segment: Optional[str] = None) -> Identif
 
 
 @router.get("/{run_id}/verification", response_model=VerificationResponse)
-async def get_verification(run_id: str, segment: Optional[str] = None) -> VerificationResponse:
+async def get_verification(run_id: RunId, segment: Optional[str] = None) -> VerificationResponse:
     """Get verification results for all segments or a specific segment."""
     data = load_results_json(run_id)
     
@@ -1436,7 +1459,7 @@ async def get_verification(run_id: str, segment: Optional[str] = None) -> Verifi
 
 
 @router.get("/{run_id}/logs")
-async def get_run_logs(run_id: str, type: str = "normal") -> PlainTextResponse:
+async def get_run_logs(run_id: RunId, type: str = "normal") -> PlainTextResponse:
     """Get raw log text for a run. type is 'normal' or 'debug'."""
     runs_dir = get_runs_dir()
     results_path = runs_dir / run_id / "results.json"
@@ -1462,7 +1485,7 @@ async def get_run_logs(run_id: str, type: str = "normal") -> PlainTextResponse:
 
 
 @router.get("/{run_id}/files", response_model=RunFilesResponse)
-async def get_run_files(run_id: str) -> RunFilesResponse:
+async def get_run_files(run_id: RunId) -> RunFilesResponse:
     """Get all files in a run directory (recursive), excluding hidden files."""
     
     
@@ -1592,7 +1615,7 @@ def _rerun_name(old_run_name: str) -> str:
     return f"{title.rstrip()} (re-run){sep}{desc}" if sep else f"{old_run_name} (re-run)"
 
 
-def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None) -> Optional[str]:
+def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None) -> Optional[tuple[str, str]]:
     """Create a new run reusing the input and config of an existing run.
 
     Copies input files and config.ini (or writes the default config) into a
@@ -1605,10 +1628,15 @@ def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None) ->
             rerun appears in their "Your annotations" (GET /runs?mine=1).
 
     Returns:
-        The new run id, or None if the run cannot be re-run (missing
-        results.json or missing/empty input directory).
+        (new run id, its owner token), or None if the run cannot be re-run
+        (missing results.json or missing/empty input directory).
+
+    The old config.ini goes through the same per-run allowlist as a new
+    submission (a run planted before the allowlist cannot carry executable
+    or URL overrides into a rerun); HTTPException 422 if it does not pass.
     """
     from src_new.config.loader import RunConfig
+    from src_new.config.presets import ConfigOverrideError, overrides_from_ini, resolve_run_config
 
     old_run_id = old_run_dir.name
     old_results_path = old_run_dir / "results.json"
@@ -1632,6 +1660,16 @@ def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None) ->
 
     old_run_name = old_data.get("pipeline", {}).get("run_name")
 
+    config = None
+    if old_config_path.exists():
+        try:
+            overrides = overrides_from_ini(old_config_path.read_text(encoding="utf-8"),
+                                           RunConfig.from_default_ini())
+            config = resolve_run_config(None, overrides)
+        except ConfigOverrideError as e:
+            raise HTTPException(status_code=422,
+                                detail=f"This run's configuration cannot be re-run: {e}")
+
     # Generate new run ID
     new_run_id = str(uuid.uuid4())
     new_run_dir = get_runs_dir() / new_run_id
@@ -1645,13 +1683,9 @@ def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None) ->
         if file.is_file():
             shutil.copy2(str(file), str(new_input_dir / file.name))
 
-    # Handle config: copy old or write default
+    # Config: the old run's (re-checked above) or the defaults
     new_config_path = new_run_dir / "config.ini"
-    if old_config_path.exists():
-        shutil.copy2(str(old_config_path), str(new_config_path))
-    else:
-        config = RunConfig.from_default_ini()
-        config.to_ini_path(new_config_path)
+    (config or RunConfig.from_default_ini()).to_ini_path(new_config_path)
 
     # Write new results.json
     new_results_path = new_run_dir / "results.json"
@@ -1666,7 +1700,8 @@ def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None) ->
     if old_run_name:
         initial_results["pipeline"]["run_name"] = _rerun_name(old_run_name)
     if creator_ip:
-        initial_results["pipeline"]["creator_ip"] = creator_ip
+        initial_results["pipeline"]["creator_ip_hash"] = ip_hash(creator_ip)
+    owner_token, initial_results["pipeline"]["owner_token_sha256"] = new_owner_token()
 
     with open(new_results_path, "w", encoding="utf-8") as f:
         json.dump(initial_results, f, indent=2)
@@ -1687,11 +1722,14 @@ def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None) ->
         **_ui_opts,
     )
 
-    return new_run_id
+    return new_run_id, owner_token
 
 
 @router.post("/rerun-all", response_model=RerunAllResponse)
-async def rerun_all(request: Request) -> RerunAllResponse:
+async def rerun_all(
+    request: Request,
+    admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
+) -> RerunAllResponse:
     """
     Re-run all existing runs by copying their input files and config into new run directories.
 
@@ -1705,7 +1743,14 @@ async def rerun_all(request: Request) -> RerunAllResponse:
 
     Returns:
         RerunAllResponse with list of new runs, skipped runs, and count
+
+    Operators only: needs X-Admin-Token equal to BAT3_ADMIN_TOKEN (404 when
+    that is unset, as on the public service).
     """
+    import hmac as _hmac
+    expected = os.environ.get("BAT3_ADMIN_TOKEN", "")
+    if not expected or not admin_token or not _hmac.compare_digest(admin_token, expected):
+        raise HTTPException(status_code=404, detail="Not Found")
     runs_dir = get_runs_dir()
     new_runs: List[RerunRunItem] = []
     skipped: List[str] = []
@@ -1718,10 +1763,14 @@ async def rerun_all(request: Request) -> RerunAllResponse:
             continue
 
         old_run_id = entry.name
-        new_run_id = _create_single_rerun(entry, creator_ip=_requester_ip(request))
-        if new_run_id is None:
+        try:
+            created = _create_single_rerun(entry, creator_ip=_requester_ip(request))
+        except HTTPException:
+            created = None
+        if created is None:
             skipped.append(old_run_id)
         else:
+            new_run_id = created[0]
             new_runs.append(RerunRunItem(
                 new_run_id=new_run_id,
                 old_run_id=old_run_id,
@@ -1732,7 +1781,7 @@ async def rerun_all(request: Request) -> RerunAllResponse:
 
 
 @router.post("/{run_id}/rerun", response_model=RunCreateResponse)
-async def rerun_single_run(run_id: str, request: Request) -> RunCreateResponse:
+async def rerun_single_run(run_id: RunId, request: Request) -> RunCreateResponse:
     """
     Re-run a single existing run by copying its input files and config into a
     new run directory and enqueuing a new Celery pipeline task.
@@ -1748,24 +1797,27 @@ async def rerun_single_run(run_id: str, request: Request) -> RunCreateResponse:
     Raises:
         404: If the run or its input directory is missing.
     """
-    runs_dir = get_runs_dir()
-    old_run_dir = runs_dir / run_id
+    old_run_dir = safe_run_dir(get_runs_dir(), run_id)
 
     if not old_run_dir.is_dir():
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
 
-    new_run_id = _create_single_rerun(old_run_dir, creator_ip=_requester_ip(request))
-    if new_run_id is None:
+    creator_ip = _requester_ip(request)
+    check_submit_limits(creator_ip)
+    created = _create_single_rerun(old_run_dir, creator_ip=creator_ip)
+    if created is None:
         raise HTTPException(
             status_code=404,
             detail=f"Run '{run_id}' has no input files to re-run",
         )
+    new_run_id, owner_token = created
 
     return RunCreateResponse(
         run_id=new_run_id,
         status="queued",
         message=f"Run {new_run_id} queued successfully",
         results_url=f"/runs/{new_run_id}/status",
+        owner_token=owner_token,
     )
 
 
@@ -1794,7 +1846,7 @@ def _queue_state_for(run_data: Dict[str, Any]) -> str:
 
 
 @router.get("/{run_id}/queue", response_model=RunQueueResponse)
-async def get_run_queue(run_id: str) -> RunQueueResponse:
+async def get_run_queue(run_id: RunId) -> RunQueueResponse:
     """Queue state for a single run.
 
     Returns:

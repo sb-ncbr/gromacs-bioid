@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from src_new.api.main import app
 from src_new.api.routes.runs import _rerun_name
+from src_new.api.security import ip_hash
 
 
 @pytest.fixture
@@ -34,7 +35,10 @@ def test_rerun_records_requester_ip_and_shows_as_mine(runs_dir):
     assert r.status_code == 200
     new_id = r.json()["run_id"]
     data = json.loads((runs_dir / new_id / "results.json").read_text())
-    assert data["pipeline"]["creator_ip"] == "203.0.113.7"
+    # only a keyed hash of the address is stored (src_new/api/security.py)
+    assert "creator_ip" not in data["pipeline"]
+    assert data["pipeline"]["creator_ip_hash"] == ip_hash("203.0.113.7")
+    assert r.json()["owner_token"]
     assert data["pipeline"]["run_name"] == "Trypsin (re-run)>Crystal structure"
     mine = client.get("/api/v1/runs?mine=1", headers=hdr).json()["runs"]
     assert new_id in {x["run_id"] for x in mine}

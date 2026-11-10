@@ -88,6 +88,18 @@ app.add_middleware(
 # uncompressed. Streams (text/event-stream) are excluded by Starlette.
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
+
+@app.middleware("http")
+async def harden_run_files(request, call_next):
+    """/files serves what users uploaded and what runs produced from the
+    BioID origin: never let a browser sniff it into HTML or run scripts in
+    it (an uploaded page would otherwise be live on this domain)."""
+    response = await call_next(request)
+    if request.url.path.startswith("/files/"):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
+    return response
+
 app.include_router(runs_router, prefix="/runs", tags=["runs"])
 app.include_router(runs_router, prefix="/api/v1/runs", tags=["runs"])
 

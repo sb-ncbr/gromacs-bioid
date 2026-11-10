@@ -36,4 +36,4 @@ def test_download_results_json(tmp_path: Path, monkeypatch):
     assert r.json()["pipeline"] == {"status": "success"}
     assert "attachment" in r.headers["content-disposition"]
     assert client.get("/api/v1/runs/nope/download/results.json").status_code == 404
-    assert client.get("/api/v1/runs/..%2E/download/results.json").status_code == 404
+    assert client.get("/api/v1/runs/..%2E/download/results.json").status_code in (404, 422)

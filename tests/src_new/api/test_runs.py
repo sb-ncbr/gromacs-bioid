@@ -42,6 +42,11 @@ def mock_celery_task(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+
+# Cancel needs the owner token returned at submission (src_new/api/security.py).
+OWNER = {"X-Owner-Token": "test-owner-token"}
+OWNER_SHA = __import__("hashlib").sha256(b"test-owner-token").hexdigest()
+
 class TestIdentifiersSegmentAware:
     """Tests for segment-aware identifier hits (API-17)."""
     
@@ -626,6 +631,7 @@ class TestRunCancellation:
         results_data = {
             "pipeline": {
                 "name": "BAT3",
+                "owner_token_sha256": OWNER_SHA,
                 "status": "running",
                 "started_at": "2026-05-26T10:00:00Z",
             },
@@ -659,7 +665,7 @@ class TestRunCancellation:
         monkeypatch.setattr("src_new.celery_app.celery.AsyncResult", mock_async_result)
         
         # Cancel the run
-        response = client.post(f"/runs/{run_id}/cancel")
+        response = client.post(f"/runs/{run_id}/cancel", headers=OWNER)
         
         assert response.status_code == 200
         json_response = response.json()
@@ -683,6 +689,7 @@ class TestRunCancellation:
         results_data = {
             "pipeline": {
                 "name": "BAT3",
+                "owner_token_sha256": OWNER_SHA,
                 "status": "success",
                 "started_at": "2026-05-26T10:00:00Z",
                 "finished_at": "2026-05-26T10:05:00Z",
@@ -693,7 +700,7 @@ class TestRunCancellation:
         with open(results_path, "w", encoding="utf-8") as f:
             json.dump(results_data, f, indent=2)
         
-        response = client.post(f"/runs/{run_id}/cancel")
+        response = client.post(f"/runs/{run_id}/cancel", headers=OWNER)
         
         assert response.status_code == 400
         assert "already in terminal state" in response.json()["detail"]
@@ -709,6 +716,7 @@ class TestRunCancellation:
         results_data = {
             "pipeline": {
                 "name": "BAT3",
+                "owner_token_sha256": OWNER_SHA,
                 "status": "failed",
             },
         }
@@ -717,7 +725,7 @@ class TestRunCancellation:
         with open(results_path, "w", encoding="utf-8") as f:
             json.dump(results_data, f, indent=2)
         
-        response = client.post(f"/runs/{run_id}/cancel")
+        response = client.post(f"/runs/{run_id}/cancel", headers=OWNER)
         
         assert response.status_code == 400
     
@@ -732,6 +740,7 @@ class TestRunCancellation:
         results_data = {
             "pipeline": {
                 "name": "BAT3",
+                "owner_token_sha256": OWNER_SHA,
                 "status": "cancelled",
             },
         }
@@ -740,7 +749,7 @@ class TestRunCancellation:
         with open(results_path, "w", encoding="utf-8") as f:
             json.dump(results_data, f, indent=2)
         
-        response = client.post(f"/runs/{run_id}/cancel")
+        response = client.post(f"/runs/{run_id}/cancel", headers=OWNER)
         
         assert response.status_code == 400
     
