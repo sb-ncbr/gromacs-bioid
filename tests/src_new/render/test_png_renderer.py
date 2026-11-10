@@ -120,8 +120,9 @@ def _spec(tmp_path, style="full", label="system"):
 
 def test_script_full_style_content(tmp_path):
     s = build_pymol_script(_spec(tmp_path), _cfg())
-    assert "show cartoon, polymer.protein" in s
-    assert "show sticks, ligands" in s
+    assert "show cartoon, prot or na" in s
+    assert "show sticks, ligand" in s
+    assert "show spheres, ion" in s
     assert "set opaque_background, 0" in s
     assert "png " in s and "ray=1" in s
     assert "width=1600, height=1200" in s
@@ -129,7 +130,7 @@ def test_script_full_style_content(tmp_path):
 
 def test_script_reduced_style_omits_sticks_and_spheres(tmp_path):
     s = build_pymol_script(_spec(tmp_path, style="reduced"), _cfg())
-    assert "show cartoon, polymer.protein" in s
+    assert "show cartoon, prot or na" in s
     assert "show sticks" not in s
     assert "show spheres" not in s
     assert "width=1200, height=900" in s
@@ -140,6 +141,48 @@ def test_script_contains_input_and_output_paths(tmp_path):
     s = build_pymol_script(spec, _cfg())
     assert str(spec.mmcif_path) in s
     assert str(spec.png_path) in s
+
+
+def test_script_renders_with_pymol(tmp_path):
+    """The generated script runs in real PyMOL (python blocks included)."""
+    import shutil
+    pymol = shutil.which("pymol")
+    if not pymol:
+        pytest.skip("pymol not installed")
+    import subprocess
+    mmcif = tmp_path / "system.mmcif"
+    mmcif.write_text(_TINY_CIF)
+    spec = RenderSpec(label="system", is_system=True, mmcif_path=mmcif,
+                      png_path=tmp_path / "render" / "system.png", style="full", timeout_s=60)
+    spec.png_path.parent.mkdir(parents=True)
+    pml = tmp_path / "s.pml"
+    pml.write_text(build_pymol_script(spec, RenderConfig(pymol_bin=pymol, resolution_full=(160, 120))))
+    proc = subprocess.run([pymol, "-cq", str(pml)], capture_output=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr
+    assert spec.png_path.is_file()
+    assert b"Traceback" not in proc.stdout + proc.stderr
+
+
+_TINY_CIF = """data_x
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.auth_seq_id
+_atom_site.auth_asym_id
+ATOM 1 N N ALA A 1 0.000 0.000 0.000 1 A
+ATOM 2 C CA ALA A 1 1.458 0.000 0.000 1 A
+ATOM 3 C C ALA A 1 2.009 1.420 0.000 1 A
+ATOM 4 O O ALA A 1 1.251 2.390 0.000 1 A
+HETATM 5 CA CA B . 5.000 5.000 5.000 101 B
+"""
 
 
 # ---------------------------------------------------------------------------
