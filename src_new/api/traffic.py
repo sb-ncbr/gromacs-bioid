@@ -328,7 +328,7 @@ def _add(agg: dict[str, Any], e: dict[str, Any], bucket: str) -> None:
         agg["visitors"].add(v)
         s[2].add(v)
     c = e.get("country")
-    if c and c != "internal":
+    if c and c != "internal" and e.get("client") != "bot":  # same visitors as the total
         cc = agg["countries"][c]
         cc["name"] = e.get("country_name") or c
         cc["requests" if not pv else "pageviews"] += 1
