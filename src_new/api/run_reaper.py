@@ -62,6 +62,8 @@ STATUS_TERMINAL = frozenset(
 )
 MISSES_TO_FAIL = 2
 DEFAULT_INTERVAL_S = 300
+RETENTION_INTERVAL_S = 3600
+RETENTION_STATUS_KEY = "bioid:retention:last"
 LEADER_LOCK_KEY = "bat3:run_reaper:leader"
 HEARTBEAT_NAME = "heartbeat"
 HEARTBEAT_STALE_S = 900.0  # 15 min without a touch -> zombie
@@ -328,6 +330,7 @@ async def reaper_loop(celery_app, runs_dir: Path, redis_url: str,
     """Forever-loop driver. Redis leader lock: exactly one sweeper cluster-wide."""
     redis_client = redis_lib.from_url(redis_url, socket_timeout=10)
     misses: dict[str, int] = {}
+    last_retention = 0.0
     identity = f"{os.uname().nodename}:{os.getpid()}"
     logger.info("run_reaper: started (interval=%ss, runs=%s)", interval_s, runs_dir)
     while True:
@@ -347,6 +350,14 @@ async def reaper_loop(celery_app, runs_dir: Path, redis_url: str,
                 adhoc = os.environ.get("BAT3_ADHOC_DIR", "").strip()
                 adhoc_dir = Path(adhoc) if adhoc else runs_dir / ADHOC_DIR_NAME
                 await asyncio.to_thread(sweep_adhoc, adhoc_dir)
+                # Run retention (src_new/api/retention.py): hourly; report-only
+                # unless BAT3_RETENTION_ENFORCE=1. Last result for /admin.
+                if time.time() - last_retention >= RETENTION_INTERVAL_S:
+                    last_retention = time.time()
+                    from .retention import sweep as retention_sweep
+                    result = await asyncio.to_thread(retention_sweep, runs_dir)
+                    result["at"] = time.time()
+                    redis_client.set(RETENTION_STATUS_KEY, json.dumps(result))
         except Exception as exc:
             logger.warning("run_reaper sweep failed: %s", exc)
         await asyncio.sleep(interval_s)
