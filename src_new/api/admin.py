@@ -243,6 +243,29 @@ def _dir_size(path: Path) -> int:
     return total
 
 
+_storage_state: dict[str, Any] = {"value": None, "at": 0.0, "running": False}
+
+
+def _storage_async() -> dict[str, Any]:
+    """Storage walks ~30 GB on NFS (tens of seconds): computed in the
+    background at most every 10 minutes; the page shows the last result."""
+    st = _storage_state
+    if not st["running"] and time.time() - st["at"] > 600:
+        st["running"] = True
+
+        def work():
+            try:
+                st["value"] = _storage()
+            except Exception as exc:
+                st["value"] = {"error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+            finally:
+                st["at"], st["running"] = time.time(), False
+        threading.Thread(target=work, daemon=True).start()
+    if st["value"] is None:
+        return {"error": "Measuring storage (first time after a restart, about a minute)…"}
+    return {**st["value"], "measured_at": st["at"]}
+
+
 def _storage() -> dict[str, Any]:
     runs = _runs_dir()
     top_files = []
@@ -331,7 +354,7 @@ async def overview() -> dict:
             "workers": _section(lambda: _cached("workers", 15, _workers)),
             "deployments": _section(lambda: _cached("deployments", 5, _deployments)),
             "runs": _section(lambda: _cached("runs", 10, _runs_overview)),
-            "storage": _section(lambda: _cached("storage", 600, _storage)),
+            "storage": _section(_storage_async),
             "retention": _section(lambda: _cached("retention", 30, _retention_status)),
             "limits": {"submit_per_hour": security.SUBMIT_LIMIT_PER_HOUR,
                        "queue_cap": security.QUEUE_CAP, "max_files": security.MAX_FILES},

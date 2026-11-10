@@ -50,6 +50,10 @@ async def lifespan(app: FastAPI):
     from src_new.celery_app import celery as celery_app
     from src_new.api.run_reaper import start_reaper
     reaper_task = start_reaper(celery_app, runs_dir)
+    # Warm the run-summary cache (run list, admin page) off the request path.
+    import threading
+    from src_new.api.run_index import summaries
+    threading.Thread(target=summaries, args=(runs_dir,), daemon=True).start()
     yield
     if reaper_task is not None:
         reaper_task.cancel()

@@ -149,3 +149,9 @@ html[data-theme="custom"].dark {
 html[data-theme="custom"] .text-primary {
   color: var(--color-primary-700);
 }
+
+/* Loading placeholders: the DS Skeleton is bg-secondary, the dark brand
+   green, which flashed solid green blocks on every page while loading. */
+html[data-theme="custom"] [data-slot="skeleton"] {
+  background-color: var(--color-base-200);
+}
