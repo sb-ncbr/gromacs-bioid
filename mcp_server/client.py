@@ -146,12 +146,15 @@ class BioIDClient:
         return await self._cached("capabilities", 600.0, load)
 
     async def create_run(self, files: list[tuple[str, bytes]], *, run_name: Optional[str],
-                         preset: Optional[str], client_ip: Optional[str] = None) -> dict[str, Any]:
+                         preset: Optional[str], client_ip: Optional[str] = None,
+                         retention: Optional[str] = None) -> dict[str, Any]:
         data: dict[str, str] = {}
         if run_name:
             data["run_name"] = run_name
         if preset:
             data["preset"] = preset
+        if retention:
+            data["retention"] = retention
         headers = {}
         if client_ip:
             headers["X-Forwarded-For"] = client_ip

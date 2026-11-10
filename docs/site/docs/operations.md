@@ -53,6 +53,39 @@ Never mix images across worker classes during a campaign or re-run wave
 (era unity). The dark-matter worker (`bat3-darkmatter-worker`) belongs to a
 separate study and is not touched by a BioID release.
 
+## Admin page
+
+`https://bioid-ceitec.dyn.cloud.e-infra.cz/admin` is the operations
+dashboard: queues (pause, resume, purge), Celery workers and their runs,
+BioID deployments and pods (scale, restart, logs), runs (cancel, delete to
+trash, change retention), retention status and trash (restore), storage,
+limits. Backend: `src_new/api/admin.py` (`/api/v1/admin/*`, not in the public
+schema). It only touches BioID's own deployments (`DEPLOYMENTS` there); the
+namespace also runs other teams' workloads and the validation stack.
+
+The password is `BAT3_ADMIN_PASSWORD` on the API deployment, from the secret
+`bioid-api-secrets` (unset = admin disabled). Sign-ins are limited to 10
+failures per address per 15 minutes and 100 per hour overall; sessions last
+12 hours and end when the password changes.
+
+## Run retention
+
+`src_new/api/retention.py`, run hourly by the API's reaper (one leader pod).
+A finished run expires 30 days (`BAT3_RETENTION_DAYS`) after it finished, or
+after its own `retention` (days, or `preserve` = never). Runs from before the
+policy expire 30 days after 2026-11-10 at the earliest. Never expired: the
+examples (`BAT3_EXAMPLE_RUNS` and whatever `/runs/examples` serves),
+preserved runs, unfinished runs, runs written in the last hour, anything not a
+plain run directory.
+
+- **Report-only until `BAT3_RETENTION_ENFORCE=1`** is set on the API: the
+  sweep only records what would expire (admin page, *Retention*).
+- Expired runs are moved to `<runs>/_expired/` and purged after
+  `BAT3_RETENTION_GRACE_DAYS` (7); the admin page restores them (restored runs
+  are preserved).
+- A sweep that would expire more than 50 runs (`BAT3_RETENTION_MAX_PER_SWEEP`)
+  or more than half of all runs expires nothing and logs an error.
+
 ## Scaling
 
 UI workers (`bat3-ui-worker`) execute every web, API and MCP run, two at a

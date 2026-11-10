@@ -33,6 +33,7 @@ the REST API also serves the parts separately (`/molecules`, `/verification`,
 | `pipeline.status` | `queued`, `running`, `success`, `failed` or `cancelled`. Results are complete only at `success`. |
 | `pipeline.input_kind` | What was uploaded, e.g. `pdb`, `gromacs_tpr`, `amber`. |
 | `pipeline.preset` | The preset the run was submitted with, if any. |
+| `pipeline.retention` | `{"policy": "default"}` (30 days after the run finished), `{"policy": "days", "days": N}` or `{"policy": "preserve"}`. |
 | `pipeline.creator_ip_hash`, `pipeline.owner_token_sha256` | A keyed hash of the submitter's network address and the hash of the run's owner token (not the token). Removed from the API download. |
 | `tasks` | One entry per pipeline stage, in order: `discover_input`, `load_simulation`, `repair_topology`, `unwrap_periodic_boundaries`, `analyze_universe`, `generate_signatures`, `identify_molecules`, `verify_results`, `export_results`, `render_png`. `status` is `success`, `warning` (finished, with something to report) or `failed`; `summary` holds a few counts. A `summary.partial: true` means the stage hit its time budget and the results of that stage are incomplete. |
 | `warnings` | Things worth knowing, with a stable `code` (e.g. `insufficient_bonds`, `stage_time_budget`) and `details`. |

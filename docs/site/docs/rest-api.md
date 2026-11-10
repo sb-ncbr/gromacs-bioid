@@ -45,6 +45,7 @@ curl -o results.json "$BIOID/runs/$RUN_ID/download/results.json"
 | `run_name` | no | a label shown in the run list and the results page |
 | `preset` | no | `balanced` (the default settings), `quick`, `exact` or `deep`; see [Presets](index.md#presets-and-advanced-configuration) |
 | `config_json` | no | settings to change, as JSON `{"section": {"field": value}}`; applied after the preset |
+| `retention` | no | how long the results are kept: omit for the default 30 days, a number of days (1–365), or `preserve` to keep them indefinitely |
 | `config_file` | no | the same as an uploaded `config.ini` (instead of `config_json`); only the fields that differ from the server's settings count |
 
 The response comes at once; the run is queued:
@@ -167,7 +168,10 @@ token and cannot be cancelled or deleted through the API.
   answer **429** with a `Retry-After` header (seconds) and a message saying
   when to try again. Poll no more than about once a minute; for large
   batches, write to the contact below first.
-- **Retention**: runs are not deleted automatically.
+- **Retention**: a finished run is deleted 30 days after it finished, unless
+  it was submitted with another `retention` (days, or `preserve`). Runs
+  submitted before 10 November 2026 are kept until at least 10 December 2026.
+  The example runs are never deleted.
 
 | Status | When |
 |---|---|
@@ -175,7 +179,7 @@ token and cannot be cancelled or deleted through the API.
 | 413 | a file (or the request) is larger than 128 MiB, or more than 50 files |
 | 422 | no usable file names, duplicate file names, a file type BioID does not read, invalid `config_json`, an unknown preset, an unknown or non-changeable setting, a value of the wrong type or out of range, a malformed run id |
 | 429 | too many submissions from your address this hour, or the queue is full; see `Retry-After` |
-| 403 | cancelling or deleting without the run's owner token |
+| 403 | cancelling or deleting without the run's owner token; deleting an example run |
 | 409 | `run_id` given for a run that already exists |
 | 400 | cancelling a run that already finished; a PDB download without `segment` when the run has several molecules |
 | 500 | a server-side failure; please report it |

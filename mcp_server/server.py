@@ -148,7 +148,7 @@ def build_server(settings: Optional[Settings] = None, *,
         return "Runs take from a few minutes up to about an hour for large systems."
 
     async def submit(files: list[tuple[str, bytes]], preset: Optional[str], run_name: Optional[str],
-                     ctx: Optional[Context]) -> dict[str, Any]:
+                     ctx: Optional[Context], retention: Optional[str] = None) -> dict[str, Any]:
         total = sum(len(c) for _, c in files)
         if total > settings.max_upload_bytes:
             raise BioIDError(f"The files total {total / 1e6:.1f} MB; the limit here is "
@@ -158,7 +158,8 @@ def build_server(settings: Optional[Settings] = None, *,
         preset = await check_preset(preset)
         run_name = (run_name or "").strip()[:200] or None
         created = await client.create_run(files, run_name=run_name, preset=preset,
-                                          client_ip=_client_ip(ctx))
+                                          client_ip=_client_ip(ctx),
+                                          retention=(retention or "").strip() or None)
         run_id = created.get("run_id")
         if not run_id:
             raise BioIDError(f"The BioID API did not return a run id: {_dumps(created)[:200]}")
@@ -221,6 +222,9 @@ def build_server(settings: Optional[Settings] = None, *,
         preset: Annotated[Optional[str], Field(
             description="Preset id from list_presets: 'balanced' (default), 'quick', "
                         "'exact' or 'deep'.")] = None,
+        retention: Annotated[Optional[str], Field(
+            description="How long BioID keeps the results: omit for the default 30 days, "
+                        "a number of days (1-365), or 'preserve' to keep them indefinitely.")] = None,
         run_name: Annotated[Optional[str], Field(description="Optional label for the run.")] = None,
         ctx: Optional[Context] = None,
     ) -> str:
@@ -246,7 +250,7 @@ def build_server(settings: Optional[Settings] = None, *,
                         f"({', '.join(ACCEPTED_SUFFIXES)}). Pass 'filename' with the right extension "
                         "if the URL hides it.")
                 default_name = f"{name}>Fetched from a URL via the BioID MCP server"
-            return _dumps(await submit([(name, content)], preset, run_name or default_name, ctx))
+            return _dumps(await submit([(name, content)], preset, run_name or default_name, ctx, retention))
         except BioIDError as e:
             raise _fail(e)
 
@@ -258,6 +262,9 @@ def build_server(settings: Optional[Settings] = None, *,
         preset: Annotated[Optional[str], Field(
             description="Preset id from list_presets: 'balanced' (default), 'quick', "
                         "'exact' or 'deep'.")] = None,
+        retention: Annotated[Optional[str], Field(
+            description="How long BioID keeps the results: omit for the default 30 days, "
+                        "a number of days (1-365), or 'preserve' to keep them indefinitely.")] = None,
         run_name: Annotated[Optional[str], Field(description="Optional label for the run.")] = None,
         ctx: Optional[Context] = None,
     ) -> str:
@@ -295,7 +302,7 @@ def build_server(settings: Optional[Settings] = None, *,
                 if not content:
                     raise BioIDError(f"'{name}' is empty.")
                 prepared.append((name, content))
-            return _dumps(await submit(prepared, preset, run_name, ctx))
+            return _dumps(await submit(prepared, preset, run_name, ctx, retention))
         except BioIDError as e:
             raise _fail(e)
 
@@ -578,6 +585,9 @@ def build_server(settings: Optional[Settings] = None, *,
         preset: Annotated[Optional[str], Field(
             description="Preset id from list_presets: 'balanced' (default), 'quick', "
                         "'exact' or 'deep'.")] = None,
+        retention: Annotated[Optional[str], Field(
+            description="How long BioID keeps the results: omit for the default 30 days, "
+                        "a number of days (1-365), or 'preserve' to keep them indefinitely.")] = None,
         run_name: Annotated[Optional[str], Field(description="Optional label for the run.")] = None,
     ) -> str:
         """For files on the user's machine, or too large to pass as content: returns a
@@ -602,9 +612,13 @@ def build_server(settings: Optional[Settings] = None, *,
                 fields.append(f"preset={preset}")
             if run_name:
                 fields.append(f"run_name={run_name}")
+            retention = (retention or "").strip() or None
+            if retention:
+                fields.append(f"retention={retention}")
             curl = " ".join(["curl", "-sS", "--fail-with-body"]
                             + [f"-F {shlex.quote(f)}" for f in fields] + [settings.runs_api])
-            data = {k: v for k, v in (("preset", preset), ("run_name", run_name)) if v}
+            data = {k: v for k, v in (("preset", preset), ("run_name", run_name),
+                                      ("retention", retention)) if v}
             python = (
                 "import requests\n"
                 f"paths = {file_paths!r}\n"

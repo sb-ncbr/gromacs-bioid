@@ -331,14 +331,16 @@ export function resolveConfigToPost(config: RunConfig | null, base: RunConfig | 
 
 /**
  * Build the multipart FormData for POST /runs. Field names match the API:
- * `files` (repeatable), optional `run_name`, `config_json` and `preset`
- * (recorded with the run; the overrides it implies are in config_json too).
+ * `files` (repeatable), optional `run_name`, `config_json`, `preset`
+ * (recorded with the run; the overrides it implies are in config_json too)
+ * and `retention` ("" = the 30-day default, "preserve", or days).
  */
 export function buildRunFormData(
   files: File[],
   runName: string | undefined | null,
   configJson: string | null,
   preset?: string | null,
+  retention?: string | null,
 ): FormData {
   const form = new FormData();
   for (const file of files) {
@@ -352,6 +354,9 @@ export function buildRunFormData(
   }
   if (preset) {
     form.append("preset", preset);
+  }
+  if (retention) {
+    form.append("retention", retention);
   }
   return form;
 }

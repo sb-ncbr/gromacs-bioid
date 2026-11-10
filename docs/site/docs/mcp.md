@@ -154,8 +154,9 @@ web page or the REST API's `config_json` for that.
   the submit tool) can cancel it.
 - Molecule sequences and structures are sent to public databases and search
   services (for example RCSB PDB and PubChem) to find matches.
-- Results are not deleted automatically. To have a run removed, write to the
-  contact below. Runs submitted through the MCP server do not appear under
+- Results are deleted 30 days after the run finished (ask the assistant for
+  another `retention` — a number of days or `preserve` — when submitting).
+  To have a run removed earlier, write to the contact below. Runs submitted through the MCP server do not appear under
   **Your annotations** on the web page with a delete button: the owner token
   is with the assistant, not in your browser.
 - Submissions are limited per network address (30 per hour) and paused

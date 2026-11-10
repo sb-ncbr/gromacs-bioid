@@ -28,6 +28,7 @@ import { Loader2, Settings2 } from "lucide-react";
 import Dropzone from "./Dropzone";
 import ConfigEditor from "./ConfigEditor";
 import PresetPicker from "./PresetPicker";
+import RetentionPicker, { retentionSummary, retentionValid, type Retention } from "./RetentionPicker";
 import {
   activePresetId,
   applyPreset,
@@ -59,6 +60,8 @@ export default function UploadForm() {
   // taken when the dialog opened, restored by Cancel.
   const [config, setConfig] = useState<RunConfig | null>(null);
   const [snapshot, setSnapshot] = useState<RunConfig | null>(null);
+  const [retention, setRetention] = useState<Retention>("");
+  const [retentionSnapshot, setRetentionSnapshot] = useState<Retention>("");
   const [configOpen, setConfigOpen] = useState(false);
 
   // The tunable fields with the server defaults, and the presets.
@@ -94,11 +97,13 @@ export default function UploadForm() {
 
   function openConfig() {
     setSnapshot(config);
+    setRetentionSnapshot(retention);
     setConfigOpen(true);
   }
 
   function cancelConfig() {
     setConfig(snapshot);
+    setRetention(retentionSnapshot);
     setConfigOpen(false);
   }
 
@@ -106,7 +111,7 @@ export default function UploadForm() {
 
   const submit = useMutation({
     mutationFn: async () => {
-      const form = buildRunFormData(files, runName, configToPost, presetId);
+      const form = buildRunFormData(files, runName, configToPost, presetId, retention);
       return api.postForm<RunCreateResponse>(endpoints.runs, form);
     },
     onSuccess: (res) => {
@@ -116,7 +121,7 @@ export default function UploadForm() {
     },
   });
 
-  const canSubmit = files.length > 0 && !submit.isPending;
+  const canSubmit = files.length > 0 && !submit.isPending && retentionValid(retention);
 
   return (
     <Card className="w-full">
@@ -170,13 +175,15 @@ export default function UploadForm() {
             Advanced configuration
           </span>
           <div className="flex items-center gap-3">
-            {base && <span className="text-xs text-text-muted">{presetTitle}</span>}
+            <span className="text-xs text-text-muted">
+              {base ? `${presetTitle} · ` : ""}
+              {retentionSummary(retention)}
+            </span>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={openConfig}
-              disabled={!base}
             >
               Edit
             </Button>
@@ -247,12 +254,18 @@ export default function UploadForm() {
               <ConfigEditor config={displayConfig} onChange={setConfig} />
             </>
           )}
+          <div className="border-t border-base-200 pt-4">
+            <RetentionPicker value={retention} onChange={setRetention} />
+          </div>
           <DialogFooter>
             <Button
               type="button"
               variant="ghost"
               className="sm:mr-auto"
-              onClick={() => setConfig(base ? cloneConfig(base) : null)}
+              onClick={() => {
+                setConfig(base ? cloneConfig(base) : null);
+                setRetention("");
+              }}
             >
               Reset to defaults
             </Button>

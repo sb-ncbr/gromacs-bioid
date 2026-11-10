@@ -68,3 +68,16 @@ async def test_get_results_links_results_json(call, api):
 async def test_results_json_resource(call):
     res = await call.session.read_resource("bioid://results-json")
     assert "documentation/results-json" in res.contents[0].text
+
+
+async def test_retention_is_forwarded(call, api):
+    import httpx
+    api.get("https://api.test/api/v1/runs/config/options").respond(json=OPTIONS)
+    route = api.post("https://api.test/api/v1/runs").mock(
+        return_value=httpx.Response(200, json={"run_id": "r", "status": "queued", "owner_token": "t"}))
+    err, out = await call("submit_files", {"files": [{"name": "a.pdb", "text": "ATOM\n"}],
+                                           "retention": "preserve"})
+    assert not err, out
+    assert b'name="retention"\r\n\r\npreserve' in route.calls.last.request.content
+    err, out = await call("prepare_upload", {"file_paths": ["a.pdb"], "retention": "90"})
+    assert "retention=90" in out["curl"]

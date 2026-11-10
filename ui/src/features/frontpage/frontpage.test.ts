@@ -256,3 +256,20 @@ describe("config: v3.142 Phase 3 weights helper", () => {
     }
   });
 });
+
+describe("retention", () => {
+  it("summarises and validates the choice", async () => {
+    const { retentionSummary, retentionValid } = await import("./RetentionPicker");
+    expect(retentionSummary("")).toBe("kept 30 days");
+    expect(retentionSummary("90")).toBe("kept 90 days");
+    expect(retentionSummary("preserve")).toBe("kept indefinitely");
+    expect(["", "preserve", "1", "365"].every(retentionValid)).toBe(true);
+    expect(["0", "366", "2.5", "forever"].some(retentionValid)).toBe(false);
+  });
+
+  it("is posted only when chosen", () => {
+    const f = new File(["x"], "a.pdb");
+    expect(buildRunFormData([f], "", null, null, "").get("retention")).toBeNull();
+    expect(buildRunFormData([f], "", null, null, "preserve").get("retention")).toBe("preserve");
+  });
+});
