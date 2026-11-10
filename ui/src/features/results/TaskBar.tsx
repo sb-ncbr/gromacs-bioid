@@ -151,14 +151,14 @@ const TaskBar: React.FC<TaskBarProps> = ({ tasks, onGroupClick }) => {
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-xs">
                 <p className="font-semibold text-xs mb-1">{group.display}</p>
-                {groupTasks.length === 0 && <p className="text-xs text-gray-500">No tasks</p>}
+                {groupTasks.length === 0 && <p className="text-xs text-background/75">No tasks</p>}
                 {groupTasks.map((t) => (
                   <div key={t.task_id} className="flex items-center gap-2 text-xs">
                     <span
                       className={cn("h-1.5 w-1.5 rounded-full", SEVERITY_STYLES[taskSeverity(t.status)].dot)}
                     />
                     <span className="flex-1">{t.name}</span>
-                    <span className="text-gray-500 tabular-nums">
+                    <span className="text-background/75 tabular-nums">
                       {formatDuration(t.started_at, t.finished_at)}
                     </span>
                   </div>

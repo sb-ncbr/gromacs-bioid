@@ -150,7 +150,7 @@ const IdentifiersTab: React.FC<IdentifiersTabProps> = ({
                         <div className="space-y-1 max-w-xs">
                           <p className="font-semibold text-xs">Failure details:</p>
                           {failures!.map((msg, i) => (
-                            <p key={i} className="text-xs text-gray-700">{msg}</p>
+                            <p key={i} className="text-xs text-background/85">{msg}</p>
                           ))}
                         </div>
                       </TooltipContent>
