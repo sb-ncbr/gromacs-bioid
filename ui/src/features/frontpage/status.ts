@@ -2,7 +2,8 @@
  * Display helpers for the IP-bound "recents" list.
  * Copy tone: plain language for a biologist audience. Statuses map to a
  * coloured Badge (pending gray / running blue / success green / failed red /
- * warning amber). No raw codes, paths or exception text reach the user.
+ * warning amber; blue and amber use the --vm-info / --vm-attention tokens,
+ * which have dark-mode values). No raw codes, paths or exception text reach the user.
  */
 import { splitRunName } from "../../lib/runName";
 
@@ -22,7 +23,12 @@ export function statusStyle(status: string | null | undefined): StatusStyle {
     case "queued":
       return { variant: "outline", className: "text-gray-600", label: "Queued" };
     case "running":
-      return { variant: "secondary", className: "text-blue-700", label: "Running" };
+      // Not the DS "secondary" variant: its fill is the dark brand green.
+      return {
+        variant: "outline",
+        className: "border-(--vm-info-line) bg-(--vm-info-bg) text-(--vm-info)",
+        label: "Running",
+      };
     case "success":
     case "completed":
     case "done":
@@ -32,7 +38,11 @@ export function statusStyle(status: string | null | undefined): StatusStyle {
       // DS error badge is white on #f65a4f (3.2:1); darker red for AA.
       return { variant: "error", className: "bg-[#c62828] text-white", label: "Failed" };
     case "warning":
-      return { variant: "secondary", className: "text-amber-700", label: "Needs review" };
+      return {
+        variant: "outline",
+        className: "border-(--vm-attention-line) bg-(--vm-attention-bg) text-(--vm-attention)",
+        label: "Needs review",
+      };
     case "cancelled":
       return { variant: "outline", className: "text-gray-500", label: "Cancelled" };
     default:

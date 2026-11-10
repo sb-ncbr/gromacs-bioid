@@ -6,17 +6,20 @@ import {
   truncateFileName,
 } from "./fileTypes";
 import {
-  applyFastMode,
+  activePresetId,
+  applyPreset,
   buildRunFormData,
+  configDiff,
   humanLabel,
-  parseConfigPayload,
+  identifierGroups,
+  parseConfigOptions,
   resolveConfigToPost,
+  type RunPreset,
   shouldRequireNonNegative,
   validateNumberInput,
   type RunConfig,
   normalizedWeights,
   FIELD_HELP,
-  MINIMAL_DEFAULT_CONFIG,
 } from "./config";
 import {
   formatCreated,
@@ -26,9 +29,18 @@ import {
 } from "./status";
 
 const SAMPLE: RunConfig = {
-  executor: { signatures_parallel: false, identifiers_parallel: false, verification_parallel: false },
-  verification: { tm_score_threshold: 0.5, min_final_confidence: 0.0 },
+  identifiers: { blast_nt: true, blast_nt_similarity: true, name_ccd: true, foo: true },
+  verification: { tm_score_threshold: 0.5, min_final_confidence: 0.0, verify_top_n: 100 },
 };
+
+const QUICK: RunPreset = {
+  id: "quick",
+  title: "Quick look",
+  description: "",
+  icon: "zap",
+  overrides: { identifiers: { blast_nt: false, blast_nt_similarity: false }, verification: { verify_top_n: 30 } },
+};
+const BALANCED: RunPreset = { id: "balanced", title: "Balanced", description: "", icon: "scale", overrides: {} };
 
 describe("fileTypes", () => {
   it("fileExtension handles tar.gz and plain exts", () => {
@@ -104,63 +116,67 @@ describe("config: validateNumberInput", () => {
   });
 });
 
-describe("config: applyFastMode", () => {
-  it("sets the three parallel flags without mutating the input", () => {
-    const before = JSON.stringify(SAMPLE);
-    const out = applyFastMode(SAMPLE, true);
-    expect(out.executor.signatures_parallel).toBe(true);
-    expect(out.executor.identifiers_parallel).toBe(true);
-    expect(out.executor.verification_parallel).toBe(true);
-    expect(JSON.stringify(SAMPLE)).toBe(before);
-  });
-});
-
 describe("config: humanLabel", () => {
   it("title-cases snake_case keys", () => {
-    expect(humanLabel("signatures_parallel")).toBe("Signatures parallel");
+    expect(humanLabel("blast_pdb_protein")).toBe("BLAST PDB protein");
     expect(humanLabel("global_timeout_s")).toBe("Global timeout (s)");
     expect(humanLabel("tpr_resid_from_one")).toBe("TPR resid from one");
     expect(humanLabel("bond_guess_vdw_factor")).toBe("Bond guess vdW factor");
-    expect(humanLabel("exact_match_min_identity_p")).toBe("Exact match min identity (%)");
+    expect(humanLabel("exact_match_min_identity_p")).toBe("Exact match min identity (0–1)");
   });
 });
 
-describe("config: parseConfigPayload", () => {
-  it("accepts a direct section dict", () => {
-    const out = parseConfigPayload(SAMPLE);
-    expect(out?.executor.signatures_parallel).toBe(false);
-    expect(out?.verification.tm_score_threshold).toBe(0.5);
+describe("config: parseConfigOptions", () => {
+  it("reads config and presets", () => {
+    const out = parseConfigOptions({ config: SAMPLE, presets: [QUICK, { bogus: 1 }] });
+    expect(out?.config.verification.tm_score_threshold).toBe(0.5);
+    expect(out?.presets.map((p) => p.id)).toEqual(["quick"]);
   });
 
-  it("accepts the { error, config } error shape", () => {
-    const out = parseConfigPayload({ error: "boom", config: SAMPLE });
-    expect(out?.verification.min_final_confidence).toBe(0.0);
-  });
-
-  it("returns null for empty/non-object input", () => {
-    expect(parseConfigPayload(null)).toBeNull();
-    expect(parseConfigPayload("nope")).toBeNull();
-    expect(parseConfigPayload({ a: 1 })).toBeNull();
+  it("returns null for unusable input", () => {
+    expect(parseConfigOptions(null)).toBeNull();
+    expect(parseConfigOptions({ config: {} })).toBeNull();
+    expect(parseConfigOptions(SAMPLE)).toBeNull();
   });
 });
 
-describe("config: resolveConfigToPost", () => {
-  it("posts nothing unless customized or fast", () => {
-    expect(resolveConfigToPost(SAMPLE, { customized: false, fastMode: false })).toBeNull();
+describe("config: presets and diffs", () => {
+  it("applyPreset overrides without mutating the base", () => {
+    const before = JSON.stringify(SAMPLE);
+    const out = applyPreset(SAMPLE, QUICK);
+    expect(out.identifiers.blast_nt).toBe(false);
+    expect(out.identifiers.name_ccd).toBe(true);
+    expect(JSON.stringify(SAMPLE)).toBe(before);
   });
 
-  it("applies fast-mode flags when enabled", () => {
-    const json = resolveConfigToPost(SAMPLE, { customized: false, fastMode: true });
-    expect(json).not.toBeNull();
-    const parsed = JSON.parse(json!);
-    expect(parsed.executor.signatures_parallel).toBe(true);
+  it("configDiff keeps only changed fields", () => {
+    expect(configDiff(SAMPLE, SAMPLE)).toEqual({});
+    expect(configDiff(applyPreset(SAMPLE, QUICK), SAMPLE)).toEqual(QUICK.overrides);
   });
 
-  it("serializes the edited config when customized", () => {
-    const json = resolveConfigToPost(SAMPLE, { customized: true, fastMode: false });
-    const parsed = JSON.parse(json!);
-    expect(parsed.verification.tm_score_threshold).toBe(0.5);
-    expect(parsed.executor.signatures_parallel).toBe(false);
+  it("activePresetId recognises presets and custom configs", () => {
+    const presets = [BALANCED, QUICK];
+    expect(activePresetId(SAMPLE, SAMPLE, presets)).toBe("balanced");
+    const quick = applyPreset(SAMPLE, QUICK);
+    expect(activePresetId(quick, SAMPLE, presets)).toBe("quick");
+    quick.verification.verify_top_n = 31;
+    expect(activePresetId(quick, SAMPLE, presets)).toBeNull();
+  });
+
+  it("resolveConfigToPost posts only the diff, or nothing", () => {
+    expect(resolveConfigToPost(SAMPLE, SAMPLE)).toBeNull();
+    expect(resolveConfigToPost(null, SAMPLE)).toBeNull();
+    const json = resolveConfigToPost(applyPreset(SAMPLE, QUICK), SAMPLE);
+    expect(JSON.parse(json!)).toEqual(QUICK.overrides);
+  });
+});
+
+describe("config: identifierGroups", () => {
+  it("pairs exact/similar toggles and groups them", () => {
+    const groups = Object.fromEntries(identifierGroups(SAMPLE.identifiers));
+    expect(groups.Sequence).toEqual([{ name: "blast_nt", exact: true, similar: true }]);
+    expect(groups.Names).toEqual([{ name: "name_ccd", exact: true }]);
+    expect(groups.Other).toEqual([{ name: "foo", exact: true }]);
   });
 });
 
@@ -168,10 +184,11 @@ describe("config: buildRunFormData", () => {
   it("appends files, optional run_name and config_json", () => {
     const f1 = new File(["x"], "system.pdb");
     const f2 = new File(["y"], "conf.ini");
-    const form = buildRunFormData([f1, f2], "My Run", '{"a":1}');
+    const form = buildRunFormData([f1, f2], "My Run", '{"a":1}', "quick");
     expect(form.getAll("files")).toHaveLength(2);
     expect(form.get("run_name")).toBe("My Run");
     expect(form.get("config_json")).toBe('{"a":1}');
+    expect(form.get("preset")).toBe("quick");
   });
 
   it("omits run_name/config_json when not provided", () => {
@@ -185,9 +202,9 @@ describe("status: statusStyle", () => {
   it("maps statuses to badge variants", () => {
     expect(statusStyle("success").variant).toBe("default");
     expect(statusStyle("failed").variant).toBe("error");
-    expect(statusStyle("running").variant).toBe("secondary");
+    expect(statusStyle("running").variant).toBe("outline");
     expect(statusStyle("pending").variant).toBe("outline");
-    expect(statusStyle("warning").variant).toBe("secondary");
+    expect(statusStyle("warning").variant).toBe("outline");
     expect(statusStyle("mystery").label).toBe("Unknown");
   });
 });
@@ -237,11 +254,5 @@ describe("config: v3.142 Phase 3 weights helper", () => {
     for (const k of ["verification.resolver_weight", "verification.similarity_weight", "verification.annotation_weight"]) {
       expect(FIELD_HELP[k], k).toBeTruthy();
     }
-  });
-  it("default config carries the v3.142 live-annotation fields into the form", () => {
-    const v = MINIMAL_DEFAULT_CONFIG.verification as Record<string, unknown>;
-    expect(v.annotation_live_fetch).toBe(true);
-    expect(v.annotation_live_budget_per_segment).toBe(25);
-    expect(v.annotation_fetch_timeout_s).toBe(3.0);
   });
 });

@@ -89,6 +89,7 @@ export const endpoints = {
   runQueue: (runId: string) => `${API_BASE}/runs/${runId}/queue`,
   runExamples: `${API_BASE}/runs/examples`,
   configDefault: `${API_BASE}/runs/config/default`,
+  configOptions: `${API_BASE}/runs/config/options`,
   capabilities: `${API_BASE}/capabilities`,
   runResultsCsv: (runId: string) => `${API_BASE}/runs/${encodeURIComponent(runId)}/download/results.csv`,
   /** Static run-file mount (served by API container, stays on legacy path). */

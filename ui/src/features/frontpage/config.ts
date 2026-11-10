@@ -1,152 +1,33 @@
 /**
  * Frontpage run-config helpers.
  *
- * The pipeline's functional config is owned by the worker (config.ini). The UI
- * only edits the run-config JSON that is POSTed at submit time, so the keys
- * here must stay verbatim. `MINIMAL_DEFAULT_CONFIG` is the offline fallback,
- * extracted verbatim from the legacy frontpage (git tag ui-legacy-pre-rework,
- * ui/src/Pages/Frontpage.tsx) and used only when GET /runs/config/default
- * fails.
+ * The pipeline's config is owned by the server (config.ini). GET
+ * /runs/config/options returns the fields a run may change (with the server
+ * defaults) and the presets; everything else (executables, database paths,
+ * URLs, threads) is not offered and the API rejects changes to it. At submit
+ * time only the fields that differ from the server defaults are POSTed.
  */
 
 export type ConfigValue = string | number | boolean | null;
 export type ConfigSection = Record<string, unknown>;
 export type RunConfig = Record<string, ConfigSection>;
 
-/** The three executor flags that "Fast Mode" toggles (verbatim keys). */
-export const FAST_MODE_FLAGS = [
-  "signatures_parallel",
-  "identifiers_parallel",
-  "verification_parallel",
-] as const;
+/** A run preset: overrides on top of the server defaults. */
+export interface RunPreset {
+  id: string;
+  title: string;
+  description: string;
+  /** What the preset changes, in a sentence. */
+  details?: string;
+  /** lucide icon name (scale, zap, target, telescope). */
+  icon: string;
+  overrides: RunConfig;
+}
 
-/**
- * Fallback config used ONLY if the default-config endpoint is unavailable.
- * Must match the legacy MINIMAL_DEFAULT_CONFIG exactly (do not edit keys).
- */
-export const MINIMAL_DEFAULT_CONFIG: RunConfig = {
-  executor: {
-    n_threads: 10,
-    tps: 100,
-    emit_queue_stats: true,
-    signatures_parallel: false,
-    identifiers_parallel: false,
-    verification_parallel: false,
-  },
-  loader: {
-    tpr_resid_from_one: true,
-    guess_missing_elements: true,
-    guess_missing_masses: true,
-    guess_missing_names: true,
-    guess_missing_bonds: false,
-    quick_structure_search: true,
-    element_mass_tolerance: 0.01,
-    bond_guess_vdw_factor: 0.55,
-    unwrap_periodic_boundaries: true,
-    unwrap_compound: "fragments",
-    unwrap_reference: "com",
-    unwrap_selection: "all",
-    unwrap_guess_bonds_if_missing: true,
-    unwrap_warn_if_jumps_detected: true,
-    unwrap_max_bond_length_factor: 0.5,
-    unwrap_max_backbone_gap: 10.0,
-  },
-  signatures: {
-    overwrite_existing: false,
-    generation_attempts: 10,
-    smiles_maximum_number_of_atoms: 250,
-    fasta_map_determine_sequence_partial_mode: false,
-    fasta_map_determine_sequence_strict_mode: false,
-    name_minimum_length: 1,
-    smiles: true,
-    smiles_not_sanitized: true,
-    atom: true,
-    fasta_map_protein: true,
-    fasta_map_nucleic: true,
-    fasta_resname_protein: true,
-    fasta_resname_nucleic: true,
-    enhanced_nucleic_acid_recognition: true,
-    pdb_protein: true,
-    pdb_nucleic: true,
-    pdb_not_sanitized_protein: true,
-    pdb_not_sanitized_nucleic: true,
-    pdb_backbone_protein: true,
-    pdb_backbone_nucleic: true,
-    pdb_backbone_not_sanitized_protein: true,
-    pdb_backbone_not_sanitized_nucleic: true,
-    name_chain: true,
-    name_molecule: true,
-    name_segment: true,
-    fingerprint: true,
-    inchi_key: true,
-    morgan_fingerprint: true,
-    selfies: true,
-    molecular_formula: true,
-    tdi: true,
-    lipid_shorthand: true,
-    glycan_composition: true,
-    mmcif: true,
-    topology_less_pdb: true,
-    ca_only_pdb: true,
-  },
-  identifiers: {
-    overwrite_existing: false,
-    blast_pdb_protein: true,
-    blast_pdb_protein_similarity: true,
-    blast_uniprot: true,
-    blast_uniprot_similarity: true,
-    blast_pdb_nucleic: true,
-    blast_pdb_nucleic_similarity: true,
-    pdb_struct_protein: true,
-    pdb_struct_protein_similarity: true,
-    pdb_struct_nucleotide: true,
-    pdb_struct_nucleotide_similarity: true,
-    alphafind_struct: true,
-    alphafind_struct_similarity: true,
-    chembl_struct: true,
-    chembl_struct_similarity: true,
-    pubchem_struct: true,
-    pubchem_struct_similarity: true,
-    atom: true,
-    atom_similarity: false,
-    idsm_pubchem: true,
-    idsm_pubchem_similarity: true,
-    idsm_chembl: true,
-    idsm_chembl_similarity: true,
-    idsm_chebi: true,
-    idsm_chebi_similarity: true,
-    name_ccd: true,
-    name_ccd_similarity: false,
-    name_maps: true,
-    name_maps_similarity: false,
-    name_manual: true,
-    name_manual_similarity: false,
-  },
-  verification: {
-    verify_top_n: 100,
-    similarity_top_n: 10,
-    enable_annotation_quality: true,
-    resolver_weight: 0.4,
-    similarity_weight: 0.4,
-    annotation_weight: 0.2,
-    // v3.142 (1c): bounded live annotation enrichment (backend defaults)
-    annotation_live_fetch: true,
-    annotation_live_budget_per_segment: 25,
-    annotation_fetch_timeout_s: 3.0,
-    tm_score_threshold: 0.5,
-    min_final_confidence: 0.0,
-  },
-  timeouts: {
-    global_timeout_s: 600,
-    input_timeout_s: 5,
-    create_timeout_s: 5,
-    load_timeout_s: 300,
-    signatures_timeout_s: 2400,
-    identifiers_timeout_s: 1200,
-    summarize_timeout_s: 1200,
-    metadata_timeout_s: 1200,
-  },
-};
+export interface ConfigOptions {
+  config: RunConfig;
+  presets: RunPreset[];
+}
 
 /** Field-name hints that imply a non-negative numeric constraint. */
 const NON_NEGATIVE_HINTS = [
@@ -209,27 +90,35 @@ export function validateNumberInput(
   return { ok: true, value: parsed, display: String(parsed) };
 }
 
-/**
- * Return a copy of `config` with the Fast-Mode executor parallel flags set to
- * `enabled`. Does not mutate the input object.
- */
-export function applyFastMode(config: RunConfig, enabled: boolean): RunConfig {
-  const executor: ConfigSection = { ...(config.executor ?? {}) };
-  for (const key of FAST_MODE_FLAGS) {
-    executor[key] = enabled;
-  }
-  return { ...config, executor };
-}
-
-/** `some_field_name` -> "Some Field Name" (label rendering). */
 /** Words shown in their usual spelling rather than title case. */
 const WORDS: Record<string, string> = {
   tpr: "TPR", vdw: "vdW", smiles: "SMILES", pdb: "PDB", fasta: "FASTA", ca: "Cα", inchi: "InChI",
   mmcif: "mmCIF", blast: "BLAST", nr: "nr", nt: "nt", uniprot: "UniProt", swissprot: "Swiss-Prot",
   chembl: "ChEMBL", chebi: "ChEBI", pubchem: "PubChem", idsm: "IDSM", ccd: "CCD", alphafind: "AlphaFind",
   rcsb: "RCSB", tm: "TM", tdi: "TDI", selfies: "SELFIES", aa: "aa", fp: "fingerprint", n: "number of",
-  tps: "TPS", api: "API", struct: "structure", hfamily: "H-family",
+  tps: "TPS", api: "API", struct: "structure", hfamily: "H-family", inchikey: "InChIKey",
+  sifts: "SIFTS", uniref50: "UniRef50", swisslipids: "SwissLipids", "3di": "3Di",
+  evalue: "E-value", cov: "coverage",
 };
+
+/** Labels for fields whose key reads badly through humanLabel. */
+const FIELD_LABEL: Record<string, string> = {
+  "verification.verify_top_n": "Candidates verified per molecule",
+  "verification.verify_top_n_supplementary": "Extra candidates from supplementary databases",
+  "verification.similarity_top_n": "Similar matches kept per molecule",
+  "verification.min_final_confidence": "Minimum confidence",
+  "verification.tm_score_threshold": "Minimum TM-score",
+  "verification.enable_annotation_quality": "Score annotation quality",
+  "verification.annotation_live_fetch": "Fetch missing annotations live",
+  "pdb.rcsb_include_mixed_complexes": "Include protein–nucleic acid complexes",
+  "signatures.fasta_map_determine_sequence_partial_mode": "Partial protein sequences",
+  "signatures.fasta_map_determine_sequence_strict_mode": "Strict protein sequences",
+};
+
+/** Label of `section.field` in the editor. */
+export function fieldLabel(section: string, field: string): string {
+  return FIELD_LABEL[`${section}.${field}`] ?? humanLabel(field);
+}
 
 /**
  * Config key → label: "global_timeout_s" → "Global timeout (s)",
@@ -237,7 +126,7 @@ const WORDS: Record<string, string> = {
  * acronyms kept, the unit suffix shown as a unit.
  */
 export function humanLabel(key: string): string {
-  const unit = /_s$/.test(key) ? " (s)" : /_p$/.test(key) ? " (%)" : "";
+  const unit = /_s$/.test(key) ? " (s)" : /_p$/.test(key) ? " (0–1)" : "";
   const words = key.replace(/_(s|p)$/, "").split("_").filter(Boolean);
   const text = words
     .map((w, i) => {
@@ -251,31 +140,56 @@ export function humanLabel(key: string): string {
 
 /** What each config section controls (one line under its heading). */
 export const SECTION_HELP: Record<string, string> = {
-  loader: "How the simulation files are read: missing elements, bonds and periodic unwrapping.",
-  executor: "Threads and which pipeline steps run in parallel.",
-  timeouts: "Time limits for each step, in seconds.",
-  signatures: "Which molecule descriptions (sequences, SMILES, fingerprints, structures) are generated.",
-  identifiers: "Which databases are searched, exactly and by similarity.",
-  blast: "Sequence-search thresholds.",
+  identifiers: "Which databases are searched: for identical entries (exact) and for similar ones.",
+  verification: "How many candidates are checked against the database records, and how they are scored.",
+  blast: "When a sequence match counts as exact or as similar.",
   chembl: "ChEMBL similarity search.",
   idsm: "IDSM chemical similarity search.",
-  pubchem: "PubChem similarity search and retries.",
-  alphafind: "AlphaFind structure search (remote).",
-  pdb: "PDB structure search.",
-  foldseek: "Foldseek structure search.",
-  verification: "How candidates are checked and scored into the confidence value.",
+  pubchem: "PubChem similarity search.",
+  pdb: "RCSB PDB structure search.",
+  signatures: "How protein and nucleic-acid sequences are read from the structure.",
+  loader: "How the simulation files are read: missing elements, bonds and periodic unwrapping.",
 };
 
+/** Identifier toggles grouped by kind of search (unlisted ones: "Other"). */
+const IDENTIFIER_GROUPS: [string, RegExp][] = [
+  ["Sequence", /^(blast_|sifts_)/],
+  ["Structure", /^(pdb_struct_|alphafind_|foldseek_|mmcif_)/],
+  ["Lipids and glycans", /^(lipid_|swisslipids|glycan_)/],
+  ["Chemistry", /^(pubchem_|chembl_|idsm_|inchikey_|formula_|chebi_|atom$)/],
+  ["Names", /^name_/],
+];
+
+export interface IdentifierRow {
+  /** Resolver name; the similarity toggle is `${name}_similarity`. */
+  name: string;
+  exact?: boolean;
+  similar?: boolean;
+}
+
 /**
- * Deployment plumbing (executables, database paths, URLs, credentials):
- * not meaningful to change per run, so not shown. The values are still
- * submitted unchanged.
+ * The identifiers section as rows of (exact, similar) toggles, grouped by
+ * kind of search, in the server's order within each group.
  */
-export function isPlumbing(section: string, field: string): boolean {
-  if (section === "identifiers_cache" || section === "names") return true;
-  return /(_exec|_db|_db_path|^db_path|_path|_dir|^url|_url|^ssh_|^directory$|^file$|^curr_uuid$|^remote_database$|^use_deployment_file_access$)/.test(
-    field,
-  );
+export function identifierGroups(section: ConfigSection): [string, IdentifierRow[]][] {
+  const rows = new Map<string, IdentifierRow>();
+  for (const [key, value] of Object.entries(section)) {
+    if (typeof value !== "boolean") continue;
+    const similar = key.endsWith("_similarity");
+    const name = similar ? key.slice(0, -"_similarity".length) : key;
+    const row = rows.get(name) ?? { name };
+    if (similar) row.similar = value;
+    else row.exact = value;
+    rows.set(name, row);
+  }
+  const groups = new Map<string, IdentifierRow[]>();
+  for (const [title] of IDENTIFIER_GROUPS) groups.set(title, []);
+  groups.set("Other", []);
+  for (const row of rows.values()) {
+    const title = IDENTIFIER_GROUPS.find(([, re]) => re.test(row.name))?.[0] ?? "Other";
+    groups.get(title)!.push(row);
+  }
+  return [...groups.entries()].filter(([, r]) => r.length > 0);
 }
 
 /**
@@ -286,6 +200,13 @@ export function isPlumbing(section: string, field: string): boolean {
  * thirds — so only the ratio matters here.
  */
 export const FIELD_HELP: Record<string, string> = {
+  "verification.verify_top_n":
+    "Candidate groups per molecule checked against their database records. More finds rarer matches but is slower.",
+  "verification.verify_top_n_supplementary":
+    "Extra groups found only by the supplementary and slow databases, checked after the main window.",
+  "verification.similarity_top_n": "Similar (non-identical) matches kept per molecule.",
+  "verification.min_final_confidence": "Matches below this confidence (0–100) are not marked verified.",
+  "verification.tm_score_threshold": "Minimum TM-score (0–1) for a structure match to count.",
   "verification.resolver_weight":
     "Weight of the database-belief term (resolver agreement structure). Weights are normalized by their sum at runtime — only the ratio matters; all-zero falls back to equal thirds.",
   "verification.similarity_weight":
@@ -293,11 +214,16 @@ export const FIELD_HELP: Record<string, string> = {
   "verification.annotation_weight":
     "Weight of the annotation term (completeness of the database record). Normalized by the sum with the other weights.",
   "verification.annotation_live_fetch":
-    "Allow bounded live-API fetch for annotation signals missing from the local mirrors (default on; silent mirror fallback on failure).",
-  "verification.annotation_live_budget_per_segment":
-    "Maximum live annotation calls per segment; once exhausted, further candidates silently use mirror data only.",
-  "verification.annotation_fetch_timeout_s":
-    "Per-call timeout in seconds for live annotation fetches.",
+    "Fetch annotation details missing from the local database copies from the live services (bounded; falls back silently).",
+  "loader.quick_structure_search":
+    "Skip bond guessing and search with simplified structures (topology-less and Cα-only PDB). Faster on large systems.",
+  "pdb.rcsb_include_mixed_complexes": "Also search PDB entries that mix protein and nucleic acid.",
+  "signatures.fasta_map_determine_sequence_strict_mode": "Protein sequences must start with methionine.",
+  "signatures.fasta_map_determine_sequence_partial_mode":
+    "Allow a protein sequence shorter than the number of residues in the molecule.",
+  "chembl.similarity_threshold": "Minimum similarity (%) for a similar compound.",
+  "idsm.similarity_threshold": "Minimum similarity (%) for a similar compound.",
+  "pubchem.similarity_threshold": "Minimum similarity (%) for a similar compound.",
 };
 
 export interface WeightTriple {
@@ -321,57 +247,98 @@ export function normalizedWeights(v: WeightTriple): [number, number, number] | n
   return [cleaned[0] / total, cleaned[1] / total, cleaned[2] / total];
 }
 
-/**
- * Normalize the raw JSON body from GET /runs/config/default into a RunConfig.
- * The endpoint normally returns the section dict directly, but on error it
- * returns `{ error, config }`. Accepts both shapes; returns null when nothing
- * usable is present.
- */
-export function parseConfigPayload(
-  raw: unknown,
-): RunConfig | null {
-  if (!raw || typeof raw !== "object") return null;
-  const obj = raw as Record<string, unknown>;
-  const candidate = (typeof obj.config === "object" && obj.config)
-    ? (obj.config as Record<string, unknown>)
-    : obj;
-  if (!candidate || typeof candidate !== "object") return null;
-  const sections: Record<string, Record<string, unknown>> = {};
-  let sawSection = false;
-  for (const [key, value] of Object.entries(candidate)) {
+function sectionsOf(raw: unknown): RunConfig | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const sections: RunConfig = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (key.startsWith("_")) continue;
     if (value && typeof value === "object" && !Array.isArray(value)) {
-      sections[key] = value as Record<string, unknown>;
-      sawSection = true;
+      sections[key] = value as ConfigSection;
     }
   }
-  return sawSection ? (sections as RunConfig) : null;
+  return Object.keys(sections).length > 0 ? sections : null;
+}
+
+/** Normalize the JSON body of GET /runs/config/options; null if unusable. */
+export function parseConfigOptions(raw: unknown): ConfigOptions | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  const config = sectionsOf(obj.config);
+  if (!config) return null;
+  const presets = Array.isArray(obj.presets)
+    ? (obj.presets as RunPreset[]).filter(
+        (p) => p && typeof p.id === "string" && typeof p.title === "string",
+      ).map((p) => ({ ...p, overrides: sectionsOf(p.overrides) ?? {} }))
+    : [];
+  return { config, presets };
+}
+
+export function cloneConfig(cfg: RunConfig): RunConfig {
+  return JSON.parse(JSON.stringify(cfg)) as RunConfig;
+}
+
+/** `base` with the preset's overrides applied (new object). */
+export function applyPreset(base: RunConfig, preset: RunPreset): RunConfig {
+  const out = cloneConfig(base);
+  for (const [section, fields] of Object.entries(preset.overrides)) {
+    out[section] = { ...(out[section] ?? {}), ...fields };
+  }
+  return out;
+}
+
+/** The fields of `config` that differ from `base`, as {section: {field: value}}. */
+export function configDiff(config: RunConfig, base: RunConfig): RunConfig {
+  const diff: RunConfig = {};
+  for (const [section, fields] of Object.entries(config)) {
+    for (const [field, value] of Object.entries(fields)) {
+      if (base[section]?.[field] !== value) {
+        (diff[section] ??= {})[field] = value;
+      }
+    }
+  }
+  return diff;
+}
+
+function sameDiff(a: RunConfig, b: RunConfig): boolean {
+  const flat = (d: RunConfig) =>
+    Object.entries(d)
+      .flatMap(([s, f]) => Object.entries(f).map(([k, v]) => `${s}.${k}=${JSON.stringify(v)}`))
+      .sort()
+      .join("\n");
+  return flat(a) === flat(b);
+}
+
+/** The preset `config` is exactly equal to, or null for a custom config. */
+export function activePresetId(
+  config: RunConfig,
+  base: RunConfig,
+  presets: RunPreset[],
+): string | null {
+  const diff = configDiff(config, base);
+  const hit = presets.find((p) => sameDiff(diff, configDiff(applyPreset(base, p), base)));
+  return hit ? hit.id : null;
 }
 
 /**
- * Decide which config (if any) should be serialized into the POSTed
- * `config_json`. Per the contract, `config_json` is only sent when the config
- * was customized by the user or Fast Mode is on; otherwise the server applies
- * its own defaults.
+ * The `config_json` to POST: only the fields that differ from the server
+ * defaults, or null when nothing changed (the server then uses its own).
  */
-export function resolveConfigToPost(
-  config: RunConfig | null,
-  opts: { customized: boolean; fastMode: boolean },
-): string | null {
-  if (!config || Object.keys(config).length === 0) return null;
-  if (!opts.customized && !opts.fastMode) return null;
-  const final = opts.fastMode ? applyFastMode(config, true) : config;
-  return JSON.stringify(final);
+export function resolveConfigToPost(config: RunConfig | null, base: RunConfig | null): string | null {
+  if (!config || !base) return null;
+  const diff = configDiff(config, base);
+  return Object.keys(diff).length > 0 ? JSON.stringify(diff) : null;
 }
 
 /**
  * Build the multipart FormData for POST /runs. Field names match the API:
- * `files` (repeatable), optional `run_name`, optional `config_json`.
+ * `files` (repeatable), optional `run_name`, `config_json` and `preset`
+ * (recorded with the run; the overrides it implies are in config_json too).
  */
 export function buildRunFormData(
   files: File[],
   runName: string | undefined | null,
   configJson: string | null,
+  preset?: string | null,
 ): FormData {
   const form = new FormData();
   for (const file of files) {
@@ -382,6 +349,9 @@ export function buildRunFormData(
   }
   if (configJson) {
     form.append("config_json", configJson);
+  }
+  if (preset) {
+    form.append("preset", preset);
   }
   return form;
 }

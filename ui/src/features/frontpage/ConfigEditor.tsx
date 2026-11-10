@@ -9,12 +9,14 @@ import {
   Switch,
 } from "@e-infra/design-system";
 import {
+  fieldLabel,
   humanLabel,
-  isPlumbing,
+  identifierGroups,
   validateNumberInput,
   FIELD_HELP,
   SECTION_HELP,
   normalizedWeights,
+  type ConfigSection,
   type RunConfig,
   type WeightTriple,
 } from "./config";
@@ -35,7 +37,7 @@ function WeightSumNote({ sectionData }: { sectionData: unknown }) {
 }
 
 interface ConfigEditorProps {
-  config: RunConfig | null;
+  config: RunConfig;
   onChange: (updated: RunConfig) => void;
 }
 
@@ -45,12 +47,16 @@ interface ConfigEditorProps {
  * previous valid value is retained. Shows an inline error message.
  */
 function NumberField({
+  id,
   fieldName,
+  label,
   value,
   onValid,
   help,
 }: {
+  id: string;
   fieldName: string;
+  label: string;
   value: number;
   onValid: (n: number) => void;
   help?: string;
@@ -59,7 +65,7 @@ function NumberField({
   const [err, setErr] = useState<string | undefined>(undefined);
 
   // "Adjust state during render" pattern — sync display when the prop
-  // changes externally (e.g. Fast Mode toggle). React re-renders
+  // changes externally (e.g. a preset is picked). React re-renders
   // synchronously before committing the DOM.
   const [prevValue, setPrevValue] = useState(value);
   if (prevValue !== value) {
@@ -81,11 +87,11 @@ function NumberField({
 
   return (
     <div className="flex flex-col gap-1">
-      <Label htmlFor={`cfg-${fieldName}`} className="text-sm text-text-muted">
-        {humanLabel(fieldName)}
+      <Label htmlFor={id} className="text-sm text-text-muted">
+        {label}
       </Label>
       <Input
-        id={`cfg-${fieldName}`}
+        id={id}
         type="number"
         value={text}
         onChange={(e) => handle(e.target.value)}
@@ -97,106 +103,128 @@ function NumberField({
   );
 }
 
-export default function ConfigEditor({ config, onChange }: ConfigEditorProps) {
-  if (!config || Object.keys(config).length === 0) {
-    return (
-      <p className="py-4 text-sm text-text-muted">
-        Failed to load configuration. Using fallback defaults.
-      </p>
-    );
-  }
+/** Databases as rows with an "Exact" and a "Similar" switch, grouped by kind. */
+function IdentifiersTable({
+  section,
+  onToggle,
+}: {
+  section: ConfigSection;
+  onToggle: (field: string, value: boolean) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      {identifierGroups(section).map(([group, rows]) => (
+        <table key={group} className="w-full text-sm">
+          <thead>
+            <tr className="text-xs text-text-muted">
+              <th className="pb-1 text-left font-semibold uppercase tracking-wide">{group}</th>
+              <th className="w-20 pb-1 text-center font-normal">Exact</th>
+              <th className="w-20 pb-1 text-center font-normal">Similar</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const label = humanLabel(row.name);
+              return (
+                <tr key={row.name} className="border-t border-base-200">
+                  <td className="py-1.5 pr-2 text-text">{label}</td>
+                  {(["exact", "similar"] as const).map((kind) => {
+                    const v = row[kind];
+                    const field = kind === "exact" ? row.name : `${row.name}_similarity`;
+                    return (
+                      <td key={kind} className="py-1.5 text-center">
+                        {v !== undefined && (
+                          <Switch
+                            checked={v}
+                            aria-label={`${label} — ${kind === "exact" ? "exact" : "similar"} matches`}
+                            onCheckedChange={(c) => onToggle(field, c)}
+                          />
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      ))}
+    </div>
+  );
+}
 
+/**
+ * Editor for the per-run tunable config (GET /runs/config/options): only
+ * the fields the server offers are shown, in its section order.
+ */
+export default function ConfigEditor({ config, onChange }: ConfigEditorProps) {
   const sections = Object.entries(config).filter(
-    ([k, v]) => !k.startsWith("_") && v && typeof v === "object",
+    ([k, v]) => !k.startsWith("_") && v && typeof v === "object" && Object.keys(v).length > 0,
   );
 
   function setField(section: string, field: string, value: unknown) {
-    const next: RunConfig = { ...config };
-    const sec: Record<string, unknown> = { ...(next[section] ?? {}) };
-    sec[field] = value;
-    next[section] = sec;
-    onChange(next);
+    onChange({ ...config, [section]: { ...(config[section] ?? {}), [field]: value } });
   }
 
   return (
-    <div className="flex max-h-[60vh] flex-col gap-1 overflow-y-auto pr-2">
-      {sections.map(([sectionName, sectionData]) => {
-        const fields = Object.entries(
-          sectionData as Record<string, unknown>,
-        ).filter(([k]) => !k.startsWith("_") && !isPlumbing(sectionName, k));
-        if (fields.length === 0) return null;
-        return (
-          <Accordion key={sectionName} type="single" collapsible>
-            <AccordionItem value={sectionName}>
-              <AccordionTrigger className="text-sm font-semibold">
-                <span className="flex flex-col items-start gap-0.5 text-left">
-                  {humanLabel(sectionName)}
-                  {SECTION_HELP[sectionName] && (
-                    <span className="text-xs font-normal text-text-muted">{SECTION_HELP[sectionName]}</span>
-                  )}
-                </span>
-              </AccordionTrigger>
-              <AccordionContent>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {fields.map(([fieldName, v]) => {
-                    if (typeof v === "boolean") {
-                      return (
-                        <Label
-                          key={fieldName}
-                          className="flex cursor-pointer items-center justify-between gap-3 text-sm"
-                        >
-                          <span className="text-text-muted">
-                            {humanLabel(fieldName)}
-                          </span>
-                          <Switch
-                            checked={v}
-                            onCheckedChange={(c) =>
-                              setField(sectionName, fieldName, c)
-                            }
-                          />
-                        </Label>
-                      );
-                    }
-                    if (typeof v === "number") {
-                      return (
-                        <NumberField
-                          key={fieldName}
-                          fieldName={fieldName}
-                          value={v}
-                          onValid={(n) => setField(sectionName, fieldName, n)}
-                          help={FIELD_HELP[`${sectionName}.${fieldName}`]}
-                        />
-                      );
-                    }
-                    // string (or other scalar) -> text Input
-                    const sv = v == null ? "" : String(v);
+    <Accordion type="multiple" className="flex flex-col gap-1">
+      {sections.map(([sectionName, sectionData]) => (
+        <AccordionItem key={sectionName} value={sectionName}>
+          <AccordionTrigger className="text-sm font-semibold">
+            <span className="flex flex-col items-start gap-0.5 text-left">
+              {sectionName === "identifiers" ? "Databases" : humanLabel(sectionName)}
+              {SECTION_HELP[sectionName] && (
+                <span className="text-xs font-normal text-text-muted">{SECTION_HELP[sectionName]}</span>
+              )}
+            </span>
+          </AccordionTrigger>
+          <AccordionContent>
+            {sectionName === "identifiers" ? (
+              <IdentifiersTable
+                section={sectionData}
+                onToggle={(field, v) => setField(sectionName, field, v)}
+              />
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {Object.entries(sectionData).map(([fieldName, v]) => {
+                  const label = fieldLabel(sectionName, fieldName);
+                  const help = FIELD_HELP[`${sectionName}.${fieldName}`];
+                  if (typeof v === "boolean") {
                     return (
-                      <div key={fieldName} className="flex flex-col gap-1">
-                        <Label
-                          htmlFor={`cfg-${sectionName}-${fieldName}`}
-                          className="text-sm text-text-muted"
-                        >
-                          {humanLabel(fieldName)}
-                        </Label>
-                        <Input
-                          id={`cfg-${sectionName}-${fieldName}`}
-                          value={sv}
-                          onChange={(e) =>
-                            setField(sectionName, fieldName, e.target.value)
-                          }
+                      <Label
+                        key={fieldName}
+                        className="flex cursor-pointer items-center justify-between gap-3 text-sm"
+                        title={help}
+                      >
+                        <span className="text-text-muted">{label}</span>
+                        <Switch
+                          checked={v}
+                          onCheckedChange={(c) => setField(sectionName, fieldName, c)}
                         />
-                      </div>
+                      </Label>
                     );
-                  })}
-                </div>
-                {sectionName === "verification" && (
-                  <WeightSumNote sectionData={sectionData} />
-                )}
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-        );
-      })}
-    </div>
+                  }
+                  if (typeof v === "number") {
+                    return (
+                      <NumberField
+                        key={fieldName}
+                        id={`cfg-${sectionName}-${fieldName}`}
+                        fieldName={fieldName}
+                        label={label}
+                        value={v}
+                        onValid={(n) => setField(sectionName, fieldName, n)}
+                        help={help}
+                      />
+                    );
+                  }
+                  return null;
+                })}
+              </div>
+            )}
+            {sectionName === "verification" && <WeightSumNote sectionData={sectionData} />}
+          </AccordionContent>
+        </AccordionItem>
+      ))}
+    </Accordion>
   );
 }

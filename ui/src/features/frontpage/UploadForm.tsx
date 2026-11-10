@@ -23,19 +23,21 @@ import {
   DialogTitle,
   Input,
   Label,
-  Switch,
 } from "@e-infra/design-system";
-import { Loader2, Rocket, Settings2 } from "lucide-react";
+import { Loader2, Settings2 } from "lucide-react";
 import Dropzone from "./Dropzone";
 import ConfigEditor from "./ConfigEditor";
+import PresetPicker from "./PresetPicker";
 import {
-  MINIMAL_DEFAULT_CONFIG,
+  activePresetId,
+  applyPreset,
   buildRunFormData,
-  parseConfigPayload,
+  cloneConfig,
+  parseConfigOptions,
   resolveConfigToPost,
   type RunConfig,
 } from "./config";
-import { api, endpoints } from "../../lib/api/client";
+import { ApiError, api, endpoints } from "../../lib/api/client";
 
 interface RunCreateResponse {
   run_id: string;
@@ -44,8 +46,15 @@ interface RunCreateResponse {
   results_url?: string;
 }
 
-function cloneConfig(cfg: RunConfig): RunConfig {
-  return JSON.parse(JSON.stringify(cfg)) as RunConfig;
+/** The API's message for a rejected config (422), else null. */
+function rejectionDetail(err: unknown): string | null {
+  if (!(err instanceof ApiError) || err.status !== 422) return null;
+  try {
+    const detail = (JSON.parse(err.body) as { detail?: unknown }).detail;
+    return typeof detail === "string" ? detail : null;
+  } catch {
+    return null;
+  }
 }
 
 export default function UploadForm() {
@@ -54,26 +63,26 @@ export default function UploadForm() {
 
   const [files, setFiles] = useState<FileWithPath[]>([]);
   const [runName, setRunName] = useState("");
-  const [fastMode, setFastMode] = useState(false);
-  const [customized, setCustomized] = useState(false);
-  const [editedConfig, setEditedConfig] = useState<RunConfig | null>(null);
+  // Working copy of the run config (null = server defaults) and the copy
+  // taken when the dialog opened, restored by Cancel.
+  const [config, setConfig] = useState<RunConfig | null>(null);
+  const [snapshot, setSnapshot] = useState<RunConfig | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
 
-  // Source of truth for the run config: live default, else the legacy
-  // MINIMAL_DEFAULT_CONFIG fallback (used ONLY on error).
-  const configQuery = useQuery({
-    queryKey: ["defaultConfig"],
+  // The tunable fields with the server defaults, and the presets.
+  const optionsQuery = useQuery({
+    queryKey: ["configOptions"],
     queryFn: async () =>
-      parseConfigPayload(await api.get<unknown>(endpoints.configDefault)),
+      parseConfigOptions(await api.get<unknown>(endpoints.configOptions)),
     retry: 0,
   });
-  const usedFallback =
-    configQuery.isError || configQuery.data === null || configQuery.data === undefined;
-  const effectiveDefault = useMemo(
-    () => configQuery.data ?? MINIMAL_DEFAULT_CONFIG,
-    [configQuery.data],
-  );
-  const displayConfig = editedConfig ?? effectiveDefault;
+  const options = optionsQuery.data ?? null;
+  const optionsUnavailable = optionsQuery.isError || (optionsQuery.isSuccess && !options);
+  const base = options?.config ?? null;
+  const presets = useMemo(() => options?.presets ?? [], [options]);
+  const displayConfig = config ?? base;
+  const presetId = displayConfig && base ? activePresetId(displayConfig, base, presets) : null;
+  const presetTitle = presets.find((p) => p.id === presetId)?.title ?? "Custom";
 
   function handleFilesAdded(accepted: FileWithPath[]) {
     setFiles((prev) => {
@@ -91,29 +100,21 @@ export default function UploadForm() {
     );
   }
 
-  function handleConfigChange(next: RunConfig) {
-    setEditedConfig(next);
-    setCustomized(true);
-  }
-
   function openConfig() {
-    // Make sure the editor has a concrete working copy on first open.
-    setEditedConfig((prev) => prev ?? cloneConfig(effectiveDefault));
+    setSnapshot(config);
     setConfigOpen(true);
   }
 
-  function toggleFast(checked: boolean) {
-    setFastMode(checked);
+  function cancelConfig() {
+    setConfig(snapshot);
+    setConfigOpen(false);
   }
 
-  const configToPost = resolveConfigToPost(editedConfig ?? effectiveDefault, {
-    customized,
-    fastMode,
-  });
+  const configToPost = resolveConfigToPost(displayConfig, base);
 
   const submit = useMutation({
     mutationFn: async () => {
-      const form = buildRunFormData(files, runName, configToPost);
+      const form = buildRunFormData(files, runName, configToPost, presetId);
       return api.postForm<RunCreateResponse>(endpoints.runs, form);
     },
     onSuccess: (res) => {
@@ -169,21 +170,6 @@ export default function UploadForm() {
           />
         </div>
 
-        {/* Fast Mode */}
-        <Label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-base-200 bg-surface-raised/40 px-3 py-2">
-          <span className="flex items-center gap-2 text-sm">
-            <Rocket className="h-4 w-4 text-primary" />
-            <span>
-              <span className="font-medium text-text">Fast Mode</span>
-              <span className="block text-xs text-text-muted">
-                Run signatures, identifiers and verification in parallel for a
-                quicker result.
-              </span>
-            </span>
-          </span>
-          <Switch checked={fastMode} onCheckedChange={toggleFast} />
-        </Label>
-
         {/* Advanced configuration */}
         <div className="flex items-center justify-between gap-3">
           <span className="flex items-center gap-2 text-sm text-text-muted">
@@ -191,10 +177,14 @@ export default function UploadForm() {
             Advanced configuration
           </span>
           <div className="flex items-center gap-3">
-            {(customized || fastMode) && (
-              <span className="text-xs text-text-muted">customized</span>
-            )}
-            <Button type="button" variant="outline" size="sm" onClick={openConfig}>
+            {base && <span className="text-xs text-text-muted">{presetTitle}</span>}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={openConfig}
+              disabled={!base}
+            >
               Edit
             </Button>
           </div>
@@ -224,36 +214,54 @@ export default function UploadForm() {
           <Alert variant="error">
             <AlertTitle>Could not start the annotation</AlertTitle>
             <AlertDescription>
-              Something went wrong while submitting your files. Please try
-              again.
+              {rejectionDetail(submit.error)
+                ? `The configuration was not accepted: ${rejectionDetail(submit.error)}.`
+                : "Something went wrong while submitting your files. Please try again."}
             </AlertDescription>
           </Alert>
         )}
 
-        {usedFallback && (
+        {optionsUnavailable && (
           <Alert variant="warning">
-            <AlertTitle>Using built-in defaults</AlertTitle>
+            <AlertTitle>Advanced configuration unavailable</AlertTitle>
             <AlertDescription>
-              The current default configuration could not be loaded, so
-              sensible defaults are being used.
+              The configuration options could not be loaded. You can still
+              start the annotation; it will use the recommended settings.
             </AlertDescription>
           </Alert>
         )}
       </CardContent>
 
       {/* Advanced configuration dialog */}
-      <Dialog open={configOpen} onOpenChange={setConfigOpen}>
-        <DialogContent className="max-w-2xl">
+      <Dialog open={configOpen} onOpenChange={(open) => (open ? setConfigOpen(true) : cancelConfig())}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Advanced configuration</DialogTitle>
             <DialogDescription>
-              Fine-tune how the annotation pipeline runs. Leave unchanged if you
-              are not sure.
+              Start from a preset, then fine-tune if you need to. Leave it on
+              Balanced if you are not sure.
             </DialogDescription>
           </DialogHeader>
-          <ConfigEditor config={displayConfig} onChange={handleConfigChange} />
+          {base && displayConfig && (
+            <>
+              <PresetPicker
+                presets={presets}
+                active={presetId}
+                onPick={(p) => setConfig(applyPreset(base, p))}
+              />
+              <ConfigEditor config={displayConfig} onChange={setConfig} />
+            </>
+          )}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfigOpen(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              className="sm:mr-auto"
+              onClick={() => setConfig(base ? cloneConfig(base) : null)}
+            >
+              Reset to defaults
+            </Button>
+            <Button type="button" variant="outline" onClick={cancelConfig}>
               Cancel
             </Button>
             <Button type="button" onClick={() => setConfigOpen(false)}>
