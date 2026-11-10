@@ -934,6 +934,20 @@ async def get_molecules(run_id: str) -> MoleculeSummaryResponse:
     )
 
 
+@router.get("/{run_id}/download/results.json")
+async def download_results_json(run_id: str):
+    """The run's complete results document (documented at
+    /documentation/results-json/), without the submitter's address."""
+    from fastapi.responses import JSONResponse
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", run_id) or ".." in run_id:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    data = load_results_json(run_id)
+    if isinstance(data.get("pipeline"), dict):
+        data["pipeline"].pop("creator_ip", None)
+    return JSONResponse(data, headers={
+        "Content-Disposition": f'attachment; filename="bioid-{run_id[:8]}-results.json"'})
+
+
 @router.get("/{run_id}/download/results.csv")
 async def download_results_csv(run_id: str) -> PlainTextResponse:
     """v3.143 (BACKEND_GAPS G6): run-level CSV export — one clean row per

@@ -54,7 +54,27 @@ async def lifespan(app: FastAPI):
         reaper_task.cancel()
 
 
-app = FastAPI(title="BAT3 Pipeline API", version="0.1.0", lifespan=lifespan)
+API_DESCRIPTION = """
+Identify the biomolecules in a molecular dynamics simulation: upload the
+files, poll the run, read the identifications.
+
+* **Guide and examples**: [/documentation/](/documentation/) (REST API section)
+* **results.json structure**: [/documentation/results-json/](/documentation/results-json/)
+* **For AI assistants**: the MCP server at `/mcp` ([guide](/documentation/mcp/))
+
+Typical flow: `POST /api/v1/runs` (multipart: `files`, optional `run_name`,
+`preset`, `config_json`) → poll `GET /api/v1/runs/{run_id}/status` until
+`pipeline.status` is `success` or `failed` → `GET .../molecules`,
+`.../verification`, `.../download/results.csv` or `.../download/results.json`.
+No account is needed. Each file may be up to 128 MiB.
+"""
+
+app = FastAPI(
+    title="BioID API",
+    version="1",
+    description=API_DESCRIPTION,
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -987,3 +1007,84 @@ async def test_cancelled():
         return {"cancelled_count": cancelled}
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Published schema (/docs, /openapi.json). The public API is /api/v1 (the
+# BioID host routes only /api, /files and /health here). The root-level
+# duplicates, the validation-campaign control plane, the batch routes and the
+# UI-internal helpers stay callable in-cluster but are left out of the
+# schema. Public routes get user-facing summaries (the docstrings are
+# developer notes).
+# ---------------------------------------------------------------------------
+from fastapi.routing import APIRoute  # noqa: E402
+
+_V1 = "/api/v1/runs"
+_PUBLIC_ROUTES: dict[tuple[str, str], tuple[str, str, str]] = {
+    # (method, path): (tag, summary, description)
+    ("POST", _V1): ("Runs", "Submit a run",
+        "Upload simulation files as multipart `files` (repeat the field for several files; "
+        "GROMACS, AMBER, CHARMM/NAMD, LAMMPS, PDB/mmCIF or a zip/tar bundle; 128 MiB per file). "
+        "Optional form fields: `run_name`, `preset` (`balanced`, `quick`, `exact`, `deep`; see "
+        "`GET /api/v1/runs/config/options`) and `config_json` (only the fields that differ from the "
+        "defaults, e.g. `{\"verification\": {\"verify_top_n\": 50}}`). Returns the `run_id`; the run "
+        "is queued and processed in the background. 422 if a file name or the configuration is "
+        "not accepted."),
+    ("GET", _V1): ("Runs", "List your runs",
+        "Runs submitted from your network address, newest first (`mine=1`)."),
+    ("GET", f"{_V1}/examples"): ("Runs", "Example runs",
+        "Finished example analyses shown on the front page."),
+    ("GET", f"{_V1}/{{run_id}}"): ("Runs", "Run summary",
+        "Name, status, timestamps and input files of a run."),
+    ("GET", f"{_V1}/{{run_id}}/status"): ("Runs", "Run status and progress",
+        "Poll this while the run is processing. `pipeline.status` is `queued`, `running`, "
+        "`success`, `failed` or `cancelled`; `tasks` lists the pipeline stages, `progress` the "
+        "per-molecule identification progress, `warnings` anything worth knowing."),
+    ("GET", f"{_V1}/{{run_id}}/queue"): ("Runs", "Queue position",
+        "Where a queued run stands in the queue."),
+    ("POST", f"{_V1}/{{run_id}}/cancel"): ("Runs", "Cancel a run", "Stops a queued or running run."),
+    ("POST", f"{_V1}/{{run_id}}/rerun"): ("Runs", "Run again",
+        "Starts a new run with the same input files and configuration; returns the new `run_id`."),
+    ("DELETE", f"{_V1}/{{run_id}}"): ("Runs", "Delete a run", "Removes the run and its files."),
+    ("GET", f"{_V1}/{{run_id}}/molecules"): ("Results", "Molecules",
+        "The molecules found in the system: unique molecules with their copies, counts by kind "
+        "and per-segment metadata."),
+    ("GET", f"{_V1}/{{run_id}}/molecules/{{segment}}/info"): ("Results", "One molecule",
+        "Composition and identification summary of one molecule (segment)."),
+    ("GET", f"{_V1}/{{run_id}}/verification"): ("Results", "Identifications (verified hits)",
+        "For every molecule, the database candidates after verification, with their confidence "
+        "(0–100), the three confidence terms and whether each was verified. This is the main result."),
+    ("GET", f"{_V1}/{{run_id}}/identifiers"): ("Results", "Database hits",
+        "Every raw hit from every database search, before verification."),
+    ("GET", f"{_V1}/{{run_id}}/signatures"): ("Results", "Signatures",
+        "The descriptions generated for each molecule and used as search queries: sequences, "
+        "SMILES, InChIKeys, formulas, structures."),
+    ("GET", f"{_V1}/{{run_id}}/download/results.json"): ("Results", "Download results.json",
+        "The complete results document. Its structure is described at /documentation/results-json/."),
+    ("GET", f"{_V1}/{{run_id}}/download/results.csv"): ("Results", "Download results.csv",
+        "One row per molecule: best identification, database, identifier, confidence and alternatives."),
+    ("GET", f"{_V1}/{{run_id}}/download/topology-less-pdb"): ("Results", "Download topology-less PDB",
+        "The system as a PDB file without topology records."),
+    ("GET", f"{_V1}/{{run_id}}/download/ca-only-pdb"): ("Results", "Download Cα-only PDB",
+        "Protein Cα trace of the system."),
+    ("GET", f"{_V1}/{{run_id}}/files"): ("Results", "Run files",
+        "Files of the run (inputs and outputs), served under `/files/{run_id}/…`."),
+    ("GET", f"{_V1}/{{run_id}}/logs"): ("Results", "Run log", "The pipeline log of the run."),
+    ("GET", f"{_V1}/config/options"): ("Configuration", "Presets and settings",
+        "The presets and every setting a run may change, with the server defaults. Post only "
+        "the settings you change, as `config_json`."),
+    ("GET", "/api/v1/health"): ("Service", "Health", "Liveness of the API."),
+    ("GET", "/api/v1/capabilities"): ("Service", "Capabilities",
+        "API features available on this server and the code version."),
+}
+
+for _route in app.routes:
+    if not isinstance(_route, APIRoute):
+        continue
+    _meta = next((_PUBLIC_ROUTES[(m, _route.path)] for m in _route.methods
+                  if (m, _route.path) in _PUBLIC_ROUTES), None)
+    if _meta is None:
+        _route.include_in_schema = False
+        continue
+    _route.tags, _route.summary, _route.description = [_meta[0]], _meta[1], _meta[2]
+
