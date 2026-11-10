@@ -1,9 +1,11 @@
 import { Outlet } from "react-router-dom";
 import { Toaster } from "@e-infra/design-system";
+import { usePageviews } from "../../lib/pageviews";
 import Header from "./Header";
 import Footer from "./Footer";
 
 export default function Layout() {
+  usePageviews();
   return (
     <div className="flex min-h-screen flex-col bg-background text-text">
       <a

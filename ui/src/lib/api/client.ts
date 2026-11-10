@@ -61,7 +61,10 @@ function buildUrl(path: string, params?: QueryParams): string {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
+  // Tells the API's traffic statistics this call came from the web app.
+  const headers = new Headers(init?.headers);
+  headers.set("X-BioID-Client", "web");
+  const res = await fetch(path, { ...init, headers });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     const retry = Number(res.headers.get("retry-after"));

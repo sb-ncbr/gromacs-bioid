@@ -56,7 +56,8 @@ class BioIDClient:
         self._http = httpx.AsyncClient(
             base_url=settings.api_url,
             timeout=httpx.Timeout(settings.api_timeout_s, connect=10.0),
-            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+            # X-BioID-Client: the API's traffic statistics count MCP use separately
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json", "X-BioID-Client": "mcp"},
             transport=transport,
             follow_redirects=False,
         )

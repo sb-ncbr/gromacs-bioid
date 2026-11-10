@@ -192,7 +192,17 @@ Runs are not tied to an account: **anyone who has a run's id can open its
 results and re-run it**; only the holder of its owner token can cancel or
 delete it. Run ids are random and are not listed to others. The service keeps
 a keyed hash of the address a run was submitted from (to list *Your
-annotations* and apply the limits), not the address itself. Sequences and
+annotations* and apply the limits), not the address itself.
+
+For usage statistics the service records each page view of the web
+application and the documentation, and each meaningful API call
+(submissions, results, downloads, errors), with the time, the page or
+endpoint, the kind of client, the referring site, the same keyed address
+hash and an approximate location (city, coordinates rounded to about 10 km)
+looked up from the address at that moment. The address is never stored.
+Raw records are kept 90 days. Browsers sending *Do Not Track* or *Global
+Privacy Control* are not counted. IP geolocation by
+[DB-IP](https://db-ip.com) (CC BY 4.0). Sequences and
 structures of your molecules are sent to public search services (for
 example RCSB PDB, PubChem, AlphaFind) to find matches. Do not submit data you
 are not allowed to share.

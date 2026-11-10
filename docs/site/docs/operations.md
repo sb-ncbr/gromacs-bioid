@@ -68,6 +68,20 @@ The password is `BAT3_ADMIN_PASSWORD` on the API deployment, from the secret
 failures per address per 15 minutes and 100 per hour overall; sessions last
 12 hours and end when the password changes.
 
+## Traffic statistics
+
+`src_new/api/traffic.py`; shown on the admin page (*Traffic*). Page views come
+from a beacon in the web app (`ui/src/lib/pageviews.ts`) and the docs
+(`docs/site/docs/js/stats.js`); API calls from a middleware (routine status
+polling is skipped, errors are always recorded). Clients identify themselves
+with `X-BioID-Client` (web, mcp, docs). Events are appended to
+`<runs>/_traffic/events/<day>/<host>-<pid>.jsonl` (not served, not touched by
+run retention) and deleted after 90 days (`BAT3_TRAFFIC_RAW_DAYS`). No address
+is stored: the keyed hash and a city-level location from the DB-IP Lite
+database at `/app/databases/geoip/dbip-city-lite.mmdb`, downloaded and
+refreshed monthly by the API (`BAT3_GEOIP_REFRESH=0` disables;
+`BAT3_TRAFFIC=0` turns recording off).
+
 ## Run retention
 
 `src_new/api/retention.py`, run hourly by the API's reaper (one leader pod).

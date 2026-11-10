@@ -38,3 +38,5 @@ nav:
       - Methodology & statistics: methodology.md
       - Operations: operations.md
       - Developers: developers.md
+extra_javascript:
+  - js/stats.js
