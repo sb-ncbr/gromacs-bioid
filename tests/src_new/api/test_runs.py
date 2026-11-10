@@ -341,7 +341,9 @@ class TestUploadSafeguards:
         
         valid_json = json.dumps({
             "loader": {"guess_missing_elements": True},
-            "executor": {"n_threads": 4}
+            "identifiers": {"blast_nt": False},
+            # an unchanged non-tunable value (old clients post the whole config)
+            "executor": {"n_threads": 10},
         })
         
         response = client.post(

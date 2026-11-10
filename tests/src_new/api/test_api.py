@@ -1254,7 +1254,7 @@ version = 1.0.0
 strategy = auto_detect
 
 [identifiers]
-overwrite_existing = yes
+blast_nt = no
 """
         
         response = client.post(
@@ -1282,7 +1282,7 @@ overwrite_existing = yes
         # like [pipeline]/[loading] are dropped on round-trip; known keys must
         # survive), so byte-equality with the upload is not the contract.
         saved_text = saved_config.read_text()
-        assert "overwrite_existing = yes" in saved_text
+        assert "blast_nt = False" in saved_text or "blast_nt = no" in saved_text
         assert "guess_missing_bonds = " in saved_text
 
 

@@ -75,6 +75,15 @@ async def get_default_config():
         return {"error": str(e), "config": RunConfig().to_dict()}
 
 
+@router.get("/config/options", response_model=dict)
+async def get_config_options():
+    """What a run may change: the tunable fields with their server defaults,
+    and the presets (overrides on top of those defaults)."""
+    from src_new.config.loader import RunConfig
+    from src_new.config.presets import PRESETS, tunable_config
+    return {"config": tunable_config(RunConfig.from_default_ini()), "presets": PRESETS}
+
+
 @router.get("/config/parallel-default", response_model=dict)
 async def get_parallel_default_config():
     """Get the default configuration with parallelism enabled."""
@@ -167,15 +176,22 @@ async def create_run(
     config_json: Optional[str] = Form(None),
     run_id: Optional[str] = None,
     run_name: Optional[str] = Form(None),
+    preset: Optional[str] = Form(None),
 ) -> RunCreateResponse:
     """
     Create a new run by uploading input files and optionally a config file.
+
+    ``preset`` (see GET /runs/config/options) is applied first, then
+    ``config_file`` or ``config_json``; only per-run tunable fields may change.
     
     The pipeline runs in the background via Celery. Returns immediately with run status.
     """
-    # Generate run_id if not provided
+    # Generate run_id if not provided. A client-chosen id becomes a directory
+    # name under the runs dir: no separators, no "..".
     if run_id is None:
         run_id = str(uuid.uuid4())
+    elif not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", run_id) or ".." in run_id:
+        raise HTTPException(status_code=422, detail="Invalid run_id")
     
     runs_dir = get_runs_dir()
     run_dir = runs_dir / run_id
@@ -218,6 +234,41 @@ async def create_run(
             detail="No files with usable names were uploaded"
         )
     
+    # Run config: server defaults, then the preset, then the user's
+    # overrides (config_file or config_json). Only the fields in
+    # presets.TUNABLE may change; executables, database paths and URLs stay
+    # the server's. Checked before the run directory is created.
+    from src_new.config.presets import (
+        ConfigOverrideError, checked_overrides, overrides_from_ini, resolve_run_config,
+    )
+    from src_new.config.loader import RunConfig
+    try:
+        base = RunConfig.from_default_ini()
+        overrides = None
+        if config_file and config_file.filename:
+            config_content_bytes = await config_file.read()
+            if len(config_content_bytes) > MAX_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File '{config_file.filename}' exceeds 128 MiB limit"
+                )
+            overrides = overrides_from_ini(
+                config_content_bytes.decode("utf-8", errors="replace"), base)
+        elif config_json:
+            try:
+                overrides_dict = json.loads(config_json)
+            except json.JSONDecodeError as e:
+                raise HTTPException(status_code=422, detail=f"Invalid config JSON: {e}")
+            overrides = checked_overrides(overrides_dict, base)
+        config = resolve_run_config(preset or None, overrides)
+    except ConfigOverrideError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    # Apply quick structure search overrides if enabled
+    if config.loader.quick_structure_search:
+        config.override("loader.guess_missing_bonds", False)
+        config.override("signatures.topology_less_pdb", True)
+        config.override("signatures.ca_only_pdb", True)
+
     # Create run directory structure (after validation)
     input_dir.mkdir(parents=True, exist_ok=True)
     
@@ -229,63 +280,9 @@ async def create_run(
             f.write(file_content)
         saved_files[name] = str(file_path)
     
-    # Handle config: uploaded file, JSON overrides, or default
-    config_path: Optional[Path] = None
-    if config_file and config_file.filename:
-        # Use uploaded config file with size validation
-        config_content_bytes = await config_file.read()
-        if len(config_content_bytes) > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File '{config_file.filename}' exceeds 128 MiB limit"
-            )
-        config_path = run_dir / "config.ini"
-        with open(config_path, "wb") as f:
-            f.write(config_content_bytes)
-        # Apply quick structure search overrides if enabled
-        from src_new.config.loader import RunConfig
-        config = RunConfig.from_ini_path(config_path)
-        if config.loader.quick_structure_search:
-            config.override("loader.guess_missing_bonds", False)
-            config.override("signatures.topology_less_pdb", True)
-            config.override("signatures.ca_only_pdb", True)
-            config.to_ini_path(config_path)
-    elif config_json:
-        # Parse JSON overrides and write customized config
-        import json as json_module
-        try:
-            overrides_dict = json_module.loads(config_json)
-        except json_module.JSONDecodeError as e:
-            raise HTTPException(status_code=422, detail=f"Invalid config JSON: {e}")
-        
-        # Validate top-level keys against RunConfig sections
-        from src_new.config.loader import RunConfig
-        valid_sections = set(RunConfig.__dataclass_fields__.keys())
-        for key in overrides_dict.keys():
-            if key not in valid_sections:
-                raise HTTPException(status_code=422, detail=f"Unknown config section: {key}")
-        
-        config = RunConfig.from_default_ini()
-        config.apply_nested_overrides(overrides_dict)
-        # Apply quick structure search overrides if enabled
-        if config.loader.quick_structure_search:
-            config.override("loader.guess_missing_bonds", False)
-            config.override("signatures.topology_less_pdb", True)
-            config.override("signatures.ca_only_pdb", True)
-        config_path = run_dir / "config.ini"
-        config.to_ini_path(config_path)
-    else:
-        # Copy default config
-        from src_new.config.loader import RunConfig
-        config = RunConfig.from_default_ini()
-        # Apply quick structure search overrides if enabled
-        if config.loader.quick_structure_search:
-            config.override("loader.guess_missing_bonds", False)
-            config.override("signatures.topology_less_pdb", True)
-            config.override("signatures.ca_only_pdb", True)
-        config_path = run_dir / "config.ini"
-        config.to_ini_path(config_path)
-    
+    config_path = run_dir / "config.ini"
+    config.to_ini_path(config_path)
+
     # Extract creator IP: first hop of X-Forwarded-For, fallback to client.host
     xff = request.headers.get("x-forwarded-for")
     if xff:
@@ -305,6 +302,8 @@ async def create_run(
     }
     if run_name:
         initial_results["pipeline"]["run_name"] = run_name
+    if preset:
+        initial_results["pipeline"]["preset"] = preset
     if creator_ip:
         initial_results["pipeline"]["creator_ip"] = creator_ip
     with open(results_path, "w", encoding="utf-8") as f:
