@@ -1,0 +1,76 @@
+/*
+ * Admin Traffic section: chart colours (dataviz reference palette, slots 1-3,
+ * validated on the card surfaces #eaebf1 light / #191820 dark) and Leaflet
+ * styling. Imported only by the admin chunk.
+ */
+.bioid-traffic {
+  --viz-visitors: #2a78d6;
+  --viz-pageviews: #eb6834;
+  --viz-requests: #1baf7a;
+  --viz-surface: var(--surface, #eaebf1);
+  --viz-grid: var(--vm-line);
+  --viz-axis: var(--vm-muted);
+}
+
+html.dark .bioid-traffic {
+  --viz-visitors: #3987e5;
+  --viz-pageviews: #d95926;
+  --viz-requests: #199e70;
+}
+
+/* Leaflet: keep its z-indices inside the card, theme the chrome. */
+.bioid-traffic .leaflet-container {
+  font: inherit;
+  background: var(--vm-surface-2);
+}
+
+.bioid-traffic .leaflet-control-attribution {
+  font-size: 11px;
+}
+
+.bioid-traffic .traffic-place {
+  fill: var(--viz-visitors);
+  fill-opacity: 0.5;
+  stroke: #ffffff;
+  stroke-opacity: 0.9;
+  stroke-width: 1.5px;
+  transition: fill-opacity 0.1s;
+}
+
+.bioid-traffic .traffic-place:hover {
+  fill-opacity: 0.85;
+}
+
+.bioid-traffic .leaflet-tooltip {
+  border: 1px solid var(--vm-line);
+  border-radius: 6px;
+  background: var(--background, #f4f5f9);
+  color: var(--vm-fg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.bioid-traffic .leaflet-tooltip-top::before {
+  border-top-color: var(--vm-line);
+}
+
+/* OSM tiles are light only: a darkened inversion keeps the map calm in dark mode. */
+html.dark .bioid-traffic .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.6);
+}
+
+html.dark .bioid-traffic .traffic-place {
+  stroke: #191820;
+}
+
+html.dark .bioid-traffic .leaflet-control-attribution,
+html.dark .bioid-traffic .leaflet-bar a {
+  background: rgb(25 24 32 / 0.85);
+  color: var(--vm-fg-2);
+  border-color: var(--vm-line);
+}
+
+html.dark .bioid-traffic .leaflet-control-attribution a {
+  color: var(--vm-info);
+}

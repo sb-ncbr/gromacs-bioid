@@ -18,6 +18,7 @@ import { DeploymentsSection } from "../features/admin/Deployments";
 import { RunsSection } from "../features/admin/Runs";
 import { LimitsSection, RetentionSection, StorageSection } from "../features/admin/RetentionStorage";
 import { AdminProvider, OVERVIEW_KEY } from "../features/admin/session";
+import { TrafficSection } from "../features/admin/Traffic";
 
 const REFRESH_MS = 5_000;
 
@@ -91,7 +92,7 @@ function Dashboard({ session, signOut }: { session: AdminSession; signOut: (mess
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold text-(--vm-fg)">Admin</h1>
-            <p className="text-sm text-text-muted">Queues, workers, deployments, runs and retention of this BioID instance.</p>
+            <p className="text-sm text-text-muted">Traffic, queues, workers, deployments, runs and retention of this BioID instance.</p>
           </div>
           {controls}
         </div>
@@ -132,6 +133,7 @@ function Dashboard({ session, signOut }: { session: AdminSession; signOut: (mess
         ) : (
           <>
             <TopStrip overview={data} nowMs={now} />
+            <TrafficSection live={live} />
             <div className="grid gap-4 lg:grid-cols-2">
               <QueuesSection queues={data.queues} />
               <WorkersSection workers={data.workers} nowMs={now} />

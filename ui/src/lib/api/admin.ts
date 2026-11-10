@@ -164,6 +164,78 @@ export interface AdminOverview {
   limits: Section<LimitsSection>;
 }
 
+// -- traffic ------------------------------------------------------------------
+
+export const TRAFFIC_WINDOWS = ["1h", "24h", "7d", "30d", "90d", "all"] as const;
+export type TrafficWindow = (typeof TRAFFIC_WINDOWS)[number];
+
+export interface TrafficCount {
+  name: string;
+  count: number;
+}
+
+/** One bucket of the time series; buckets with no traffic are left out. */
+export interface TrafficBucket {
+  /** UTC "YYYY-MM-DDTHH" (hourly) or "YYYY-MM-DD" (daily). */
+  t: string;
+  requests: number;
+  pageviews: number;
+  visitors: number;
+}
+
+export interface TrafficCountry {
+  code: string;
+  name: string;
+  visitors: number;
+  pageviews: number;
+  requests: number;
+}
+
+export interface TrafficPlace {
+  /** Rounded to 0.1 degree. */
+  lat: number;
+  lon: number;
+  city: string;
+  /** ISO country code. */
+  country: string;
+  visitors: number;
+  pageviews: number;
+  requests: number;
+}
+
+/** GET /admin/traffic (src_new/api/traffic.py summarize()). */
+export interface TrafficStats {
+  window: TrafficWindow;
+  /** ISO time; for "all" the first recorded UTC day ("YYYY-MM-DD"), or null when nothing is kept. */
+  from: string | null;
+  to: string;
+  bucket: "hour" | "day";
+  totals: {
+    visitors: number;
+    pageviews: number;
+    requests: number;
+    runs: number;
+    errors: number;
+    rate_limited: number;
+    countries: number;
+    p50_ms: number | null;
+    p95_ms: number | null;
+  };
+  runs_by_client: Record<string, number>;
+  series: TrafficBucket[];
+  countries: TrafficCountry[];
+  places: TrafficPlace[];
+  pages: TrafficCount[];
+  endpoints: TrafficCount[];
+  /** HTTP status code -> API requests. */
+  status: Record<string, number>;
+  clients: Record<string, number>;
+  browsers: Record<string, number>;
+  referrers: TrafficCount[];
+  geoip: { available: boolean; attribution: string };
+  raw_days: number;
+}
+
 export interface AdminSession {
   token: string;
   /** Unix seconds. */
@@ -223,6 +295,8 @@ export const adminApi = {
   login: (password: string) =>
     request<AdminSession>("/login", null, { method: "POST", body: JSON.stringify({ password }) }),
   overview: (token: string) => request<AdminOverview>("/overview", token),
+  traffic: (token: string, window: TrafficWindow) =>
+    request<TrafficStats>(`/traffic?window=${seg(window)}`, token),
 
   scale: (token: string, name: string, replicas: number) =>
     post<{ name: string; replicas: number }>(`/deployments/${seg(name)}/scale`, token, { replicas }),
