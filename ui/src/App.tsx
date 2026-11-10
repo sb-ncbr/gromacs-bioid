@@ -6,6 +6,8 @@ import NotFoundPage from "./pages/NotFoundPage";
 
 // The run page carries Mol* (4.7 MB); the front page does not need it.
 const RunResultsPage = lazy(() => import("./pages/RunResultsPage"));
+// Operators only; not linked from the header.
+const AdminPage = lazy(() => import("./pages/AdminPage"));
 
 export default function App() {
   return (
@@ -17,6 +19,14 @@ export default function App() {
           element={
             <Suspense fallback={null}>
               <RunResultsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="admin"
+          element={
+            <Suspense fallback={null}>
+              <AdminPage />
             </Suspense>
           }
         />
