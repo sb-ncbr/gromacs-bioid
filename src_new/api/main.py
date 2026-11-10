@@ -1,6 +1,7 @@
 """FastAPI application for BAT3 Pipeline API."""
 
 import os
+import time
 import re
 import logging
 from contextlib import asynccontextmanager
@@ -8,7 +9,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -54,7 +55,12 @@ async def lifespan(app: FastAPI):
     import threading
     from src_new.api.run_index import summaries
     threading.Thread(target=summaries, args=(runs_dir,), daemon=True).start()
+    # Traffic statistics: GeoIP database present and fresh (background).
+    from src_new.api import traffic
+    if traffic.enabled():
+        threading.Thread(target=traffic.refresh_geoip, daemon=True).start()
     yield
+    traffic.flush()
     if reaper_task is not None:
         reaper_task.cancel()
 
@@ -106,6 +112,51 @@ def _run_file_allowed(path: str) -> bool:
             not p or p.startswith(".") or p.startswith("_") for p in parts):
         return False
     return (get_runs_dir() / parts[0] / "results.json").is_file()
+
+
+@app.middleware("http")
+async def record_traffic(request, call_next):
+    """Traffic statistics (src_new/api/traffic.py): meaningful API calls."""
+    started = time.perf_counter()
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api/"):
+        try:
+            from src_new.api import traffic
+            route = getattr(request.scope.get("route"), "path", None) or "(unmatched)"
+            client = request.headers.get("x-bioid-client", "")
+            if traffic.worth_recording(request.method, route, response.status_code,
+                                       traffic.client_kind(request.headers.get("user-agent", ""), client)):
+                from src_new.api.routes.runs import _requester_ip
+                traffic.record("request", ip=_requester_ip(request), route=route,
+                               status=response.status_code, method=request.method,
+                               ms=(time.perf_counter() - started) * 1000,
+                               user_agent=request.headers.get("user-agent", ""), client=client)
+        except Exception as exc:  # statistics must never break a request
+            logger.debug("traffic: not recorded: %s", exc)
+    return response
+
+
+@app.post("/api/v1/events/pageview", include_in_schema=False, status_code=204)
+async def pageview(request: Request):
+    """Page-view beacon of the web app and the documentation. Honours
+    Do-Not-Track; never counts the admin page."""
+    from fastapi import Response
+    from src_new.api import traffic
+    from src_new.api.routes.runs import _requester_ip
+    if request.headers.get("dnt") == "1" or request.headers.get("sec-gpc") == "1":
+        return Response(status_code=204)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    page = traffic.page_route(str(body.get("path") or "")) if isinstance(body, dict) else None
+    if page:
+        traffic.record("pageview", ip=_requester_ip(request), route=page,
+                       user_agent=request.headers.get("user-agent", ""),
+                       client=request.headers.get("x-bioid-client", "") or "web",
+                       referrer=str(body.get("referrer") or "")[:500] or None)
+    return Response(status_code=204)
 
 
 @app.middleware("http")

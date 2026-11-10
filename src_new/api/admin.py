@@ -362,6 +362,17 @@ async def overview() -> dict:
     return await asyncio.to_thread(build)
 
 
+@router.get("/traffic", dependencies=[Depends(require_admin)])
+async def traffic_stats(window: str = Query("24h")) -> dict:
+    """Traffic statistics for one window (1h, 24h, 7d, 30d, 90d, all)."""
+    import asyncio
+    from . import traffic
+    if window not in traffic.WINDOWS:
+        raise HTTPException(status_code=422, detail=f"window must be one of {', '.join(traffic.WINDOWS)}")
+    ttl = 30 if window in ("1h", "24h") else 300
+    return await asyncio.to_thread(lambda: _cached(f"traffic:{window}", ttl, lambda: traffic.summarize(window)))
+
+
 # -- actions ----------------------------------------------------------------------
 
 def _drop_cache(*keys: str) -> None:

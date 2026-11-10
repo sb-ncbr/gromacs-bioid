@@ -34,3 +34,11 @@ def _clear_dbo_reuse():
     yield
     pc.set_dbo_run_id(None)
     pc._dbo_memo.clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_traffic_recording(monkeypatch):
+    """Traffic statistics (src_new/api/traffic.py) stay off in tests, and the
+    GeoIP database is never downloaded; test_traffic.py turns recording on."""
+    monkeypatch.setenv("BAT3_TRAFFIC", "0")
+    monkeypatch.setenv("BAT3_GEOIP_REFRESH", "0")

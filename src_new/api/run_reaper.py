@@ -358,6 +358,12 @@ async def reaper_loop(celery_app, runs_dir: Path, redis_url: str,
                     result = await asyncio.to_thread(retention_sweep, runs_dir)
                     result["at"] = time.time()
                     redis_client.set(RETENTION_STATUS_KEY, json.dumps(result))
+                    # Traffic statistics: drop raw events past their 90 days,
+                    # refresh the GeoIP database monthly.
+                    from . import traffic
+                    if traffic.enabled():
+                        await asyncio.to_thread(traffic.prune)
+                        await asyncio.to_thread(traffic.refresh_geoip)
         except Exception as exc:
             logger.warning("run_reaper sweep failed: %s", exc)
         await asyncio.sleep(interval_s)
