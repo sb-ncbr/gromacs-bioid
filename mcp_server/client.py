@@ -185,6 +185,16 @@ class BioIDClient:
         return await self._json(f"/api/v1/runs/{run_id}/signatures",
                                 not_found=self._run_missing(run_id), params={"segment": segment})
 
+    async def results_json(self, run_id: str) -> dict[str, Any]:
+        """The whole results.json (MBs; the caller extracts what it needs)."""
+        resp = await self._request("GET", f"/api/v1/runs/{run_id}/download/results.json",
+                                   not_found=self._run_missing(run_id),
+                                   timeout=max(self.settings.api_timeout_s, 60.0))
+        try:
+            return resp.json()
+        except (json.JSONDecodeError, ValueError) as e:
+            raise BioIDError("The BioID API returned a non-JSON results.json.") from e
+
     async def examples(self, limit: int) -> dict[str, Any]:
         return await self._json("/api/v1/runs/examples", params={"limit": limit})
 

@@ -61,17 +61,19 @@ Some clients call the type `streamable-http`, or only support local
 | Tool | What it does |
 |---|---|
 | `submit_structure` | Starts a run for a **PDB entry** (for example `3PTB`, downloaded from RCSB) or for **one file at a public `https://` URL**, such as a Zenodo file or a `.zip` bundle. |
-| `submit_files` | Starts a run from file content the assistant passes along (as text, or base64 for binary formats such as `.tpr`). |
+| `submit_files` | Starts a run from file content the assistant passes along (as text, or base64 for binary formats such as `.tpr`). Suits small files. |
+| `prepare_upload` | For files on your computer or larger than a few MB: returns a `curl` command (and a Python equivalent) that uploads them **straight to the BioID REST API**, not through the assistant. An assistant with a shell (Claude Code, for example) runs it and continues with the `run_id` it prints; otherwise it gives you the command. |
 | `list_presets` | Lists the presets (`balanced`, `quick`, `exact`, `deep`) and the settings each one changes. |
 | `get_run_status` | Queue position, the current stage, how many molecules have been searched, database searches that failed, and errors. |
 | `get_results` | For each molecule: its kind, number of copies and size, the best verified database match with its confidence, and the other databases that matched too. |
 | `get_molecule_details` | Everything about one molecule: its sequence or SMILES, formula and InChIKey, every verified hit ranked by confidence, the hits that were rejected and why. |
+| `get_results_json` | The complete record of a run, [results.json](results-json.md): its download link, the link to its documentation and a guide to its structure; or, given a path such as `data/verification/A`, that part of it. |
 | `list_examples` | The finished example runs from the front page, to try the tools without submitting anything. |
 | `cancel_run` | Cancels a queued or running run. |
 
-The server also provides a resource, `bioid://guide`, on reading the
-results, and a prompt, `explain_run`, which asks the assistant to explain a
-run.
+The server also provides two resources, `bioid://guide` on reading the
+results and `bioid://results-json` on the structure of results.json, and a
+prompt, `explain_run`, which asks the assistant to explain a run.
 
 Runs take from a few minutes to about an hour, so the tools never wait for a
 run to finish. A submit tool returns a `run_id` and a link to the results
@@ -92,6 +94,10 @@ web page or the REST API's `config_json` for that.
 - *"Run BioID on this GROMACS system"* (with `topol.top`, `conf.gro` and the
   `.itp` files attached), *"using the quick preset."*
 - *"What does BioID find in https://zenodo.org/records/…/files/system.tpr?"*
+- *"Run BioID on md/topol.tpr and md/conf.gro"* (in Claude Code: the files are
+  uploaded with `prepare_upload`'s command).
+- *"Download the results.json of my run and plot the confidence of every
+  molecule."*
 - *"Show me the BioID example runs and explain the membrane one."*
 - *"Is the ligand in run 1c2a4d4b-… really benzamidine? How sure is BioID?"*
 - *"Which molecules in my run were not identified, and why?"*
@@ -121,16 +127,17 @@ web page or the REST API's `config_json` for that.
 
 | | |
 |---|---|
-| Files per submission | 50 MB in total through the MCP server, at most 20 files (the web page and REST API accept 128 MiB per file) |
+| Files per submission | `submit_files`: 50 MB in total, at most 20 files. `prepare_upload` (direct to the REST API): 128 MiB per file |
 | URL downloads | `https://` only, publicly reachable hosts only, at most 5 redirects |
 | Formats | GROMACS `.tpr` or `.top`+`.itp`+`.gro`; AMBER `.prmtop`/`.parm7` with `.rst7`/`.inpcrd`/`.nc`/`.mdcrd`; CHARMM/NAMD `.psf` with `.pdb`/`.crd`/`.dcd`; LAMMPS `.data`; `.pdb`/`.cif`; `.zip`/`.tar`/`.tar.gz` bundles |
 | Run time | from a few minutes to about an hour |
 
 !!! tip "Large systems"
-    The file content passes through the assistant, so in practice
-    `submit_files` suits small text files such as a PDB file or a GROMACS
-    topology. For larger inputs, give `submit_structure` a public URL of
-    the file (for example on Zenodo), or upload it on the
+    With `submit_files` the file content passes through the assistant, so it
+    suits small text files such as a PDB file or a GROMACS topology. For
+    anything larger, use `prepare_upload` (the files go straight to the REST
+    API), give `submit_structure` a public URL of the file (for example on
+    Zenodo), or upload it on the
     [web page](https://bioid-ceitec.dyn.cloud.e-infra.cz/) and ask the
     assistant about the run's `run_id`.
 

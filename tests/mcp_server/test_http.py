@@ -38,7 +38,7 @@ async def test_initialize_and_list_tools(http):
     assert "submit" in result["instructions"]
     tools = await http.post("/mcp", headers=HEADERS,
                             json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-    assert len(tools.json()["result"]["tools"]) == 8
+    assert len(tools.json()["result"]["tools"]) == 10
 
 
 async def test_submit_forwards_client_address(http, api):

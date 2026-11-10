@@ -50,6 +50,32 @@ How to read BioID results
 """
 
 
+RESULTS_JSON_GUIDE = """\
+results.json: the complete record of a BioID run (1-5 MB, more for big systems).
+Full reference: {docs}
+Download: GET {api}/<run_id>/download/results.json (or the get_results_json tool).
+
+Main paths (segment = one distinct molecule; ligands/ions/water split off a
+chain are virtual segments named <chain>__v<N>):
+- pipeline.status                      queued|running|success|failed|cancelled
+- tasks.<stage>.status / .summary      per pipeline stage; summary.partial=true = time budget hit
+- warnings[]                           {{code, message, severity, details}}
+- data.fragments.segments[]            {{segment, type, copies, atoms_per_copy}} = the molecule list
+- data.signatures.<seg>.generated      generator -> description searched (sequence, SMILES, formula...)
+- data.identifiers.<seg>.<generator>.<resolver>
+                                       raw database hits: {{hits[], hits_metadata, hit_type, ident_type}};
+                                       resolver@sim = similarity search
+- data.stage_errors.identifiers.<seg>  failed searches {{generator, resolver, error}}
+- data.verification.<seg>.verified_hits[]
+                                       THE RESULT: {{identifier, database, name, organism, hit_type,
+                                       is_verified, final_confidence 0-100, belief, similarity_score,
+                                       annotation_quality_score, equivalence_class_id, rejection_reason}}
+                                       NOT sorted: best = max final_confidence among is_verified
+- data.verification._meta              confidence formula and weights
+- data.config                          the configuration the run used
+"""
+
+
 def conf_label(confidence: Optional[float]) -> Optional[str]:
     if confidence is None:
         return None

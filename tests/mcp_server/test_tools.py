@@ -16,7 +16,8 @@ async def test_tool_list(call):
     tools = await call.session.list_tools()
     names = {t.name for t in tools.tools}
     assert names == {"list_presets", "submit_structure", "submit_files", "get_run_status",
-                     "get_results", "get_molecule_details", "list_examples", "cancel_run"}
+                     "get_results", "get_molecule_details", "list_examples", "cancel_run",
+                     "prepare_upload", "get_results_json"}
     by_name = {t.name: t for t in tools.tools}
     assert by_name["get_results"].annotations.readOnlyHint is True
     assert by_name["cancel_run"].annotations.destructiveHint is True
@@ -88,7 +89,7 @@ async def test_submit_files_without_preset_sends_none(call, api):
     ([{"name": "a.pdb", "text": "x", "content_base64": "eA=="}], "exactly one"),
     ([{"name": "a.pdb", "text": ""}], "is empty"),
     ([{"name": "a.tpr", "content_base64": "!!!notbase64"}], "base64"),
-    ([{"name": "a.pdb", "text": "x" * 2000}], "limit is"),
+    ([{"name": "a.pdb", "text": "x" * 2000}], "prepare_upload"),
     ([{"name": "..", "text": "x"}], "Invalid file name"),
 ])
 async def test_submit_files_rejects(call, api, files, message):
@@ -448,7 +449,7 @@ async def test_cancel_finished_run(call, api):
 
 async def test_guide_resource_and_prompt(call):
     resources = await call.session.list_resources()
-    assert [str(r.uri) for r in resources.resources] == ["bioid://guide"]
+    assert [str(r.uri) for r in resources.resources] == ["bioid://guide", "bioid://results-json"]
     res = await call.session.read_resource("bioid://guide")
     assert "Only verified hits count" in res.contents[0].text
     prompt = await call.session.get_prompt("explain_run", {"run_id": RUN})

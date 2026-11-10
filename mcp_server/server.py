@@ -11,6 +11,7 @@ import base64
 import binascii
 import json
 import logging
+import shlex
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Optional
 
@@ -37,12 +38,16 @@ searching public databases and verifying every hit against the simulated
 molecule.
 
 Workflow: submit (submit_structure for a PDB id or public https URL,
-submit_files for file content) -> you get a run_id immediately -> poll
+submit_files for small file content; for files on the user's machine or
+larger than a few MB, call prepare_upload and run the command it returns, which
+sends the files straight to the BioID REST API) -> you get a run_id -> poll
 get_run_status every 1-2 minutes (runs take a few minutes up to about an hour)
 -> when status is "success", call get_results, then get_molecule_details for
 one molecule. Always give the user the results_page link. list_examples gives
 finished demo runs to explore without submitting anything. Read the resource
-bioid://guide for how to interpret confidence and verification.
+bioid://guide for how to interpret confidence and verification. For the full
+record of a run, get_results_json gives the results.json link, its documented
+structure (resource bioid://results-json) and can extract one part of it.
 """
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True,
@@ -146,9 +151,10 @@ def build_server(settings: Optional[Settings] = None, *,
                      ctx: Optional[Context]) -> dict[str, Any]:
         total = sum(len(c) for _, c in files)
         if total > settings.max_upload_bytes:
-            raise BioIDError(f"The files total {total / 1e6:.1f} MB; the limit is "
-                             f"{settings.max_upload_bytes / 1e6:.0f} MB. Use the BioID web page "
-                             f"({settings.public_url}) for larger uploads.")
+            raise BioIDError(f"The files total {total / 1e6:.1f} MB; the limit here is "
+                             f"{settings.max_upload_bytes / 1e6:.0f} MB. Call prepare_upload and run "
+                             "its command to send the files straight to the BioID API "
+                             "(128 MiB per file).")
         preset = await check_preset(preset)
         run_name = (run_name or "").strip()[:200] or None
         created = await client.create_run(files, run_name=run_name, preset=preset,
@@ -443,6 +449,8 @@ def build_server(settings: Optional[Settings] = None, *,
                                   "nothing passed verification. Resource bioid://guide has details.")
             out["results_page"] = settings.results_page(run_id)
             out["results_csv"] = settings.results_csv(run_id)
+            out["results_json"] = settings.results_json(run_id)
+            out["results_json_docs"] = settings.results_json_docs
             return _dumps(out)
         except BioIDError as e:
             raise _fail(e)
@@ -557,6 +565,109 @@ def build_server(settings: Optional[Settings] = None, *,
             out.append(item)
         return _dumps({"examples": out})
 
+    @mcp.tool(annotations=READ_ONLY)
+    async def prepare_upload(
+        file_paths: Annotated[list[str], Field(
+            description="Paths of the input files of one system on the machine where the "
+                        "command will run, e.g. ['md/topol.tpr'] or ['sys.prmtop', 'sys.inpcrd'].")],
+        preset: Annotated[Optional[str], Field(
+            description="Preset id from list_presets: 'balanced' (default), 'quick', "
+                        "'exact' or 'deep'.")] = None,
+        run_name: Annotated[Optional[str], Field(description="Optional label for the run.")] = None,
+    ) -> str:
+        """For files on the user's machine, or too large to pass as content: returns a
+        ready curl command (and a Python equivalent) that uploads the files straight
+        to the BioID REST API (128 MiB per file) and prints the new run's id as JSON.
+        Run it with your shell tool (or give it to the user), then poll
+        get_run_status with the run_id it prints. Nothing is submitted by this tool."""
+        try:
+            if not file_paths:
+                raise BioIDError("No files given.")
+            if len(file_paths) > MAX_FILES:
+                raise BioIDError(f"At most {MAX_FILES} files per run; bundle more as a .zip.")
+            for path in file_paths:
+                name = PurePosixPath(path.replace("\\", "/")).name
+                if not accepted_name(name):
+                    raise BioIDError(f"'{name}' is not a format BioID reads "
+                                     f"({', '.join(ACCEPTED_SUFFIXES)}).")
+            preset = await check_preset(preset)
+            run_name = (run_name or "").strip()[:200] or None
+            fields = [f"files=@{p}" for p in file_paths]
+            if preset:
+                fields.append(f"preset={preset}")
+            if run_name:
+                fields.append(f"run_name={run_name}")
+            curl = " ".join(["curl", "-sS", "--fail-with-body"]
+                            + [f"-F {shlex.quote(f)}" for f in fields] + [settings.runs_api])
+            data = {k: v for k, v in (("preset", preset), ("run_name", run_name)) if v}
+            python = (
+                "import requests\n"
+                f"paths = {file_paths!r}\n"
+                "files = [('files', open(p, 'rb')) for p in paths]\n"
+                f"r = requests.post({settings.runs_api!r}, files=files, data={data!r}, timeout=600)\n"
+                "r.raise_for_status(); print(r.json()['run_id'])"
+            )
+            return _dumps({
+                "curl": curl,
+                "python": python,
+                "returns": '{"run_id": "...", "status": "queued", ...}',
+                "next": "Run the command where the files are, then call get_run_status with the run_id.",
+                "limits": "128 MiB per file; GROMACS, AMBER, CHARMM/NAMD, LAMMPS, PDB/mmCIF or a zip/tar bundle.",
+                "api_docs": settings.api_docs,
+            })
+        except BioIDError as e:
+            raise _fail(e)
+
+    @mcp.tool(annotations=READ_ONLY)
+    async def get_results_json(
+        run_id: Annotated[str, Field(description="Run id.")],
+        path: Annotated[Optional[str], Field(
+            description="Optional slash-separated path into results.json to return, e.g. "
+                        "'data/verification/A' or 'data/fragments/segments' or 'warnings'. "
+                        "Omit to get the download link and the structure guide.")] = None,
+        max_kb: Annotated[int, Field(ge=1, le=1000,
+                                     description="Cap on the returned JSON size, in kB.")] = 100,
+    ) -> str:
+        """The complete record of a run (results.json): without `path`, its download
+        URL, documentation link and a guide to its structure; with `path`, that part
+        of the document as JSON (truncated to max_kb). Fetch the URL yourself if you
+        need the whole file (1-5 MB)."""
+        try:
+            run_id = check_run_id(run_id)
+            links = {"run_id": run_id, "download_url": settings.results_json(run_id),
+                     "documentation": settings.results_json_docs}
+            if not path or not path.strip("/"):
+                await client.summary(run_id)  # 404 early for a wrong id
+                return _dumps({**links, "structure": fmt.RESULTS_JSON_GUIDE.format(
+                    docs=settings.results_json_docs, api=settings.runs_api)})
+            node: Any = await client.results_json(run_id)
+            walked: list[str] = []
+            for part in [p for p in path.strip("/").split("/") if p]:
+                if isinstance(node, dict) and part in node:
+                    node = node[part]
+                elif isinstance(node, list) and part.isdigit() and int(part) < len(node):
+                    node = node[int(part)]
+                else:
+                    keys = list(node)[:50] if isinstance(node, dict) else (
+                        f"list of {len(node)}" if isinstance(node, list) else type(node).__name__)
+                    raise BioIDError(f"'{part}' not found under '/{'/'.join(walked)}'. "
+                                     f"Available: {keys}")
+                walked.append(part)
+            text = json.dumps(node, ensure_ascii=False, default=str)
+            limit = max_kb * 1024
+            out: dict[str, Any] = {**links, "path": "/".join(walked)}
+            if len(text) > limit:
+                out["truncated"] = (f"{len(text) // 1024} kB, showing the first {max_kb} kB; "
+                                    "narrow the path, raise max_kb or download the file.")
+                if isinstance(node, dict):
+                    out["keys"] = list(node)[:200]
+                out["json_prefix"] = text[:limit]
+            else:
+                out["value"] = node
+            return _dumps(out)
+        except BioIDError as e:
+            raise _fail(e)
+
     @mcp.tool(annotations=CANCEL)
     async def cancel_run(
         run_id: Annotated[str, Field(description="Run id to cancel.")],
@@ -584,6 +695,12 @@ def build_server(settings: Optional[Settings] = None, *,
     def guide() -> str:
         """How to interpret BioID confidence, verification and result states."""
         return fmt.GUIDE
+
+    @mcp.resource("bioid://results-json", name="bioid-results-json",
+                  title="Structure of results.json", mime_type="text/plain")
+    def results_json_guide() -> str:
+        """Where things are in a run's results.json, with the documentation link."""
+        return fmt.RESULTS_JSON_GUIDE.format(docs=settings.results_json_docs, api=settings.runs_api)
 
     @mcp.prompt(name="explain_run", title="Explain a BioID run")
     def explain_run(run_id: str) -> str:

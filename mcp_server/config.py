@@ -55,3 +55,18 @@ class Settings:
 
     def results_csv(self, run_id: str) -> str:
         return f"{self.public_url}/api/v1/runs/{run_id}/download/results.csv"
+
+    def results_json(self, run_id: str) -> str:
+        return f"{self.public_url}/api/v1/runs/{run_id}/download/results.json"
+
+    @property
+    def runs_api(self) -> str:
+        return f"{self.public_url}/api/v1/runs"
+
+    @property
+    def results_json_docs(self) -> str:
+        return f"{self.public_url}/documentation/results-json/"
+
+    @property
+    def api_docs(self) -> str:
+        return f"{self.public_url}/docs"
