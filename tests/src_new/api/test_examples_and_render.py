@@ -83,11 +83,14 @@ def test_get_example_runs_explicit_ordering(tmp_path):
     assert [p["run_id"] for p in picks] == ["c", "b"]
 
 
-def test_get_example_runs_explicit_then_autofill(tmp_path):
+def test_get_example_runs_explicit_only(tmp_path):
+    # a curated list is never padded with other runs (they are not examples,
+    # and examples are protected from deletion)
     for rid, c in (("a", "2026-10-19"), ("b", "2026-10-10"), ("z", "2026-11-01")):
         _mk_fake_run(tmp_path, rid, created=c)
     picks = get_example_runs(tmp_path, 2, explicit_ids=["b"])
-    assert [p["run_id"] for p in picks] == ["b", "z"]
+    assert [p["run_id"] for p in picks] == ["b"]
+    assert [p["run_id"] for p in get_example_runs(tmp_path, 2)] == ["z", "a"]
 
 
 # ---------------------------------------------------------------------------
@@ -128,8 +131,7 @@ def test_examples_respects_env_override(tmp_path, monkeypatch):
     client = _client(tmp_path)
     resp = client.get("/api/v1/runs/examples?limit=3")
     ex = resp.json()["examples"]
-    assert ex[0]["run_id"] == "chosen"
-    assert ex[1]["run_id"] == "newest"
+    assert [e["run_id"] for e in ex] == ["chosen"]
 
 
 def test_render_endpoint_reports_pngs_and_atom_count(tmp_path):

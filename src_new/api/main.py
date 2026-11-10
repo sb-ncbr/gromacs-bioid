@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
@@ -89,11 +90,30 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
 
+def _run_file_allowed(path: str) -> bool:
+    """/files/<run id>/<file> of a real run only. The runs directory also
+    holds the shared resolver cache (everyone's searches), its old copies,
+    staging and trash: none of that is served."""
+    from src_new.api.security import valid_run_id
+    parts = path[len("/files/"):].split("/")
+    if parts[0] == "adhoc" or parts[0].startswith("validation-"):
+        return True  # dedicated guarded routes above
+    if len(parts) < 2 or not valid_run_id(parts[0]) or any(
+            not p or p.startswith(".") or p.startswith("_") for p in parts):
+        return False
+    return (get_runs_dir() / parts[0] / "results.json").is_file()
+
+
 @app.middleware("http")
 async def harden_run_files(request, call_next):
     """/files serves what users uploaded and what runs produced from the
-    BioID origin: never let a browser sniff it into HTML or run scripts in
-    it (an uploaded page would otherwise be live on this domain)."""
+    BioID origin: only inside real run directories, and never let a browser
+    sniff it into HTML or run scripts in it (an uploaded page would otherwise
+    be live on this domain)."""
+    if request.url.path.startswith("/files/") and not _run_file_allowed(request.url.path):
+        return JSONResponse({"detail": "Not Found"}, status_code=404, headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox; default-src 'none'"})
     response = await call_next(request)
     if request.url.path.startswith("/files/"):
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -102,6 +122,9 @@ async def harden_run_files(request, call_next):
 
 app.include_router(runs_router, prefix="/runs", tags=["runs"])
 app.include_router(runs_router, prefix="/api/v1/runs", tags=["runs"])
+# /admin page backend (src_new/api/admin.py); not in the published schema
+from .admin import router as admin_router  # noqa: E402
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
 
 
 @app.get("/health")

@@ -180,6 +180,7 @@ async def create_run(
     run_id: Optional[str] = None,
     run_name: Optional[str] = Form(None),
     preset: Optional[str] = Form(None),
+    retention: Optional[str] = Form(None),
 ) -> RunCreateResponse:
     """
     Create a new run by uploading input files and optionally a config file.
@@ -282,6 +283,11 @@ async def create_run(
         config = resolve_run_config(preset or None, overrides)
     except ConfigOverrideError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    from src_new.api.retention import RetentionError, parse_retention
+    try:
+        retention_policy = parse_retention(retention)
+    except RetentionError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     # Apply quick structure search overrides if enabled
     if config.loader.quick_structure_search:
         config.override("loader.guess_missing_bonds", False)
@@ -327,6 +333,7 @@ async def create_run(
     if creator_ip:
         initial_results["pipeline"]["creator_ip_hash"] = ip_hash(creator_ip)
     owner_token, initial_results["pipeline"]["owner_token_sha256"] = new_owner_token()
+    initial_results["pipeline"]["retention"] = retention_policy
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(initial_results, f, indent=2)
     
@@ -372,44 +379,18 @@ async def list_runs(request: Request, mine: int = Query(1)) -> RunListResponse:
     if requester_ip is None:
         return RunListResponse(runs=[])
 
-    runs = []
-    for entry in runs_dir.iterdir():
-        if not entry.is_dir():
-            continue
-
-        results_path = entry / "results.json"
-        if not results_path.exists():
-            continue
-
-        try:
-            # Retry once on ESTALE
-            data = None
-            for retry_attempt in range(2):
-                try:
-                    file_content = results_path.read_text(encoding="utf-8")
-                    data = json.loads(file_content)
-                    break
-                except OSError as e:
-                    if e.errno == errno.ESTALE and retry_attempt == 0:
-                        time.sleep(0.1)
-                        continue
-                    raise
-
-            pipeline_data = data.get("pipeline", {})
-            created_at = data.get("created_at", "")
-            if not same_submitter(pipeline_data, requester_ip):
-                continue
-
-            runs.append(RunListItem(
-                run_id=entry.name,
-                status=pipeline_data.get("status", "unknown"),
-                created_at=created_at,
-                input_kind=pipeline_data.get("input_kind"),
-                run_name=pipeline_data.get("run_name"),
-            ))
-        except (json.JSONDecodeError, IOError):
-            # Skip malformed results files
-            continue
+    from src_new.api.run_index import summaries
+    runs = [
+        RunListItem(
+            run_id=r["run_id"],
+            status=r["status"],
+            created_at=r["created_at"],
+            input_kind=r["input_kind"],
+            run_name=r["run_name"],
+        )
+        for r in summaries(runs_dir)
+        if same_submitter(r["_pipeline"], requester_ip)
+    ]
 
     return RunListResponse(runs=runs)
 
@@ -457,19 +438,40 @@ def _example_candidates(runs_dir: Path) -> List[dict]:
 
 
 def get_example_runs(runs_dir: Path, limit: int, explicit_ids: Optional[List[str]] = None) -> List[dict]:
-    """Pick up to `limit` examples: explicit ids first (in order), then by recency."""
+    """Pick up to `limit` examples: the explicit ids (in order) when configured
+    — only those, never padded with other runs — else the newest."""
     candidates = _example_candidates(runs_dir)
     by_id = {c["run_id"]: c for c in candidates}
     picked: List[dict] = []
     for rid in explicit_ids or []:
         if rid in by_id and len(picked) < limit:
             picked.append(by_id.pop(rid))
+    if explicit_ids:
+        return picked
     for cand in candidates:
         if len(picked) >= limit:
             break
         if cand["run_id"] in by_id:
             picked.append(cand)
     return picked
+
+
+def _explicit_examples() -> Optional[List[str]]:
+    """BAT3_EXAMPLE_RUNS (JSON list of run ids), or None."""
+    raw = os.environ.get("BAT3_EXAMPLE_RUNS")
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return [str(x) for x in parsed] if isinstance(parsed, list) else None
+
+
+def served_example_ids(runs_dir: Path) -> set:
+    """Every run the examples endpoint can show (protected from deletion)."""
+    explicit = _explicit_examples() or []
+    return set(explicit) | {p["run_id"] for p in get_example_runs(runs_dir, 10, explicit or None)}
 
 
 @router.get("/examples", response_model=ExamplesResponse)
@@ -480,14 +482,7 @@ async def get_run_examples(limit: int = 3) -> ExamplesResponse:
     curated cards: env BAT3_EXAMPLE_RUNS as JSON list of run ids (deploy-time
     changeable, no code edit). Titles parse from run_name 'Title>Description'.
     """
-    explicit: Optional[List[str]] = None
-    raw = os.environ.get("BAT3_EXAMPLE_RUNS")
-    if raw:
-        try:
-            parsed = json.loads(raw)
-            explicit = parsed if isinstance(parsed, list) else None
-        except (json.JSONDecodeError, TypeError):
-            explicit = None
+    explicit = _explicit_examples()
     limit = max(1, min(limit, 10))
     picks = get_example_runs(get_runs_dir(), limit, explicit)
     examples = [
@@ -513,6 +508,8 @@ async def delete_run(
     run_dir = safe_run_dir(get_runs_dir(), run_id)
     if not run_dir.is_dir():
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    if run_id in served_example_ids(get_runs_dir()):
+        raise HTTPException(status_code=403, detail="Example runs cannot be deleted.")
     require_owner(load_results_json(run_id).get("pipeline", {}), owner_token, "deleted")
     shutil.rmtree(run_dir)
     return {"message": f"Run '{run_id}' deleted successfully"}
@@ -986,11 +983,13 @@ async def download_results_csv(run_id: RunId) -> PlainTextResponse:
     fragments_segments = fragments_data.get("segments") or []
     verification_data = payload_data.get("verification", {}) or {}
 
+    from src_new.api.best_hit import molecule_result
+
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow([
-        "Segment", "Display Name", "Kind", "Copies", "Atoms",
-        "Identified Name", "Best Database", "Best Identifier",
+        "Segment", "Display Name", "Kind", "Copies", "Atoms", "Result",
+        "Identified Name", "Best Database", "Best Identifier", "Database URL",
         "Confidence", "Confidence Label", "Alternatives",
     ])
 
@@ -1008,33 +1007,22 @@ async def download_results_csv(run_id: RunId) -> PlainTextResponse:
         atoms = entry.get("atoms_per_copy", 0) or 0
 
         seg_ver = verification_data.get(seg) or {}
-        hits = seg_ver.get("verified_hits") or []
-        verified = [h for h in hits if isinstance(h, dict) and h.get("is_verified")]
-        best = verified[0] if verified else {}
-        confidence = best.get("final_confidence")
-        if confidence is None:
-            conf_text, conf_label = "", ""
-        else:
-            conf_text = str(round(float(confidence), 1))
-            conf_label = ("high" if confidence >= 80
-                          else "medium" if confidence >= 50 else "low")
-        alternatives = " ".join(
-            f"{h.get('database', '')}:{h.get('identifier', '')}"
-            for h in verified[1:4]
-        )
-
+        r = molecule_result(seg_ver.get("verified_hits") or [])
+        best = r["best"] or {}
         writer.writerow([
             seg,
             segment_display_name(seg, segment_resname(payload_data, seg)),
             entry.get("type") or "unknown",
             copies,
             atoms,
+            r["state_label"],
             (hit_display_name(best) if best else "") or "",
-            best.get("database") or "",
-            best.get("identifier") or "",
-            conf_text,
-            conf_label,
-            alternatives,
+            r["database"],
+            r["identifier"],
+            r["url"],
+            "" if r["confidence"] is None else str(round(float(r["confidence"]), 1)),
+            r["confidence_label"] or "",
+            " ".join(r["alternatives"]),
         ])
 
     return PlainTextResponse(
@@ -1702,6 +1690,7 @@ def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None) ->
     if creator_ip:
         initial_results["pipeline"]["creator_ip_hash"] = ip_hash(creator_ip)
     owner_token, initial_results["pipeline"]["owner_token_sha256"] = new_owner_token()
+    initial_results["pipeline"]["retention"] = {"policy": "default"}
 
     with open(new_results_path, "w", encoding="utf-8") as f:
         json.dump(initial_results, f, indent=2)

@@ -764,34 +764,34 @@ class TestResultsCsv:
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/csv")
         assert "attachment" in response.headers["content-disposition"]
-        lines = response.text.replace("\r\n", "\n").strip().split("\n")
-        assert lines[0] == (
-            "Segment,Display Name,Kind,Copies,Atoms,Identified Name,"
-            "Best Database,Best Identifier,Confidence,Confidence Label,"
-            "Alternatives"
-        )
-        assert len(lines) == 4
+        import csv as _csv, io as _io
+        rows = list(_csv.reader(_io.StringIO(response.text)))
+        lines = [",".join(r) for r in rows]
+        assert rows[0] == [
+            "Segment", "Display Name", "Kind", "Copies", "Atoms", "Result",
+            "Identified Name", "Best Database", "Best Identifier", "Database URL",
+            "Confidence", "Confidence Label", "Alternatives",
+        ]
+        assert len(rows) == 4
 
-        protein = lines[1].split(",")
-        assert protein[0] == "Protein_chain_A"
-        assert protein[1] == "Chain A"
-        assert protein[2] == "protein"
-        assert protein[3] == "1"
-        assert protein[5] == ""              # identified name — lands with G5
-        assert protein[6] == "pdb" and protein[7] == "1UBQ"
-        assert protein[8] == "92.0" and protein[9] == "high"
-        # top-3 alternatives excluding the best, db:id label form
-        assert protein[10] == "pdb:3AUB uniprot:P0CG48 pdb:XYZ9"
+        protein = rows[1]
+        assert protein[:6] == ["Protein_chain_A", "Chain A", "protein", "1", "602", "identified"]
+        assert protein[6] == ""              # identified name — lands with G5
+        assert protein[7] == "PDB" and protein[8] == "1UBQ"
+        assert protein[9].endswith("1UBQ")
+        assert protein[10] == "92.0" and protein[11] == "high"
+        # the next three verified hits by confidence, as the results page lists them
+        assert protein[12] == "UniProt:P0CG48 PDB:3AUB PDB:XYZ9"
 
-        ion = lines[2].split(",")
+        ion = rows[2]
         assert ion[0] == "seg_0_SOD" and ion[1] == "SOD"
-        assert ion[3] == "12"
-        assert ion[6] == "element" and ion[7] == "NA"
-        assert ion[8] == "" and ion[9] == ""   # legacy null confidence
+        assert ion[3] == "12" and ion[5] == "exact"
+        assert ion[7] == "Element" and ion[8] == "NA"
+        assert ion[10] == "" and ion[11] == ""   # exact matches carry no confidence
 
-        unknown = lines[3].split(",")
-        assert unknown[0] == "L" and unknown[1] == "L"
-        assert unknown[6] == "" and unknown[7] == "" and unknown[8] == ""
+        unknown = rows[3]
+        assert unknown[0] == "L" and unknown[1] == "L" and unknown[5] == "not identified"
+        assert unknown[7] == "" and unknown[8] == "" and unknown[10] == ""
 
         # no internal names in values
         body = "\n".join(lines)
@@ -1303,7 +1303,8 @@ class TestStaticFilesEndpoint:
         run_dir.mkdir(parents=True, exist_ok=True)
         
         try:
-            # Create a test file
+            # Create a test file (only real runs, with results.json, are served)
+            (run_dir / "results.json").write_text("{}")
             test_file = run_dir / "test.txt"
             test_file.write_text("Hello from static files!")
             

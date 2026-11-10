@@ -173,17 +173,15 @@ class TestUiGapsE2E:
         # --- unverified baseline (fully real) -----------------------------
         response = client.get("/runs/cytcE2E/download/results.csv")
         assert response.status_code == 200
-        lines = response.text.replace("\r\n", "\n").strip().split("\n")
-        assert lines[0] == (
-            "Segment,Display Name,Kind,Copies,Atoms,Identified Name,"
-            "Best Database,Best Identifier,Confidence,Confidence Label,"
-            "Alternatives"
-        )
-        rows = {line.split(",")[0]: line.split(",") for line in lines[1:]}
+        import csv as _csv, io as _io
+        table = list(_csv.reader(_io.StringIO(response.text)))
+        assert table[0][5:9] == ["Result", "Identified Name", "Best Database", "Best Identifier"]
+        rows = {cols[0]: cols for cols in table[1:]}
         assert set(rows) == {"A", "B", "C", "D"}
         for seg, cols in rows.items():
             assert cols[1] == segment_display_name(seg)
-            assert cols[5] == cols[6] == cols[7] == ""  # nothing searched
+            assert cols[5] == "not identified"
+            assert cols[6] == cols[7] == cols[8] == ""  # nothing searched
         assert rows["A"][2] == "protein" and rows["B"][2] == "small_molecule"
 
         # --- seeded verification (d14-observed verified_hits shape, see
@@ -208,14 +206,14 @@ class TestUiGapsE2E:
         results_path.write_text(json.dumps(payload))
 
         response = client.get("/runs/cytcE2E/download/results.csv")
-        rows = {line.split(",")[0]: line.split(",")
-                for line in response.text.replace("\r\n", "\n").strip().split("\n")[1:]}
+        rows = {cols[0]: cols for cols in list(_csv.reader(_io.StringIO(response.text)))[1:]}
         best_row = rows["B"]
-        assert best_row[5] == "Heme"  # G5 identified-name lands in the CSV
-        assert best_row[6] == "pdb_ligand" and best_row[7] == "HEM"
-        assert best_row[8] == "95.0" and best_row[9] == "high"
-        assert best_row[10] == "pubchem:5181"
-        assert rows["C"][6] == ""  # untouched segments stay blank
+        assert best_row[5] == "identified"
+        assert best_row[6] == "Heme"  # G5 identified-name lands in the CSV
+        assert best_row[7] == "Pdb ligand" and best_row[8] == "HEM"
+        assert best_row[10] == "95.0" and best_row[11] == "high"
+        assert best_row[12] == "PubChem:5181"
+        assert rows["C"][7] == ""  # untouched segments stay blank
 
     def test_capabilities_e2e(self, client: TestClient) -> None:
         """G8 + capabilities: deployed endpoint advertises the landed B1
