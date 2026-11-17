@@ -16,7 +16,7 @@ describe("inputHints", () => {
     expect(inputHints(["topol.tpr"])).toEqual([]);
     expect(inputHints(["topol.top", "conf.gro", "lig.itp"])).toEqual([]);
     expect(inputHints(["sys.prmtop", "sys.rst7"])).toEqual([]);
-    expect(inputHints(["sim.zip"])).toEqual([]);
+    expect(inputHints(["sim.zip"])).toEqual(["Archives are not unpacked: upload the files inside them."]);
   });
   it("names the missing half", () => {
     expect(inputHints(["topol.top"])[0]).toMatch(/\.gro/);

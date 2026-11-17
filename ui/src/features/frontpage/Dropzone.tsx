@@ -70,8 +70,8 @@ export default function Dropzone({ files, onFilesAdded, onRemove }: DropzoneProp
           </p>
         )}
         {hints.map((h) => (
-          <p key={h} className="text-sm text-text-muted">
-            {h}
+          <p key={h} className="text-sm font-medium text-(--vm-attention)">
+            ⚠ {h}
           </p>
         ))}
       </div>
