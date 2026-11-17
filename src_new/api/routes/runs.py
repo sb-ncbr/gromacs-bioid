@@ -57,6 +57,7 @@ from ..models import (
 from ..hit_names import hit_display_name
 from ..names import chain_of, segment_display_name, segment_resname, strip_seg
 from ..utils import build_database_url, normalize_identifier
+from src_new.identification.outcomes import user_warnings
 from ..tasks import run_pipeline_task
 from ..security import (
     MAX_FILES, OWNER_HEADER, RunId, allowed_upload, check_submit_limits, ip_hash,
@@ -521,7 +522,7 @@ async def get_run_summary(run_id: RunId) -> RunSummaryResponse:
     
     pipeline_data = data.get("pipeline", {})
     tasks_data = data.get("tasks", {})
-    warnings_data = data.get("warnings", [])
+    warnings_data = user_warnings(data.get("warnings", []))
     errors_data = data.get("critical_errors", [])
     
     return RunSummaryResponse(
@@ -608,7 +609,7 @@ async def get_run_status(run_id: RunId, since: Optional[str] = None) -> RunStatu
         ))
     
     # Build warnings list (filter by since if provided)
-    warnings_data = data.get("warnings", [])
+    warnings_data = user_warnings(data.get("warnings", []))
     warnings = []
     for w in warnings_data:
         if since_dt:
@@ -1345,7 +1346,7 @@ async def get_identifiers(run_id: RunId, segment: Optional[str] = None) -> Ident
     # Parse failed_resolvers from warnings
     failed_resolvers_set = set()  # For deduplication by (resolver_name, generator, message)
     failed_resolvers = []
-    warnings = data.get("warnings", [])
+    warnings = user_warnings(data.get("warnings", []))
     for warning in warnings:
         if warning.get("code") == "identifier_resolver_failed":
             message = warning.get("message", "")

@@ -240,6 +240,7 @@ async def test_get_run_status_finished(call, api):
     assert out["stages_done"] == "3/3"
     assert out["molecules_searched"] == "5/5"
     assert out["failed_searches"][0] == "blast_nr_protein [A]: BLAST timed out after 300s"
+    assert not any("no_polymer_payload" in f for f in out["failed_searches"])  # a skip, not a failure
     assert "/app/databases" not in json.dumps(out)
     assert out["warnings"] == {"pbc_unwrap_applied": 1}
     assert out["next"] == "Finished. Call get_results."

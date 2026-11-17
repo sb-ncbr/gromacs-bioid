@@ -18,6 +18,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from src_new.identification.outcomes import user_warnings
+
 from . import retention
 from .security import valid_run_id
 
@@ -43,7 +45,7 @@ def _summary(run_id: str, data: dict[str, Any]) -> dict[str, Any]:
         "started_at": pipeline.get("started_at"),
         "finished_at": pipeline.get("finished_at"),
         "updated_at": data.get("updated_at"),
-        "warning_count": len(data.get("warnings") or []),
+        "warning_count": len(user_warnings(data.get("warnings"))),
         "error": first_error,
         "retention": retention.describe(data),
         "has_owner_token": bool(pipeline.get("owner_token_sha256")),

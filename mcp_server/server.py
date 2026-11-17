@@ -31,6 +31,15 @@ from .fetch import ACCEPTED_SUFFIXES, accepted_name, fetch_pdb_entry, fetch_url
 
 log = logging.getLogger("bioid_mcp")
 
+#: A resolver that declined its input is a skip, not a failed search; same
+#: list as src_new/identification/outcomes.py (this image ships without src_new).
+_NOT_APPLICABLE_REASONS = ("na_mode_unsupported", "no_polymer_payload", "H-family not applicable")
+
+
+def _failed_search(w: dict) -> bool:
+    return (w.get("code") == "identifier_resolver_failed"
+            and not any(r in (w.get("message") or "") for r in _NOT_APPLICABLE_REASONS))
+
 INSTRUCTIONS = """\
 BioID identifies the molecules in a molecular-dynamics simulation or structure
 file (proteins, nucleic acids, ligands, lipids, glycans, ions, water) by
@@ -367,6 +376,8 @@ def build_server(settings: Optional[Settings] = None, *,
             failed_searches: list[str] = []
             other: dict[str, int] = {}
             for w in warnings:
+                if w.get("code") == "identifier_resolver_failed" and not _failed_search(w):
+                    continue  # a skip
                 if w.get("code") == "identifier_resolver_failed":
                     details = w.get("details") or {}
                     msg = (w.get("message") or "")
@@ -536,7 +547,7 @@ def build_server(settings: Optional[Settings] = None, *,
             failed = []
             for w in status.get("warnings") or []:
                 details = w.get("details") or {}
-                if w.get("code") == "identifier_resolver_failed" and details.get("segment") == seg:
+                if _failed_search(w) and details.get("segment") == seg:
                     msg = (w.get("message") or "").split(". ", 1)[0][:160]
                     if msg not in failed:
                         failed.append(msg)

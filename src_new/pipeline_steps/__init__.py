@@ -1015,6 +1015,27 @@ def _propagate_group_identifiers(results, rep_to_group) -> int:
     return copied
 
 
+def _record_resolver_errors(context, fragment_name: str, errors) -> None:
+    """identifier_resolver_failed warnings for real failures; not-applicable
+    outcomes go to identification/_meta/not_applicable/<segment>."""
+    from ..identification.outcomes import is_not_applicable
+    skipped = []
+    for error in errors or []:
+        resolver_name = error.get("resolver", "unknown")
+        gen_name = error.get("generator", "unknown")
+        error_msg = error.get("error", "unknown error")
+        if is_not_applicable(error_msg):
+            skipped.append({"resolver": resolver_name, "generator": gen_name, "reason": str(error_msg)[:200]})
+            continue
+        context.add_warning("identifier_resolver_failed", f"{resolver_name} ({gen_name}): {error_msg}",
+                            details={"segment": fragment_name, "service": resolver_name,
+                                     "generator": gen_name})
+    if skipped:
+        path = f"identification/_meta/not_applicable/{fragment_name}"
+        existing = context.results.get_data(path) or []
+        context.results.set_data(path, list(existing) + skipped)
+
+
 def _identify_molecules(context):
     """Identify molecules from generated signatures with optional parallelism."""
     from ..signatures.registry import get_signature_type_map
@@ -1194,14 +1215,9 @@ def _identify_molecules(context):
 
             fragment_name = result["fragment_name"]
 
-            # Record warnings from errors
-            for error in result.get("errors", []):
-                resolver_name = error.get("resolver", "unknown")
-                gen_name = error.get("generator", "unknown")
-                error_msg = error.get("error", "unknown error")
-                context.add_warning("identifier_resolver_failed", f"{resolver_name} ({gen_name}): {error_msg}",
-                                    details={"segment": fragment_name, "service": resolver_name,
-                                             "generator": gen_name})
+            # Record warnings from errors; a resolver that declined its input
+            # is a skip, recorded as data, not a warning (outcomes.py)
+            _record_resolver_errors(context, fragment_name, result.get("errors", []))
 
             # F-N1e: persist (bounded) resolution errors for postmortem visibility
             _ident_errs = bounded_stage_errors(result.get("errors", []))
@@ -1223,14 +1239,7 @@ def _identify_molecules(context):
                     context.results, items_serial, context.config, sig_type_map,
                     str(getattr(context, "working_directory", "") or ""), budget_deadline(context),
                     lambda: _budget_exceeded(context)):
-                for error in supp["errors"]:
-                    context.add_warning(
-                        "identifier_resolver_failed",
-                        f"{error.get('resolver', 'unknown')} ({error.get('generator', 'unknown')}): "
-                        f"{error.get('error', 'unknown error')}",
-                        details={"segment": supp["fragment_name"],
-                                 "service": error.get("resolver", "unknown"),
-                                 "generator": error.get("generator", "unknown")})
+                _record_resolver_errors(context, supp["fragment_name"], supp["errors"])
 
     # A7 (BH-046) / W3.1-3: members inherit the group's identifiers (one
     # payload per group; _shared_with records the representative name).
