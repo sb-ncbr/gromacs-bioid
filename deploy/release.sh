@@ -62,7 +62,9 @@ if [ -n "$BACKEND" ]; then
     [ "$n" = "0" ] || { echo "REFUSE: queue $q holds $n"; exit 1; }
   done
   # ask a live fleet worker (a fixed pod name goes stale after any rollout)
-  P=$(kubectl -n $NS get pods --no-headers | awk '/bat3-ceitec-bat3-worker/ && $3=="Running"{print $1; exit}')
+  # (no `| awk ... exit`: it closes the pipe early and pipefail aborts on SIGPIPE)
+  P=$(kubectl -n $NS get pods -l app=bat3-ceitec-bat3-worker --field-selector=status.phase=Running \
+        -o jsonpath='{.items[0].metadata.name}')
   [ -n "$P" ] || { echo "REFUSE: no running fleet worker to ask for active runs"; exit 1; }
   act=$(kubectl -n $NS exec -c worker "$P" -- sh -c 'cd /app && timeout 90 celery -A src_new.celery_app inspect active -j 2>/dev/null' \
         | python3 -c 'import sys,json; t=sys.stdin.read(); d=json.loads(t[t.find("{"):]); print(sum(len(v or []) for v in d.values()))')
