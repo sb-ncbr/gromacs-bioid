@@ -1,0 +1,24 @@
+# Exported from ceitec-biodata-ns by deploy/export-live.sh; do not edit by hand
+# without applying the same change to the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: {}
+  labels:
+    app: bioid-mcp
+  name: bioid-mcp
+  namespace: ceitec-biodata-ns
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: bioid-mcp
+  sessionAffinity: None
+  type: ClusterIP

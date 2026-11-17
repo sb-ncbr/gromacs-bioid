@@ -1,0 +1,77 @@
+# Exported from ceitec-biodata-ns by deploy/export-live.sh; do not edit by hand
+# without applying the same change to the cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    field.cattle.io/publicEndpoints: '[{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:validation-docs","ingressName":"ceitec-biodata-ns:validation-ui-v2","hostname":"bat3-validation.dyn.cloud.e-infra.cz","path":"/docs","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:validation-docs","ingressName":"ceitec-biodata-ns:bioid-documentation","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/documentation","allNodes":false}]'
+  labels:
+    app: validation-docs
+  name: validation-docs
+  namespace: ceitec-biodata-ns
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: validation-docs
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: validation-docs
+    spec:
+      containers:
+      - image: cerit.io/tomsko/bat3-docs:v3.143-docs6
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /docs/
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 20
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: docs
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /docs/
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 2
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30

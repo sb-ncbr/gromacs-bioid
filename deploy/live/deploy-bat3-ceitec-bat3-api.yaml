@@ -1,0 +1,158 @@
+# Exported from ceitec-biodata-ns by deploy/export-live.sh; do not edit by hand
+# without applying the same change to the cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    field.cattle.io/publicEndpoints: '[{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/api","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/files","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/health","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/docs","allNodes":false},{"addresses":[""],"port":443,"protocol":"HTTPS","serviceName":"ceitec-biodata-ns:bat3-ceitec-bat3-api","ingressName":"ceitec-biodata-ns:bat3-ceitec-bat3-ingress","hostname":"bioid-ceitec.dyn.cloud.e-infra.cz","path":"/openapi.json","allNodes":false}]'
+    meta.helm.sh/release-name: bat3-ceitec
+    meta.helm.sh/release-namespace: ceitec-biodata-ns
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  name: bat3-ceitec-bat3-api
+  namespace: ceitec-biodata-ns
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: bat3-ceitec-bat3-api
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations: {}
+      labels:
+        app: bat3-ceitec-bat3-api
+    spec:
+      containers:
+      - args:
+        - src_new.api.main:app
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8000'
+        - --workers
+        - '4'
+        command:
+        - uvicorn
+        env:
+        - name: VALIDATION_FILES_ROOT
+          value: /data/validation
+        - name: CELERY_BROKER_URL
+          value: redis://bat3-redis.ceitec-biodata-ns.svc.cluster.local:6379/0
+        - name: CELERY_RESULT_BACKEND
+          value: redis://bat3-redis.ceitec-biodata-ns.svc.cluster.local:6379/0
+        - name: BAT3_RUNS_DIR
+          value: /app/runs
+        - name: CLEANUP_DAYS
+          value: '30'
+        - name: TZ
+          value: Europe/Prague
+        - name: SERVER_NAME
+          value: bioid-ceitec.dyn.cloud.e-infra.cz
+        - name: VALIDATION_UI_QUEUE
+          value: validation.ui.celery
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              key: DATABASE_URL
+              name: bioid-api-secrets
+        - name: BAT3_CODE_VERSION
+          value: git-c3fafa592
+        - name: BAT3_ADHOC_DIR
+          value: /app/runs/_adhoc
+        - name: BAT3_ADHOC_RETENTION_DAYS
+          value: '7'
+        - name: BAT3_TYPICAL_DURATION_MIN
+          value: '2'
+        - name: BAT3_TYPICAL_DURATION_MAX
+          value: '8'
+        - name: BAT3_EXAMPLE_RUNS
+          value: '["1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd","8338ea32-a5b1-4e31-81db-c157d936df25","6b21b4ec-756d-43db-b549-81e0ecfd1ce1"]'
+        - name: BAT3_IP_HASH_KEY
+          valueFrom:
+            secretKeyRef:
+              key: BAT3_IP_HASH_KEY
+              name: bioid-api-secrets
+        - name: BAT3_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: BAT3_ADMIN_PASSWORD
+              name: bioid-api-secrets
+        - name: BAT3_RETENTION_ENFORCE
+          value: '1'
+        - name: BAT3_SUBMIT_LIMIT_PER_HOUR
+          value: '1000'
+        - name: BAT3_ALERT_EMAIL
+          value: xpavlik8@fi.muni.cz
+        image: cerit.io/tomsko/bat3-validation-api@sha256:18ad70344a0399d71e1e56e7bdaf29d0ae9f464d552d896c612c08523b6484ab
+        imagePullPolicy: Always
+        livenessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /health/live
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 20
+          successThreshold: 1
+          timeoutSeconds: 10
+        name: api
+        ports:
+        - containerPort: 8000
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health/ready
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: '4'
+            memory: 4Gi
+          requests:
+            cpu: 500m
+            memory: 1Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsUser: 1000
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /app/runs
+          name: runs-data
+        - mountPath: /app/databases
+          name: databases-data
+        - mountPath: /data/validation
+          name: validation-data
+          readOnly: true
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: validation-data
+        persistentVolumeClaim:
+          claimName: validation-data-ceitec
+          readOnly: true
+      - name: runs-data
+        persistentVolumeClaim:
+          claimName: bat3-runs-data-ceitec
+      - name: databases-data
+        persistentVolumeClaim:
+          claimName: bat3-databases-data-ceitec

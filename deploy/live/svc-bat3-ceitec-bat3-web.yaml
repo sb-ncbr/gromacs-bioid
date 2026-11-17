@@ -1,0 +1,25 @@
+# Exported from ceitec-biodata-ns by deploy/export-live.sh; do not edit by hand
+# without applying the same change to the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    meta.helm.sh/release-name: bat3-ceitec
+    meta.helm.sh/release-namespace: ceitec-biodata-ns
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  name: bat3-ceitec-bat3-web
+  namespace: ceitec-biodata-ns
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 8081
+    protocol: TCP
+    targetPort: 8081
+  selector:
+    app: bat3-ceitec-bat3-web
+  sessionAffinity: None
+  type: ClusterIP
