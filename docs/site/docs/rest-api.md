@@ -179,7 +179,7 @@ token and cannot be cancelled or deleted through the API.
 |---|---|
 | 404 | unknown run id, or a molecule (`segment`) that is not in the run |
 | 413 | a file (or the request) is larger than 128 MiB, or more than 50 files |
-| 422 | no usable file names, duplicate file names, a file type BioID does not read, invalid `config_json`, an unknown preset, an unknown or non-changeable setting, a value of the wrong type or out of range, a malformed run id |
+| 422 | files that do not make a complete simulation (e.g. a trajectory without a topology, or an archive: archives are not unpacked; the message lists accepted combinations), no usable file names, duplicate file names, a file type BioID does not read, invalid `config_json`, an unknown preset, an unknown or non-changeable setting, a value of the wrong type or out of range, a malformed run id |
 | 429 | too many submissions from your address this hour, or the queue is full; see `Retry-After` |
 | 403 | cancelling or deleting without the run's owner token; deleting an example run |
 | 409 | `run_id` given for a run that already exists |

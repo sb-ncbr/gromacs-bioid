@@ -977,3 +977,15 @@ class TestStatusSinceParameter:
         assert len(json_response["warnings"]) == 1
 
 
+
+
+def test_incomplete_upload_is_refused_at_submission(client: TestClient, tmp_path: Path,
+                                                    monkeypatch: pytest.MonkeyPatch) -> None:
+    """A trajectory alone (or an archive) cannot run: refused with a hint, nothing queued."""
+    monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+    r = client.post("/runs", files={"files": ("traj.xtc", b"\x00" * 64)})
+    assert r.status_code == 422
+    assert "could not find a complete simulation" in r.json()["detail"] and "traj.xtc" in r.json()["detail"]
+    assert not any(tmp_path.iterdir())  # no run directory left behind
+    r = client.post("/runs", files={"files": ("sim.zip", b"PK\x03\x04")})
+    assert r.status_code == 422 and "Archives are not unpacked" in r.json()["detail"]

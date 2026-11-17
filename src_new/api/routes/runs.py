@@ -176,6 +176,30 @@ def resolve_artifact_paths(artifacts_dict: Dict[str, Any], run_id: str) -> Dict[
     return resolved
 
 
+def _input_problem(input_dir: Path) -> Optional[str]:
+    """Why these files cannot run, by the worker's own input discovery; None if they can.
+
+    Checked at submission so an incomplete upload is refused at once instead
+    of waiting in the queue and failing with missing_input (2026-11-17).
+    """
+    from src_new.input.discovery import inspect_directory, select_best_file_combination
+    try:
+        decision = select_best_file_combination(inspect_directory(input_dir))
+    except Exception as exc:  # the worker decides; never refuse on a checker error
+        logger.warning("input pre-check failed (%s); run accepted", exc)
+        return None
+    if decision.selected_strategy != "UNKNOWN":
+        return None
+    names = sorted(p.name for p in input_dir.iterdir())
+    archives = [n for n in names if n.lower().endswith((".zip", ".tar", ".tar.gz", ".tgz"))]
+    hint = (" Archives are not unpacked: upload the files inside them." if archives else "")
+    return ("BioID could not find a complete simulation in these files ("
+            + ", ".join(names[:10]) + (", …" if len(names) > 10 else "") + "). "
+            "Upload a topology together with coordinates, e.g. .tpr (+ .gro), .gro + .top (+ .itp), "
+            ".prmtop + .inpcrd/.rst7/.nc, .psf + .pdb/.crd/.dcd, a LAMMPS .data file, "
+            "or a single .pdb or .cif." + hint)
+
+
 @router.post("", response_model=RunCreateResponse)
 async def create_run(
     request: Request,
@@ -317,7 +341,12 @@ async def create_run(
                 f.write(head)
             shutil.copyfileobj(file.file, f, 1024 * 1024)
         saved_files[name] = str(file_path)
-    
+
+    problem = _input_problem(input_dir)
+    if problem:
+        shutil.rmtree(run_dir, ignore_errors=True)
+        raise HTTPException(status_code=422, detail=problem)
+
     config_path = run_dir / "config.ini"
     config.to_ini_path(config_path)
 
