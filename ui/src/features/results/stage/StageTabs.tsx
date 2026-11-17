@@ -34,6 +34,7 @@ import {
   isPolymer,
   moleculeNotes,
 } from "./stageModel";
+import { UnidentifiedPanel } from "./UnidentifiedPanel";
 
 export type StageTab = "matches" | "descriptor" | "notes";
 
@@ -117,6 +118,7 @@ function MatchesTab({ molecule: m }: { molecule: Molecule }) {
   if (!identified) {
     return (
       <div className="px-5 py-4">
+        <UnidentifiedPanel molecule={m} />
         <h3 className="text-sm font-semibold">What you can do</h3>
         <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm text-(--vm-fg-2)">
           {NOT_IDENTIFIED_POINTS.map((p) => (

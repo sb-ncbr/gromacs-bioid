@@ -199,3 +199,20 @@ def test_admin_limits_apply_to_submissions(runs, client, monkeypatch):
     assert [submit(client, BOB).status_code for _ in range(4)] == [200, 200, 200, 429]
     security.save_limits(queue_cap=0, submit_per_hour=0)  # 0 = no limit
     assert submit(client, ALICE).status_code == 200
+
+
+def test_rerun_with_another_preset(client, runs):
+    old = runs / "plain"
+    (old / "input").mkdir(parents=True)
+    (old / "input" / "x.pdb").write_text("ATOM\n")
+    (old / "results.json").write_text('{"pipeline": {"status": "success"}}')
+    (old / "config.ini").write_text("[verification]\nverify_top_n = 50\n")
+    r = client.post("/api/v1/runs/plain/rerun", json={"preset": "deep"})
+    assert r.status_code == 200, r.text
+    import json as _json
+    from src_new.config.loader import RunConfig
+    new = runs / r.json()["run_id"]
+    assert _json.loads((new / "results.json").read_text())["pipeline"]["preset"] == "deep"
+    assert RunConfig.from_ini_path(new / "config.ini").verification.verify_top_n == 150
+    assert client.post("/api/v1/runs/plain/rerun", json={"preset": "bogus"}).status_code == 422
+    assert client.post("/api/v1/runs/plain/rerun").status_code == 200  # no body: as before

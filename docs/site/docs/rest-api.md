@@ -146,7 +146,7 @@ How to read the confidence and the verified flag is explained in
 |---|---|
 | `GET /runs/examples` | the finished example runs shown on the front page (`?limit=`) |
 | `GET /runs` | the runs submitted from your network address (what *Your annotations* shows); other people's runs are never listed |
-| `POST /runs/{id}/rerun` | a new run with the same input files and settings; returns the new `run_id` and its `owner_token` |
+| `POST /runs/{id}/rerun` | a new run with the same input files and settings; returns the new `run_id` and its `owner_token`. Optional body `{"preset": "deep"}` runs the files again with that preset on today's server settings instead |
 | `DELETE /runs/{id}` | deletes the run and its files; needs `X-Owner-Token` |
 
 ```bash

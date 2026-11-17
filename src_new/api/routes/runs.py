@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Form, Header, HTTPException, Request, UploadFile, Query
+from fastapi import APIRouter, Body, Form, Header, HTTPException, Request, UploadFile, Query
 from fastapi.responses import PlainTextResponse
 import csv
 import io
@@ -1694,7 +1694,8 @@ def _rerun_name(old_run_name: str) -> str:
     return f"{title.rstrip()} (re-run){sep}{desc}" if sep else f"{old_run_name} (re-run)"
 
 
-def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None) -> Optional[tuple[str, str]]:
+def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None,
+                         preset: Optional[str] = None) -> Optional[tuple[str, str]]:
     """Create a new run reusing the input and config of an existing run.
 
     Copies input files and config.ini (or writes the default config) into a
@@ -1742,7 +1743,14 @@ def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None) ->
     old_run_name = old_data.get("pipeline", {}).get("run_name")
 
     config = None
-    if old_config_path.exists():
+    if preset:
+        # "Run again with <preset>": the preset on today's server settings;
+        # the old run's own choices are not carried over (2026-11-17)
+        try:
+            config = resolve_run_config(preset, None)
+        except ConfigOverrideError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+    elif old_config_path.exists():
         try:
             overrides = overrides_from_ini(old_config_path.read_text(encoding="utf-8"),
                                            RunConfig.from_default_ini(), strict=False)
@@ -1784,6 +1792,8 @@ def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None) ->
         initial_results["pipeline"]["creator_ip_hash"] = ip_hash(creator_ip)
     owner_token, initial_results["pipeline"]["owner_token_sha256"] = new_owner_token()
     initial_results["pipeline"]["retention"] = {"policy": "default"}
+    if preset:
+        initial_results["pipeline"]["preset"] = preset
 
     with open(new_results_path, "w", encoding="utf-8") as f:
         json.dump(initial_results, f, indent=2)
@@ -1863,7 +1873,8 @@ async def rerun_all(
 
 
 @router.post("/{run_id}/rerun", response_model=RunCreateResponse)
-async def rerun_single_run(run_id: RunId, request: Request) -> RunCreateResponse:
+async def rerun_single_run(run_id: RunId, request: Request,
+                           body: Optional[Dict[str, Any]] = Body(None)) -> RunCreateResponse:
     """
     Re-run a single existing run by copying its input files and config into a
     new run directory and enqueuing a new Celery pipeline task.
@@ -1886,7 +1897,9 @@ async def rerun_single_run(run_id: RunId, request: Request) -> RunCreateResponse
 
     creator_ip = _requester_ip(request)
     check_submit_limits(creator_ip)
-    created = _create_single_rerun(old_run_dir, creator_ip=creator_ip)
+    preset = (body or {}).get("preset") or None
+    created = _create_single_rerun(old_run_dir, creator_ip=creator_ip,
+                                   preset=str(preset) if preset else None)
     if created is None:
         raise HTTPException(
             status_code=404,

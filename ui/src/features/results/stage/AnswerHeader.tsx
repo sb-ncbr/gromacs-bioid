@@ -7,6 +7,7 @@ import { ExternalLink } from "lucide-react";
 import type { Molecule, RunStatus } from "../viewmodel";
 import { CONFIDENCE_ICONS, CONFIDENCE_COLOR } from "../list";
 import { badgeOf, bestLine, eyebrow, headline, sameAs, type Badge as BadgeModel } from "./stageModel";
+import { ReportDialog } from "./ReportDialog";
 
 export interface AnswerHeaderProps {
   molecule: Molecule;
@@ -108,6 +109,18 @@ export function AnswerHeader({ molecule, molecules, runStatus, onSelect }: Answe
               ))}
               {extra > 0 && ` and ${extra} more`}
             </span>
+          )}
+          {resolved && molecule.result != null && molecule.result.state !== "not_identified" && (
+            <ReportDialog
+              segment={molecule.id}
+              moleculeName={molecule.display_name}
+              identified
+              trigger={
+                <button type="button" className="text-(--vm-muted) underline-offset-2 hover:text-(--vm-fg) hover:underline">
+                  · This looks wrong?
+                </button>
+              }
+            />
           )}
         </div>
       </div>
