@@ -130,4 +130,4 @@ fi
 for d in "${touched[@]}"; do
   echo "$d: $(kubectl -n $NS get pods -l app=$d -o jsonpath='{.items[0].status.containerStatuses[0].imageID}' 2>/dev/null)"
 done
-[ -z "$BACKEND" ] || { curl -s -m 30 https://bioid-ceitec.dyn.cloud.e-infra.cz/api/v1/capabilities | head -c 300; echo; }
+[ -z "$BACKEND" ] || { curl -s -m 30 https://bioid-ceitec.dyn.cloud.e-infra.cz/api/v1/capabilities | cut -c1-300; echo; }
