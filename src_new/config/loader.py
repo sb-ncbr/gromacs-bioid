@@ -228,6 +228,10 @@ class IdentifiersConfig:
     # at a long per-search limit) cannot starve the searches after it.
     # Empty = historical order (the evaluation configs do not set it).
     deferred_resolvers: str = ""
+    # Skip a deferred resolver for a segment that a first-pass search already
+    # matched exactly (>= 0.99 identity and coverage): nr/nt/core_nt then only
+    # re-find the same sequence. No effect when nothing is deferred.
+    skip_deferred_on_exact: bool = True
     # Local SQLite indexes (scripts/build_reference_indexes.py,
     # k8s/reference-indexes-job.yaml). A missing file = resolver inactive.
     sifts_db: str = "/app/databases/sifts/sifts.sqlite"

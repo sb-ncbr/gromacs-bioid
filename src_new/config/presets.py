@@ -18,7 +18,7 @@ from .loader import RunConfig
 # Fields not offered in the identifiers section although they are booleans:
 # overwrite_existing has no meaning for a fresh run, formula_chembl is the
 # PubChem-outage fallback.
-_IDENTIFIERS_EXCLUDED = {"overwrite_existing", "formula_chembl"}
+_IDENTIFIERS_EXCLUDED = {"overwrite_existing", "formula_chembl", "skip_deferred_on_exact"}
 
 # Numeric tunables: (minimum, maximum), both inclusive.
 _NUMBER_BOUNDS: dict[str, dict[str, tuple[float, float]]] = {

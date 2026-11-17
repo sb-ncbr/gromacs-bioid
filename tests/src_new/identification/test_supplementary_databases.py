@@ -452,3 +452,59 @@ def test_deferred_evidence_does_not_take_regular_window_slots(tmp_path):
     hist = ResultsManager(tmp_path / "c.json")
     seed(hist, True)
     assert not set(base) <= set(verified_ids(hist, ""))
+
+
+def test_exact_match_skips_the_deferred_search(tmp_path, monkeypatch):
+    """run 1882f6b9: nr took an hour for a protein PDB had matched exactly."""
+    from src_new.identification import registry, supplementary
+    from src_new.identification.base import IdentifierResolver
+    calls = []
+
+    class Fake(IdentifierResolver):
+        accepted_signatures = ["residue_sequence_protein"]
+
+        def __init__(self, name):
+            super().__init__(RunConfig())
+            self.name = name
+
+        def _is_applicable(self, signature):
+            return True
+
+        def _resolve_identity(self, signature, wd):
+            calls.append((self.name, signature))
+            return []
+
+        def _resolve_similarity(self, signature, wd):
+            return []
+
+    monkeypatch.setattr(supplementary, "get_supplementary_resolvers", lambda c: [])
+    monkeypatch.setattr(registry, "get_deferred_resolvers", lambda c: [Fake("blast_nr_protein")])
+    results = ResultsManager(tmp_path / "r.json")
+    # A: PDB matched exactly; B: only a 0.86 identity match; C: exact but similarity search
+    results.set_data("identifiers/A/fasta_map_protein/blast_pdb_protein", {
+        "hit_type": "identity", "hits": ["5EF9_A"],
+        "hits_metadata": {"5EF9_A": {"identity_p": 1.0, "coverage_p": 1.0}}})
+    results.set_data("identifiers/B/fasta_map_protein/blast_pdb_protein", {
+        "hit_type": "identity", "hits": ["5D1V_A"],
+        "hits_metadata": {"5D1V_A": {"identity_p": 0.86, "coverage_p": 1.0}}})
+    results.set_data("identifiers/C/fasta_map_protein/blast_pdb_protein@sim", {
+        "hit_type": "similarity", "hits": ["1AAA_A"],
+        "hits_metadata": {"1AAA_A": {"identity_p": 1.0, "coverage_p": 1.0}}})
+    cfg = RunConfig()
+    items = [(seg, {"fasta_map_protein": f"SEQ{seg}"}) for seg in "ABC"]
+    run_supplementary_pass(results, items, cfg, {"fasta_map_protein": "residue_sequence_protein"},
+                           str(tmp_path), None, lambda: False)
+    assert [c[1] for c in calls] == ["SEQB", "SEQC"]
+    assert results.get_data("identification/_meta/skipped_deferred/A") == ["blast_nr_protein"]
+
+    calls.clear()
+    cfg.identifiers.skip_deferred_on_exact = False
+    run_supplementary_pass(results, items, cfg, {"fasta_map_protein": "residue_sequence_protein"},
+                           str(tmp_path), None, lambda: False)
+    assert [c[1] for c in calls] == ["SEQA", "SEQB", "SEQC"]
+
+
+def test_skip_toggle_is_not_a_per_run_database_switch():
+    from src_new.config.presets import TUNABLE
+    assert "skip_deferred_on_exact" not in TUNABLE["identifiers"]
+    assert RunConfig.from_ini_path(REPO / "config.ini").identifiers.skip_deferred_on_exact is True

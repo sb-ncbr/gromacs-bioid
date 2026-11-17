@@ -37,6 +37,53 @@ SUPPLEMENTARY_RESOLVERS = frozenset({
 # SIFTS: identity-matched PDB chains mapped to at most this many accessions.
 _SIFTS_MAX_ACCESSIONS = 25
 
+# A deferred (slow) database is skipped for a segment that an exact first-pass
+# match already identifies: nr only re-finds the same sequence as GenBank
+# duplicates, at up to an hour of NFS reads per protein (run 1882f6b9: 3,624 s
+# of identify for a protein PDB 5EF9_A had matched exactly).
+_EXACT_SOURCES_FOR_DEFERRED = {
+    "blast_nr_protein": ("blast_pdb_protein", "blast_swissprot_protein", "blast_uniprot"),
+    "blast_nt": ("blast_pdb_nucleic",),
+    "blast_core_nt": ("blast_pdb_nucleic",),
+}
+_EXACT_MIN = 0.99
+
+
+def _exact_sources(results, segment: str) -> set[str]:
+    """First-pass resolvers with an exact match (>= 0.99 identity and query
+    coverage) for this segment."""
+    try:
+        block = results.get_data(f"identifiers/{segment}") or {}
+    except Exception:
+        return set()
+    found: set[str] = set()
+    for gen_entries in block.values() if isinstance(block, dict) else ():
+        if not isinstance(gen_entries, dict):
+            continue
+        for resolver, entry in gen_entries.items():
+            if not isinstance(entry, dict) or entry.get("hit_type") != "identity" or not entry.get("hits"):
+                continue
+            meta = entry.get("hits_metadata") or {}
+            for hit in entry["hits"]:
+                m = meta.get(hit) if isinstance(meta, dict) else None
+                if not isinstance(m, dict):
+                    continue
+                ident, cov = m.get("identity_p"), m.get("coverage_p")
+                if isinstance(ident, (int, float)) and isinstance(cov, (int, float)) \
+                        and ident >= _EXACT_MIN and cov >= _EXACT_MIN:
+                    found.add(resolver)
+                    break
+    return found
+
+
+def skipped_deferred(results, segment: str, deferred_names, config: RunConfig) -> set[str]:
+    """Deferred resolvers not worth running for this segment."""
+    if not getattr(config.identifiers, "skip_deferred_on_exact", True):
+        return set()
+    exact = _exact_sources(results, segment)
+    return {name for name in deferred_names
+            if exact & set(_EXACT_SOURCES_FOR_DEFERRED.get(name, ()))}
+
 
 def _enabled(config: RunConfig, name: str) -> bool:
     ids = config.identifiers
@@ -135,14 +182,23 @@ def derive_sifts_hits(results, segment: str, config: RunConfig) -> int:
 
 
 def _sweep(results, items, resolvers, config, signature_type_map, working_directory,
-           deadline_epoch, budget_exceeded, after_segment=None) -> dict[str, list[dict]]:
-    """One pass of `resolvers` over every item; errors per segment."""
+           deadline_epoch, budget_exceeded, after_segment=None,
+           skip=None) -> dict[str, list[dict]]:
+    """One pass of `resolvers` over every item; errors per segment.
+    `skip(segment)` names resolvers not to run for that segment."""
     from .cache_manager import ResolverCache
     from .registry import IdentifierRegistry
     from .resolution_manager import IdentifierResolutionManager
 
-    manager = IdentifierResolutionManager(IdentifierRegistry(resolvers), config,
-                                          signature_type_map=signature_type_map)
+    managers: dict[frozenset, IdentifierResolutionManager] = {}
+
+    def manager_for(skipped: frozenset) -> IdentifierResolutionManager:
+        if skipped not in managers:
+            managers[skipped] = IdentifierResolutionManager(
+                IdentifierRegistry([r for r in resolvers if r.name not in skipped]), config,
+                signature_type_map=signature_type_map)
+        return managers[skipped]
+
     cache = ResolverCache(config)
     errors_by_segment: dict[str, list[dict]] = {}
     for fragment_name, valid_sigs in items:
@@ -150,6 +206,15 @@ def _sweep(results, items, resolvers, config, signature_type_map, working_direct
             logger.warning("second identify pass: stage budget exhausted at %s", fragment_name)
             break
         errors = errors_by_segment.setdefault(fragment_name, [])
+        skipped = frozenset(skip(fragment_name) if skip else ())
+        if skipped:
+            logger.info("second identify pass: %s skips %s (exact match already found)",
+                        fragment_name, ", ".join(sorted(skipped)))
+            try:
+                results.set_data(f"identification/_meta/skipped_deferred/{fragment_name}", sorted(skipped))
+            except Exception:
+                pass
+        manager = manager_for(skipped)
         seen: set[tuple] = set()
         for generator_name, signature in (valid_sigs.items() if resolvers else ()):
             if budget_exceeded():
@@ -208,7 +273,9 @@ def run_supplementary_pass(
         errors = _sweep(results, items, resolvers, config, signature_type_map, working_directory,
                         deadline_epoch, budget_exceeded, _sifts if sifts_on else None)
     if deferred:
+        names = [r.name for r in deferred]
         for segment, errs in _sweep(results, items, deferred, config, signature_type_map,
-                                    working_directory, deadline_epoch, budget_exceeded).items():
+                                    working_directory, deadline_epoch, budget_exceeded,
+                                    skip=lambda seg: skipped_deferred(results, seg, names, config)).items():
             errors.setdefault(segment, []).extend(errs)
     return [{"fragment_name": name, "errors": errors[name]} for name, _s in items if name in errors]
