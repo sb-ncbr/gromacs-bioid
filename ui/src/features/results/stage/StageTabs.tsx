@@ -302,6 +302,11 @@ function NotesTab({ molecule: m, notes }: { molecule: Molecule; notes: Note[] })
           </p>
           <p className="mt-1 text-sm text-(--vm-fg-2)">{n.body}</p>
           {n.action && <p className="mt-1 text-sm font-medium text-(--vm-fg)">What to do: {n.action}</p>}
+          {n.docs_url && (
+          <a href={n.docs_url} target="_blank" rel="noreferrer" className="mt-0.5 inline-block text-sm text-(--vm-info) underline">
+            What this means
+          </a>
+        )}
         </div>
       ))}
     </div>

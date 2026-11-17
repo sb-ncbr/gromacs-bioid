@@ -15,6 +15,8 @@ export interface WarningView {
   message?: string;
   step_id?: string | null;
   details?: Record<string, unknown> | null;
+  /** Documentation section explaining the code (API capability warning_docs_url). */
+  docs_url?: string | null;
 }
 
 /** Message prefix before the first " (" — the resolver/service name (DATA.md §3.2). */
@@ -125,7 +127,7 @@ export function notes(
     }
     if (entry.severity === "error") continue; // run banner, not a note
     const affects = items.map(segmentOf).filter((s): s is string => s != null);
-    out.push(
+    const note =
       renderNote(
         code,
         entry,
@@ -138,8 +140,9 @@ export function notes(
         [...new Set(affects)],
         items.length,
         svc ?? "run",
-      ),
-    );
+      );
+    note.docs_url = items.find((w) => w.docs_url)?.docs_url ?? null;
+    out.push(note);
   }
   out.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "attention" ? -1 : 1));
   return { notes: out, hidden };

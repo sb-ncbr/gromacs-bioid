@@ -98,6 +98,11 @@ function NoteRow({ note, molecules, onSelect }: { note: Note; molecules: Molecul
       <CollapsibleContent className="pb-1 pl-[21px]">
         <p className="text-sm text-(--vm-fg-2)">{note.body}</p>
         {note.action && <p className="mt-0.5 text-sm font-medium text-(--vm-fg)">What to do: {note.action}</p>}
+        {note.docs_url && (
+          <a href={note.docs_url} target="_blank" rel="noreferrer" className="mt-0.5 inline-block text-sm text-(--vm-info) underline">
+            What this means
+          </a>
+        )}
       </CollapsibleContent>
     </Collapsible>
   );

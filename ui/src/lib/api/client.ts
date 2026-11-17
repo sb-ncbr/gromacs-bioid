@@ -114,6 +114,8 @@ export const endpoints = {
   runLogs: (runId: string) => `${API_BASE}/runs/${runId}/logs`,
   runRerun: (runId: string) => `${API_BASE}/runs/${runId}/rerun`,
   runCancel: (runId: string) => `${API_BASE}/runs/${runId}/cancel`,
+  runRetention: (runId: string) => `${API_BASE}/runs/${runId}/retention`,
+  runReports: (runId: string) => `${API_BASE}/runs/${runId}/reports`,
   runQueue: (runId: string) => `${API_BASE}/runs/${runId}/queue`,
   runExamples: `${API_BASE}/runs/examples`,
   configDefault: `${API_BASE}/runs/config/default`,

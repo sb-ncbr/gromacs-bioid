@@ -145,3 +145,14 @@ describe("notes merge what reads the same (live 3PTB, 2026-11-08)", () => {
     expect(nr[0].affects).toEqual(["A"]);
   });
 });
+
+describe("notes: documentation links", () => {
+  it("carries the warning's docs_url onto its note", () => {
+    const { notes: out } = notes([
+      { code: "stage_time_budget", message: "identify cut", docs_url: "/documentation/warnings/#stage_time_budget" },
+      { code: "pbc_unwrap_applied", message: "joined" },
+    ]);
+    expect(out.find((n) => n.code === "stage_time_budget")?.docs_url).toBe("/documentation/warnings/#stage_time_budget");
+    expect(out.find((n) => n.code === "pbc_unwrap_applied")?.docs_url).toBeNull();
+  });
+});

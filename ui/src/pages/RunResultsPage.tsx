@@ -37,6 +37,7 @@ import { adapt, elapsed, type ApiBundle, type ViewModel } from "../features/resu
 import { MoleculeList, defaultSelection } from "../features/results/list";
 import { Stage } from "../features/results/stage";
 import { SystemStage, SYSTEM_SELECTION } from "../features/results/stage/SystemStage";
+import { RetentionLine } from "../features/results/header/RetentionLine";
 import { StageCanvas } from "../features/results/viewer";
 import { StatusStrip } from "../features/results/status";
 import { RunHeader } from "../features/results/header/RunHeader";
@@ -157,9 +158,10 @@ export default function RunResultsPage() {
   }, [runId, statusQ.data, summaryQ.data, moleculesQ.data, signaturesAllQ.data, verificationAllQ.data, queueQ.data, filesQ.data, csvAvailable, typical]);
 
   const molecules = vm?.molecules ?? [];
-  // "Whole system" is its own selection; per-segment views (technical
-  // fold, verification/identifier queries) keep the first molecule.
-  const systemView = segment === SYSTEM_SELECTION && molecules.length > 0;
+  // "Whole system" is its own selection and the first view of a run (no
+  // ?segment); per-segment views (technical fold, verification/identifier
+  // queries) keep the first molecule.
+  const systemView = (!segment || segment === SYSTEM_SELECTION) && molecules.length > 0;
   const selectedId = molecules.find((m) => m.id === segment)?.id ?? defaultSelection(molecules);
   const selected = systemView ? null : molecules.find((m) => m.id === selectedId) ?? null;
   const onSelect = useCallback((id: string) => patchQuery({ segment: id }), [patchQuery]);
@@ -285,6 +287,7 @@ export default function RunResultsPage() {
         onDownload={onDownload}
         onReport={onReport}
       />
+      <RetentionLine runId={runId} retention={statusQ.data?.retention} />
 
       {vm.run.status === "failed" && vm.error && <ErrorBanner run={vm.run} error={vm.error} />}
 
@@ -377,9 +380,7 @@ export default function RunResultsPage() {
         <p>
           Using these results? Please cite: {CITATION}. The Cite button at the top copies it with a link to this run.
         </p>
-        {vm.run.retention_days != null && (
-          <p>Anyone with this link can see these results. They are kept for {vm.run.retention_days} days.</p>
-        )}
+        <p>Anyone with this link can see these results.</p>
       </footer>
     </div>
   );

@@ -32,6 +32,8 @@ export interface Note {
   affects: string[];
   /** How many raw warnings were merged into this note. */
   raw_count: number;
+  /** Documentation section explaining the code (null on older servers). */
+  docs_url?: string | null;
 }
 
 export type MoleculeKind =
