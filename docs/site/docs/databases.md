@@ -31,6 +31,13 @@ application's settings). Checked against the code on 2026-11-10.
    only the second pass found (see
    [Identification & verification](identifiers.md#stage-3-verification)).
 
+A deferred database is **skipped** for a molecule that a first-pass search
+already matched exactly (≥ 0.99 identity and coverage in PDB, Swiss-Prot or
+UniProt for nr; PDB nucleic for nt/core_nt): it would only re-find the same
+sequence as GenBank duplicates, at up to an hour of reading nr over NFS
+(`[identifiers] skip_deferred_on_exact`, on). BLAST uses 2 threads per search
+for UI runs.
+
 ## Main databases (first pass)
 
 ### Proteins and nucleic acids
@@ -71,10 +78,11 @@ route (see [API](api.md#the-rcsb-file-serving-contract)).
 | `formula_pubchem` | PubChem fast-formula search | molecular formula | yes | — | remote |
 | `formula_chembl` | ChEMBL, formula → IDs | molecular formula | yes | — | local ChEMBL mirror first, else EBI REST; built only when `formula_chembl` is on or `VALIDATION_SKIP_PUG=1` (set on the production workers) |
 | `formula_hfamily` | PubChem, formula with ±4 hydrogens (protonation states) | molecular formula | — | yes (candidates only) | local PubChem mirror first, else PubChem |
-| `lipid_maps` | LIPID MAPS | lipid shorthand, e.g. `PC(16:0/18:1)` | yes | — | remote |
+| `lipid_maps` | LIPID MAPS | lipid shorthand, e.g. `PC(16:0/18:1)`, looked up as its species (`PC 34:1`; LMSD's REST paths reject the chain-level form) — every isomer is a candidate (at most 25), verification keeps the matching structure | yes | — | remote |
 | `glycan_composition` | GlyCosmos → GlyTouCan | glycan composition | yes | — | remote |
 | `atom` | the chemical element | element of a one-atom molecule | yes | — | local |
-| `name_ccd`, `name_maps`, `name_manual` | name tables (PDB Chemical Component Dictionary, LIPID MAPS names, a curated list) → InChIKey | residue / molecule / chain names | yes | — (switch off by default) | local (`databases/*.json`) |
+| `name_ccd` | PDB Chemical Component Dictionary names → InChIKey | residue / molecule / chain names | yes | — (switch off by default) | local (`databases/ccd.json`) |
+| `name_maps`, `name_manual` | LIPID MAPS names, a curated list | names | — | — | **off** in `config.ini`: their data (`maps.json`, `manual.json`) does not exist |
 
 Formula and similarity searches only *propose* candidates: every chemical
 candidate must pass the skeleton-fingerprint check at verification

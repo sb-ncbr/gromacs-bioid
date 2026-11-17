@@ -117,8 +117,78 @@ def same_submitter(pipeline: dict[str, Any], ip: Optional[str]) -> bool:
 
 # -- limits --------------------------------------------------------------------
 
+#: Defaults (env); the admin page overrides them in <runs>/_settings/limits.json.
 SUBMIT_LIMIT_PER_HOUR = int(os.environ.get("BAT3_SUBMIT_LIMIT_PER_HOUR", "30"))
 QUEUE_CAP = int(os.environ.get("BAT3_QUEUE_CAP", "40"))
+MAX_LIMIT = 100_000
+
+_limits_cache: tuple[float, Optional[dict]] = (0.0, None)
+
+
+def _limits_path() -> Path:
+    from .routes.runs import get_runs_dir
+    return get_runs_dir() / "_settings" / "limits.json"
+
+
+def _limits_file() -> dict:
+    global _limits_cache
+    at, data = _limits_cache
+    if data is not None and time.time() - at < 10:
+        return data
+    try:
+        import json
+        data = json.loads(_limits_path().read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            data = {}
+    except (OSError, ValueError):
+        data = {}
+    _limits_cache = (time.time(), data)
+    return data
+
+
+def current_limits() -> dict:
+    """Submission limits in force: the admin's settings over the env defaults.
+    0 means no limit. exceptions: {address or CIDR: {"label", "per_hour"}}."""
+    data = _limits_file()
+    return {
+        "submit_per_hour": int(data.get("submit_per_hour", SUBMIT_LIMIT_PER_HOUR)),
+        "queue_cap": int(data.get("queue_cap", QUEUE_CAP)),
+        "exceptions": dict(data.get("exceptions") or {}),
+        "defaults": {"submit_per_hour": SUBMIT_LIMIT_PER_HOUR, "queue_cap": QUEUE_CAP},
+    }
+
+
+def save_limits(**changes) -> dict:
+    """Update the admin limit settings (atomic write); returns current_limits()."""
+    import json
+    global _limits_cache
+    data = dict(_limits_file())
+    data.update({k: v for k, v in changes.items() if v is not None})
+    path = _limits_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".limits.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+    _limits_cache = (0.0, None)
+    return current_limits()
+
+
+def hourly_limit_for(ip: Optional[str], limits: Optional[dict] = None) -> int:
+    """The per-hour submission limit of an address (its exception, else the global)."""
+    import ipaddress
+    limits = limits or current_limits()
+    if ip:
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            addr = None
+        for key, rule in limits["exceptions"].items():
+            try:
+                if addr is not None and addr in ipaddress.ip_network(key, strict=False):
+                    return int(rule.get("per_hour", limits["submit_per_hour"]))
+            except ValueError:
+                continue
+    return limits["submit_per_hour"]
 
 _redis = None
 
@@ -141,23 +211,25 @@ def check_submit_limits(ip: Optional[str]) -> None:
     if client is None:
         return
     try:
+        limits = current_limits()
+        queue_cap, per_hour = limits["queue_cap"], hourly_limit_for(ip, limits)
         queue = os.environ.get("VALIDATION_UI_QUEUE") or "celery"
         waiting = int(client.llen(queue))
-        if QUEUE_CAP > 0 and waiting >= QUEUE_CAP:
+        if queue_cap > 0 and waiting >= queue_cap:
             raise HTTPException(status_code=429, headers={"Retry-After": "600"}, detail=(
                 f"BioID is busy: {waiting} runs are waiting to start. "
                 "Please try again in about 10 minutes."))
-        if SUBMIT_LIMIT_PER_HOUR > 0 and ip:
+        if per_hour > 0 and ip:
             hour = int(time.time() // 3600)
             key = f"bioid:submits:{ip_hash(ip)}:{hour}"
             count = int(client.incr(key))
             if count == 1:
                 client.expire(key, 3700)
-            if count > SUBMIT_LIMIT_PER_HOUR:
+            if count > per_hour:
                 retry = 3600 - int(time.time()) % 3600
                 raise HTTPException(status_code=429, headers={"Retry-After": str(retry)}, detail=(
                     f"Too many runs from your network address: at most "
-                    f"{SUBMIT_LIMIT_PER_HOUR} per hour. Please try again in "
+                    f"{per_hour} per hour. Please try again in "
                     f"{max(1, retry // 60)} minutes."))
     except HTTPException:
         raise

@@ -158,7 +158,10 @@ describe("healthSummary", () => {
       },
       storage: { error: "x" },
       retention: { error: "x" },
-      limits: { submit_per_hour: 30, queue_cap: 40, max_files: 50 },
+      limits: {
+        submit_per_hour: 30, queue_cap: 40, max_files: 50, exceptions: {},
+        defaults: { submit_per_hour: 30, queue_cap: 40 },
+      },
     };
     expect(healthSummary(o, NOW)).toEqual({
       waiting: 5,

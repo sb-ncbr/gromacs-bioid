@@ -26,3 +26,16 @@ Each entry records what changed, why, who decided it and how to undo it.
   only changes to bat3 the mdval project is allowed to make.
 - **Undo:** `kubectl -n ceitec-biodata-ns set env deploy/bat3-ceitec-bat3-api
   BAT3_SUBMIT_LIMIT_PER_HOUR-` (restores the code default, 30).
+
+## 2026-11-17 — Submission limits move to the admin page
+
+- **Change:** limits are edited on the admin page and stored in
+  `<runs>/_settings/limits.json`; the env value above is only the default.
+  The public limit is back to 30 runs per address per hour, with an exception
+  of 1000/hour for `10.42.0.0/16`: in-cluster clients such as the mdval
+  submitter call the API service directly and appear with their pod address.
+- **Why:** the 1000/hour of 2026-11-16 applied to every address; the owner
+  wants the limits adjustable without a deploy.
+- **Decided by:** Tomáš Pavlík (owner).
+- **Undo:** remove the exception or change the values on the admin page.
+

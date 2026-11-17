@@ -356,8 +356,7 @@ async def overview() -> dict:
             "runs": _section(lambda: _cached("runs", 10, _runs_overview)),
             "storage": _section(_storage_async),
             "retention": _section(lambda: _cached("retention", 30, _retention_status)),
-            "limits": {"submit_per_hour": security.SUBMIT_LIMIT_PER_HOUR,
-                       "queue_cap": security.QUEUE_CAP, "max_files": security.MAX_FILES},
+            "limits": {**security.current_limits(), "max_files": security.MAX_FILES},
         }
     return await asyncio.to_thread(build)
 
@@ -371,6 +370,61 @@ async def traffic_stats(window: str = Query("24h")) -> dict:
         raise HTTPException(status_code=422, detail=f"window must be one of {', '.join(traffic.WINDOWS)}")
     ttl = 30 if window in ("1h", "24h") else 300
     return await asyncio.to_thread(lambda: _cached(f"traffic:{window}", ttl, lambda: traffic.summarize(window)))
+
+
+@router.get("/settings/limits", dependencies=[Depends(require_admin)])
+async def get_limits() -> dict:
+    return security.current_limits()
+
+
+def _limit_value(body: dict, key: str) -> Optional[int]:
+    if key not in body or body[key] is None:
+        return None
+    try:
+        value = int(body[key])
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail=f"{key} must be a whole number")
+    if not 0 <= value <= security.MAX_LIMIT:
+        raise HTTPException(status_code=422, detail=f"{key} must be between 0 (no limit) and {security.MAX_LIMIT}")
+    return value
+
+
+@router.put("/settings/limits", dependencies=[Depends(require_admin)])
+async def put_limits(body: dict = Body(...)) -> dict:
+    """{submit_per_hour?, queue_cap?}: 0 = no limit; takes effect within 10 s."""
+    out = security.save_limits(submit_per_hour=_limit_value(body, "submit_per_hour"),
+                               queue_cap=_limit_value(body, "queue_cap"))
+    _drop_cache()
+    return out
+
+
+@router.put("/settings/limits/exceptions", dependencies=[Depends(require_admin)])
+async def put_limit_exception(body: dict = Body(...)) -> dict:
+    """{address (IP or CIDR), label, per_hour}: an address's own hourly limit."""
+    import ipaddress
+    address = str(body.get("address") or "").strip()
+    try:
+        address = str(ipaddress.ip_network(address, strict=False))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="address must be an IP address or a CIDR range")
+    per_hour = _limit_value(body, "per_hour")
+    if per_hour is None:
+        raise HTTPException(status_code=422, detail="per_hour is required")
+    exceptions = dict(security.current_limits()["exceptions"])
+    exceptions[address] = {"label": str(body.get("label") or "")[:80], "per_hour": per_hour}
+    out = security.save_limits(exceptions=exceptions)
+    _drop_cache()
+    return out
+
+
+@router.delete("/settings/limits/exceptions", dependencies=[Depends(require_admin)])
+async def delete_limit_exception(address: str = Query(...)) -> dict:
+    exceptions = dict(security.current_limits()["exceptions"])
+    if exceptions.pop(address, None) is None:
+        raise HTTPException(status_code=404, detail="No exception for this address.")
+    out = security.save_limits(exceptions=exceptions)
+    _drop_cache()
+    return out
 
 
 # -- actions ----------------------------------------------------------------------

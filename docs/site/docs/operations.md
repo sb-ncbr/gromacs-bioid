@@ -76,6 +76,25 @@ The password is `BAT3_ADMIN_PASSWORD` on the API deployment, from the secret
 failures per address per 15 minutes and 100 per hour overall; sessions last
 12 hours and end when the password changes.
 
+### Submission limits
+
+Edited on the admin page (*Submission limits*): runs per address per hour,
+the queue cap (0 = no limit) and per-address or CIDR exceptions with their own
+hourly limit. Stored in `<runs>/_settings/limits.json` (survives restarts;
+Redis does not persist), in force within 10 s; `BAT3_SUBMIT_LIMIT_PER_HOUR` and
+`BAT3_QUEUE_CAP` are only the defaults. In-cluster clients call the API
+service directly and are seen with their pod address (10.42.0.0/16).
+
+### NCBI
+
+Verification fetches nr/nt sequences from NCBI E-utilities. NCBI allows 3
+requests/s per caller, 10/s with an API key, counted across the whole fleet:
+the workers share one budget through the Celery Redis. The key is
+`NCBI_API_KEY` in the secret `bioid-api-secrets`, attached to both worker
+deployments (`kubectl set env deploy/bat3-ui-worker -c ui-worker
+--from=secret/bioid-api-secrets --keys=NCBI_API_KEY`, same for
+`bat3-ceitec-bat3-worker -c worker`); re-attach after a helm upgrade.
+
 ## Traffic statistics
 
 `src_new/api/traffic.py`; shown on the admin page (*Traffic*). Page views come
@@ -105,8 +124,12 @@ plain run directory.
 - Expired runs are moved to `<runs>/_expired/` and purged after
   `BAT3_RETENTION_GRACE_DAYS` (7); the admin page restores them (restored runs
   are preserved).
-- A sweep that would expire more than 50 runs (`BAT3_RETENTION_MAX_PER_SWEEP`)
-  or more than half of all runs expires nothing and logs an error.
+- At most 50 runs (`BAT3_RETENTION_MAX_PER_SWEEP`) are expired per hourly
+  sweep, oldest due first; the rest wait for the next sweeps.
+- If runs on the *default* retention alone are due for more than half of all
+  runs (a wrong `BAT3_RETENTION_DAYS`, a clock jump), the sweep expires nothing
+  and logs an error. Runs with their own short retention (a campaign's
+  `retention=1`) do not count against this.
 
 ## Scaling
 

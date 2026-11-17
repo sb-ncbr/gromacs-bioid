@@ -143,9 +143,22 @@ export interface RetentionSection {
   expired: { run_id: string; expired_at: string | null; purge_at: string | null }[];
 }
 
-export interface LimitsSection {
+export interface LimitException {
+  label: string;
+  per_hour: number;
+}
+
+export interface LimitSettings {
+  /** 0 = no limit. */
   submit_per_hour: number;
+  /** 0 = no cap. */
   queue_cap: number;
+  /** IP address or CIDR range -> its own hourly limit. */
+  exceptions: Record<string, LimitException>;
+  defaults: { submit_per_hour: number; queue_cap: number };
+}
+
+export interface LimitsSection extends LimitSettings {
   max_files: number;
 }
 
@@ -318,4 +331,14 @@ export const adminApi = {
       retention,
     }),
   restoreRun: (token: string, runId: string) => post<{ run_id: string }>(`/expired/${seg(runId)}/restore`, token),
+
+  setLimits: (token: string, limits: { submit_per_hour?: number; queue_cap?: number }) =>
+    request<LimitSettings>("/settings/limits", token, { method: "PUT", body: JSON.stringify(limits) }),
+  setLimitException: (token: string, address: string, label: string, perHour: number) =>
+    request<LimitSettings>("/settings/limits/exceptions", token, {
+      method: "PUT",
+      body: JSON.stringify({ address, label, per_hour: perHour }),
+    }),
+  removeLimitException: (token: string, address: string) =>
+    request<LimitSettings>(`/settings/limits/exceptions?address=${seg(address)}`, token, { method: "DELETE" }),
 };

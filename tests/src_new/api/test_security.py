@@ -179,3 +179,14 @@ def test_creator_ip_migration(tmp_path):
     assert "creator_ip" not in done and done["creator_ip_hash"] == security.ip_hash("192.0.2.9")
     assert security.same_submitter(done, "192.0.2.9")
     assert mod.migrate(tmp_path, dry_run=False)["migrated"] == 0
+
+
+def test_admin_limits_apply_to_submissions(runs, client, monkeypatch):
+    monkeypatch.setattr(security, "_limits_cache", (0.0, None))
+    security.save_limits(submit_per_hour=1, exceptions={"198.51.100.2/32": {"label": "partner", "per_hour": 3}})
+    assert submit(client, ALICE).status_code == 200
+    r = submit(client, ALICE)
+    assert r.status_code == 429 and "at most 1 per hour" in r.json()["detail"]
+    assert [submit(client, BOB).status_code for _ in range(4)] == [200, 200, 200, 429]
+    security.save_limits(queue_cap=0, submit_per_hour=0)  # 0 = no limit
+    assert submit(client, ALICE).status_code == 200

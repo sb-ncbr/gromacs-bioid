@@ -1,6 +1,13 @@
-import { Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@e-infra/design-system";
+import { useState } from "react";
+import { Button, Input, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@e-infra/design-system";
 import { Archive, Gauge, HardDrive, Undo2 } from "lucide-react";
-import { adminApi, isSectionError, type AdminOverview, type RunsSection } from "../../lib/api/admin";
+import {
+  adminApi,
+  isSectionError,
+  type AdminOverview,
+  type LimitsSection as LimitsSectionData,
+  type RunsSection,
+} from "../../lib/api/admin";
 import { dateTime, formatBytes, isResolverCache, relativeTime, retentionSummary, toMs } from "./format";
 import { RunLink } from "./Runs";
 import { useAdminAction } from "./session";
@@ -210,12 +217,113 @@ export function LimitsSection({ limits }: { limits: AdminOverview["limits"] }) {
       {isSectionError(limits) ? (
         <SectionErrorNote what="Limits" error={limits.error} />
       ) : (
-        <dl className="grid grid-cols-3 gap-3">
-          <Stat label="Per address / hour" value={limits.submit_per_hour} />
-          <Stat label="Queue cap" value={limits.queue_cap} />
-          <Stat label="Files per run" value={limits.max_files} />
-        </dl>
+        <LimitsEditor limits={limits} />
       )}
     </Section>
+  );
+}
+
+const limitText = (n: number) => (n === 0 ? "no limit" : n.toLocaleString());
+
+function LimitsEditor({ limits }: { limits: LimitsSectionData }) {
+  const [perHour, setPerHour] = useState(String(limits.submit_per_hour));
+  const [queueCap, setQueueCap] = useState(String(limits.queue_cap));
+  const [address, setAddress] = useState("");
+  const [label, setLabel] = useState("");
+  const [exceptionLimit, setExceptionLimit] = useState("1000");
+  const save = useAdminAction(
+    (token, v: { submit_per_hour: number; queue_cap: number }) => adminApi.setLimits(token, v),
+    { success: () => "Limits saved (in force within 10 s)", failure: "Could not save the limits" },
+  );
+  const addException = useAdminAction(
+    (token, v: { address: string; label: string; perHour: number }) =>
+      adminApi.setLimitException(token, v.address, v.label, v.perHour),
+    { success: (_r, v) => `Exception for ${v.address} saved`, failure: "Could not save the exception" },
+  );
+  const removeException = useAdminAction((token, a: string) => adminApi.removeLimitException(token, a), {
+    success: (_r, a) => `Exception for ${a} removed`,
+    failure: "Could not remove the exception",
+  });
+  const whole = (v: string) => /^\d+$/.test(v.trim());
+  const changed = perHour !== String(limits.submit_per_hour) || queueCap !== String(limits.queue_cap);
+  const exceptions = Object.entries(limits.exceptions ?? {});
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <label className="flex flex-col gap-1 text-xs text-text-muted">
+          Runs per address per hour
+          <Input type="number" min={0} value={perHour} onChange={(e) => setPerHour(e.target.value)} />
+          <span>default {limitText(limits.defaults.submit_per_hour)} · 0 = no limit</span>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-text-muted">
+          Queue cap (runs waiting)
+          <Input type="number" min={0} value={queueCap} onChange={(e) => setQueueCap(e.target.value)} />
+          <span>default {limitText(limits.defaults.queue_cap)} · 0 = no cap</span>
+        </label>
+        <div className="flex flex-col justify-between gap-1 text-xs text-text-muted">
+          Files per run
+          <span className="text-base font-semibold text-text">{limits.max_files}</span>
+          <Button
+            size="sm"
+            disabled={!changed || !whole(perHour) || !whole(queueCap) || save.isPending}
+            onClick={() => save.mutate({ submit_per_hour: Number(perHour), queue_cap: Number(queueCap) })}
+          >
+            Save limits
+          </Button>
+        </div>
+      </div>
+
+      <div>
+        <h4 className="mb-1 text-sm font-semibold text-text-heading">Exceptions</h4>
+        <p className="mb-2 text-xs text-text-muted">
+          An address or range (CIDR) with its own hourly limit, e.g. a partner's campaign.
+        </p>
+        {exceptions.length === 0 ? (
+          <p className="text-xs text-text-muted">None.</p>
+        ) : (
+          <ul className="mb-2 flex flex-col divide-y divide-base-200 text-sm">
+            {exceptions.map(([addr, rule]) => (
+              <li key={addr} className="flex items-center justify-between gap-2 py-1.5">
+                <span className="min-w-0">
+                  <code className="text-xs">{addr}</code>
+                  {rule.label && <span className="ml-2 text-text-muted">{rule.label}</span>}
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="tabular-nums">{limitText(rule.per_hour)} / h</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Remove the exception for ${addr}`}
+                    disabled={removeException.isPending}
+                    onClick={() => removeException.mutate(addr)}
+                  >
+                    Remove
+                  </Button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1.2fr_1.2fr_0.7fr_auto]">
+          <Input placeholder="Address or CIDR" value={address} onChange={(e) => setAddress(e.target.value)} aria-label="Address or CIDR" />
+          <Input placeholder="Label (who)" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Label" />
+          <Input type="number" min={0} value={exceptionLimit} onChange={(e) => setExceptionLimit(e.target.value)} aria-label="Runs per hour" />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!address.trim() || !whole(exceptionLimit) || addException.isPending}
+            onClick={() =>
+              addException.mutate(
+                { address: address.trim(), label: label.trim(), perHour: Number(exceptionLimit) },
+                { onSuccess: () => { setAddress(""); setLabel(""); } },
+              )
+            }
+          >
+            Add
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

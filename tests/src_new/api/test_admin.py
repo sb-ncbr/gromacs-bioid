@@ -167,3 +167,26 @@ def test_queue_actions(env, client, monkeypatch):
 
 def test_admin_routes_not_published(client):
     assert not [p for p in client.get("/openapi.json").json()["paths"] if "admin" in p]
+
+
+def test_limits_are_editable_with_per_address_exceptions(env, client, monkeypatch):
+    from src_new.api import security as sec
+    monkeypatch.setattr(sec, "_limits_cache", (0.0, None))
+    h = token(client)
+    r = client.put("/api/v1/admin/settings/limits", json={"submit_per_hour": 30, "queue_cap": 0}, headers=h)
+    assert r.status_code == 200 and r.json()["submit_per_hour"] == 30 and r.json()["queue_cap"] == 0
+    assert client.put("/api/v1/admin/settings/limits", json={"submit_per_hour": -1}, headers=h).status_code == 422
+    r = client.put("/api/v1/admin/settings/limits/exceptions",
+                   json={"address": "192.0.2.0/24", "label": "mdval campaign", "per_hour": 1000}, headers=h)
+    assert r.json()["exceptions"] == {"192.0.2.0/24": {"label": "mdval campaign", "per_hour": 1000}}
+    assert client.put("/api/v1/admin/settings/limits/exceptions",
+                      json={"address": "not-an-ip", "per_hour": 5}, headers=h).status_code == 422
+    assert sec.hourly_limit_for("192.0.2.77") == 1000
+    assert sec.hourly_limit_for("198.51.100.1") == 30
+    # stored on the runs volume, so it survives restarts (Redis has no persistence)
+    assert json.loads((env.runs / "_settings" / "limits.json").read_text())["submit_per_hour"] == 30
+    assert client.get("/api/v1/admin/overview", headers=h).json()["limits"]["exceptions"]
+    r = client.delete("/api/v1/admin/settings/limits/exceptions",
+                      params={"address": "192.0.2.0/24"}, headers=h)
+    assert r.json()["exceptions"] == {}
+    assert client.get("/api/v1/admin/settings/limits").status_code == 401
