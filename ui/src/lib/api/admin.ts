@@ -356,8 +356,13 @@ async function request<T>(path: string, token: string | null, init: RequestInit 
     const retry = Number(res.headers.get("retry-after"));
     throw new ApiError(res.status, body, Number.isFinite(retry) && retry > 0 ? retry : null);
   }
-  const type = res.headers.get("content-type") ?? "";
-  return (type.includes("application/json") ? await res.json() : await res.text()) as T;
+  const contentType = res.headers.get("content-type") ?? "";
+  // The API never answers HTML: an HTML page here is the ingress's error page
+  // (served with status 200 while the API is down), not data (2026-11-17).
+  if (contentType.includes("text/html")) {
+    throw new ApiError(503, JSON.stringify({ detail: "BioID's server is not available right now. Please try again in a few minutes." }), 60);
+  }
+  return (contentType.includes("application/json") ? await res.json() : await res.text()) as T;
 }
 
 const post = <T>(path: string, token: string, body?: unknown) =>
