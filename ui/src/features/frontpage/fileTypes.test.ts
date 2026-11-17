@@ -25,3 +25,16 @@ describe("inputHints", () => {
     expect(inputHints(["traj.xtc"])[0]).toMatch(/\.tpr/);
   });
 });
+
+describe("what the server accepts (2026-11-17)", () => {
+  it("accepts .ent and the auxiliaries", () => {
+    for (const n of ["x.ent", "index.ndx", "md.mdp", "par.prm", "top.rtf", "toppar.str", "step.inp"]) {
+      expect(isAccepted(n)).toBe(true);
+    }
+  });
+  it("warns, but does not stop, a .gro without a topology", () => {
+    expect(inputHints(["conf.gro"])[0]).toContain("likely be incomplete");
+    expect(inputHints(["conf.gro", "topol.top"])).toEqual([]);
+    expect(inputHints(["s.psf", "s.cif"])[0]).toContain("A .psf needs coordinates");
+  });
+});

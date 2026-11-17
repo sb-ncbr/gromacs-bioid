@@ -11,7 +11,10 @@ export const ACCEPTED_EXTENSIONS = [
   // AMBER
   "prmtop", "parm7", "nc", "rst7", "inpcrd", "restrt", "mdcrd",
   // CHARMM / NAMD
-  "psf", "pdb", "crd", "dcd",
+  "psf", "pdb", "ent", "crd", "dcd",
+  // auxiliaries the server accepts with a simulation (index, run, CHARMM
+  // parameter / stream files): dropping a whole folder should not drop them
+  "ndx", "mdp", "prm", "rtf", "str", "inp",
   // LAMMPS
   "data",
   // mmCIF
@@ -25,7 +28,8 @@ export const ACCEPT_MAP: Record<string, string[]> = {
   "application/octet-stream": [
     ".tpr", ".gro", ".top", ".itp", ".trr", ".xtc",
     ".prmtop", ".parm7", ".nc", ".rst7", ".inpcrd", ".restrt", ".mdcrd",
-    ".psf", ".pdb", ".crd", ".dcd",
+    ".psf", ".pdb", ".ent", ".crd", ".dcd",
+    ".ndx", ".mdp", ".prm", ".rtf", ".str", ".inp",
     ".data", ".cif",
   ],
   "application/json": [".json"],
@@ -62,9 +66,11 @@ export function inputHints(names: string[]): string[] {
   if (has("top") && !has("tpr") && !coords) hints.push("A .top needs coordinates: add the .gro.");
   if (has("itp") && !has("top", "tpr")) hints.push(".itp files are includes: add the .top that includes them, or the .tpr.");
   if (has("prmtop", "parm7") && !has("rst7", "inpcrd", "restrt", "nc", "mdcrd", "pdb")) hints.push("An AMBER topology needs coordinates: add the .rst7 or .inpcrd.");
-  if (has("psf") && !has("pdb", "crd", "dcd", "cif")) hints.push("A .psf needs coordinates: add the .pdb or .crd.");
+  if (has("psf") && !has("pdb", "crd", "dcd")) hints.push("A .psf needs coordinates: add the .pdb, .crd or .dcd.");
   if (has("rst7", "inpcrd", "restrt", "mdcrd", "nc") && !has("prmtop", "parm7")) hints.push("AMBER coordinates need their topology: add the .prmtop.");
   if (has("xtc", "trr") && !has("tpr", "top", "gro", "pdb")) hints.push("A trajectory alone has no topology: add the .tpr (or .top and .gro).");
+  if (has("gro") && !has("top", "itp", "tpr"))
+    hints.push("A .gro alone has no topology: BioID will guess molecules and bonds, so identification will likely be incomplete. Add the .top (and .itp) or the .tpr.");
   return hints;
 }
 

@@ -71,7 +71,8 @@ describe("fileTypes", () => {
     expect(ACCEPT_MAP["application/octet-stream"]).toEqual([
       ".tpr", ".gro", ".top", ".itp", ".trr", ".xtc",
       ".prmtop", ".parm7", ".nc", ".rst7", ".inpcrd", ".restrt", ".mdcrd",
-      ".psf", ".pdb", ".crd", ".dcd",
+      ".psf", ".pdb", ".ent", ".crd", ".dcd",
+      ".ndx", ".mdp", ".prm", ".rtf", ".str", ".inp",
       ".data", ".cif",
     ]);
   });

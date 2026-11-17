@@ -989,3 +989,15 @@ def test_incomplete_upload_is_refused_at_submission(client: TestClient, tmp_path
     assert not any(tmp_path.iterdir())  # no run directory left behind
     r = client.post("/runs", files={"files": ("sim.zip", b"PK\x03\x04")})
     assert r.status_code == 422 and "Archives are not unpacked" in r.json()["detail"]
+
+
+def test_gro_alone_is_accepted_with_a_note(client: TestClient, tmp_path: Path,
+                                           monkeypatch: pytest.MonkeyPatch) -> None:
+    """The loader's topology-free .gro fallback works, partially: never refused."""
+    monkeypatch.setenv("BAT3_RUNS_DIR", str(tmp_path))
+    gro = b"t\n1\n    1SOL     OW    1   0.126   1.624   1.679\n   1.0 1.0 1.0\n"
+    r = client.post("/runs", files={"files": ("conf.gro", gro)})
+    assert r.status_code == 200, r.text
+    assert "likely be incomplete" in r.json()["message"]
+    r = client.post("/runs", files=[("files", ("conf.gro", gro)), ("files", ("topol.top", b"[ system ]\nx\n"))])
+    assert r.status_code == 200 and "Note" not in r.json()["message"]

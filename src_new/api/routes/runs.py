@@ -176,20 +176,31 @@ def resolve_artifact_paths(artifacts_dict: Dict[str, Any], run_id: str) -> Dict[
     return resolved
 
 
-def _input_problem(input_dir: Path) -> Optional[str]:
-    """Why these files cannot run, by the worker's own input discovery; None if they can.
+def _input_check(input_dir: Path) -> tuple[Optional[str], Optional[str]]:
+    """(refusal, note) for the uploaded files, by the worker's own loader rules.
 
-    Checked at submission so an incomplete upload is refused at once instead
-    of waiting in the queue and failing with missing_input (2026-11-17).
+    Refused only when no loading strategy the worker would try can use the
+    files (the loader tries every strategy for an unrecognised set, so
+    "unrecognised" is not "unloadable"): a trajectory without a topology, an
+    archive alone. When the only usable strategy is the topology-free .gro
+    fallback, the run is accepted with a note that it will likely be
+    incomplete (2026-11-17).
     """
     from src_new.input.discovery import inspect_directory, select_best_file_combination
+    from src_new.loader.strategies import LoadStrategy, get_fallback_strategies, validate_for_strategy
     try:
-        decision = select_best_file_combination(inspect_directory(input_dir))
+        bundle = inspect_directory(input_dir)
+        decision = select_best_file_combination(bundle)
+        usable = [s for s in get_fallback_strategies(decision, bundle) if validate_for_strategy(bundle, s).ok]
     except Exception as exc:  # the worker decides; never refuse on a checker error
         logger.warning("input pre-check failed (%s); run accepted", exc)
-        return None
-    if decision.selected_strategy != "UNKNOWN":
-        return None
+        return None, None
+    if usable and all(s == LoadStrategy.GROMACS_GRO for s in usable):
+        return None, ("Only coordinates without a topology (.gro): BioID will guess molecules and bonds, "
+                      "so identification will likely be incomplete. Upload the .top (and .itp) or .tpr "
+                      "with it for reliable results.")
+    if usable:
+        return None, None
     names = sorted(p.name for p in input_dir.iterdir())
     archives = [n for n in names if n.lower().endswith((".zip", ".tar", ".tar.gz", ".tgz"))]
     hint = (" Archives are not unpacked: upload the files inside them." if archives else "")
@@ -197,7 +208,7 @@ def _input_problem(input_dir: Path) -> Optional[str]:
             + ", ".join(names[:10]) + (", …" if len(names) > 10 else "") + "). "
             "Upload a topology together with coordinates, e.g. .tpr (+ .gro), .gro + .top (+ .itp), "
             ".prmtop + .inpcrd/.rst7/.nc, .psf + .pdb/.crd/.dcd, a LAMMPS .data file, "
-            "or a single .pdb or .cif." + hint)
+            "or a single .pdb, .gro or .cif." + hint), None
 
 
 @router.post("", response_model=RunCreateResponse)
@@ -342,7 +353,7 @@ async def create_run(
             shutil.copyfileobj(file.file, f, 1024 * 1024)
         saved_files[name] = str(file_path)
 
-    problem = _input_problem(input_dir)
+    problem, input_note = _input_check(input_dir)
     if problem:
         shutil.rmtree(run_dir, ignore_errors=True)
         raise HTTPException(status_code=422, detail=problem)
@@ -391,7 +402,7 @@ async def create_run(
     return RunCreateResponse(
         run_id=run_id,
         status="queued",
-        message=f"Run {run_id} queued successfully",
+        message=f"Run {run_id} queued successfully" + (f". Note: {input_note}" if input_note else ""),
         results_url=f"/runs/{run_id}/status",
         owner_token=owner_token,
     )
