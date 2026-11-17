@@ -353,6 +353,10 @@ async def reaper_loop(celery_app, runs_dir: Path, redis_url: str,
                 adhoc = os.environ.get("BAT3_ADHOC_DIR", "").strip()
                 adhoc_dir = Path(adhoc) if adhoc else runs_dir / ADHOC_DIR_NAME
                 await asyncio.to_thread(sweep_adhoc, adhoc_dir)
+                # Watchdog: crash-loop alarms, nightly known-answers check
+                # (never raises; watchdog.py)
+                from .watchdog import tick as watchdog_tick
+                await asyncio.to_thread(watchdog_tick, runs_dir)
                 # Run retention (src_new/api/retention.py): hourly; report-only
                 # unless BAT3_RETENTION_ENFORCE=1. Last result for /admin.
                 if time.time() - last_retention >= RETENTION_INTERVAL_S:

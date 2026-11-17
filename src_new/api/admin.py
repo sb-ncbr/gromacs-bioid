@@ -358,8 +358,17 @@ async def overview() -> dict:
             "retention": _section(lambda: _cached("retention", 30, _retention_status)),
             "limits": {**security.current_limits(), "max_files": security.MAX_FILES},
             "reports": _section(lambda: _cached("reports", 30, _reports_summary)),
+            "checks": _section(lambda: _cached("checks", 30, _checks_summary)),
         }
     return await asyncio.to_thread(build)
+
+
+def _checks_summary() -> dict:
+    from . import watchdog
+    st = watchdog.state(_runs_dir())
+    return {"cases": len(watchdog.cases(_runs_dir())), "status": st.get("status"),
+            "started_at": st.get("started_at"), "finished_at": st.get("finished_at"),
+            "last_completed": st.get("last_completed")}
 
 
 def _reports_summary() -> dict:
@@ -623,6 +632,81 @@ async def admin_report_update(report_id: str, body: dict = Body(...)) -> dict:
     report.pop("reporter_hash", None)
     _drop_cache("reports")
     return report
+
+
+@router.get("/checks", dependencies=[Depends(require_admin)])
+async def admin_checks() -> dict:
+    """Known-answers cases, the last/current nightly check, crash loops, recent alarms."""
+    import asyncio
+    from . import alerts, watchdog
+
+    def build():
+        try:
+            loops = watchdog.crash_loops()
+        except Exception as exc:
+            loops = {"error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        return {"cases": watchdog.cases(_runs_dir()), "check": watchdog.state(_runs_dir()),
+                "crash_loops": loops, "alerts": alerts.recent(),
+                "alert_email": alerts.recipient()}
+    return await asyncio.to_thread(build)
+
+
+@router.post("/checks/cases", dependencies=[Depends(require_admin)])
+async def admin_add_case(body: dict = Body(...)) -> dict:
+    from . import watchdog
+    run_id = str(body.get("run_id") or "")
+    _run_dir(run_id)
+    try:
+        case = watchdog.add_case(_runs_dir(), run_id, str(body.get("label") or ""))
+    except (OSError, ValueError) as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    _drop_cache("checks")
+    return case
+
+
+@router.delete("/checks/cases/{run_id}", dependencies=[Depends(require_admin)])
+async def admin_remove_case(run_id: security.RunId) -> dict:
+    from . import watchdog
+    watchdog.remove_case(_runs_dir(), run_id)
+    _drop_cache("checks")
+    return {"removed": run_id}
+
+
+@router.post("/checks/cases/{run_id}/accept", dependencies=[Depends(require_admin)])
+async def admin_accept_case(run_id: security.RunId) -> dict:
+    from . import watchdog
+    try:
+        case = watchdog.accept(_runs_dir(), run_id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    _drop_cache("checks")
+    return case
+
+
+@router.post("/checks/run", dependencies=[Depends(require_admin)])
+async def admin_run_check() -> dict:
+    """Start the known-answers check now (409 while one is running)."""
+    import asyncio
+    from . import watchdog
+    if watchdog.state(_runs_dir()).get("status") == "running":
+        raise HTTPException(status_code=409, detail="A check is already running.")
+    if not watchdog.cases(_runs_dir()):
+        raise HTTPException(status_code=409, detail="No known-answers cases yet.")
+    st = await asyncio.to_thread(watchdog.start_check, _runs_dir())
+    _drop_cache("checks")
+    return st
+
+
+@router.post("/alerts/test", dependencies=[Depends(require_admin)])
+async def admin_test_alert() -> dict:
+    """Send a test alarm email (bypasses the once-per-6-hours limit)."""
+    import asyncio
+    from . import alerts
+    if not alerts.recipient():
+        raise HTTPException(status_code=409, detail="BAT3_ALERT_EMAIL is not set.")
+    sent = await asyncio.to_thread(alerts.alarm, f"test:{time.time()}", "Test alarm",
+                                   "A test alarm from the BioID admin page. No action needed.", 60)
+    return {"sent": sent, "to": alerts.recipient()}
 
 
 @router.post("/expired/{run_id}/restore", dependencies=[Depends(require_admin)])

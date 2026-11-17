@@ -131,6 +131,36 @@ plain run directory.
   and logs an error. Runs with their own short retention (a campaign's
   `retention=1`) do not count against this.
 
+## Nightly known-answers check and alarms
+
+Some failures never raise an error: a missing client library, a service
+changing its API, a database gone from the volume. Runs still finish, with
+fewer hits. The nightly check catches them.
+
+- **Cases**: on the admin page (*Checks*), add a successful run whose answers
+  are known to be right. Its current answer per molecule (database,
+  identifier, state) and the databases that answered are recorded, and the
+  run is kept permanently. Reported identifications (*Reports*) are good
+  candidates once corrected.
+- **Every night at 01:30 (Europe/Prague)** the API reruns each case through the
+  normal rerun path and compares: a changed identity or a failed run is
+  **red**; a database that stopped answering is **amber**, and **red** when the
+  same database is missing two nights running; a rerun that does not finish
+  in 4 hours is amber. *Run check now* starts one at once.
+- Green check runs are deleted; others are kept 7 days for inspection. When
+  an answer changed for a good reason (a better match), *Accept* makes the
+  observed answer the new known answer.
+- **Alarms** go by email to `BAT3_ALERT_EMAIL` (API env; unset = logged only)
+  through `relay.muni.cz:25` (STARTTLS, no credentials; `BAT3_SMTP_HOST`,
+  `BAT3_SMTP_PORT`, `BAT3_ALERT_FROM` override). A red check mails once; a
+  deployment with pods in CrashLoopBackOff, ImagePullBackOff or a container
+  configuration error mails at most once per 6 hours. *Send test alarm* on
+  the admin page checks delivery.
+
+Both run in the API's run-reaper loop (Redis leader lock: one API pod acts).
+State: `<runs>/_settings/known_answers.json` (cases) and
+`known_answers_state.json` (last check).
+
 ## Scaling
 
 UI workers (`bat3-ui-worker`) execute every web, API and MCP run, two at a
