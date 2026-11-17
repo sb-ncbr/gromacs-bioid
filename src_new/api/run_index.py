@@ -25,8 +25,13 @@ from .security import valid_run_id
 
 _lock = threading.Lock()
 _cache: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
-#: NFS round trips in flight at once (stat, then reading changed files).
+#: Stats in flight at once (cheap, latency-bound).
 _IO_THREADS = 32
+#: Changed results.json files read and parsed at once. Each is 1-5 MB and
+#: several times that once parsed; 32 at once in each of the API's worker
+#: processes, with mdval's runs changing all the time, pushed the API pod
+#: to its memory limit and it was OOM-killed (2026-11-17).
+_READ_THREADS = 4
 
 
 def _summary(run_id: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -93,7 +98,8 @@ def summaries(runs_dir: Path) -> list[dict[str, Any]]:
                 found[name] = hit[1]
             else:
                 stale[name] = key
-        for name, summary in zip(stale, pool.map(_read, stale, [paths[n] for n in stale])):
+    with ThreadPoolExecutor(_READ_THREADS) as readers:
+        for name, summary in zip(stale, readers.map(_read, stale, [paths[n] for n in stale])):
             if summary is None:
                 continue
             with _lock:
