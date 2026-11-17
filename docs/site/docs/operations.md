@@ -36,18 +36,28 @@ and the UI worker (and optionally a new frontend tag), in one step:
    the web application, and `code_version` in
    `GET https://bioid-ceitec.dyn.cloud.e-infra.cz/api/v1/capabilities`.
 
-The maintainer's script for this (`release.sh <digest> <short sha> [frontend
-tag]`) is kept outside the repository. Not covered by it, and deployed
-separately:
+All of this is `deploy/release.sh` (since 2026-11-17 in the repository):
 
-- **Docs**: build `Dockerfile.docs`, then
-  `kubectl -n ceitec-biodata-ns set image deploy/validation-docs docs=cerit.io/tomsko/bat3-docs:<tag>`.
-- **MCP server**: `Dockerfile.mcp`, manifest `deploy/mcp-server.yaml`
-  (deployment `bioid-mcp`).
-- Their paths on the BioID host (`/documentation`, `/mcp`) are separate
-  Ingresses in `deploy/bioid-ingress-extras.yaml`, because the main ingress
-  `bat3-ceitec-bat3-ingress` is managed by Helm and a path patched into it
-  would be lost on the next `helm upgrade`.
+```
+deploy/release.sh --backend sha256:<digest> --code <short sha> \
+                  [--web <frontend tag>] [--docs <docs tag>] [--mcp <mcp tag>]
+```
+
+Any combination; web, docs and MCP alone need no empty queue. It retries
+flaky registry lookups, asks a live worker for active runs, writes snapshots
+to `~/bioid-release-snapshots` (outside the repository: the specs carry
+environment values; roll back with `kubectl apply -f <snapshot>`), and warns
+afterwards if secret environment, the alarm address or the shared cache URL
+went missing, or the old config overlay is still mounted.
+
+Production manifests live in `deploy/live/` (`deploy/export-live.sh`
+exports them and refuses while any carries a literal secret). The Helm chart
+`bat3-chart/` is retired: Helm last deployed BioID on 2026-09-10 and an
+upgrade would roll production back two months, so the chart now refuses to
+render (`bat3-chart/RETIRED.md`). Other objects: `deploy/mcp-server.yaml`,
+`deploy/bioid-cache-redis.yaml`, and the docs and MCP paths on the BioID host
+(`/documentation`, `/mcp`) as separate Ingresses in
+`deploy/bioid-ingress-extras.yaml`.
 
 Never mix images across worker classes during a campaign or re-run wave
 (era unity). The dark-matter worker (`bat3-darkmatter-worker`) belongs to a
