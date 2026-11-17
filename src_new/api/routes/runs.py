@@ -544,7 +544,12 @@ async def delete_run(
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
     if run_id in served_example_ids(get_runs_dir()):
         raise HTTPException(status_code=403, detail="Example runs cannot be deleted.")
-    require_owner(load_results_json(run_id).get("pipeline", {}), owner_token, "deleted")
+    pipeline = load_results_json(run_id).get("pipeline", {})
+    require_owner(pipeline, owner_token, "deleted")
+    # A queued or running run's worker would write results.json again after
+    # the delete and leave a half run behind (2026-11-17): cancel it first.
+    if pipeline.get("status") in ("queued", "running", "pending", "created"):
+        raise HTTPException(status_code=409, detail="This run is still queued or running: cancel it first, then delete it.")
     shutil.rmtree(run_dir)
     return {"message": f"Run '{run_id}' deleted successfully"}
 

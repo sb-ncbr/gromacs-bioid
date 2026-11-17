@@ -67,6 +67,11 @@ def test_owner_token_guards_delete_and_cancel(runs, client):
     r = client.request("DELETE", f"/api/v1/runs/{run_id}", headers={"X-Owner-Token": "nope"})
     assert r.status_code == 403 and "Only the submitter" in r.json()["detail"]
     r = client.request("DELETE", f"/api/v1/runs/{run_id}", headers={"X-Owner-Token": token})
+    assert r.status_code == 409 and "cancel it first" in r.json()["detail"]  # still queued
+    data = json.loads((runs / run_id / "results.json").read_text())
+    data["pipeline"]["status"] = "success"
+    (runs / run_id / "results.json").write_text(json.dumps(data))
+    r = client.request("DELETE", f"/api/v1/runs/{run_id}", headers={"X-Owner-Token": token})
     assert r.status_code == 200 and not (runs / run_id).exists()
 
 
