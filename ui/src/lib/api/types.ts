@@ -4,6 +4,27 @@
  */
 
 export interface paths {
+    "/api/v1/events/pageview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pageview
+         * @description Page-view beacon of the web app and the documentation. Honours
+         *     Do-Not-Track; never counts the admin page.
+         */
+        post: operations["pageview_api_v1_events_pageview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/config/default": {
         parameters: {
             query?: never;
@@ -16,6 +37,27 @@ export interface paths {
          * @description Get the default configuration as a JSON dict.
          */
         get: operations["get_default_config_runs_config_default_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/config/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Config Options
+         * @description What a run may change: the tunable fields with their server defaults,
+         *     and the presets (overrides on top of those defaults).
+         */
+        get: operations["get_config_options_runs_config_options_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -53,16 +95,19 @@ export interface paths {
         };
         /**
          * List Runs
-         * @description List all runs with basic metadata.
+         * @description Runs submitted from the caller's network address, with basic metadata.
          *
-         *     When ``mine=1``, only runs whose ``creator_ip`` matches the current
-         *     requester's IP are returned (default behavior is unchanged).
+         *     Other people's runs are never listed (``mine`` is accepted for
+         *     compatibility and ignored).
          */
         get: operations["list_runs_runs_get"];
         put?: never;
         /**
          * Create Run
          * @description Create a new run by uploading input files and optionally a config file.
+         *
+         *     ``preset`` (see GET /runs/config/options) is applied first, then
+         *     ``config_file`` or ``config_json``; only per-run tunable fields may change.
          *
          *     The pipeline runs in the background via Celery. Returns immediately with run status.
          */
@@ -113,9 +158,53 @@ export interface paths {
         post?: never;
         /**
          * Delete Run
-         * @description Delete a run and its associated directory.
+         * @description Delete a run and its associated directory (owner token required).
          */
         delete: operations["delete_run_runs__run_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Identification
+         * @description Report that a molecule's identification looks wrong. Anyone may report;
+         *     at most 20 reports per address per hour (429).
+         */
+        post: operations["report_identification_runs__run_id__reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep Run Longer
+         * @description Keep a finished run longer: 30, 90, 180 or 365 days from now (owner only).
+         *
+         *     403 without the owner token; 409 when the run is not finished, is kept
+         *     permanently, or already expires later than the choice.
+         */
+        post: operations["keep_run_longer_runs__run_id__retention_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -209,6 +298,27 @@ export interface paths {
          * @description Get molecule summary including unique molecules and type counts.
          */
         get: operations["get_molecules_runs__run_id__molecules_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/download/results.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Results Json
+         * @description The run's complete results document (documented at
+         *     /documentation/results-json/), without the submitter's address.
+         */
+        get: operations["download_results_json_runs__run_id__download_results_json_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -545,6 +655,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/config/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Presets and settings
+         * @description The presets and every setting a run may change, with the server defaults. Post only the settings you change, as `config_json`.
+         */
+        get: operations["get_config_options_api_v1_runs_config_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/config/parallel-default": {
         parameters: {
             query?: never;
@@ -573,19 +703,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Runs
-         * @description List all runs with basic metadata.
-         *
-         *     When ``mine=1``, only runs whose ``creator_ip`` matches the current
-         *     requester's IP are returned (default behavior is unchanged).
+         * List your runs
+         * @description Runs submitted from your network address, newest first (`mine=1`).
          */
         get: operations["list_runs_api_v1_runs_get"];
         put?: never;
         /**
-         * Create Run
-         * @description Create a new run by uploading input files and optionally a config file.
-         *
-         *     The pipeline runs in the background via Celery. Returns immediately with run status.
+         * Submit a run
+         * @description Upload simulation files as multipart `files` (repeat the field for several files; GROMACS, AMBER, CHARMM/NAMD, LAMMPS, PDB/mmCIF or a zip/tar bundle; 128 MiB per file). Optional form fields: `run_name`, `preset` (`balanced`, `quick`, `exact`, `deep`; see `GET /api/v1/runs/config/options`) and `config_json` (only the fields that differ from the defaults, e.g. `{"verification": {"verify_top_n": 50}}`). Returns the `run_id`; the run is queued and processed in the background. 422 if a file name or the configuration is not accepted.
          */
         post: operations["create_run_api_v1_runs_post"];
         delete?: never;
@@ -602,12 +727,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Run Examples
-         * @description Landing-page example cards (v3.137).
-         *
-         *     Auto: newest *successful* runs that have render/system.png. Override for
-         *     curated cards: env BAT3_EXAMPLE_RUNS as JSON list of run ids (deploy-time
-         *     changeable, no code edit). Titles parse from run_name 'Title>Description'.
+         * Example runs
+         * @description Finished example analyses shown on the front page.
          */
         get: operations["get_run_examples_api_v1_runs_examples_get"];
         put?: never;
@@ -626,17 +747,57 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Run Summary
-         * @description Get a summary of a specific run.
+         * Run summary
+         * @description Name, status, timestamps and input files of a run.
          */
         get: operations["get_run_summary_api_v1_runs__run_id__get"];
         put?: never;
         post?: never;
         /**
-         * Delete Run
-         * @description Delete a run and its associated directory.
+         * Delete a run
+         * @description Removes the run and its files.
          */
         delete: operations["delete_run_api_v1_runs__run_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report a wrong identification
+         * @description Tells the BioID team that a molecule's identification looks wrong (segment, optional note and suggestion).
+         */
+        post: operations["report_identification_api_v1_runs__run_id__reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep a run longer
+         * @description Keeps a finished run 30, 90, 180 or 365 days from now. Needs the owner token; only extends.
+         */
+        post: operations["keep_run_longer_api_v1_runs__run_id__retention_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -650,13 +811,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Run Status
-         * @description Get full run status including pipeline, tasks, warnings, errors, and events.
-         *
-         *     Args:
-         *         run_id: The run identifier
-         *         since: Optional ISO 8601 timestamp to filter events/warnings/errors. Only items
-         *                with timestamp >= since will be returned. Invalid timestamps are ignored.
+         * Run status and progress
+         * @description Poll this while the run is processing. `pipeline.status` is `queued`, `running`, `success`, `failed` or `cancelled`; `tasks` lists the pipeline stages, `progress` the per-molecule identification progress, `warnings` anything worth knowing.
          */
         get: operations["get_run_status_api_v1_runs__run_id__status_get"];
         put?: never;
@@ -677,19 +833,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Cancel Run
-         * @description Cancel a running or queued run.
-         *
-         *     Revokes the Celery task and sets pipeline status to "cancelled".
-         *
-         *     Args:
-         *         run_id: The run identifier
-         *
-         *     Returns:
-         *         CancelRunResponse with run_id and status
-         *
-         *     Raises:
-         *         HTTPException: 404 if run not found, 400 if run is already finished
+         * Cancel a run
+         * @description Stops a queued or running run.
          */
         post: operations["cancel_run_api_v1_runs__run_id__cancel_post"];
         delete?: never;
@@ -726,10 +871,30 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Molecules
-         * @description Get molecule summary including unique molecules and type counts.
+         * Molecules
+         * @description The molecules found in the system: unique molecules with their copies, counts by kind and per-segment metadata.
          */
         get: operations["get_molecules_api_v1_runs__run_id__molecules_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/download/results.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download results.json
+         * @description The complete results document. Its structure is described at /documentation/results-json/.
+         */
+        get: operations["download_results_json_api_v1_runs__run_id__download_results_json_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -746,13 +911,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Download Results Csv
-         * @description v3.143 (BACKEND_GAPS G6): run-level CSV export — one clean row per
-         *     leaderboard molecule (every fragments/segments entry). Confidence
-         *     label thresholds match the UI exactly (>=80 high, >=50 medium);
-         *     Alternatives = top-3 verified hits after the best, as db:id. Empty
-         *     cells (never resolver names or internal chains) for unverified
-         *     molecules; `identified_name` fills in once G5 lands server-side.
+         * Download results.csv
+         * @description One row per molecule: best identification, database, identifier, confidence and alternatives.
          */
         get: operations["download_results_csv_api_v1_runs__run_id__download_results_csv_get"];
         put?: never;
@@ -771,8 +931,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Molecule Info
-         * @description Get detailed info for a specific molecule segment.
+         * One molecule
+         * @description Composition and identification summary of one molecule (segment).
          */
         get: operations["get_molecule_info_api_v1_runs__run_id__molecules__segment__info_get"];
         put?: never;
@@ -811,8 +971,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Signatures
-         * @description Get signatures for all segments or a specific segment.
+         * Signatures
+         * @description The descriptions generated for each molecule and used as search queries: sequences, SMILES, InChIKeys, formulas, structures.
          */
         get: operations["get_signatures_api_v1_runs__run_id__signatures_get"];
         put?: never;
@@ -831,8 +991,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Identifiers
-         * @description Get identifier hits for all segments or a specific segment.
+         * Database hits
+         * @description Every raw hit from every database search, before verification.
          */
         get: operations["get_identifiers_api_v1_runs__run_id__identifiers_get"];
         put?: never;
@@ -851,8 +1011,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Verification
-         * @description Get verification results for all segments or a specific segment.
+         * Identifications (verified hits)
+         * @description For every molecule, the database candidates after verification, with their confidence (0–100), the three confidence terms and whether each was verified. This is the main result.
          */
         get: operations["get_verification_api_v1_runs__run_id__verification_get"];
         put?: never;
@@ -871,8 +1031,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Run Logs
-         * @description Get raw log text for a run. type is 'normal' or 'debug'.
+         * Run log
+         * @description The pipeline log of the run.
          */
         get: operations["get_run_logs_api_v1_runs__run_id__logs_get"];
         put?: never;
@@ -891,8 +1051,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Run Files
-         * @description Get all files in a run directory (recursive), excluding hidden files.
+         * Run files
+         * @description Files of the run (inputs and outputs), served under `/files/{run_id}/…`.
          */
         get: operations["get_run_files_api_v1_runs__run_id__files_get"];
         put?: never;
@@ -911,19 +1071,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Download Topology Less Pdb
-         * @description Download topology-less PDB signature(s) for a run.
-         *
-         *     Args:
-         *         run_id: The run identifier
-         *         segment: Optional segment name. Required if multiple segments exist.
-         *
-         *     Returns:
-         *         Plain text PDB content with media_type='chemical/x-pdb'
-         *
-         *     Raises:
-         *         404: If run not found or no topology-less PDB signatures exist
-         *         400: If multiple segments exist and segment parameter not specified
+         * Download topology-less PDB
+         * @description The system as a PDB file without topology records.
          */
         get: operations["download_topology_less_pdb_api_v1_runs__run_id__download_topology_less_pdb_get"];
         put?: never;
@@ -942,19 +1091,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Download Ca Only Pdb
-         * @description Download CA-only PDB signature(s) for a run.
-         *
-         *     Args:
-         *         run_id: The run identifier
-         *         segment: Optional segment name. Required if multiple segments exist.
-         *
-         *     Returns:
-         *         Plain text PDB content with media_type='chemical/x-pdb'
-         *
-         *     Raises:
-         *         404: If run not found or no CA-only PDB signatures exist
-         *         400: If multiple segments exist and segment parameter not specified
+         * Download Cα-only PDB
+         * @description Protein Cα trace of the system.
          */
         get: operations["download_ca_only_pdb_api_v1_runs__run_id__download_ca_only_pdb_get"];
         put?: never;
@@ -988,6 +1126,9 @@ export interface paths {
          *
          *     Returns:
          *         RerunAllResponse with list of new runs, skipped runs, and count
+         *
+         *     Operators only: needs X-Admin-Token equal to BAT3_ADMIN_TOKEN (404 when
+         *     that is unset, as on the public service).
          */
         post: operations["rerun_all_api_v1_runs_rerun_all_post"];
         delete?: never;
@@ -1006,20 +1147,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Rerun Single Run
-         * @description Re-run a single existing run by copying its input files and config into a
-         *     new run directory and enqueuing a new Celery pipeline task.
-         *
-         *     The original run is not modified or deleted.
-         *
-         *     Args:
-         *         run_id: The identifier of the run to re-run.
-         *
-         *     Returns:
-         *         RunCreateResponse for the newly queued run.
-         *
-         *     Raises:
-         *         404: If the run or its input directory is missing.
+         * Run again
+         * @description Starts a new run with the same input files and configuration; returns the new `run_id`.
          */
         post: operations["rerun_single_run_api_v1_runs__run_id__rerun_post"];
         delete?: never;
@@ -1036,21 +1165,412 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Run Queue
-         * @description Queue state for a single run.
-         *
-         *     Returns:
-         *         state: queued | running | done
-         *         position: 1-based position among queued runs ordered by created_at
-         *                   (queued runs only; null otherwise)
-         *         ahead: number of queued runs ahead of this run (null otherwise)
-         *
-         *     Raises:
-         *         404: If run not found.
+         * Queue position
+         * @description Where a queued run stands in the queue.
          */
         get: operations["get_run_queue_api_v1_runs__run_id__queue_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Login */
+        post: operations["login_api_v1_admin_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Overview
+         * @description Everything the dashboard shows; cached a few seconds per section.
+         */
+        get: operations["overview_api_v1_admin_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/traffic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Traffic Stats
+         * @description Traffic statistics for one window (1h, 24h, 7d, 30d, 90d, all).
+         */
+        get: operations["traffic_stats_api_v1_admin_traffic_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Limits */
+        get: operations["get_limits_api_v1_admin_settings_limits_get"];
+        /**
+         * Put Limits
+         * @description {submit_per_hour?, queue_cap?}: 0 = no limit; takes effect within 10 s.
+         */
+        put: operations["put_limits_api_v1_admin_settings_limits_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/limits/exceptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Limit Exception
+         * @description {address (IP or CIDR), label, per_hour}: an address's own hourly limit.
+         */
+        put: operations["put_limit_exception_api_v1_admin_settings_limits_exceptions_put"];
+        post?: never;
+        /** Delete Limit Exception */
+        delete: operations["delete_limit_exception_api_v1_admin_settings_limits_exceptions_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/deployments/{name}/scale": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scale */
+        post: operations["scale_api_v1_admin_deployments__name__scale_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/deployments/{name}/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restart */
+        post: operations["restart_api_v1_admin_deployments__name__restart_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/pods/{name}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete Pod */
+        post: operations["delete_pod_api_v1_admin_pods__name__delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/pods/{name}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pod Logs */
+        get: operations["pod_logs_api_v1_admin_pods__name__logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/queues/{name}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue Action */
+        post: operations["queue_action_api_v1_admin_queues__name___action__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Cancel */
+        post: operations["admin_cancel_api_v1_admin_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/runs/{run_id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Delete
+         * @description Moves the run to the retention trash (restorable during the grace period).
+         */
+        post: operations["admin_delete_api_v1_admin_runs__run_id__delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/runs/{run_id}/retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Retention */
+        post: operations["admin_retention_api_v1_admin_runs__run_id__retention_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Reports */
+        get: operations["admin_reports_api_v1_admin_reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Admin Report Update */
+        put: operations["admin_report_update_api_v1_admin_reports__report_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Checks
+         * @description Known-answers cases, the last/current nightly check, crash loops, recent alarms.
+         */
+        get: operations["admin_checks_api_v1_admin_checks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/checks/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Add Case */
+        post: operations["admin_add_case_api_v1_admin_checks_cases_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/checks/cases/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Admin Remove Case */
+        delete: operations["admin_remove_case_api_v1_admin_checks_cases__run_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/checks/cases/{run_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Accept Case */
+        post: operations["admin_accept_case_api_v1_admin_checks_cases__run_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/checks/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Run Check
+         * @description Start the known-answers check now (409 while one is running).
+         */
+        post: operations["admin_run_check_api_v1_admin_checks_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/alerts/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Test Alert
+         * @description Send a test alarm email (bypasses the once-per-6-hours limit).
+         */
+        post: operations["admin_test_alert_api_v1_admin_alerts_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/expired/{run_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Restore */
+        post: operations["admin_restore_api_v1_admin_expired__run_id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1081,7 +1601,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Capabilities */
+        /**
+         * Capabilities
+         * @description API features available on this server and the code version.
+         */
         get: operations["get_capabilities_api_v1_capabilities_get"];
         put?: never;
         post?: never;
@@ -1108,6 +1631,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/files/adhoc/{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Serve Adhoc File
+         * @description Serve a worker-staged adhoc mmCIF/PDB by content sha256 (404 on miss).
+         */
+        get: operations["serve_adhoc_file_files_adhoc__filename__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/validation-{rest}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Serve Validation File
+         * @description Serve files for validation runs by uuid (validation-<eid>-<ts>).
+         *
+         *     Resolved via VALIDATION_FILES_ROOT (validation NFS mount, read-only).
+         *     Absent root / unknown uuid / traversal attempts -> 404 (same as before).
+         */
+        get: operations["serve_validation_file_files_validation__rest__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -1116,8 +1682,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Api V1 Health
-         * @description Health check for the /api/v1 namespace.
+         * Health
+         * @description Liveness of the API.
          */
         get: operations["api_v1_health_api_v1_health_get"];
         put?: never;
@@ -1625,6 +2191,10 @@ export interface components {
             config_json?: string | null;
             /** Run Name */
             run_name?: string | null;
+            /** Preset */
+            preset?: string | null;
+            /** Retention */
+            retention?: string | null;
         };
         /** Body_create_run_runs_post */
         Body_create_run_runs_post: {
@@ -1636,6 +2206,10 @@ export interface components {
             config_json?: string | null;
             /** Run Name */
             run_name?: string | null;
+            /** Preset */
+            preset?: string | null;
+            /** Retention */
+            retention?: string | null;
         };
         /**
          * CancelRunResponse
@@ -1728,6 +2302,11 @@ export interface components {
              * @description ISO 8601 timestamp when error was recorded
              */
             recorded_at?: string | null;
+            /**
+             * Docs Url
+             * @description Path on the BioID host of the documentation section explaining this code
+             */
+            docs_url?: string | null;
         };
         /**
          * EventItem
@@ -2218,6 +2797,29 @@ export interface components {
             residue_ranges?: (string | number)[][] | null;
         };
         /**
+         * ReportCreate
+         * @description 'This identification looks wrong' for one molecule of a run.
+         */
+        ReportCreate: {
+            /**
+             * Segment
+             * @description The molecule's segment name, as in results.json
+             */
+            segment: string;
+            /**
+             * Note
+             * @description What looks wrong (optional)
+             * @default
+             */
+            note: string;
+            /**
+             * Suggestion
+             * @description What the molecule really is, if known (optional)
+             * @default
+             */
+            suggestion: string;
+        };
+        /**
          * RerunAllResponse
          * @description Response model for the re-run all endpoint.
          */
@@ -2281,6 +2883,49 @@ export interface components {
             message: string;
         };
         /**
+         * RetentionChange
+         * @description Keep a finished run longer (owner only).
+         */
+        RetentionChange: {
+            /**
+             * Days
+             * @description Keep the run this many days from now: 30, 90, 180 or 365
+             */
+            days: number;
+        };
+        /**
+         * RetentionInfo
+         * @description How long a run is kept (2026-11-17).
+         */
+        RetentionInfo: {
+            /**
+             * Policy
+             * @description default, days or preserve
+             */
+            policy: string;
+            /**
+             * Days
+             * @description Retention period in days (null when preserved)
+             */
+            days?: number | null;
+            /**
+             * Expires At
+             * @description ISO 8601 time the run is deleted; null = never or not finished
+             */
+            expires_at?: string | null;
+            /**
+             * Example
+             * @description An example run: never deleted
+             * @default false
+             */
+            example: boolean;
+            /**
+             * Owner Choices
+             * @description Days the owner may choose with POST /runs/{id}/retention
+             */
+            owner_choices?: number[];
+        };
+        /**
          * RunCreateResponse
          * @description Response model for creating a new run.
          */
@@ -2305,6 +2950,11 @@ export interface components {
              * @description URL to check run status
              */
             results_url: string;
+            /**
+             * Owner Token
+             * @description Secret for deleting or cancelling this run (X-Owner-Token header); shown only once, keep it
+             */
+            owner_token?: string | null;
         };
         /**
          * RunFilesResponse
@@ -2460,6 +3110,8 @@ export interface components {
             updated_at?: string | null;
             /** @description Per-segment identification progress */
             progress?: components["schemas"]["RunStageProgress"] | null;
+            /** @description How long the run is kept */
+            retention?: components["schemas"]["RetentionInfo"] | null;
         };
         /**
          * RunSummaryResponse
@@ -2516,6 +3168,8 @@ export interface components {
              * @description Number of errors
              */
             error_count: number;
+            /** @description How long the run is kept */
+            retention?: components["schemas"]["RetentionInfo"] | null;
         };
         /**
          * SignatureInfo
@@ -2763,6 +3417,11 @@ export interface components {
              * @description ISO 8601 timestamp when warning was recorded
              */
             recorded_at?: string | null;
+            /**
+             * Docs Url
+             * @description Path on the BioID host of the documentation section explaining this code
+             */
+            docs_url?: string | null;
         };
     };
     responses: never;
@@ -2773,7 +3432,47 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    pageview_api_v1_events_pageview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_default_config_runs_config_default_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_config_options_runs_config_options_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -2919,6 +3618,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -2948,8 +3648,11 @@ export interface operations {
     delete_run_runs__run_id__delete: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Owner-Token"?: string | null;
+            };
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -2978,6 +3681,82 @@ export interface operations {
             };
         };
     };
+    report_identification_runs__run_id__reports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run id returned by POST /runs */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    keep_run_longer_runs__run_id__retention_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Owner-Token"?: string | null;
+            };
+            path: {
+                /** @description Run id returned by POST /runs */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetentionChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetentionInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_run_status_runs__run_id__status_get: {
         parameters: {
             query?: {
@@ -2985,6 +3764,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3014,8 +3794,11 @@ export interface operations {
     cancel_run_runs__run_id__cancel_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Owner-Token"?: string | null;
+            };
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3047,6 +3830,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3078,6 +3862,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3104,11 +3889,44 @@ export interface operations {
             };
         };
     };
+    download_results_json_runs__run_id__download_results_json_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run id returned by POST /runs */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     download_results_csv_runs__run_id__download_results_csv_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3140,6 +3958,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
                 segment: string;
             };
@@ -3172,6 +3991,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3205,6 +4025,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3238,6 +4059,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3271,6 +4093,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3304,6 +4127,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3335,6 +4159,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3452,6 +4277,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3483,6 +4309,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3510,6 +4337,28 @@ export interface operations {
         };
     };
     get_default_config_api_v1_runs_config_default_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_config_options_api_v1_runs_config_options_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3655,6 +4504,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3684,8 +4534,11 @@ export interface operations {
     delete_run_api_v1_runs__run_id__delete: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Owner-Token"?: string | null;
+            };
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3714,6 +4567,82 @@ export interface operations {
             };
         };
     };
+    report_identification_api_v1_runs__run_id__reports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run id returned by POST /runs */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    keep_run_longer_api_v1_runs__run_id__retention_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Owner-Token"?: string | null;
+            };
+            path: {
+                /** @description Run id returned by POST /runs */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetentionChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetentionInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_run_status_api_v1_runs__run_id__status_get: {
         parameters: {
             query?: {
@@ -3721,6 +4650,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3750,8 +4680,11 @@ export interface operations {
     cancel_run_api_v1_runs__run_id__cancel_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Owner-Token"?: string | null;
+            };
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3783,6 +4716,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3814,6 +4748,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3840,11 +4775,44 @@ export interface operations {
             };
         };
     };
+    download_results_json_api_v1_runs__run_id__download_results_json_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run id returned by POST /runs */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     download_results_csv_api_v1_runs__run_id__download_results_csv_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3876,6 +4844,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
                 segment: string;
             };
@@ -3908,6 +4877,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3941,6 +4911,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -3974,6 +4945,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -4007,6 +4979,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -4040,6 +5013,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -4071,6 +5045,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -4166,7 +5141,9 @@ export interface operations {
     rerun_all_api_v1_runs_rerun_all_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Admin-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -4181,6 +5158,15 @@ export interface operations {
                     "application/json": components["schemas"]["RerunAllResponse"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     rerun_single_run_api_v1_runs__run_id__rerun_post: {
@@ -4188,6 +5174,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -4219,6 +5206,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
@@ -4232,6 +5220,873 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunQueueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    login_api_v1_admin_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    overview_api_v1_admin_overview_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    traffic_stats_api_v1_admin_traffic_get: {
+        parameters: {
+            query?: {
+                window?: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_limits_api_v1_admin_settings_limits_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_limits_api_v1_admin_settings_limits_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_limit_exception_api_v1_admin_settings_limits_exceptions_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_limit_exception_api_v1_admin_settings_limits_exceptions_delete: {
+        parameters: {
+            query: {
+                address: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scale_api_v1_admin_deployments__name__scale_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restart_api_v1_admin_deployments__name__restart_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_pod_api_v1_admin_pods__name__delete_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pod_logs_api_v1_admin_pods__name__logs_get: {
+        parameters: {
+            query?: {
+                tail?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    queue_action_api_v1_admin_queues__name___action__post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                name: string;
+                action: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_cancel_api_v1_admin_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                /** @description Run id returned by POST /runs */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_delete_api_v1_admin_runs__run_id__delete_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                /** @description Run id returned by POST /runs */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_retention_api_v1_admin_runs__run_id__retention_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                /** @description Run id returned by POST /runs */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_reports_api_v1_admin_reports_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_report_update_api_v1_admin_reports__report_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_checks_api_v1_admin_checks_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_add_case_api_v1_admin_checks_cases_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_remove_case_api_v1_admin_checks_cases__run_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                /** @description Run id returned by POST /runs */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_accept_case_api_v1_admin_checks_cases__run_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                /** @description Run id returned by POST /runs */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_run_check_api_v1_admin_checks_run_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_test_alert_api_v1_admin_alerts_test_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_restore_api_v1_admin_expired__run_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                /** @description Run id returned by POST /runs */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -4301,6 +6156,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CapabilitiesResponse"];
+                };
+            };
+        };
+    };
+    serve_adhoc_file_files_adhoc__filename__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    serve_validation_file_files_validation__rest__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rest: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

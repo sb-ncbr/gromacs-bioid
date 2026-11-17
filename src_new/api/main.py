@@ -1135,6 +1135,11 @@ _PUBLIC_ROUTES: dict[tuple[str, str], tuple[str, str, str]] = {
     ("GET", f"{_V1}/{{run_id}}/queue"): ("Runs", "Queue position",
         "Where a queued run stands in the queue."),
     ("POST", f"{_V1}/{{run_id}}/cancel"): ("Runs", "Cancel a run", "Stops a queued or running run."),
+    ("POST", f"{_V1}/{{run_id}}/retention"): ("Runs", "Keep a run longer",
+        "Keeps a finished run 30, 90, 180 or 365 days from now. Needs the owner token; only extends."),
+    ("POST", f"{_V1}/{{run_id}}/reports"): ("Results", "Report a wrong identification",
+        "Tells the BioID team that a molecule's identification looks wrong (segment, optional note "
+        "and suggestion)."),
     ("POST", f"{_V1}/{{run_id}}/rerun"): ("Runs", "Run again",
         "Starts a new run with the same input files and configuration; returns the new `run_id`."),
     ("DELETE", f"{_V1}/{{run_id}}"): ("Runs", "Delete a run", "Removes the run and its files."),
