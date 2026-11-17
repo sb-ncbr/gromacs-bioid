@@ -3,12 +3,18 @@
 results.json files are 1-5 MB on NFS; listing runs used to parse every one
 of them on every request. Summaries are cached per process and a file is
 read again only when its size or mtime changes (finished runs never do).
+
+Each request still stats every run's results.json. Under shared-storage
+load a stat took ~0.15 s, so 310 runs in a row took 50 s and the main page
+hung (2026-11-17); they are issued in parallel now (0.5 s in the same
+conditions), and so are the reads of changed files.
 """
 from __future__ import annotations
 
 import json
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +23,8 @@ from .security import valid_run_id
 
 _lock = threading.Lock()
 _cache: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
+#: NFS round trips in flight at once (stat, then reading changed files).
+_IO_THREADS = 32
 
 
 def _summary(run_id: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -44,41 +52,52 @@ def _summary(run_id: str, data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _stat(path: Path):
+    try:
+        return path.stat()
+    except OSError:
+        return None
+
+
+def _read(name: str, path: Path):
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return _summary(name, data) if isinstance(data, dict) else None
+
+
 def summaries(runs_dir: Path) -> list[dict[str, Any]]:
     """One summary per run directory (unreadable or malformed runs skipped)."""
-    out = []
-    seen = set()
     try:
         entries = list(os.scandir(runs_dir))
     except FileNotFoundError:
-        return out
-    for entry in entries:
-        name = entry.name
-        if name.startswith((".", "_")) or not valid_run_id(name) or not entry.is_dir():
-            continue
-        path = Path(entry.path) / "results.json"
-        try:
-            st = path.stat()
-        except OSError:
-            continue
-        key = (st.st_size, st.st_mtime_ns)
-        seen.add(name)
-        with _lock:
-            hit = _cache.get(name)
-        if hit and hit[0] == key:
-            out.append(hit[1])
-            continue
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        if not isinstance(data, dict):
-            continue
-        summary = _summary(name, data)
-        with _lock:
-            _cache[name] = (key, summary)
-        out.append(summary)
+        return []
+    names = [e.name for e in entries
+             if not e.name.startswith((".", "_")) and valid_run_id(e.name) and e.is_dir()]
+    paths = {name: runs_dir / name / "results.json" for name in names}
+    with ThreadPoolExecutor(_IO_THREADS) as pool:
+        stats = dict(zip(names, pool.map(_stat, paths.values())))
+        found: dict[str, dict[str, Any]] = {}
+        stale: dict[str, tuple[int, int]] = {}
+        for name in names:
+            st = stats[name]
+            if st is None:
+                continue
+            key = (st.st_size, st.st_mtime_ns)
+            with _lock:
+                hit = _cache.get(name)
+            if hit and hit[0] == key:
+                found[name] = hit[1]
+            else:
+                stale[name] = key
+        for name, summary in zip(stale, pool.map(_read, stale, [paths[n] for n in stale])):
+            if summary is None:
+                continue
+            with _lock:
+                _cache[name] = (stale[name], summary)
+            found[name] = summary
     with _lock:
-        for gone in set(_cache) - seen:
+        for gone in set(_cache) - set(found):
             _cache.pop(gone, None)
-    return out
+    return [found[name] for name in names if name in found]
