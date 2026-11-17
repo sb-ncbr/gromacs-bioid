@@ -191,6 +191,22 @@ class TestLocalSearch:
         with patch.object(resolver, "_remote_search", return_value=[]):
             assert resolver._resolve_similarity(CRAMBIN_CA_PDB, str(tmp_path)) == []
 
+    def test_search_uses_ungapped_prefilter_and_threads(self, tmp_path):
+        resolver = _make_resolver(tmp_path, mode="local")
+        resolver.config.foldseek.foldseek_exec = "foldseek"
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return MagicMock(returncode=0, stderr="")
+
+        with patch("src_new.identification.resolvers.foldseek.subprocess.run", side_effect=fake_run):
+            resolver._local_search(CRAMBIN_CA_PDB, str(tmp_path))
+        search = next(c for c in calls if c[1] == "search")
+        assert search[search.index("--prefilter-mode") + 1] == "1"
+        assert search[search.index("--threads") + 1] == "2"
+        assert RunConfig.from_default_ini().foldseek.prefilter_mode == 1
+
 
 class TestRemoteSearch:
     def _patch_http(self, *, ticket_id="t1", status="COMPLETE", payload=None):

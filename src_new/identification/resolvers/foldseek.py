@@ -200,7 +200,9 @@ class Foldseek3DiResolver(IdentifierResolver):
                 return None
 
             search = subprocess.run(
-                [exe, "search", query_db, self._db_path, result_db, tmp_dir],
+                [exe, "search", query_db, self._db_path, result_db, tmp_dir,
+                 "--prefilter-mode", str(self.foldseek_config.prefilter_mode),
+                 "--threads", str(self.foldseek_config.threads)],
                 capture_output=True, text=True,
                 timeout=self.foldseek_config.search_timeout_s, cwd=tmp_dir,
             )

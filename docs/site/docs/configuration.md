@@ -113,7 +113,9 @@ Other keys:
   `local_db_path` (PubChem mirror), `hfamily_local_max_*`.
 - `[foldseek]` `mode` (`local` / `remote` / `off`), `db_path` (AlphaFold
   Swiss-Prot), `pdb_db_path` (for `foldseek_pdb`), `remote_url`,
-  `max_target_hits` 20, `search_timeout_s` 300.
+  `max_target_hits` 20, `search_timeout_s` 300, `prefilter_mode` 1 (ungapped:
+  seconds per search without a precomputed index; 0 is Foldseek's k-mer
+  default), `threads` 2.
 - `[alphafind]` `url` (the AlphaFind search API), retry and polling limits.
 - `[names]` `ccd_db`, `maps_db`, `manual_db` (JSON tables under `databases/`).
 - `[identifiers_cache]` `directory` (empty: `BAT3_IDENTIFIERS_CACHE_DIR`,

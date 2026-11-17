@@ -358,6 +358,13 @@ class FoldseekConfig:
     # Caps for both modes.
     max_target_hits: int = 20
     search_timeout_s: int = 300
+    # Local search: 1 = ungapped prefilter (scans every target; seconds on
+    # Swiss-Prot), 0 = foldseek's k-mer default, which without a precomputed
+    # index rebuilds one per query (~450 s on 2 CPUs: every run timed out and
+    # went to the public server, 2026-11-17). Same top hits on the test set.
+    prefilter_mode: int = 1
+    # Two runs share a UI worker pod's 4 CPUs.
+    threads: int = 2
 
 
 @dataclass
