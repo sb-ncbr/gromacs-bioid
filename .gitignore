@@ -210,3 +210,11 @@ __pycache__/
 # ui rework: python-era patterns collided with frontend tree
 !ui/src/lib/
 !ui/src/lib/**
+
+# Local caches and test artifacts (2026-11-17)
+/resolver_cache.sqlite3
+.*.xtc_offsets.lock
+.*.xtc_offsets.npz
+tests/data/*/used_files.txt
+# git worktrees
+/.wt/

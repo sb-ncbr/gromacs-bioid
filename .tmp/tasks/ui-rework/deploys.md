@@ -64,3 +64,51 @@
 - Deploy discipline updated: unique tags trigger rollouts; production-v1 = registry pointer only; html-asset-hash parity = standard post-deploy verification.
 
 ## 2026-10-02: UI rework formally CLOSED. All waves + fix-forwards live & verified; topic archived.
+
+## 2026-10-26 w21-redesign (backfilled 2026-11-06)
+- /runs/:id redesign live: cerit.io/tomsko/bat3-frontend:w21-redesign, built from clean worktree @ 24d9d5af2 (UI fork report). Rollback = set image back to w20.
+
+## 2026-11-06 w22-viewerfix + w23-cachefix ✅
+- w22 (1a1a929f4, sha256:f6d8165e): 3D viewer never rendered on w21 — MVS scene used colour {hex}, water "point", selector "non_standard" (all invalid MVS → whole scene rejected, "Structural data not available"). buildMvs extracted to viewer/mvsScene.ts, typed against molstar MVS; regression test validates every scene with MVSData.validationIssues(noExtra). Header input line shows input/ files only (was the whole run dir).
+- w23 (782600844, sha256:e27d2301): nginx Cache-Control — `no-cache` on the HTML shell, `public, max-age=31536000, immutable` on /assets/ (=404 for missing chunks). Root cause found during w22 verification: no Cache-Control → heuristic caching of index.html → browsers kept the old bundle after rollout (likely also the 10-02 "rollout did not take" class).
+- Verified: pod digest e27d2301, HTML `cache-control: no-cache` + index-BE-pEx9t.js, asset immutable header, missing asset 404, /api/v1/capabilities 200; browser: viewer renders, 0 console errors.
+- Acceptance (handoff TODO 1): Tab to first molecule row = 14 (<15) ✓, 1440×900 header ✓, reduced motion ✓ (no animations), dark theme unreachable (nothing sets html.dark) and incomplete if forced (21 WCAG failures) — not shipped.
+- Snapshot: backups/bat3-ceitec-bat3-web.pre-w22.yaml (rollback: set image web=cerit.io/tomsko/bat3-frontend:w21-redesign).
+
+## 2026-11-06 w24-system + w25-g9 (frontend), b26 (API + fleet workers + ui-worker) ✅
+- w24 (5fa0807b3, sha256:c173d979): whole-system view (list button + SystemStage, ?segment=__system__, canvas opens by confidence).
+- b26 (f93a29883, sha256:1dd24de9) on bat3-ceitec-bat3-api, bat3-ceitec-bat3-worker AND bat3-ui-worker: export keeps insertion codes (3PTB system mmCIF failed), O-only crystal water verifies as water (CID 962), virtual segment display_name = resname. API env BAT3_TYPICAL_DURATION_MIN=2/MAX=8 (G8, g1 p10–p90).
+- FINDING: API/UI-submitted runs execute on `bat3-ui-worker` (queue validation.ui.celery), which had stayed on b13-era sha256:5a79ef4f (git-c8135d10c). Every image rollout must include it.
+- w25 (573b3981c, sha256:2fe4e36c): G9 selector colouring (chain / selector chain / atom_index), long-name safety (line-clamp, wrap-anywhere, tooltips), legacy MolstarViewer/MoleculeSelector/ResultsPanel + DEV playground removed.
+- Verified on API run 79ba82ce (3PTB, b26 ui-worker): system.mmcif + selectors present, water PubChem 962 conf 100, names BEN/CA/HOH.
+- Snapshots: rollout_b24/*.pre-b26.yaml (bioid_bughunt), backups/bat3-ceitec-bat3-web.pre-w22.yaml.
+
+## 2026-11-06 b28/b29 + w26–w28 ✅
+- b28 (82d9c0879, sha256:347f13db): G9 selectors cover ALL copies + residue_ranges; ligand names (mirror IUPAC / element names, read-time backfill). b29 (4877b492e, sha256:07c0aabb): names capitalized. Released to API + fleet + ui-worker via bioid_bughunt/rollout_b24/release.sh (refuses on queued/active work; snapshots every deployment).
+- w26 (sha256:db8a1075): UI residue ranges first. w27 (afaf85185): each molecule drawn once — BLANK canvas in prod → rolled back to w26 within minutes. w28 (e8940b8db, sha256:779b47a9): the real cause — StageCanvas loaded each MVS scene twice concurrently; fixed; verified on a local production build + live (TARP+145 POPC, 3PTB fully coloured).
+- Fleet bat3-ceitec-bat3-worker scaled 200 → 8 (user: no large re-eval today).
+
+## 2026-11-06/07 b30–b34 + w29 (g1 bughunt close-out) ✅
+- b30 (971de6235): free nucleotides are ligands (901 g1 re-runs). b31 (5f0efbaa7, sha256:1505b80f): a lone whole residue is a monomer ligand, never a chain (+ bond-distance safety net; 575 re-runs, corpus probe 575 changed / 14,498 identical). b32 (6bcfeadfe, sha256:ca28ee39): tiny segments signatured first + one-residue mmCIF payload skipped (67 re-runs). b33 (497395c0c, sha256:451b5c23): smallest segments verified first (177 re-runs incl. 162 pre-b26 export failures). b34 (dc9de0edb, sha256:b0c4a4cc): display names only — PubChem titles (new optional file /app/databases/pubchem/current/pubchem_titles.sqlite, 124.9M rows from CID-Title 2026-11-06, mirror untouched) and PDB entity descriptions for the top PDB hits. All via bioid_bughunt/rollout_b24/release.sh (API + fleet + ui-worker; snapshots *.pre-<stamp>.yaml).
+- w29 (c4767052f, sha256:3646b342): notes hide declared not-applicable outcomes (no_polymer_payload, na_mode_unsupported) and box-less pbc_unwrap_failed; asset hash parity verified (index-BSrGjvPC.js). Rollback: rollout_b24/bat3-ceitec-bat3-web.pre-w29.yaml.
+- Fleet bat3-ceitec-bat3-worker scaled 24 → 8 after the campaign (snapshot rollout_b24/bat3-ceitec-bat3-worker.pre-scaledown-8.yaml).
+
+## 2026-11-09 b36 + w30 + w31 (UI audit fixes) ✅
+- b36 (29a022ae5, sha256:dd8151d7) via release.sh to API + fleet + ui-worker: GZip on the API (system.mmcif 22 MB → 3.7 MB on the wire), system export keeps molecules in their input periodic image (3PTB benzamidine back in the S1 pocket, 2.82 A from the protein), one-atom hits named as ions ("Chloride"). Also carries 610bb59ab (pod-local resolver cache wins over run config). 3PTB rerun identical to b34 (P00760 84.1 top, 100 verified).
+- w30-audit (29a022ae5, sha256:e3b0e499), then w31-live (9a95da063, sha256:ce4e3c90, index-BEuc1sPR.js): audit batches 7ac3a6996 / eae09e097 / f19793fda / 29a022ae5 / e6f8a73ee / 9a95da063 — honest failed/cancelled states, CSV + typical duration from /capabilities, labels, phone stage header, Mol* toolbar hidden, a11y (axe 0 on audited pages), Recents sorted, upload validation, config dialog, 404 route, nginx gzip + Mol* lazy-loaded (front page JS 5.4 → 0.62 MB), "Title>Description" run names, refetch error no longer shows "Run not found", live rows follow per_segment progress.
+- Rollback: web → rollout_b24/bat3-ceitec-bat3-web.pre-w31.yaml (w30) or pre-<stamp>.yaml (w29); backend → rollout_b24/*.pre-<stamp>.yaml (b34 sha256:b0c4a4cc).
+
+## 2026-11-09 b37 + w33 ✅
+- b37 (de7f8d1f9, sha256:ae8df43f) via release.sh: every verified PDB hit named after its matched entity (fail-safe: 8 s/no-retry uncached lookups, ≤12 entities, 30 s/segment, 180 s/run, ≤¼ of remaining verify budget above 60 s, stop after 3 failures); config.ini BLAST timeout_s 300 → 3600 (UI runs only; config_shared.ini keeps 600); reruns record requester IP, "Title (re-run)>Desc".
+- bat3-ui-worker env VALIDATION_STAGE_BUDGETS={"identify_molecules": 4500} (fleet untouched).
+- w33-seq (de7f8d1f9, sha256:b34dc4df): nucleic acids show their sequence (fasta_map_nucleic).
+- Earlier same day: w32-finish (efce1eca7, sha256:184ad513), API env BAT3_EXAMPLE_RUNS = 1c2a4d4b / 8338ea32 / 6b21b4ec (curated landing examples).
+
+## b38 / w34-supdb — supplementary databases (2026-11-09)
+- Backend `cerit.io/tomsko/bat3-validation-api@sha256:9f6b817053a7450fc74e12565c270335030c3a418159b4b2eb8f33f4d6ea70cc` (git ad7f91f95) on API, fleet worker (8/8), ui-worker; web `bat3-frontend:w34-supdb` (`sha256:924c9d2b…`). release.sh, snapshots in rollout_b24/*.pre-<stamp>.yaml.
+- New data (new paths only): `/app/databases/uniref50` -> `.staging/uniref50-20261109-113411` (41,243,524 seqs, UniRef50 2026-11-04); `/app/databases/foldseek/pdb*` (pdb100, PDB_DATE 250101); `/app/databases/{sifts,swisslipids,chebi}/*.sqlite`. Jobs: k8s/uniref50-blastdb-job.yaml, k8s/foldseek-pdb-db-job.yaml, k8s/reference-indexes-job.yaml.
+- Enabled in config.ini only (UI runs); eval configs (/data/validation/config_g1.ini, config_shared.ini) name none of the keys -> off. Plan: .tmp/tasks/new-databases/PLAN.md.
+- Before/after: C07 free ATP 86c1592b -> 1df31cc7: additive, top unchanged, +3 ChEBI.
+- b39 (2134ec8d0): slow NCBI searches deferred to the end of the second pass. b40 (792d04669, `sha256:61722e6a…`): their evidence verified after the regular window (verify_top_n_supplementary 40).
+- 2026-11-09 16:14 UTC: bat3-ui-worker scaled 2 -> 10 replicas on user request (snapshot rollout_b24/bat3-ui-worker.pre-scale10-*.yaml); all on b40, consuming validation.ui.celery.
+- Before/after (compare.py: nothing previously verified lost, no confidence drop): C07 ATP 86c1592b->1df31cc7 additive (+3 ChEBI); P04 3PTB 5ee8666f->91a997fa additive (+20 PDB; top 1AQ7 81.4 -> P00760 92.1 via SIFTS); M02 E-protein membrane 8338ea32->8aecbc66 additive (POPC +SLM:000000651 +CHEBI:73001; protein +67 nr); M01 protein-DNA 6b21b4ec->fb5009a2 on b40 additive (+40 protein, DNA +12 PDB; b38/b39 runs 2aad52dc/032d9704 were not: nr budget starvation, then nr taking window slots — fixed by b39/b40).
