@@ -232,11 +232,17 @@ def checked_overrides(nested: Any, base: RunConfig) -> dict[str, dict[str, Any]]
     return out
 
 
-def overrides_from_ini(text: str, base: RunConfig) -> dict[str, dict[str, Any]]:
+def overrides_from_ini(text: str, base: RunConfig, strict: bool = True) -> dict[str, dict[str, Any]]:
     """Overrides an uploaded config.ini makes to the server defaults.
 
     The upload is read on top of the server's config.ini, so a partial file
     only changes what it names; the result goes through checked_overrides.
+
+    strict=False (a rerun: the old run's config.ini is the whole server
+    config of its day): keep only the per-run choices, i.e. the tunable
+    fields, and take today's server values for everything else. A rerun of
+    a run older than a server config change was refused otherwise
+    (2026-11-17), and planted executables or URLs are dropped, not applied.
     """
     import configparser
     from pathlib import Path
@@ -256,8 +262,11 @@ def overrides_from_ini(text: str, base: RunConfig) -> dict[str, dict[str, Any]]:
         if not isinstance(values, dict):
             continue
         for field, value in values.items():
-            if value != (current.get(section) or {}).get(field):
-                diff.setdefault(section, {})[field] = value
+            if value == (current.get(section) or {}).get(field):
+                continue
+            if not strict and field not in TUNABLE.get(section, frozenset()):
+                continue
+            diff.setdefault(section, {})[field] = value
     return checked_overrides(diff, base)
 
 

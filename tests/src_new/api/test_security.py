@@ -146,7 +146,16 @@ def test_rerun_rechecks_the_stored_config(runs, client):
     (old / "input").mkdir(parents=True)
     (old / "input" / "x.pdb").write_bytes(PDB)
     (old / "results.json").write_text(json.dumps({"pipeline": {"status": "success"}}))
-    (old / "config.ini").write_text("[blast]\nblastp_exec = /bin/sh\n")
+    (old / "config.ini").write_text("[blast]\nblastp_exec = /bin/sh\nblastp_num_threads = 1\n"
+                                    "[identifiers]\nblast_nt = no\n")
+    r = client.post("/api/v1/runs/planted/rerun")
+    assert r.status_code == 200, r.text  # planted executable dropped, not applied
+    from src_new.config.loader import RunConfig
+    new = RunConfig.from_ini_path(runs / r.json()["run_id"] / "config.ini")
+    assert new.blast.blastp_exec == RunConfig.from_default_ini().blast.blastp_exec
+    assert new.blast.blastp_num_threads == RunConfig.from_default_ini().blast.blastp_num_threads
+    assert new.identifiers.blast_nt is False  # the run's own choice is kept
+    (old / "config.ini").write_text("[verification]\nverify_top_n = 100000\n")
     r = client.post("/api/v1/runs/planted/rerun")
     assert r.status_code == 422 and "cannot be re-run" in r.json()["detail"]
     (old / "config.ini").write_text("[identifiers]\nblast_nt = no\n")

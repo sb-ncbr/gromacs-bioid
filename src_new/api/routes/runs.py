@@ -1619,9 +1619,11 @@ def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None) ->
         (new run id, its owner token), or None if the run cannot be re-run
         (missing results.json or missing/empty input directory).
 
-    The old config.ini goes through the same per-run allowlist as a new
-    submission (a run planted before the allowlist cannot carry executable
-    or URL overrides into a rerun); HTTPException 422 if it does not pass.
+    Of the old config.ini only the per-run choices (tunable fields) are
+    kept; everything else takes today's server values, so a planted
+    executable or URL is dropped and an older run stays re-runnable after a
+    server config change. HTTPException 422 for a tunable value that is no
+    longer valid.
     """
     from src_new.config.loader import RunConfig
     from src_new.config.presets import ConfigOverrideError, overrides_from_ini, resolve_run_config
@@ -1652,7 +1654,7 @@ def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None) ->
     if old_config_path.exists():
         try:
             overrides = overrides_from_ini(old_config_path.read_text(encoding="utf-8"),
-                                           RunConfig.from_default_ini())
+                                           RunConfig.from_default_ini(), strict=False)
             config = resolve_run_config(None, overrides)
         except ConfigOverrideError as e:
             raise HTTPException(status_code=422,
