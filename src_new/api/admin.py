@@ -290,7 +290,7 @@ def _storage() -> dict[str, Any]:
 
 
 def _runs_overview() -> dict[str, Any]:
-    from .routes.runs import served_example_ids
+    from .routes.runs import example_ids  # never the full scan (2026-11-17)
     runs = run_index.summaries(_runs_dir())
     now = datetime.now(timezone.utc)
     by_status: dict[str, int] = {}
@@ -303,7 +303,7 @@ def _runs_overview() -> dict[str, Any]:
         except ValueError:
             return False
 
-    examples = served_example_ids(_runs_dir())
+    examples = example_ids(_runs_dir())
     public = [{k: v for k, v in r.items() if not k.startswith("_")} | {"example": r["run_id"] in examples}
               for r in runs]
     public.sort(key=lambda r: str(r["created_at"]), reverse=True)
@@ -353,7 +353,7 @@ async def overview() -> dict:
             "queues": _section(lambda: _cached("queues", 3, _queues)),
             "workers": _section(lambda: _cached("workers", 15, _workers)),
             "deployments": _section(lambda: _cached("deployments", 5, _deployments)),
-            "runs": _section(lambda: _cached("runs", 10, _runs_overview)),
+            "runs": _section(lambda: _cached("runs", 30, _runs_overview)),
             "storage": _section(_storage_async),
             "retention": _section(lambda: _cached("retention", 30, _retention_status)),
             "limits": {**security.current_limits(), "max_files": security.MAX_FILES},
@@ -584,9 +584,9 @@ async def admin_cancel(run_id: security.RunId) -> dict:
 @router.post("/runs/{run_id}/delete", dependencies=[Depends(require_admin)])
 async def admin_delete(run_id: security.RunId) -> dict:
     """Moves the run to the retention trash (restorable during the grace period)."""
-    from .routes.runs import served_example_ids
+    from .routes.runs import example_ids
     d = _run_dir(run_id)
-    if run_id in served_example_ids(_runs_dir()):
+    if run_id in example_ids(_runs_dir()):
         raise HTTPException(status_code=403, detail="Example runs cannot be deleted.")
     status = json.loads((d / "results.json").read_text()).get("pipeline", {}).get("status")
     if status not in retention.TERMINAL:
