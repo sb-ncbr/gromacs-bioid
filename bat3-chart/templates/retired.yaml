@@ -1,0 +1,5 @@
+{{- /* 2026-11-17: guard. Production drifted from this chart in Sept 2026
+       (kubectl set image/env/patch since helm revision 6, 2026-09-10); an
+       upgrade would roll it back two months (images, UI workers, secrets,
+       probes). Rendering fails here, so `helm upgrade` changes nothing. */ -}}
+{{- fail "bat3-chart is retired (2026-11-17): BioID is deployed with deploy/release.sh and deploy/live/*.yaml. See bat3-chart/RETIRED.md." -}}
