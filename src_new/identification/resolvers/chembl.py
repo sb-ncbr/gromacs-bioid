@@ -33,7 +33,9 @@ class ChemblResolver(IdentifierResolver):
             from chembl_webresource_client.settings import Settings
             Settings.Instance().TIMEOUT = 10
             Settings.Instance().CACHING = False
-            Settings.Instance().TOTAL_RETRIES = 10
+            # 2, not 10: ChEMBL's API answers 500 in bursts, and 10 retries of
+            # a 10 s timeout cost a run over a minute per search
+            Settings.Instance().TOTAL_RETRIES = 2
         except ImportError:
             logger.warning("chembl_webresource_client not installed; resolver will fail at runtime")
 

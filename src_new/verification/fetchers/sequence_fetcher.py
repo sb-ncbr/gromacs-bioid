@@ -344,35 +344,84 @@ class SequenceSignatureFetcher(SignatureFetcher):
             return None
     
     def _fetch_ncbi_protein(self, accession: str) -> str | None:
-        """Fetch protein sequence from NCBI (for NR_ID).
-        
-        Uses NCBI E-utilities EFetch endpoint.
-        """
-        url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=protein&id={accession}&rettype=fasta"
-        try:
-            r = requests.get(url, timeout=10)
-            r.raise_for_status()
-            lines = r.text.splitlines()
-            # Skip header lines (starting with '>') and join sequence lines
-            seq = ''.join(line.strip() for line in lines if not line.startswith('>'))
-            return seq if seq else None
-        except Exception as e:
-            logger.warning(f"NCBI protein {accession} fetch FASTA failed: {e}")
-            return None
-    
+        """Fetch protein sequence from NCBI (for NR_ID)."""
+        return _ncbi_fasta("protein", accession)
+
     def _fetch_ncbi_nucleotide(self, accession: str) -> str | None:
-        """Fetch nucleotide sequence from NCBI (for NT_ID, CORE_NT_ID).
-        
-        Uses NCBI E-utilities EFetch endpoint.
-        """
-        url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id={accession}&rettype=fasta"
+        """Fetch nucleotide sequence from NCBI (for NT_ID, CORE_NT_ID)."""
+        return _ncbi_fasta("nuccore", accession)
+
+
+# ---------------------------------------------------------------------------
+# NCBI E-utilities (efetch). NCBI allows 3 requests/s per caller, 10/s with an
+# API key (NCBI_API_KEY), and counts every worker of the cluster together:
+# 20 parallel runs fetching nr hits drew 429 Too Many Requests in bursts. The
+# budget is shared through the Celery Redis (one counter per second), with a
+# per-process spacing fallback when Redis is unreachable. 429/5xx are retried
+# with backoff, then reported as transient (the hit stays unmeasured).
+# ---------------------------------------------------------------------------
+
+_NCBI_EFETCH = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+_ncbi_lock = threading.Lock()
+_ncbi_last = 0.0
+_ncbi_redis = None
+
+
+def _ncbi_rate() -> int:
+    return 9 if os.environ.get("NCBI_API_KEY") else 3
+
+
+def _ncbi_wait_turn() -> None:
+    """Block until this process may send one request within the shared budget."""
+    global _ncbi_last, _ncbi_redis
+    rate = _ncbi_rate()
+    url = os.environ.get("CELERY_BROKER_URL")
+    if url:
         try:
-            r = requests.get(url, timeout=10)
-            r.raise_for_status()
-            lines = r.text.splitlines()
-            # Skip header lines (starting with '>') and join sequence lines
-            seq = ''.join(line.strip() for line in lines if not line.startswith('>'))
-            return seq if seq else None
-        except Exception as e:
-            logger.warning(f"NCBI nucleotide {accession} fetch FASTA failed: {e}")
-            return None
+            if _ncbi_redis is None:
+                import redis
+                _ncbi_redis = redis.Redis.from_url(url, socket_timeout=2, socket_connect_timeout=2)
+            for _ in range(50):
+                second = int(time.time())
+                key = f"bioid:ncbi:{second}"
+                n = int(_ncbi_redis.incr(key))
+                if n == 1:
+                    _ncbi_redis.expire(key, 5)
+                if n <= rate:
+                    return
+                time.sleep(max(0.01, second + 1 - time.time()))
+            return
+        except Exception:
+            pass  # Redis unavailable: per-process spacing below
+    with _ncbi_lock:
+        wait = _ncbi_last + 1.0 / rate - time.time()
+        if wait > 0:
+            time.sleep(wait)
+        _ncbi_last = time.time()
+
+
+def _ncbi_fasta(db: str, accession: str) -> str | None:
+    params = {"db": db, "id": accession, "rettype": "fasta", "retmode": "text", "tool": "bioid"}
+    key = os.environ.get("NCBI_API_KEY")
+    if key:
+        params["api_key"] = key
+    last = None
+    for attempt in range(4):
+        _ncbi_wait_turn()
+        try:
+            r = requests.get(_NCBI_EFETCH, params=params, timeout=10)
+        except requests.RequestException as e:
+            last = e
+        else:
+            if r.status_code == 429 or r.status_code >= 500:
+                last = f"HTTP {r.status_code}"
+                retry = r.headers.get("Retry-After")
+                time.sleep(float(retry) if retry and retry.isdigit() else 0.5 * 2 ** attempt)
+                continue
+            if r.status_code >= 400:
+                logger.warning(f"NCBI {db} {accession} fetch FASTA failed: HTTP {r.status_code}")
+                return None
+            seq = "".join(line.strip() for line in r.text.splitlines() if not line.startswith(">"))
+            return seq or None
+        time.sleep(0.5 * 2 ** attempt)
+    raise TransientFetchError(f"NCBI {db} {accession}: {last}")

@@ -152,7 +152,7 @@ class TestSequenceFetcher:
         
         assert result == "MVLSPADK"
         mock_get.assert_called_once()
-        assert "db=protein" in mock_get.call_args[0][0]
+        assert mock_get.call_args.kwargs["params"]["db"] == "protein"
     
     @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
     def test_sequence_fetcher_swissprot_id(self, mock_get) -> None:
@@ -184,7 +184,7 @@ class TestSequenceFetcher:
         
         assert result == "ATGCGTACGT"
         mock_get.assert_called_once()
-        assert "db=nuccore" in mock_get.call_args[0][0]
+        assert mock_get.call_args.kwargs["params"]["db"] == "nuccore"
     
     @patch("src_new.verification.fetchers.sequence_fetcher.requests.get")
     def test_sequence_fetcher_core_nt_id(self, mock_get) -> None:
