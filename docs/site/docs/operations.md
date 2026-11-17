@@ -131,6 +131,22 @@ plain run directory.
   and logs an error. Runs with their own short retention (a campaign's
   `retention=1`) do not count against this.
 
+## Shared resolver cache
+
+Each worker pod caches resolver answers in its own SQLite file. A second,
+shared layer lets a molecule identified on one pod be instant on every
+other: a cache-only Redis (`deploy/bioid-cache-redis.yaml`, 768 MB,
+least-recently-used eviction, no persistence), separate from the Celery
+broker. Workers use it when `BAT3_SHARED_CACHE_URL` is set
+(`redis://bioid-cache-redis:6379/0`); unset it to switch the layer off.
+
+Entries are keyed by resolver, mode, the signature and a fingerprint of the
+settings that shape answers (thresholds, database paths, search modes), so
+runs with different settings never share answers; they expire after 30
+days. Only non-empty answers without an error are stored, with their hit
+details (the deferred nr/nt skip needs them). If the Redis is unreachable a
+worker stops asking it for a minute and resolves as before.
+
 ## Nightly known-answers check and alarms
 
 Some failures never raise an error: a missing client library, a service

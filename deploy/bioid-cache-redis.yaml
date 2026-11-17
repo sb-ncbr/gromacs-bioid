@@ -1,0 +1,58 @@
+# Shared resolver cache (src_new/identification/shared_cache.py), 2026-11-17.
+#
+# Cache only: separate from the Celery broker (bat3-redis) so a full cache
+# can never evict the job queue. Memory-capped with LRU eviction, no
+# persistence (a restart just empties the cache). Workers find it through
+# BAT3_SHARED_CACHE_URL=redis://bioid-cache-redis:6379/0; without that env
+# the layer is off.
+#
+#   kubectl -n ceitec-biodata-ns apply -f deploy/bioid-cache-redis.yaml
+#   kubectl -n ceitec-biodata-ns set env deploy/bat3-ui-worker deploy/bat3-ceitec-bat3-worker \
+#       BAT3_SHARED_CACHE_URL=redis://bioid-cache-redis:6379/0
+# Off again: kubectl ... set env deploy/... BAT3_SHARED_CACHE_URL-
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bioid-cache-redis
+  labels: {app: bioid-cache-redis}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: bioid-cache-redis}
+  template:
+    metadata:
+      labels: {app: bioid-cache-redis}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: redis
+          image: redis:8-alpine
+          args: ["redis-server", "--maxmemory", "768mb", "--maxmemory-policy", "allkeys-lru",
+                 "--save", "", "--appendonly", "no", "--timeout", "0"]
+          ports:
+            - containerPort: 6379
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+            seccompProfile: {type: RuntimeDefault}
+          readinessProbe:
+            exec: {command: ["redis-cli", "ping"]}
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bioid-cache-redis
+  labels: {app: bioid-cache-redis}
+spec:
+  selector: {app: bioid-cache-redis}
+  ports:
+    - port: 6379
+      targetPort: 6379

@@ -155,6 +155,16 @@ class IdentifierResolver(ABC):
         self._last_resolution_metadata = None
         self._last_error = None
         
+        # Shared cache (between worker pods, shared_cache.py) first: it keeps
+        # the hits metadata the local cache drops. Off unless configured;
+        # consulted only where local caching is on (cache is not None).
+        if cache is not None:
+            from . import shared_cache
+            shared = shared_cache.get(self, signature, as_similarity)
+            if shared is not None:
+                result, self._last_resolution_metadata = shared
+                return result
+
         # Check cache first. Cache failures (e.g. sqlite corruption surfaced
         # as DatabaseError "file is not a database", OQ-13) degrade to a cache
         # MISS - live resolution must never die because of a poisoned cache.
@@ -211,6 +221,10 @@ class IdentifierResolver(ABC):
                         "[Cache] write failed for resolver '%s' (%s); result kept uncached",
                         self.name, exc,
                     )
+                if self._last_error is None:
+                    from . import shared_cache
+                    shared_cache.put(self, signature, as_similarity, result,
+                                     self._last_resolution_metadata)
             
             return result
         except IdentifierResolutionError as exc:
