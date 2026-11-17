@@ -60,8 +60,9 @@ export function isAccepted(name: string): boolean {
 export function inputHints(names: string[]): string[] {
   const ext = new Set(names.map((n) => fileExtension(n).toLowerCase()));
   const has = (...e: string[]) => e.some((x) => ext.has(x));
+  // an archive's contents are unpacked and checked by the server
+  if (has("zip", "tar", "tar.gz", "tgz")) return [];
   const hints: string[] = [];
-  if (has("zip", "tar", "tar.gz", "tgz")) hints.push("Archives are not unpacked: upload the files inside them.");
   const coords = has("gro", "pdb", "cif", "crd", "rst7", "inpcrd", "restrt", "nc", "mdcrd", "dcd", "xtc", "trr");
   if (has("top") && !has("tpr") && !coords) hints.push("A .top needs coordinates: add the .gro.");
   if (has("itp") && !has("top", "tpr")) hints.push(".itp files are includes: add the .top that includes them, or the .tpr.");

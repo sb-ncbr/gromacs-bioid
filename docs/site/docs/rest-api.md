@@ -41,7 +41,7 @@ curl -o results.json "$BIOID/runs/$RUN_ID/download/results.json"
 
 | Field | Required | Meaning |
 |---|---|---|
-| `files` | yes, repeat for each file | the simulation files (formats in [Submitting a simulation](index.md#submitting-a-simulation)); a `.zip` / `.tar` / `.tar.gz` bundle also works; at most 50 files |
+| `files` | yes, repeat for each file | the simulation files (formats in [Submitting a simulation](index.md#submitting-a-simulation)); a `.zip` / `.tar` / `.tar.gz` / `.tgz` bundle also works: it is unpacked on submission, folders flattened (file names must be unique), only file types BioID reads kept; at most 50 uploaded files. A `.gro` without a topology is accepted, with a note in `message` that identification will likely be incomplete |
 | `run_name` | no | a label shown in the run list and the results page |
 | `preset` | no | `balanced` (the default settings), `quick`, `exact` or `deep`; see [Presets](index.md#presets-and-advanced-configuration) |
 | `config_json` | no | settings to change, as JSON `{"section": {"field": value}}`; applied after the preset |
@@ -179,7 +179,7 @@ token and cannot be cancelled or deleted through the API.
 |---|---|
 | 404 | unknown run id, or a molecule (`segment`) that is not in the run |
 | 413 | a file (or the request) is larger than 128 MiB, or more than 50 files |
-| 422 | files that do not make a complete simulation (e.g. a trajectory without a topology, or an archive: archives are not unpacked; the message lists accepted combinations), no usable file names, duplicate file names, a file type BioID does not read, invalid `config_json`, an unknown preset, an unknown or non-changeable setting, a value of the wrong type or out of range, a malformed run id |
+| 422 | files that do not make a complete simulation, even with every loading fallback (e.g. a trajectory without a topology; the message lists accepted combinations), an archive that cannot be unpacked or is too large unpacked (128 MiB per file, 2 GiB in all), no usable file names, duplicate file names, a file type BioID does not read, invalid `config_json`, an unknown preset, an unknown or non-changeable setting, a value of the wrong type or out of range, a malformed run id |
 | 429 | too many submissions from your address this hour, or the queue is full; see `Retry-After` |
 | 403 | cancelling or deleting without the run's owner token; deleting an example run |
 | 409 | `run_id` given for a run that already exists |

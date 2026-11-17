@@ -988,7 +988,7 @@ def test_incomplete_upload_is_refused_at_submission(client: TestClient, tmp_path
     assert "could not find a complete simulation" in r.json()["detail"] and "traj.xtc" in r.json()["detail"]
     assert not any(tmp_path.iterdir())  # no run directory left behind
     r = client.post("/runs", files={"files": ("sim.zip", b"PK\x03\x04")})
-    assert r.status_code == 422 and "Archives are not unpacked" in r.json()["detail"]
+    assert r.status_code == 422 and "could not be unpacked" in r.json()["detail"]  # corrupt archive
 
 
 def test_gro_alone_is_accepted_with_a_note(client: TestClient, tmp_path: Path,

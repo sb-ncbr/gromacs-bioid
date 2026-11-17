@@ -202,13 +202,11 @@ def _input_check(input_dir: Path) -> tuple[Optional[str], Optional[str]]:
     if usable:
         return None, None
     names = sorted(p.name for p in input_dir.iterdir())
-    archives = [n for n in names if n.lower().endswith((".zip", ".tar", ".tar.gz", ".tgz"))]
-    hint = (" Archives are not unpacked: upload the files inside them." if archives else "")
     return ("BioID could not find a complete simulation in these files ("
             + ", ".join(names[:10]) + (", …" if len(names) > 10 else "") + "). "
             "Upload a topology together with coordinates, e.g. .tpr (+ .gro), .gro + .top (+ .itp), "
             ".prmtop + .inpcrd/.rst7/.nc, .psf + .pdb/.crd/.dcd, a LAMMPS .data file, "
-            "or a single .pdb, .gro or .cif." + hint), None
+            "or a single .pdb, .gro or .cif (also inside a .zip or .tar.gz)."), None
 
 
 @router.post("", response_model=RunCreateResponse)
@@ -352,6 +350,13 @@ async def create_run(
                 f.write(head)
             shutil.copyfileobj(file.file, f, 1024 * 1024)
         saved_files[name] = str(file_path)
+
+    from ..archives import ArchiveError, unpack as unpack_archives
+    try:
+        unpack_archives(input_dir)
+    except ArchiveError as e:
+        shutil.rmtree(run_dir, ignore_errors=True)
+        raise HTTPException(status_code=422, detail=str(e))
 
     problem, input_note = _input_check(input_dir)
     if problem:
