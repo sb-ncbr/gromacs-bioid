@@ -28,6 +28,7 @@ nav:
       - Databases: databases.md
       - MCP server (AI assistants): mcp.md
       - results.json reference: results-json.md
+      - Warnings and errors: warnings.md
   - Validation & internals:
       - Overview: validation.md
       - Running validations: running-a-validation.md

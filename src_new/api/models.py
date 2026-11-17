@@ -40,6 +40,7 @@ class WarningItem(BaseModel):
     step_id: Optional[str] = Field(None, description="Task/step ID that generated the warning")
     details: Dict[str, Any] = Field(default_factory=dict, description="Additional warning details")
     recorded_at: Optional[str] = Field(None, description="ISO 8601 timestamp when warning was recorded")
+    docs_url: Optional[str] = Field(None, description="Path on the BioID host of the documentation section explaining this code")
 
 
 class ErrorItem(BaseModel):
@@ -52,6 +53,7 @@ class ErrorItem(BaseModel):
     critical: bool = Field(default=False, description="Whether this is a critical error")
     exception_type: Optional[str] = Field(None, description="Type of exception if applicable")
     recorded_at: Optional[str] = Field(None, description="ISO 8601 timestamp when error was recorded")
+    docs_url: Optional[str] = Field(None, description="Path on the BioID host of the documentation section explaining this code")
 
 
 class EventItem(BaseModel):

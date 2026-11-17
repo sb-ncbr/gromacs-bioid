@@ -77,6 +77,7 @@ def old_run(tmp_path, monkeypatch):
 def test_api_hides_skips_of_older_runs(old_run):
     status = old_run.get("/api/v1/runs/old-run/status").json()
     assert [w["message"] for w in status["warnings"]] == [REAL, "ok"]
+    assert status["warnings"][0]["docs_url"] == "/documentation/warnings/#identifier_resolver_failed"
     assert old_run.get("/api/v1/runs/old-run").json()["warning_count"] == 2
     failed = old_run.get("/api/v1/runs/old-run/identifiers").json()["failed_resolvers"]
     assert [f["resolver_name"] for f in failed] == ["blast_nr_protein"]

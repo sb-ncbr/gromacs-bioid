@@ -243,6 +243,7 @@ async def test_get_run_status_finished(call, api):
     assert not any("no_polymer_payload" in f for f in out["failed_searches"])  # a skip, not a failure
     assert "/app/databases" not in json.dumps(out)
     assert out["warnings"] == {"pbc_unwrap_applied": 1}
+    assert out["warnings_explained"].endswith("/documentation/warnings/")
     assert out["next"] == "Finished. Call get_results."
     assert out["results_page"] == f"{PUBLIC}/runs/{RUN}"
 

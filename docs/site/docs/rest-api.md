@@ -103,7 +103,7 @@ recorded as `pipeline.preset` in results.json.
 | Call | Returns |
 |---|---|
 | `GET /runs/{id}/queue` | `state` (`queued`, `running`, `done`), and while queued, `position` and `ahead` (runs before yours) |
-| `GET /runs/{id}/status` | `pipeline` (with `status`), per-stage `tasks`, `warnings`, `critical_errors`, `events`, and `progress` (`molecules_done` / `molecules_total` during identification). `?since=<ISO 8601>` returns only newer warnings, errors and events |
+| `GET /runs/{id}/status` | `pipeline` (with `status`), per-stage `tasks`, `warnings`, `critical_errors`, `events`, and `progress` (`molecules_done` / `molecules_total` during identification). `?since=<ISO 8601>` returns only newer warnings, errors and events. Each warning and error has a `docs_url` (path on this host) to its section in [Warnings and errors](warnings.md) |
 | `GET /runs/{id}` | a short summary: status, times, input kind, run name, counts of tasks, warnings and errors |
 | `GET /runs/{id}/loading` | how the input files were read: strategy, attempts, topology files, why a load failed |
 | `GET /runs/{id}/logs` | the run log as text (`?type=debug` for the verbose log) |

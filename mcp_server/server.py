@@ -395,6 +395,8 @@ def build_server(settings: Optional[Settings] = None, *,
                     out["failed_searches_more"] = len(failed_searches) - 10
             if other:
                 out["warnings"] = other
+            if failed_searches or other:
+                out["warnings_explained"] = settings.warnings_docs  # one section per code
 
             if status == "failed":
                 try:

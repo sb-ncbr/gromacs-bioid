@@ -58,6 +58,7 @@ from ..hit_names import hit_display_name
 from ..names import chain_of, segment_display_name, segment_resname, strip_seg
 from ..utils import build_database_url, normalize_identifier
 from src_new.identification.outcomes import user_warnings
+from ..warning_docs import docs_url
 from ..tasks import run_pipeline_task
 from ..security import (
     MAX_FILES, OWNER_HEADER, RunId, allowed_upload, check_submit_limits, ip_hash,
@@ -627,6 +628,7 @@ async def get_run_status(run_id: RunId, since: Optional[str] = None) -> RunStatu
             step_id=w.get("step_id"),
             details=w.get("details", {}),
             recorded_at=w.get("recorded_at"),
+            docs_url=docs_url(w.get("code", "")),
         ))
     
     # Build errors list (filter by since if provided)
@@ -650,6 +652,7 @@ async def get_run_status(run_id: RunId, since: Optional[str] = None) -> RunStatu
             critical=e.get("critical", False),
             exception_type=e.get("exception_type"),
             recorded_at=e.get("recorded_at"),
+            docs_url=docs_url(e.get("code", "")),
         ))
     
     # Build events list (filter by since if provided)

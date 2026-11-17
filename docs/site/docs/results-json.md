@@ -36,7 +36,7 @@ the REST API also serves the parts separately (`/molecules`, `/verification`,
 | `pipeline.retention` | `{"policy": "default"}` (30 days after the run finished), `{"policy": "days", "days": N}` or `{"policy": "preserve"}`. |
 | `pipeline.creator_ip_hash`, `pipeline.owner_token_sha256` | A keyed hash of the submitter's network address and the hash of the run's owner token (not the token). Removed from the API download. |
 | `tasks` | One entry per pipeline stage, in order: `discover_input`, `load_simulation`, `repair_topology`, `unwrap_periodic_boundaries`, `analyze_universe`, `generate_signatures`, `identify_molecules`, `verify_results`, `export_results`, `render_png`. `status` is `success`, `warning` (finished, with something to report) or `failed`; `summary` holds a few counts. A `summary.partial: true` means the stage hit its time budget and the results of that stage are incomplete. |
-| `warnings` | Things worth knowing, with a stable `code` (e.g. `insufficient_bonds`, `stage_time_budget`) and `details`. |
+| `warnings` | Things worth knowing, with a stable `code` (e.g. `insufficient_bonds`, `stage_time_budget`) and `details`. Every code is explained in [Warnings and errors](warnings.md). Searches that do not apply to a molecule are not warnings: see `data.identification._meta.not_applicable`. |
 | `artifacts` | Files the run produced (mmCIF exports, PNG renders); `path` is server-side — the same files are served under `/files/<run_id>/<file>`. |
 
 ## Molecules and segments

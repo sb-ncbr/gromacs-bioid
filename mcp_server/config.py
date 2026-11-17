@@ -68,5 +68,9 @@ class Settings:
         return f"{self.public_url}/documentation/results-json/"
 
     @property
+    def warnings_docs(self) -> str:
+        return f"{self.public_url}/documentation/warnings/"
+
+    @property
     def api_docs(self) -> str:
         return f"{self.public_url}/docs"
