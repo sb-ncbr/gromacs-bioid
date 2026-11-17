@@ -43,6 +43,9 @@ POLICY_START = datetime(2026, 11, 10, tzinfo=timezone.utc)
 EXPIRED_DIR = "_expired"
 TERMINAL = {"success", "failed", "cancelled", "timeout", "error"}
 MAX_CUSTOM_DAYS = 365
+#: What the owner of a finished run may choose on the results page, in days
+#: from that moment. "preserve" stays admin-only (2026-11-17).
+OWNER_CHOICES = (30, 90, 180, 365)
 MAX_PER_SWEEP = int(os.environ.get("BAT3_RETENTION_MAX_PER_SWEEP", "50"))
 FRESH_WRITE_S = 3600
 
@@ -106,7 +109,8 @@ def expires_at(data: dict[str, Any]) -> Optional[datetime]:
     if policy == "preserve":
         return None
     if policy == "days" and isinstance(retention.get("days"), int) and retention["days"] > 0:
-        return finished + timedelta(days=retention["days"])
+        # "from": the owner chose to keep the run N days from that moment
+        return (_parse_time(retention.get("from")) or finished) + timedelta(days=retention["days"])
     return finished + timedelta(days=default_days())
 
 
@@ -119,6 +123,46 @@ def describe(data: dict[str, Any]) -> dict[str, Any]:
     days = retention.get("days") if retention and policy == "days" else (
         None if policy == "preserve" else default_days())
     return {"policy": policy, "days": days, "expires_at": exp.isoformat() if exp else None}
+
+
+def keep_for(run_dir: Path, days: int, now: Optional[datetime] = None) -> dict[str, Any]:
+    """The owner keeps a finished run `days` (OWNER_CHOICES) from now; returns describe().
+
+    Only extends: RetentionError if the run is not finished, is kept
+    permanently, or would expire no later than it does already.
+    """
+    if days not in OWNER_CHOICES:
+        raise RetentionError(f"days must be one of {', '.join(map(str, OWNER_CHOICES))}")
+    now = now or datetime.now(timezone.utc)
+    data = json.loads((run_dir / "results.json").read_text(encoding="utf-8"))
+    pipeline = data.get("pipeline") if isinstance(data.get("pipeline"), dict) else {}
+    if pipeline.get("status") not in TERMINAL:
+        raise RetentionError("A run can be kept longer once it has finished.")
+    current = expires_at(data)
+    if current is None:
+        raise RetentionError("This run is already kept permanently.")
+    new = now + timedelta(days=days)
+    if new <= current:
+        raise RetentionError(f"This run is already kept until {current.date().isoformat()}.")
+    set_policy(run_dir, {"policy": "days", "days": days, "from": now.isoformat()})
+    pipeline["retention"] = {"policy": "days", "days": days, "from": now.isoformat()}
+    return describe(data)
+
+
+_examples_cache: tuple[float, Optional[set]] = (0.0, None)
+
+
+def is_example(runs_dir: Path, run_id: str) -> bool:
+    """Is the run an example (never deleted)? Example list cached for a minute."""
+    global _examples_cache
+    at, ids = _examples_cache
+    if ids is None or time.time() - at > 60:
+        try:
+            ids = protected_run_ids(runs_dir)
+        except Exception:
+            ids = ids or set()
+        _examples_cache = (time.time(), ids)
+    return run_id in ids
 
 
 def protected_run_ids(runs_dir: Path) -> set[str]:
@@ -235,7 +279,7 @@ def set_policy(run_dir: Path, retention: dict[str, Any]) -> None:
     path = run_dir / "results.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     data.setdefault("pipeline", {})["retention"] = retention
-    tmp = path.with_name(f".results.{os.getpid()}.tmp")
+    tmp = path.with_name(f".results.{os.getpid()}.{os.urandom(4).hex()}.tmp")
     tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
     os.replace(tmp, path)
 

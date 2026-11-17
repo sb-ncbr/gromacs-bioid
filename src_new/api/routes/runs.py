@@ -27,6 +27,8 @@ from ..models import (
     RunFilesResponse,
     PipelineStatusResponse,
     RunStatusResponse,
+    RetentionChange,
+    RetentionInfo,
     TaskInfo,
     WarningItem,
     ErrorItem,
@@ -537,7 +539,43 @@ async def get_run_summary(run_id: RunId) -> RunSummaryResponse:
         task_count=len(tasks_data),
         warning_count=len(warnings_data),
         error_count=len(errors_data),
+        retention=_retention_info(run_id, data),
     )
+
+
+def _retention_info(run_id: str, data: Dict[str, Any]) -> RetentionInfo:
+    from .. import retention
+    if retention.is_example(get_runs_dir(), run_id):
+        return RetentionInfo(policy="preserve", days=None, expires_at=None, example=True)
+    info = retention.describe(data)
+    status = (data.get("pipeline") or {}).get("status")
+    choices = (list(retention.OWNER_CHOICES)
+               if info["expires_at"] and status in retention.TERMINAL else [])
+    return RetentionInfo(**info, owner_choices=choices)
+
+
+@router.post("/{run_id}/retention", response_model=RetentionInfo)
+async def keep_run_longer(
+    run_id: RunId,
+    body: RetentionChange,
+    owner_token: Optional[str] = Header(None, alias=OWNER_HEADER),
+) -> RetentionInfo:
+    """Keep a finished run longer: 30, 90, 180 or 365 days from now (owner only).
+
+    403 without the owner token; 409 when the run is not finished, is kept
+    permanently, or already expires later than the choice.
+    """
+    from .. import retention
+    data = load_results_json(run_id)
+    require_owner(data.get("pipeline", {}), owner_token, "kept longer")
+    if retention.is_example(get_runs_dir(), run_id):
+        raise HTTPException(status_code=409, detail="Examples are kept permanently.")
+    try:
+        retention.keep_for(safe_run_dir(get_runs_dir(), run_id), body.days)
+    except retention.RetentionError as e:
+        status = 400 if body.days not in retention.OWNER_CHOICES else 409
+        raise HTTPException(status_code=status, detail=str(e))
+    return _retention_info(run_id, load_results_json(run_id))
 
 
 logger = logging.getLogger(__name__)
@@ -691,6 +729,7 @@ async def get_run_status(run_id: RunId, since: Optional[str] = None) -> RunStatu
         events=events,
         updated_at=updated_at,
         progress=_segment_progress(data, tasks_data),
+        retention=_retention_info(run_id, data),
     )
 
 

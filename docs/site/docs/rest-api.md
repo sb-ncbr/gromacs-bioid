@@ -108,6 +108,7 @@ recorded as `pipeline.preset` in results.json.
 | `GET /runs/{id}/loading` | how the input files were read: strategy, attempts, topology files, why a load failed |
 | `GET /runs/{id}/logs` | the run log as text (`?type=debug` for the verbose log) |
 | `POST /runs/{id}/cancel` | cancels a queued or running run; needs `X-Owner-Token` (403 without it, 400 if the run already finished) |
+| `POST /runs/{id}/retention` | keeps a finished run longer: body `{"days": 30 \| 90 \| 180 \| 365}`, counted from now; needs `X-Owner-Token`. Only extends (409 if the run already expires later, is kept permanently, or has not finished). The status and summary responses carry `retention` (`policy`, `days`, `expires_at`, `example`, `owner_choices`) |
 
 `pipeline.status` ends as `success`, `failed` or `cancelled`. A finished run
 can still carry warnings, for example a database search that timed out; the

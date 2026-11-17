@@ -71,6 +71,8 @@ REGISTERED_ADDITIONS: dict[str, dict[str, set[str]]] = {
     "g9_render_selectors": {"RenderPathsResponse": {"segment_selectors"}},
     # 2026-11-06: all copies as compact auth_seq_id ranges (whole-molecule colouring)
     "g9_residue_ranges": {"RenderSegmentSelector": {"residue_ranges"}},
+    # 2026-11-17: expiry on the results page; the owner can keep a run longer
+    "run_retention": {"RunSummaryResponse": {"retention"}, "RunStatusResponse": {"retention"}},
 }
 
 _MODELS = {

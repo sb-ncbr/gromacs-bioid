@@ -86,6 +86,22 @@ class RunStageProgress(BaseModel):
     )
 
 
+class RetentionInfo(BaseModel):
+    """How long a run is kept (2026-11-17)."""
+
+    policy: str = Field(..., description="default, days or preserve")
+    days: Optional[int] = Field(None, description="Retention period in days (null when preserved)")
+    expires_at: Optional[str] = Field(None, description="ISO 8601 time the run is deleted; null = never or not finished")
+    example: bool = Field(False, description="An example run: never deleted")
+    owner_choices: List[int] = Field(default_factory=list, description="Days the owner may choose with POST /runs/{id}/retention")
+
+
+class RetentionChange(BaseModel):
+    """Keep a finished run longer (owner only)."""
+
+    days: int = Field(..., description="Keep the run this many days from now: 30, 90, 180 or 365")
+
+
 class RunStatusResponse(BaseModel):
     """Full run status response."""
 
@@ -100,6 +116,7 @@ class RunStatusResponse(BaseModel):
     # no segments planned yet (pre-analysis / no identifiable molecules).
     progress: Optional[RunStageProgress] = Field(
         None, description="Per-segment identification progress")
+    retention: Optional[RetentionInfo] = Field(None, description="How long the run is kept")
 
 
 class LoadingAttemptInfo(BaseModel):
@@ -394,6 +411,7 @@ class RunSummaryResponse(BaseModel):
     task_count: int = Field(..., description="Number of tasks in the pipeline")
     warning_count: int = Field(..., description="Number of warnings")
     error_count: int = Field(..., description="Number of errors")
+    retention: Optional[RetentionInfo] = Field(None, description="How long the run is kept")
 
 
 class RunFilesResponse(BaseModel):

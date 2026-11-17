@@ -200,6 +200,8 @@ API_ADDITIONS = [
     "hit_name_organism",       # G5 — name/organism on verified hits
     "unique_segment_names",    # G7 — full unique-group segments
     "segment_selectors",       # G9 — per-segment selectors on /render
+    "run_retention",           # 2026-11-17 — retention on status/summary; owner POST /retention
+    "warning_docs_url",        # 2026-11-17 — docs_url on warnings and errors
     "capabilities",              # this endpoint
 ]
 

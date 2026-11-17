@@ -157,3 +157,44 @@ def test_expired_runs_are_not_served(runs, monkeypatch):
     assert c.get("/files/resolver_cache.sqlite3").status_code == 404
     assert c.get("/files/resolver_cache.sqlite3.corrupt-1/x").status_code == 404
     assert c.get("/files/_quarantine_cache/2026-10-06/resolver_cache.sqlite3").status_code == 404
+
+
+def test_owner_keeps_a_run_longer_from_today(runs):
+    d = mk(runs, "mine", retention={"policy": "default"})  # finished 60 days ago: due
+    assert "mine" in ids(runs)
+    info = ret.keep_for(d, 90, now=NOW)
+    assert info["policy"] == "days" and info["expires_at"].startswith("2027-05-30")
+    assert "mine" not in ids(runs)  # the sweep sees the new expiry
+    with pytest.raises(ret.RetentionError, match="already kept until 2027-05-30"):
+        ret.keep_for(d, 30, now=NOW)  # never shortens
+    with pytest.raises(ret.RetentionError):
+        ret.keep_for(d, 1000, now=NOW)
+
+
+def test_owner_cannot_change_preserved_or_unfinished_runs(runs):
+    kept = mk(runs, "kept", retention={"policy": "preserve"})
+    running = mk(runs, "running", status="running")
+    with pytest.raises(ret.RetentionError, match="permanently"):
+        ret.keep_for(kept, 365, now=NOW)
+    with pytest.raises(ret.RetentionError, match="once it has finished"):
+        ret.keep_for(running, 365, now=NOW)
+
+
+def test_retention_api(runs, monkeypatch):
+    import hashlib
+    from fastapi.testclient import TestClient
+    from src_new.api.main import app
+    c = TestClient(app).__enter__()  # before the env change: startup mounts /files
+    monkeypatch.setenv("BAT3_RUNS_DIR", str(runs))
+    monkeypatch.setattr(ret, "_examples_cache", (0.0, None))
+    recent = datetime.now(timezone.utc).isoformat()
+    mk(runs, "owned", finished=recent, owner_token_sha256=hashlib.sha256(b"tok").hexdigest())
+    status = c.get("/api/v1/runs/owned/status").json()["retention"]
+    assert status["policy"] == "default" and status["expires_at"] and status["owner_choices"] == [30, 90, 180, 365]
+    assert c.post("/api/v1/runs/owned/retention", json={"days": 90}).status_code == 403
+    r = c.post("/api/v1/runs/owned/retention", json={"days": 90}, headers={"X-Owner-Token": "tok"})
+    assert r.status_code == 200 and r.json()["days"] == 90
+    r = c.post("/api/v1/runs/owned/retention", json={"days": 30}, headers={"X-Owner-Token": "tok"})
+    assert r.status_code == 409 and "already kept" in r.json()["detail"]
+    assert c.get("/api/v1/runs/owned").json()["retention"]["days"] == 90
+    c.__exit__(None, None, None)
