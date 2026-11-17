@@ -125,17 +125,27 @@ def test_restore_brings_a_run_back_preserved(runs):
     assert not (runs / "due" / ".expired_at").exists()
 
 
-def test_circuit_breaker(runs, monkeypatch):
+def test_circuit_breaker_guards_the_default_policy_only(runs):
     for i in range(4):
-        mk(runs, f"due-{i}")
+        mk(runs, f"due-{i}")  # legacy runs: default policy
     mk(runs, "keep", retention={"policy": "preserve"})
-    summary = ret.sweep(runs, NOW, enforce=True)  # 4 of 5 due: more than half
+    summary = ret.sweep(runs, NOW, enforce=True)  # 4 of 5 on the default policy: misconfiguration
     assert summary["aborted"] and summary["moved"] == []
     assert all((runs / f"due-{i}").is_dir() for i in range(4))
-    monkeypatch.setattr(ret, "MAX_PER_SWEEP", 1)
-    for i in range(10):
-        mk(runs, f"keep-{i}", retention={"policy": "preserve"})
-    assert ret.sweep(runs, NOW, enforce=True)["aborted"]  # 4 due > limit 1
+
+
+def test_short_explicit_retention_expires_in_batches(runs, monkeypatch):
+    """A campaign's 1-day runs coming due together are not a misconfiguration."""
+    monkeypatch.setattr(ret, "MAX_PER_SWEEP", 3)
+    for i in range(5):
+        mk(runs, f"campaign-{i}", retention={"policy": "days", "days": 1},
+           finished=(NOW - timedelta(days=2, minutes=i)).isoformat())
+    mk(runs, "keep", retention={"policy": "preserve"})
+    s1 = ret.sweep(runs, NOW, enforce=True)
+    assert s1["aborted"] is None and len(s1["moved"]) == 3 and s1["waiting"] == 2
+    assert s1["moved"] == ["campaign-4", "campaign-3", "campaign-2"]  # oldest due first
+    s2 = ret.sweep(runs, NOW, enforce=True)
+    assert len(s2["moved"]) == 2 and s2["waiting"] == 0
 
 
 def test_expired_runs_are_not_served(runs, monkeypatch):

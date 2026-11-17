@@ -233,6 +233,22 @@ class TestReaperAdhocRetention:
         assert not stale.exists()
         assert not stale_tmp.exists()
 
+    def test_sweep_adhoc_deletes_stale_pdb_staging(self, tmp_path):
+        """RCSB structure search stages <sha>.pdb; only .cif was swept and
+        85k .pdb files (21 GB) piled up (2026-11-17)."""
+        from src_new.api.run_reaper import sweep_adhoc
+        adhoc = tmp_path / "adhoc"
+        adhoc.mkdir()
+        stale_pdb = adhoc / ("e" * 64 + ".pdb")
+        stale_pdb.write_text("ATOM")
+        foreign = adhoc / "notes.pdb"
+        foreign.write_text("not ours")
+        old = time.time() - 30 * 86400
+        for f in (stale_pdb, foreign):
+            os.utime(f, (old, old))
+        assert sweep_adhoc(adhoc, retention_s=7 * 86400)["adhoc_deleted"] == 1
+        assert not stale_pdb.exists() and foreign.exists()
+
     def test_sweep_adhoc_missing_dir_is_noop(self, tmp_path):
         from src_new.api.run_reaper import sweep_adhoc
         summary = sweep_adhoc(tmp_path / "nope", retention_s=60.0)

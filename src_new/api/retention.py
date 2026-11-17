@@ -17,8 +17,12 @@ Safety, because a wrong deletion cannot be undone:
 - Expired runs are MOVED to <runs>/_expired/<run_id> (same filesystem, a
   rename) and purged only BAT3_RETENTION_GRACE_DAYS (7) later; until then the
   admin page can restore them.
-- Circuit breaker: a sweep that would expire more than MAX_PER_SWEEP runs, or
-  more than half of all runs, expires nothing and logs an error.
+- At most MAX_PER_SWEEP (50) runs are expired per hourly sweep, oldest due
+  first; the rest wait for the next sweeps (up to 1,200 a day).
+- Circuit breaker: if runs on the default policy alone are due for more than
+  half of all runs (a wrong BAT3_RETENTION_DAYS, a clock jump), the sweep
+  expires nothing and logs an error. Runs submitted with their own short
+  retention (e.g. a campaign's 1 day) are not counted against it.
 """
 from __future__ import annotations
 
@@ -160,8 +164,11 @@ def candidates(runs_dir: Path, now: Optional[datetime] = None,
             continue
         exp = expires_at(data)
         if exp is not None and exp <= now:
+            ret = data.get("pipeline", {}).get("retention")
             out.append({"run_id": name, "expires_at": exp.isoformat(),
-                        "status": data.get("pipeline", {}).get("status")})
+                        "status": data.get("pipeline", {}).get("status"),
+                        "policy": ret.get("policy") if isinstance(ret, dict) else "legacy"})
+    out.sort(key=lambda c: c["expires_at"])
     return out
 
 
@@ -178,15 +185,17 @@ def sweep(runs_dir: Path, now: Optional[datetime] = None,
     due = candidates(runs_dir, now)
     total = _count_runs(runs_dir)
     summary: dict[str, Any] = {"enforce": enforce, "due": len(due), "total_runs": total,
-                               "moved": [], "purged": [], "aborted": None}
-    if due and (len(due) > MAX_PER_SWEEP or len(due) > total / 2):
-        summary["aborted"] = (f"{len(due)} of {total} runs due at once (limit {MAX_PER_SWEEP}, "
-                              "or half of all runs): nothing expired, check the retention settings")
+                               "moved": [], "purged": [], "aborted": None, "waiting": 0}
+    on_default = sum(1 for c in due if c["policy"] in ("default", "legacy"))
+    if on_default > total / 2:
+        summary["aborted"] = (f"{on_default} of {total} runs on the default retention are due at once: "
+                              "nothing expired, check BAT3_RETENTION_DAYS and the clock")
         log.error("retention: %s", summary["aborted"])
         return summary
+    batch, summary["waiting"] = due[:MAX_PER_SWEEP], max(0, len(due) - MAX_PER_SWEEP)
     trash = runs_dir / EXPIRED_DIR
     if enforce:
-        for item in due:
+        for item in batch:
             src = runs_dir / item["run_id"]
             dst = trash / item["run_id"]
             if dst.exists():

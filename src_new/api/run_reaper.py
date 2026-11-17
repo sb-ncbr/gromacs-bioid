@@ -141,7 +141,10 @@ def heartbeat_age(results_path: Path) -> float | None:
 # W3.1 item 4 (A9): the adhoc staging dir lives under the runs dir in the
 # deployment (/app/runs/_adhoc) — never treat it as a run directory.
 ADHOC_DIR_NAME = "_adhoc"
-_ADHOC_CIF_RE = re.compile(r"^[0-9a-f]{64}\.cif$")
+# Staged structures: <sha256>.cif (mmcif resolver) and <sha256>.pdb (RCSB
+# structure search, pdb_struct.py). Only .cif was swept until 2026-11-17, so
+# 85k .pdb files (21 GB) outlived the retention window.
+_ADHOC_CIF_RE = re.compile(r"^[0-9a-f]{64}\.(cif|pdb)$")
 
 
 def adhoc_retention_s() -> float:
@@ -159,7 +162,7 @@ def adhoc_retention_s() -> float:
 def sweep_adhoc(adhoc_dir: Path, retention_s: float | None = None) -> dict:
     """Delete stale adhoc staging files (W3.1 item 4 retention).
 
-    Touches ONLY <64-hex>.cif files and abandoned ``.*.tmp`` staging
+    Touches ONLY <64-hex>.cif/.pdb files and abandoned ``.*.tmp`` staging
     files whose mtime is older than the retention window; everything
     else in the directory is left alone."""
     summary = {"adhoc_scanned": 0, "adhoc_deleted": 0, "adhoc_errors": 0}
