@@ -82,7 +82,8 @@ route (see [API](api.md#the-rcsb-file-serving-contract)).
 | `glycan_composition` | GlyCosmos → GlyTouCan | glycan composition | yes | — | remote |
 | `atom` | the chemical element | element of a one-atom molecule | yes | — | local |
 | `name_ccd` | PDB Chemical Component Dictionary names → InChIKey | residue / molecule / chain names | yes | — (switch off by default) | local (`databases/ccd.json`) |
-| `name_maps`, `name_manual` | LIPID MAPS names, a curated list | names | — | — | **off** in `config.ini`: their data (`maps.json`, `manual.json`) does not exist |
+| `name_maps` | Force-field names: 309 CHARMM36 / AMBER / GROMACS / Slipids residue and molecule names (lipids, sterols, detergents, fatty acids, ions) to InChIKeys, each checked against PubChem (`src_new/identification/name_tables/`) | names | — | — | candidates like any other name lookup, verified as usual; never an override |
+| `name_manual` | a curated list | names | — | — | **off**: no data (`manual.json`) |
 
 Formula and similarity searches only *propose* candidates: every chemical
 candidate must pass the skeleton-fingerprint check at verification
