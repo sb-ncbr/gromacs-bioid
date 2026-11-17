@@ -190,3 +190,33 @@ def test_limits_are_editable_with_per_address_exceptions(env, client, monkeypatc
                       params={"address": "192.0.2.0/24"}, headers=h)
     assert r.json()["exceptions"] == {}
     assert client.get("/api/v1/admin/settings/limits").status_code == 401
+
+
+def test_identification_reports(env, client, monkeypatch):
+    from src_new.api import reports
+    data = {"pipeline": {"status": "success", "run_name": "Trypsin"}, "data": {"verification": {
+        "seg_0_A": {"verified_hits": [{"database": "uniprot", "identifier": "P00760", "ident_type": "UNIPROT_ID",
+                                       "name": "Cationic trypsin", "is_verified": True, "final_confidence": 91}]}}}}
+    (env.runs / "done" / "results.json").write_text(json.dumps(data))
+    r = client.post("/api/v1/runs/done/reports", json={"segment": "seg_0_A", "note": "this is chymotrypsin",
+                                                       "suggestion": "P00766"})
+    assert r.status_code == 201, r.text
+    assert client.post("/api/v1/runs/done/reports", json={"segment": "nope"}).status_code == 404
+    assert client.post("/api/v1/runs/missing/reports", json={"segment": "seg_0_A"}).status_code == 404
+    assert client.get("/files/_reports/").status_code == 404  # never served
+
+    assert client.get("/api/v1/admin/reports").status_code == 401
+    h = token(client)
+    listing = client.get("/api/v1/admin/reports", headers=h).json()
+    assert listing["open"] == 1
+    rep = listing["reports"][0]
+    assert rep["answer"]["identifier"] == "P00760" and rep["answer"]["name"] == "Cationic trypsin"
+    assert rep["suggestion"] == "P00766" and "reporter_hash" not in rep
+    done = client.put(f"/api/v1/admin/reports/{rep['id']}", headers=h, json={"status": "resolved",
+                                                                            "admin_note": "checked"}).json()
+    assert done["status"] == "resolved"
+    assert client.put(f"/api/v1/admin/reports/{rep['id']}", headers=h, json={"status": "bogus"}).status_code == 422
+    assert client.put("/api/v1/admin/reports/../x", headers=h, json={}).status_code in (404, 405)
+
+    monkeypatch.setattr(reports, "PER_HOUR", 1)
+    assert client.post("/api/v1/runs/done/reports", json={"segment": "seg_0_A"}).status_code == 429

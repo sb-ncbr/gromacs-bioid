@@ -357,8 +357,15 @@ async def overview() -> dict:
             "storage": _section(_storage_async),
             "retention": _section(lambda: _cached("retention", 30, _retention_status)),
             "limits": {**security.current_limits(), "max_files": security.MAX_FILES},
+            "reports": _section(lambda: _cached("reports", 30, _reports_summary)),
         }
     return await asyncio.to_thread(build)
+
+
+def _reports_summary() -> dict:
+    from . import reports
+    items = reports.listing(_runs_dir())
+    return {"open": sum(1 for r in items if r.get("status") == "open"), "total": len(items)}
 
 
 @router.get("/traffic", dependencies=[Depends(require_admin)])
@@ -595,6 +602,27 @@ async def admin_retention(run_id: security.RunId, body: dict = Body(...)) -> dic
     retention.set_policy(d, policy)
     _drop_cache("runs")
     return {"run_id": run_id, "retention": policy}
+
+
+@router.get("/reports", dependencies=[Depends(require_admin)])
+async def admin_reports() -> dict:
+    from . import reports
+    items = reports.listing(_runs_dir())
+    for r in items:
+        r.pop("reporter_hash", None)
+    return {"reports": items, "open": sum(1 for r in items if r.get("status") == "open")}
+
+
+@router.put("/reports/{report_id}", dependencies=[Depends(require_admin)])
+async def admin_report_update(report_id: str, body: dict = Body(...)) -> dict:
+    from . import reports
+    try:
+        report = reports.update(_runs_dir(), report_id, body.get("status"), body.get("admin_note"))
+    except reports.ReportError as e:
+        raise HTTPException(status_code=404 if "unknown" in str(e) else 422, detail=str(e))
+    report.pop("reporter_hash", None)
+    _drop_cache("reports")
+    return report
 
 
 @router.post("/expired/{run_id}/restore", dependencies=[Depends(require_admin)])

@@ -28,6 +28,7 @@ from ..models import (
     PipelineStatusResponse,
     RunStatusResponse,
     RetentionChange,
+    ReportCreate,
     RetentionInfo,
     TaskInfo,
     WarningItem,
@@ -552,6 +553,24 @@ def _retention_info(run_id: str, data: Dict[str, Any]) -> RetentionInfo:
     choices = (list(retention.OWNER_CHOICES)
                if info["expires_at"] and status in retention.TERMINAL else [])
     return RetentionInfo(**info, owner_choices=choices)
+
+
+@router.post("/{run_id}/reports", status_code=201)
+async def report_identification(run_id: RunId, body: ReportCreate, request: Request) -> Dict[str, Any]:
+    """Report that a molecule's identification looks wrong. Anyone may report;
+    at most 20 reports per address per hour (429)."""
+    from .. import reports
+    data = load_results_json(run_id)
+    who = ip_hash(_requester_ip(request))
+    try:
+        reports.check_rate(who)
+    except reports.ReportError as e:
+        raise HTTPException(status_code=429, detail=str(e), headers={"Retry-After": "3600"})
+    try:
+        report = reports.create(get_runs_dir(), run_id, data, body.segment, body.note, body.suggestion, who)
+    except reports.ReportError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"id": report["id"], "message": "Thank you. The BioID team will look at it."}
 
 
 @router.post("/{run_id}/retention", response_model=RetentionInfo)

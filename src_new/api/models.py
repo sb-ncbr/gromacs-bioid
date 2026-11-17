@@ -96,6 +96,14 @@ class RetentionInfo(BaseModel):
     owner_choices: List[int] = Field(default_factory=list, description="Days the owner may choose with POST /runs/{id}/retention")
 
 
+class ReportCreate(BaseModel):
+    """'This identification looks wrong' for one molecule of a run."""
+
+    segment: str = Field(..., description="The molecule's segment name, as in results.json")
+    note: str = Field("", max_length=2000, description="What looks wrong (optional)")
+    suggestion: str = Field("", max_length=200, description="What the molecule really is, if known (optional)")
+
+
 class RetentionChange(BaseModel):
     """Keep a finished run longer (owner only)."""
 
