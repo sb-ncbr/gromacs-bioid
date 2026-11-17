@@ -506,6 +506,31 @@ def get_example_runs(runs_dir: Path, limit: int, explicit_ids: Optional[List[str
     return picked
 
 
+_example_ids_cache: tuple[float, Optional[set]] = (0.0, None)
+
+
+def example_ids(runs_dir: Path) -> set:
+    """Example run ids for request handlers: never scans the runs folder there.
+
+    With BAT3_EXAMPLE_RUNS set (production) it is that list, a superset of
+    the examples the endpoint serves. Otherwise the served examples, cached
+    10 minutes. Finding served examples reads every run's results.json:
+    over slow NFS that took a minute and, done inside requests (every run
+    deletion, every status poll), it blocked the API's event loops until
+    the readiness probe failed and the ingress dropped the API (2026-11-17).
+    The retention sweep keeps its own full check (protected_run_ids).
+    """
+    global _example_ids_cache
+    explicit = _explicit_examples()
+    if explicit:
+        return set(explicit)
+    at, ids = _example_ids_cache
+    if ids is None or time.time() - at > 600:
+        ids = served_example_ids(runs_dir)
+        _example_ids_cache = (time.time(), ids)
+    return ids
+
+
 def _explicit_examples() -> Optional[List[str]]:
     """BAT3_EXAMPLE_RUNS (JSON list of run ids), or None."""
     raw = os.environ.get("BAT3_EXAMPLE_RUNS")
@@ -558,7 +583,7 @@ async def delete_run(
     run_dir = safe_run_dir(get_runs_dir(), run_id)
     if not run_dir.is_dir():
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
-    if run_id in served_example_ids(get_runs_dir()):
+    if run_id in example_ids(get_runs_dir()):
         raise HTTPException(status_code=403, detail="Example runs cannot be deleted.")
     pipeline = load_results_json(run_id).get("pipeline", {})
     require_owner(pipeline, owner_token, "deleted")

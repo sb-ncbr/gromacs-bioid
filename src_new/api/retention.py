@@ -149,20 +149,13 @@ def keep_for(run_dir: Path, days: int, now: Optional[datetime] = None) -> dict[s
     return describe(data)
 
 
-_examples_cache: tuple[float, Optional[set]] = (0.0, None)
-
-
 def is_example(runs_dir: Path, run_id: str) -> bool:
-    """Is the run an example (never deleted)? Example list cached for a minute."""
-    global _examples_cache
-    at, ids = _examples_cache
-    if ids is None or time.time() - at > 60:
-        try:
-            ids = protected_run_ids(runs_dir)
-        except Exception:
-            ids = ids or set()
-        _examples_cache = (time.time(), ids)
-    return run_id in ids
+    """Is the run an example (never deleted)? Cheap: for request handlers."""
+    from .routes.runs import example_ids
+    try:
+        return run_id in example_ids(runs_dir)
+    except Exception:
+        return False
 
 
 def protected_run_ids(runs_dir: Path) -> set[str]:

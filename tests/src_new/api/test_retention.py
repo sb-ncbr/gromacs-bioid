@@ -186,7 +186,7 @@ def test_retention_api(runs, monkeypatch):
     from src_new.api.main import app
     c = TestClient(app).__enter__()  # before the env change: startup mounts /files
     monkeypatch.setenv("BAT3_RUNS_DIR", str(runs))
-    monkeypatch.setattr(ret, "_examples_cache", (0.0, None))
+    monkeypatch.setattr("src_new.api.routes.runs._example_ids_cache", (0.0, None))
     recent = datetime.now(timezone.utc).isoformat()
     mk(runs, "owned", finished=recent, owner_token_sha256=hashlib.sha256(b"tok").hexdigest())
     status = c.get("/api/v1/runs/owned/status").json()["retention"]
@@ -198,3 +198,13 @@ def test_retention_api(runs, monkeypatch):
     assert r.status_code == 409 and "already kept" in r.json()["detail"]
     assert c.get("/api/v1/runs/owned").json()["retention"]["days"] == 90
     c.__exit__(None, None, None)
+
+
+def test_request_paths_never_scan_for_examples(monkeypatch, tmp_path):
+    """Finding served examples reads every run (a minute on slow NFS): never inside a request
+    when the examples are configured (2026-11-17 outage)."""
+    from src_new.api.routes import runs as routes
+    monkeypatch.setenv("BAT3_EXAMPLE_RUNS", '["ex-1"]')
+    monkeypatch.setattr(routes, "served_example_ids", lambda d: (_ for _ in ()).throw(AssertionError("scanned")))
+    assert routes.example_ids(tmp_path) == {"ex-1"}
+    assert ret.is_example(tmp_path, "ex-1") and not ret.is_example(tmp_path, "other")
