@@ -19,6 +19,7 @@ import { RunsSection } from "../features/admin/Runs";
 import { LimitsSection, RetentionSection, StorageSection } from "../features/admin/RetentionStorage";
 import { AdminProvider, OVERVIEW_KEY } from "../features/admin/session";
 import { TrafficSection } from "../features/admin/Traffic";
+import { ChecksSection, ReportsSection } from "../features/admin/ChecksReports";
 
 const REFRESH_MS = 5_000;
 
@@ -134,6 +135,10 @@ function Dashboard({ session, signOut }: { session: AdminSession; signOut: (mess
           <>
             <TopStrip overview={data} nowMs={now} />
             <TrafficSection live={live} />
+            <div className="grid items-start gap-4 lg:grid-cols-2">
+              <ChecksSection live={live} nowMs={now} />
+              <ReportsSection live={live} nowMs={now} />
+            </div>
             <div className="grid gap-4 lg:grid-cols-2">
               <QueuesSection queues={data.queues} />
               <WorkersSection workers={data.workers} nowMs={now} />

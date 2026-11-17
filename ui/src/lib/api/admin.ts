@@ -175,6 +175,71 @@ export interface AdminOverview {
   storage: Section<StorageSection>;
   retention: Section<RetentionSection>;
   limits: Section<LimitsSection>;
+  reports?: Section<{ open: number; total: number }>;
+  checks?: Section<ChecksSummary>;
+}
+
+// -- reports and the nightly known-answers check (2026-11-17) ----------------
+
+export interface IdentificationReport {
+  id: string;
+  run_id: string;
+  segment: string;
+  note: string;
+  suggestion: string;
+  answer: { state: string; database: string; identifier: string; url: string; confidence: number | null; name?: string | null };
+  run_name?: string | null;
+  created_at: string;
+  status: "open" | "resolved" | "dismissed";
+  admin_note: string;
+}
+
+export interface CheckAnswer {
+  state: string;
+  database: string;
+  identifier: string;
+  answered_by: string[];
+}
+
+export interface CheckDiff {
+  kind: "identity" | "database" | "run";
+  segment?: string;
+  resolver?: string;
+  expected?: string;
+  observed: string;
+  repeated?: boolean;
+}
+
+export interface CheckCase {
+  run_id: string;
+  label: string;
+  expected: Record<string, CheckAnswer>;
+  added_at: string;
+  accepted_at?: string;
+}
+
+export interface CheckState {
+  status?: "running" | "green" | "amber" | "red";
+  started_at?: number;
+  finished_at?: number | null;
+  runs?: Record<string, string | null>;
+  results?: Record<string, { status: string; check_run?: string; diffs: CheckDiff[] }>;
+  last_completed?: { started_at?: number; finished_at?: number; status?: string } | null;
+}
+
+export interface ChecksSummary {
+  cases: number;
+  status?: string | null;
+  started_at?: number | null;
+  finished_at?: number | null;
+}
+
+export interface ChecksDetail {
+  cases: CheckCase[];
+  check: CheckState;
+  crash_loops: { deployment: string; pods: number; of: number; reason: string; last_exit: string | null }[] | { error: string };
+  alerts: { at: number; key: string; subject: string; sent: boolean; error?: string }[];
+  alert_email: string | null;
 }
 
 // -- traffic ------------------------------------------------------------------
@@ -339,6 +404,16 @@ export const adminApi = {
       method: "PUT",
       body: JSON.stringify({ address, label, per_hour: perHour }),
     }),
+  reports: (token: string) => request<{ reports: IdentificationReport[]; open: number }>("/reports", token),
+  updateReport: (token: string, id: string, change: { status?: string; admin_note?: string }) =>
+    request<IdentificationReport>(`/reports/${seg(id)}`, token, { method: "PUT", body: JSON.stringify(change) }),
+  checks: (token: string) => request<ChecksDetail>("/checks", token),
+  addCase: (token: string, runId: string, label: string) => post<CheckCase>("/checks/cases", token, { run_id: runId, label }),
+  removeCase: (token: string, runId: string) =>
+    request<{ removed: string }>(`/checks/cases/${seg(runId)}`, token, { method: "DELETE" }),
+  acceptCase: (token: string, runId: string) => post<CheckCase>(`/checks/cases/${seg(runId)}/accept`, token),
+  runCheck: (token: string) => post<CheckState>("/checks/run", token),
+  testAlarm: (token: string) => post<{ sent: boolean; to: string }>("/alerts/test", token),
   removeLimitException: (token: string, address: string) =>
     request<LimitSettings>(`/settings/limits/exceptions?address=${seg(address)}`, token, { method: "DELETE" }),
 };
