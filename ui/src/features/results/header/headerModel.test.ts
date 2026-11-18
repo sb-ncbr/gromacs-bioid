@@ -32,6 +32,10 @@ describe("metaLine (SPEC §3.1)", () => {
     expect(line).toContain(`run ${navms.run.short_id}`);
     expect(line).toContain("atoms");
   });
+  it("names a non-web queue only", () => {
+    expect(metaLine(run({ queue: "repository" }))).toContain("repository queue");
+    expect(metaLine(run({ queue: "web" }))).not.toContain("queue");
+  });
   it("never prints a zoneless timestamp", () => {
     expect(formatSubmitted("2026-10-11T19:37:20Z")).toMatch(/UTC$/);
   });

@@ -17,7 +17,8 @@
   "started_at": "2026-10-11T19:37:07Z",
   "finished_at": "2026-10-11T20:24:12Z",
   "elapsed_s": 2820,
-  "retention_days": null
+  "retention_days": null,
+  "queue": "web"
  },
  "progress": {
   "stages": [

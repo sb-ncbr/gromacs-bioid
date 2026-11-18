@@ -148,6 +148,8 @@ export interface ViewModel {
     finished_at: string | null;
     elapsed_s: number | null;
     retention_days: number | null;
+    /** Queue the run was submitted to: "web" (default) or "repository". */
+    queue: string;
   };
   progress: {
     stages: Stage[];

@@ -84,8 +84,8 @@ def test_plumbing_overrides_are_rejected(base, overrides):
 
 def test_unchanged_plumbing_is_dropped(base):
     full = base.to_dict()
-    out = checked_overrides({"blast": dict(full["blast"]), "identifiers": {"blast_nt": False}}, base)
-    assert out == {"identifiers": {"blast_nt": False}}
+    out = checked_overrides({"blast": dict(full["blast"]), "identifiers": {"blast_nt": True}}, base)
+    assert out == {"identifiers": {"blast_nt": True}}
 
 
 @pytest.mark.parametrize("overrides,message", [
@@ -102,7 +102,7 @@ def test_bad_values_are_rejected(base, overrides, message):
 
 
 def test_ini_upload_is_read_on_top_of_the_defaults(base):
-    assert overrides_from_ini("[identifiers]\nblast_nt = no\n", base) == {"identifiers": {"blast_nt": False}}
+    assert overrides_from_ini("[identifiers]\nblast_nt = yes\n", base) == {"identifiers": {"blast_nt": True}}
     with pytest.raises(ConfigOverrideError):
         overrides_from_ini("[blast]\nblastp_exec = /bin/sh\n", base)
 

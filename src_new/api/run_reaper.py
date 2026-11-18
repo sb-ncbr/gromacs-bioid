@@ -94,7 +94,15 @@ def mark_worker_lost(results_path: Path, *, sweep_count: int,
     except Exception as exc:  # unreadable/corrupt — leave it, log only
         logger.warning("run_reaper: cannot load %s (%s)", results_path, exc)
         return False
-    rm.finish_run("failed")
+    # A queue with automatic retries (retries.py) gives the run another
+    # attempt under the same id instead of failing it.
+    from .. import retries
+    retry = retries.plan(rm._payload, "worker_lost")
+    if retry:
+        retries.schedule(rm._payload, retry)
+        rm._save()
+    else:
+        rm.finish_run("failed")
     rm.add_event(
         "worker_lost",
         detail=cause or (
@@ -114,6 +122,19 @@ def mark_worker_lost(results_path: Path, *, sweep_count: int,
         critical=True,
     )
     return True
+
+
+def _requeue_if_due(run_dir: Path, summary: dict) -> None:
+    """Start the next attempt of a run waiting for an automatic retry."""
+    from .. import retries
+    try:
+        data = json.loads((run_dir / "results.json").read_text(encoding="utf-8"))
+        if retries.due(data.get("pipeline") or {}) and retries.requeue(run_dir):
+            summary.setdefault("requeued", []).append(run_dir.name)
+            logger.info("run_reaper: run %s re-queued for its next attempt", run_dir.name)
+    except Exception as exc:
+        summary["errors"] += 1
+        logger.warning("run_reaper: could not re-queue %s: %s", run_dir.name, exc)
 
 
 def heartbeat_age(results_path: Path) -> float | None:
@@ -260,6 +281,9 @@ def sweep(runs_dir: Path, live_task_ids: set[str], misses: dict[str, int]) -> di
             continue
         if status in STATUS_TERMINAL:
             misses.pop(run_id, None)
+            continue
+        if status == "retry_scheduled":
+            _requeue_if_due(run_dir, summary)
             continue
         if status not in STATUS_ZOMBIE_CANDIDATES:
             continue  # unknown/queued statuses: never reaped (BH-005)

@@ -38,6 +38,7 @@ import { MoleculeList, defaultSelection } from "../features/results/list";
 import { Stage } from "../features/results/stage";
 import { SystemStage, SYSTEM_SELECTION } from "../features/results/stage/SystemStage";
 import { RetentionLine } from "../features/results/header/RetentionLine";
+import { RunNotices } from "../features/results/header/RunNotices";
 import { StageCanvas } from "../features/results/viewer";
 import { StatusStrip } from "../features/results/status";
 import { RunHeader } from "../features/results/header/RunHeader";
@@ -201,7 +202,7 @@ export default function RunResultsPage() {
 
   const onRerun = useCallback(() => {
     void api
-      .postJson<{ run_id: string; owner_token?: string | null }>(endpoints.runRerun(runId), {})
+      .postJson<{ run_id: string; owner_token?: string | null }>(endpoints.runRerun(runId), {}, ownerHeaders(runId))
       .then((res) => {
         rememberOwnerToken(res.run_id, res.owner_token);
         toast.success("Run queued");
@@ -288,6 +289,7 @@ export default function RunResultsPage() {
         onReport={onReport}
       />
       <RetentionLine runId={runId} retention={statusQ.data?.retention} />
+      <RunNotices status={statusQ.data} nowMs={now} onRerun={onRerun} />
 
       {vm.run.status === "failed" && vm.error && <ErrorBanner run={vm.run} error={vm.error} />}
 

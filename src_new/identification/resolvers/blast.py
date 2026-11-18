@@ -767,7 +767,15 @@ class BLASTResolverUNIPROT(BLASTResolver):
             identifier_type="UNIPROT_ID"
         )
 
-class BLASTResolverNR(BLASTResolver):
+class _NCBIDatabase:
+    """nr / nt / core_nt: hundreds of GB read from NFS per search, so their
+    own per-search limit ([blast] ncbi_timeout_s, Deep search only)."""
+
+    def _search_timeout_s(self) -> int:
+        return self.blast_config.ncbi_timeout_s or self.blast_config.timeout_s
+
+
+class BLASTResolverNR(_NCBIDatabase, BLASTResolver):
     """BLAST resolver for NR (non-redundant protein) database."""
     
     def __init__(self, config: RunConfig) -> None:
@@ -798,7 +806,7 @@ class BLASTResolverSWISSPROT(BLASTResolver):
             identifier_type="UNIPROT_ID"
         )
 
-class BLASTResolverCORENT(BLASTResolver):
+class BLASTResolverCORENT(_NCBIDatabase, BLASTResolver):
     """BLAST resolver for core_nt (core nucleotide) database."""
     
     def __init__(self, config: RunConfig) -> None:
@@ -813,7 +821,7 @@ class BLASTResolverCORENT(BLASTResolver):
         )
 
 
-class BLASTResolverNT(BLASTResolver):
+class BLASTResolverNT(_NCBIDatabase, BLASTResolver):
     """BLAST resolver for nt (full nucleotide) database."""
     
     def __init__(self, config: RunConfig) -> None:

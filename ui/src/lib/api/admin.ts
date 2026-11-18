@@ -99,6 +99,12 @@ export interface AdminRun {
   retention: RunRetention;
   has_owner_token: boolean;
   example: boolean;
+  /** 2026-11-18 (absent from older APIs) */
+  queue?: string;
+  attempt?: number;
+  retry_at?: number | null;
+  incomplete?: number;
+  superseded_by?: string | null;
 }
 
 export interface RunsSection {
@@ -177,6 +183,80 @@ export interface AdminOverview {
   limits: Section<LimitsSection>;
   reports?: Section<{ open: number; total: number }>;
   checks?: Section<ChecksSummary>;
+  services?: Section<ServicesSummary>;
+  /** One card per queue (2026-11-18); absent from older APIs. */
+  lanes?: Section<LaneCard[]>;
+}
+
+// -- queues as cards: workers, retry policy, token (2026-11-18) --------------
+
+export interface RetryPolicy {
+  enabled: boolean;
+  max_attempts: number;
+  delay_minutes: number;
+  /** retry runs incomplete for retryable reasons */
+  incomplete: boolean;
+  /** retry runs whose worker was lost */
+  worker_lost: boolean;
+}
+
+export interface LaneCard {
+  /** "web" | "repository"; null for queues outside BioID's lanes (fleet, bughunt). */
+  lane: string | null;
+  title: string;
+  about: string;
+  queue: string;
+  deployment: string | null;
+  waiting: number | null;
+  paused: boolean;
+  running: number;
+  reserved: number;
+  consumers: { name: string; active: WorkerInfo["active"]; reserved: number }[];
+  pool: {
+    replicas: number | null; ready: number | null; updated: number | null;
+    image: string | null; scale: [number, number] | null; error?: string; crashing: number;
+  } | null;
+  runs: Record<string, number>;
+  retry_waiting: number;
+  retry_policy: RetryPolicy | null;
+  token: { created_at: number; hint: string } | null;
+  errors: string[];
+}
+
+// -- calls per database / web service (2026-11-18, service_stats.py) --------
+
+export interface ServiceRow {
+  /** "db:<resolver>[@sim]" (identify lookups) or "http:<host>" (every HTTP request). */
+  service: string;
+  /** Pipeline stage, e.g. identify_molecules or verify_results. */
+  stage: string;
+  calls: number;
+  cached: number;
+  errors: number;
+  error_share: number | null;
+  retries: number;
+  outcomes: Record<string, number>;
+  mean_s: number | null;
+  /** Upper edge of the latency bin (approximate). */
+  p50_s: number | null;
+  p95_s: number | null;
+}
+
+export interface ServiceRunning {
+  service: string;
+  stage: string;
+  /** Unix seconds. */
+  started: number;
+  pod: string;
+}
+
+export interface ServicesSummary {
+  last_30m: ServiceRow[];
+  last_24h: ServiceRow[];
+  failing: { service: string; calls: number; errors: number; outcomes: Record<string, number> }[];
+  running: ServiceRunning[];
+  ncbi_running: number;
+  ncbi_alarm_at: number;
 }
 
 // -- reports and the nightly known-answers check (2026-11-17) ----------------
@@ -419,6 +499,13 @@ export const adminApi = {
   acceptCase: (token: string, runId: string) => post<CheckCase>(`/checks/cases/${seg(runId)}/accept`, token),
   runCheck: (token: string) => post<CheckState>("/checks/run", token),
   testAlarm: (token: string) => post<{ sent: boolean; to: string }>("/alerts/test", token),
+  setRetryPolicy: (token: string, lane: string, change: Partial<RetryPolicy>) =>
+    request<{ lane: string; retry_policy: RetryPolicy }>(`/lanes/${seg(lane)}/retry`, token,
+      { method: "PUT", body: JSON.stringify(change) }),
+  newQueueToken: (token: string, lane: string) =>
+    post<{ lane: string; token: string; header: string }>(`/lanes/${seg(lane)}/token`, token),
+  revokeQueueToken: (token: string, lane: string) =>
+    request<{ lane: string; revoked: boolean }>(`/lanes/${seg(lane)}/token`, token, { method: "DELETE" }),
   removeLimitException: (token: string, address: string) =>
     request<LimitSettings>(`/settings/limits/exceptions?address=${seg(address)}`, token, { method: "DELETE" }),
 };

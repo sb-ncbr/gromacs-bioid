@@ -110,6 +110,36 @@ class RetentionChange(BaseModel):
     days: int = Field(..., description="Keep the run this many days from now: 30, 90, 180 or 365")
 
 
+class IncompleteItem(BaseModel):
+    """Answers a run lacks for a reason another attempt could fix (2026-11-18)."""
+
+    code: str = Field(..., description="Warning code that records the gap")
+    service: str = Field(..., description="The database, service or stage that failed")
+    reason: str = Field(..., description="server_error, rate_limited, timeout, connection or budget")
+    segments: List[str] = Field(default_factory=list, description="Molecules (segments) affected")
+    count: int = Field(..., description="Number of failed lookups")
+    example: str = Field("", description="One of the recorded messages")
+
+
+class RetryInfo(BaseModel):
+    """The next automatic attempt of a run (queues with automatic retries)."""
+
+    attempt: int = Field(..., description="Number of the attempt that just finished")
+    max_attempts: int = Field(..., description="Attempts allowed in all")
+    reason: str = Field(..., description="incomplete or worker_lost")
+    at: float = Field(..., description="When the next attempt is queued (unix seconds)")
+
+
+class AttemptInfo(BaseModel):
+    """An earlier attempt of an automatically retried run."""
+
+    attempt: int
+    reason: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    gaps: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 class RunStatusResponse(BaseModel):
     """Full run status response."""
 
@@ -125,6 +155,14 @@ class RunStatusResponse(BaseModel):
     progress: Optional[RunStageProgress] = Field(
         None, description="Per-segment identification progress")
     retention: Optional[RetentionInfo] = Field(None, description="How long the run is kept")
+    incomplete: List[IncompleteItem] = Field(
+        default_factory=list, description="Lookups that failed for reasons a rerun could fix")
+    queue: str = Field("web", description="Queue the run was submitted to: web or repository")
+    retry: Optional[RetryInfo] = Field(
+        None, description="Set while the run waits for its next automatic attempt (status shows queued)")
+    attempts: List[AttemptInfo] = Field(default_factory=list, description="Earlier automatic attempts")
+    rerun_of: Optional[str] = Field(None, description="Run this one re-runs")
+    superseded_by: Optional[str] = Field(None, description="Newer run of the same input, by its owner")
 
 
 class LoadingAttemptInfo(BaseModel):
@@ -381,6 +419,7 @@ class RunListItem(BaseModel):
     input_kind: Optional[str] = Field(None, description="Type of input data")
     run_name: Optional[str] = Field(None, description="Custom run name")
     creator_ip: Optional[str] = Field(None, description="IP address of the request that created this run")
+    queue: str = Field("web", description="Queue the run was submitted to: web or repository")
 
 
 class RunListResponse(BaseModel):
@@ -420,6 +459,11 @@ class RunSummaryResponse(BaseModel):
     warning_count: int = Field(..., description="Number of warnings")
     error_count: int = Field(..., description="Number of errors")
     retention: Optional[RetentionInfo] = Field(None, description="How long the run is kept")
+    incomplete_count: int = Field(0, description="Failed lookups a rerun could fix (see status.incomplete)")
+    queue: str = Field("web", description="Queue the run was submitted to: web or repository")
+    attempt: int = Field(1, description="Automatic attempt number (1 = first)")
+    rerun_of: Optional[str] = Field(None, description="Run this one re-runs")
+    superseded_by: Optional[str] = Field(None, description="Newer run of the same input, by its owner")
 
 
 class RunFilesResponse(BaseModel):

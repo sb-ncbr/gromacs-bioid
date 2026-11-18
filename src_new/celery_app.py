@@ -124,3 +124,17 @@ def _install_crash_dump_hook():
 
 
 _install_crash_dump_hook()
+
+
+# Service measurements (service_stats.py): count every HTTP request a worker
+# makes. Workers only (the API imports this module to enqueue runs).
+from celery.signals import worker_init  # noqa: E402
+
+
+@worker_init.connect
+def _count_http_requests(**_kwargs):
+    try:
+        from src_new import service_stats
+        service_stats.install_http_hook()
+    except Exception:
+        pass

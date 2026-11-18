@@ -31,12 +31,14 @@ from . import retention, run_index, security
 router = APIRouter()
 
 NAMESPACE = os.environ.get("BAT3_K8S_NAMESPACE", "ceitec-biodata-ns")
-QUEUES = ("validation.ui.celery", "celery", "bughunt")
+QUEUES = ("validation.ui.celery", os.environ.get("BAT3_REPO_QUEUE", "validation.repo.celery"),
+          "celery", "bughunt")
 SESSION_S = 12 * 3600
 
 #: deployment -> (label, (min, max) replicas or None = not scalable, restartable)
 DEPLOYMENTS: dict[str, tuple[str, Optional[tuple[int, int]], bool]] = {
     "bat3-ui-worker": ("UI workers — web, API and MCP runs", (0, 20), True),
+    "bat3-repo-worker": ("Repository workers — campaign queue (token, automatic retries)", (0, 300), True),
     "bat3-ceitec-bat3-worker": ("Fleet workers — campaign runs", (0, 24), True),
     "bat3-ceitec-bat3-api": ("API", None, True),
     "bat3-ceitec-bat3-web": ("Web application", None, True),
@@ -289,6 +291,15 @@ def _storage() -> dict[str, Any]:
     return out
 
 
+def _by_queue(runs: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """Run counts per queue and status."""
+    out: dict[str, dict[str, int]] = {}
+    for r in runs:
+        lane = out.setdefault(r.get("queue") or "web", {})
+        lane[r["status"]] = lane.get(r["status"], 0) + 1
+    return out
+
+
 def _runs_overview() -> dict[str, Any]:
     from .routes.runs import example_ids  # never the full scan (2026-11-17)
     runs = run_index.summaries(_runs_dir())
@@ -314,7 +325,9 @@ def _runs_overview() -> dict[str, Any]:
         "submitted_24h": sum(1 for r in runs if since(r, 1)),
         "submitted_7d": sum(1 for r in runs if since(r, 7)),
         "failed_24h": sum(1 for r in runs if r["status"] == "failed" and since(r, 1)),
-        "active": [r for r in public if r["status"] in ("queued", "running", "pending", "created")],
+        "active": [r for r in public if r["status"] in ("queued", "running", "pending", "created",
+                                                        "retry_scheduled")],
+        "by_queue": _by_queue(runs),
         "recent_failures": [r for r in public if r["status"] == "failed"][:15],
         "recent": public[:50],
         "expiring_soon": expiring[:15],
@@ -359,8 +372,112 @@ async def overview() -> dict:
             "limits": {**security.current_limits(), "max_files": security.MAX_FILES},
             "reports": _section(lambda: _cached("reports", 30, _reports_summary)),
             "checks": _section(lambda: _cached("checks", 30, _checks_summary)),
+            "services": _section(lambda: _cached("services", 60, _services)),
+            "lanes": _section(_lanes),
         }
     return await asyncio.to_thread(build)
+
+
+def _services() -> dict:
+    """Calls per database / web service (service_stats.py) and the searches
+    running now, with the NCBI concurrency check."""
+    from src_new import service_stats as ss
+    client = ss.reader()
+    if client is None:
+        return {"error": "BAT3_SHARED_CACHE_URL is not set on the API"}
+    now = time.time()
+    last_30m = ss.summarize(ss.window(client, 1800, now))
+    running = ss.running_now(client)
+    ncbi = [r for r in running if r.get("service") in ss.NCBI_SERVICES]
+    return {"last_30m": last_30m,
+            "last_24h": ss.summarize(ss.window(client, 86400, now)),
+            "failing": ss.failing(last_30m),
+            "running": running,
+            "ncbi_running": len(ncbi), "ncbi_alarm_at": ss.ncbi_alarm_at()}
+
+
+#: The queues on the admin page: BioID's lanes (retries.py) first, then the
+#: validation fleet's. "lane" = None: no submission token or retry policy.
+LANE_CARDS = (
+    {"lane": "web", "title": "Web", "deployment": "bat3-ui-worker",
+     "about": "Runs submitted from the web page, the REST API and MCP."},
+    {"lane": "repository", "title": "Repository", "deployment": "bat3-repo-worker",
+     "about": "Campaigns (mdval): submitted with a token, automatic retries possible."},
+    {"lane": None, "title": "Fleet", "queue": "celery", "deployment": "bat3-ceitec-bat3-worker",
+     "about": "Validation fleet: Celery's default queue."},
+    {"lane": None, "title": "Bughunt", "queue": "bughunt", "deployment": None,
+     "about": "Bughunt campaign queue."},
+)
+
+
+def _lanes() -> list[dict[str, Any]]:
+    """One card per queue: waiting/running counts, its worker pool, the
+    Celery workers consuming it, retry policy and submission token."""
+    from src_new import retries
+    from . import queue_tokens
+    queues = _section(lambda: _cached("queues", 3, _queues))
+    workers = _section(lambda: _cached("workers", 15, _workers))
+    deployments = _section(lambda: _cached("deployments", 5, _deployments))
+    runs = _section(lambda: _cached("runs", 30, _runs_overview))
+    waiting = {q["name"]: q["waiting"] for q in queues.get("queues", [])} if "error" not in queues else {}
+    paused = set(queues.get("paused", [])) if "error" not in queues else set()
+    deps = {d["name"]: d for d in deployments} if isinstance(deployments, list) else {}
+    policies = retries.policies(_runs_dir())
+    out = []
+    for card in LANE_CARDS:
+        lane = card["lane"]
+        queue = card.get("queue") or retries.celery_queue(lane) or "celery"
+        consumers = [w for w in workers.get("workers", []) if queue in (w.get("queues") or [])]
+        dep = deps.get(card["deployment"]) if card["deployment"] else None
+        counts = (runs.get("by_queue") or {}).get(lane, {}) if lane and "error" not in runs else {}
+        out.append({
+            **{k: card[k] for k in ("lane", "title", "about", "deployment")},
+            "queue": queue,
+            "waiting": waiting.get(queue),
+            "paused": queue in paused,
+            "running": sum(len(w.get("active") or []) for w in consumers),
+            "reserved": sum(w.get("reserved") or 0 for w in consumers),
+            "consumers": [{"name": w["name"], "active": w.get("active") or [],
+                           "reserved": w.get("reserved") or 0} for w in consumers],
+            "pool": ({k: dep.get(k) for k in ("replicas", "ready", "updated", "image", "scale", "error")}
+                     | {"crashing": sum(1 for p in dep.get("pods") or [] if p.get("waiting"))}
+                     if dep else None),
+            "runs": counts,
+            "retry_waiting": counts.get(retries.STATUS, 0),
+            "retry_policy": policies.get(lane) if lane else None,
+            "token": queue_tokens.info(_runs_dir(), lane) if lane and lane != "web" else None,
+            "errors": [x["error"] for x in (queues, workers, runs) if isinstance(x, dict) and "error" in x][:2],
+        })
+    return out
+
+
+@router.put("/lanes/{lane}/retry", dependencies=[Depends(require_admin)])
+async def put_retry_policy(lane: str, body: dict = Body(...)) -> dict:
+    """Automatic retries of a queue: enabled, max_attempts, delay_minutes,
+    incomplete, worker_lost (retries.py)."""
+    from src_new import retries
+    try:
+        return {"lane": lane, "retry_policy": retries.set_policy(lane, body, _runs_dir())}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/lanes/{lane}/token", dependencies=[Depends(require_admin)])
+async def new_queue_token(lane: str) -> dict:
+    """A new submission token for the queue (shown once; replaces the old one)."""
+    from src_new import retries
+    from . import queue_tokens
+    if lane not in retries.LANES or lane == "web":
+        raise HTTPException(status_code=404, detail="This queue takes no token.")
+    token = queue_tokens.create(_runs_dir(), lane)
+    return {"lane": lane, "token": token, "header": queue_tokens.HEADER,
+            "info": queue_tokens.info(_runs_dir(), lane)}
+
+
+@router.delete("/lanes/{lane}/token", dependencies=[Depends(require_admin)])
+async def revoke_queue_token(lane: str) -> dict:
+    from . import queue_tokens
+    return {"lane": lane, "revoked": queue_tokens.revoke(_runs_dir(), lane)}
 
 
 def _checks_summary() -> dict:
@@ -575,6 +692,12 @@ async def admin_cancel(run_id: security.RunId) -> dict:
     status = json.loads((d / "results.json").read_text()).get("pipeline", {}).get("status")
     if status in retention.TERMINAL:
         raise HTTPException(status_code=400, detail=f"The run already finished ({status}).")
+    if status == "retry_scheduled":  # stop retrying; keep the last attempt's results
+        rm = ResultsManager(str(d / "results.json"))
+        rm._payload["pipeline"].setdefault("retry", {})["cancelled"] = True
+        rm.finish_run("success")
+        _drop_cache("runs")
+        return {"run_id": run_id, "status": "success"}
     celery.AsyncResult(run_id).revoke(terminate=True)
     ResultsManager(str(d / "results.json")).finish_run("cancelled")
     _drop_cache("runs")

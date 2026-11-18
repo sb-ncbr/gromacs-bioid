@@ -13,13 +13,14 @@ import { adminApi, isSectionError, isUnauthorized, loadSession, saveSession, typ
 import { relativeTime } from "../features/admin/format";
 import { LoginCard } from "../features/admin/LoginCard";
 import { TopStrip } from "../features/admin/TopStrip";
-import { QueuesSection, WorkersSection } from "../features/admin/QueuesWorkers";
+import { QueuesWorkersSection } from "../features/admin/QueuesWorkers";
 import { DeploymentsSection } from "../features/admin/Deployments";
 import { RunsSection } from "../features/admin/Runs";
 import { LimitsSection, RetentionSection, StorageSection } from "../features/admin/RetentionStorage";
 import { AdminProvider, OVERVIEW_KEY } from "../features/admin/session";
 import { TrafficSection } from "../features/admin/Traffic";
 import { ChecksSection, ReportsSection } from "../features/admin/ChecksReports";
+import { ServicesSection } from "../features/admin/Services";
 
 const REFRESH_MS = 5_000;
 
@@ -139,10 +140,8 @@ function Dashboard({ session, signOut }: { session: AdminSession; signOut: (mess
               <ChecksSection live={live} nowMs={now} />
               <ReportsSection live={live} nowMs={now} />
             </div>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <QueuesSection queues={data.queues} />
-              <WorkersSection workers={data.workers} nowMs={now} />
-            </div>
+            <ServicesSection services={data.services} nowMs={now} />
+            <QueuesWorkersSection overview={data} nowMs={now} />
             <DeploymentsSection deployments={data.deployments} nowMs={now} />
             <RunsSection runs={data.runs} nowMs={now} />
             <div className="grid items-start gap-4 lg:grid-cols-2">

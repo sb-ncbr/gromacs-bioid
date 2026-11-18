@@ -98,6 +98,10 @@ _SLOW_SEARCHES = [
 ]
 
 
+# NCBI nr / nt / core_nt: off in the server defaults, on in Deep search.
+_NCBI_SEARCHES = ["blast_nr_protein", "blast_nt", "blast_core_nt"]
+
+
 def _both(names: list[str], value: bool) -> dict[str, bool]:
     return {k: value for n in names for k in (n, f"{n}_similarity")}
 
@@ -108,8 +112,8 @@ PRESETS: list[dict[str, Any]] = [
     {
         "id": "balanced",
         "title": "Balanced",
-        "description": "Recommended. Every database, exact and similar matches.",
-        "details": "The server defaults.",
+        "description": "Recommended. Every database except NCBI nr/nt, exact and similar matches.",
+        "details": "The server defaults. NCBI nr, nt and core_nt are searched in Deep search only.",
         "icon": "scale",
         "overrides": {},
     },
@@ -145,12 +149,15 @@ PRESETS: list[dict[str, Any]] = [
     {
         "id": "deep",
         "title": "Deep search",
-        "description": "More candidates verified, more similar matches. Slowest.",
-        "details": "150 candidates verified per molecule (60 more from the supplementary "
+        "description": "Adds NCBI nr/nt, more candidates verified, more similar matches. "
+                       "Can take many hours.",
+        "details": "NCBI nr, nt and core_nt searched (up to 12 hours per search: hundreds of GB "
+                   "each), 150 candidates verified per molecule (60 more from the supplementary "
                    "databases), 20 similar matches kept, mixed protein/nucleic-acid PDB "
                    "complexes searched.",
         "icon": "telescope",
         "overrides": {
+            "identifiers": _both(_NCBI_SEARCHES, True),
             "verification": {
                 "verify_top_n": 150,
                 "verify_top_n_supplementary": 60,

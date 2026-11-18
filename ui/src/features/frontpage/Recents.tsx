@@ -86,7 +86,7 @@ function RunRow({ run }: { run: RunItem }) {
   const canDelete = ownerHeaders(run.run_id) !== undefined;
   const rerun = useMutation({
     mutationFn: () =>
-      api.postJson<{ run_id: string; owner_token?: string | null }>(endpoints.runRerun(run.run_id), {}),
+      api.postJson<{ run_id: string; owner_token?: string | null }>(endpoints.runRerun(run.run_id), {}, ownerHeaders(run.run_id)),
     onSuccess: (res) => {
       rememberOwnerToken(res.run_id, res.owner_token);
       toast.success("Run queued again");

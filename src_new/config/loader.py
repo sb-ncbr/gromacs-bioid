@@ -258,6 +258,9 @@ class BlastConfig:
     blastn_num_threads: int = 1
     max_target_seqs: int = 500
     timeout_s: int = 300
+    # Per-search limit for the NCBI nr / nt / core_nt databases (0 = timeout_s).
+    # Run budgets grow by it when one of them is on (pipeline_steps).
+    ncbi_timeout_s: int = 0
     local_instance_run_short_search_if_under_X_residues: int = 30
     exact_match_max_evalue: float = 1e-50
     exact_match_min_bits: int = 51

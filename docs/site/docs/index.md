@@ -46,10 +46,10 @@ preset, then fine-tune if you need to:
 
 | Preset | What it does | When to use it |
 |---|---|---|
-| **Balanced** (default) | Every database, exact and similar matches. | Most runs. |
+| **Balanced** (default) | Every database except NCBI nr, nt and core_nt; exact and similar matches. | Most runs. |
 | **Quick look** | Skips the slowest searches (NCBI nr/nt, UniRef50, the AlphaFind, Foldseek and RCSB structure searches) and verifies 30 candidates per molecule instead of 100. | A first look at a large system; minutes rather than up to an hour. |
 | **Exact matches** | Every similarity search is off; only identical database entries are reported. | You expect known molecules and do not want homologues or analogues. |
-| **Deep search** | Verifies 150 candidates per molecule (plus 60 from the supplementary databases) and keeps 20 similar matches; also searches mixed protein/nucleic-acid PDB complexes. | Unusual or engineered molecules where the best match is not obvious. Slowest. |
+| **Deep search** | Also searches NCBI nr, nt and core_nt (up to 12 hours per search); verifies 150 candidates per molecule (plus 60 from the supplementary databases) and keeps 20 similar matches; also searches mixed protein/nucleic-acid PDB complexes. | Unusual or engineered molecules where the best match is not obvious. Can take many hours. |
 
 Below the presets you can change individual settings:
 

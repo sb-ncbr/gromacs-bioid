@@ -96,7 +96,7 @@
      "runs"
     ],
     "summary": "Create Run",
-    "description": "Create a new run by uploading input files and optionally a config file.\n\n``preset`` (see GET /runs/config/options) is applied first, then\n``config_file`` or ``config_json``; only per-run tunable fields may change.\n\nThe pipeline runs in the background via Celery. Returns immediately with run status.",
+    "description": "Create a new run by uploading input files and optionally a config file.\n\n``preset`` (see GET /runs/config/options) is applied first, then\n``config_file`` or ``config_json``; only per-run tunable fields may change.\n\n``queue``: \"web\" (default) or \"repository\" (campaigns: own workers and\nautomatic retries; needs the X-Queue-Token header, issued on the admin page).\n\nThe pipeline runs in the background via Celery. Returns immediately with run status.",
     "operationId": "create_run_runs_post",
     "parameters": [
      {
@@ -113,6 +113,22 @@
         }
        ],
        "title": "Run Id"
+      }
+     },
+     {
+      "name": "X-Queue-Token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Queue-Token"
       }
      }
     ],
@@ -1316,8 +1332,42 @@
        "title": "Run Id"
       },
       "description": "Run id returned by POST /runs"
+     },
+     {
+      "name": "X-Owner-Token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Owner-Token"
+      }
      }
     ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "type": "object",
+          "additionalProperties": true
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Body"
+       }
+      }
+     }
+    },
     "responses": {
      "200": {
       "description": "Successful Response",
@@ -1483,6 +1533,22 @@
         }
        ],
        "title": "Run Id"
+      }
+     },
+     {
+      "name": "X-Queue-Token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Queue-Token"
       }
      }
     ],
@@ -2719,8 +2785,42 @@
        "title": "Run Id"
       },
       "description": "Run id returned by POST /runs"
+     },
+     {
+      "name": "X-Owner-Token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Owner-Token"
+      }
      }
     ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "type": "object",
+          "additionalProperties": true
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Body"
+       }
+      }
+     }
+    },
     "responses": {
      "200": {
       "description": "Successful Response",
@@ -2871,6 +2971,198 @@
          "type": "object",
          "additionalProperties": true,
          "title": "Response Overview Api V1 Admin Overview Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/admin/lanes/{lane}/retry": {
+   "put": {
+    "tags": [
+     "admin"
+    ],
+    "summary": "Put Retry Policy",
+    "description": "Automatic retries of a queue: enabled, max_attempts, delay_minutes,\nincomplete, worker_lost (retries.py).",
+    "operationId": "put_retry_policy_api_v1_admin_lanes__lane__retry_put",
+    "parameters": [
+     {
+      "name": "lane",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Lane"
+      }
+     },
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "title": "Body"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Put Retry Policy Api V1 Admin Lanes  Lane  Retry Put"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/admin/lanes/{lane}/token": {
+   "post": {
+    "tags": [
+     "admin"
+    ],
+    "summary": "New Queue Token",
+    "description": "A new submission token for the queue (shown once; replaces the old one).",
+    "operationId": "new_queue_token_api_v1_admin_lanes__lane__token_post",
+    "parameters": [
+     {
+      "name": "lane",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Lane"
+      }
+     },
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response New Queue Token Api V1 Admin Lanes  Lane  Token Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "admin"
+    ],
+    "summary": "Revoke Queue Token",
+    "operationId": "revoke_queue_token_api_v1_admin_lanes__lane__token_delete",
+    "parameters": [
+     {
+      "name": "lane",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Lane"
+      }
+     },
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Revoke Queue Token Api V1 Admin Lanes  Lane  Token Delete"
         }
        }
       }
@@ -5071,6 +5363,61 @@
  },
  "components": {
   "schemas": {
+   "AttemptInfo": {
+    "properties": {
+     "attempt": {
+      "type": "integer",
+      "title": "Attempt"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "started_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Started At"
+     },
+     "finished_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finished At"
+     },
+     "gaps": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Gaps"
+     }
+    },
+    "type": "object",
+    "required": [
+     "attempt"
+    ],
+    "title": "AttemptInfo",
+    "description": "An earlier attempt of an automatically retried run."
+   },
    "Body_create_run_api_v1_runs_post": {
     "properties": {
      "files": {
@@ -5136,6 +5483,17 @@
        }
       ],
       "title": "Retention"
+     },
+     "queue": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Queue"
      }
     },
     "type": "object",
@@ -5209,6 +5567,17 @@
        }
       ],
       "title": "Retention"
+     },
+     "queue": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Queue"
      }
     },
     "type": "object",
@@ -5648,6 +6017,53 @@
     ],
     "title": "IdentifiersResponse",
     "description": "Response model for identifiers."
+   },
+   "IncompleteItem": {
+    "properties": {
+     "code": {
+      "type": "string",
+      "title": "Code",
+      "description": "Warning code that records the gap"
+     },
+     "service": {
+      "type": "string",
+      "title": "Service",
+      "description": "The database, service or stage that failed"
+     },
+     "reason": {
+      "type": "string",
+      "title": "Reason",
+      "description": "server_error, rate_limited, timeout, connection or budget"
+     },
+     "segments": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Segments",
+      "description": "Molecules (segments) affected"
+     },
+     "count": {
+      "type": "integer",
+      "title": "Count",
+      "description": "Number of failed lookups"
+     },
+     "example": {
+      "type": "string",
+      "title": "Example",
+      "description": "One of the recorded messages",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "code",
+     "service",
+     "reason",
+     "count"
+    ],
+    "title": "IncompleteItem",
+    "description": "Answers a run lacks for a reason another attempt could fix (2026-11-18)."
    },
    "LoadingAttemptInfo": {
     "properties": {
@@ -6375,6 +6791,39 @@
     "title": "RetentionInfo",
     "description": "How long a run is kept (2026-11-17)."
    },
+   "RetryInfo": {
+    "properties": {
+     "attempt": {
+      "type": "integer",
+      "title": "Attempt",
+      "description": "Number of the attempt that just finished"
+     },
+     "max_attempts": {
+      "type": "integer",
+      "title": "Max Attempts",
+      "description": "Attempts allowed in all"
+     },
+     "reason": {
+      "type": "string",
+      "title": "Reason",
+      "description": "incomplete or worker_lost"
+     },
+     "at": {
+      "type": "number",
+      "title": "At",
+      "description": "When the next attempt is queued (unix seconds)"
+     }
+    },
+    "type": "object",
+    "required": [
+     "attempt",
+     "max_attempts",
+     "reason",
+     "at"
+    ],
+    "title": "RetryInfo",
+    "description": "The next automatic attempt of a run (queues with automatic retries)."
+   },
    "RunCreateResponse": {
     "properties": {
      "run_id": {
@@ -6495,6 +6944,12 @@
       ],
       "title": "Creator Ip",
       "description": "IP address of the request that created this run"
+     },
+     "queue": {
+      "type": "string",
+      "title": "Queue",
+      "description": "Queue the run was submitted to: web or repository",
+      "default": "web"
      }
     },
     "type": "object",
@@ -6665,6 +7120,63 @@
        }
       ],
       "description": "How long the run is kept"
+     },
+     "incomplete": {
+      "items": {
+       "$ref": "#/components/schemas/IncompleteItem"
+      },
+      "type": "array",
+      "title": "Incomplete",
+      "description": "Lookups that failed for reasons a rerun could fix"
+     },
+     "queue": {
+      "type": "string",
+      "title": "Queue",
+      "description": "Queue the run was submitted to: web or repository",
+      "default": "web"
+     },
+     "retry": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/RetryInfo"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Set while the run waits for its next automatic attempt (status shows queued)"
+     },
+     "attempts": {
+      "items": {
+       "$ref": "#/components/schemas/AttemptInfo"
+      },
+      "type": "array",
+      "title": "Attempts",
+      "description": "Earlier automatic attempts"
+     },
+     "rerun_of": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rerun Of",
+      "description": "Run this one re-runs"
+     },
+     "superseded_by": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Superseded By",
+      "description": "Newer run of the same input, by its owner"
      }
     },
     "type": "object",
@@ -6765,6 +7277,48 @@
        }
       ],
       "description": "How long the run is kept"
+     },
+     "incomplete_count": {
+      "type": "integer",
+      "title": "Incomplete Count",
+      "description": "Failed lookups a rerun could fix (see status.incomplete)",
+      "default": 0
+     },
+     "queue": {
+      "type": "string",
+      "title": "Queue",
+      "description": "Queue the run was submitted to: web or repository",
+      "default": "web"
+     },
+     "attempt": {
+      "type": "integer",
+      "title": "Attempt",
+      "description": "Automatic attempt number (1 = first)",
+      "default": 1
+     },
+     "rerun_of": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rerun Of",
+      "description": "Run this one re-runs"
+     },
+     "superseded_by": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Superseded By",
+      "description": "Newer run of the same input, by its owner"
      }
     },
     "type": "object",

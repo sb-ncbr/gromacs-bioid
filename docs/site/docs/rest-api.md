@@ -47,6 +47,7 @@ curl -o results.json "$BIOID/runs/$RUN_ID/download/results.json"
 | `config_json` | no | settings to change, as JSON `{"section": {"field": value}}`; applied after the preset |
 | `retention` | no | how long the results are kept: omit for the default 30 days, a number of days (1–365), or `preserve` to keep them indefinitely |
 | `config_file` | no | the same as an uploaded `config.ini` (instead of `config_json`); only the fields that differ from the server's settings count |
+| `queue` | no | `web` (the default) or `repository`: the queue for campaigns, with its own workers and, when enabled, automatic retries (see below). Needs the `X-Queue-Token` header (403 without a valid one); tokens are issued by the BioID team |
 
 The response comes at once; the run is queued:
 
@@ -82,9 +83,9 @@ curl -F files=@system.pdb -F preset=exact \
      -F 'config_json={"verification": {"min_final_confidence": 50}}' \
      "$BIOID/runs"
 
-# skip the NCBI nr search, keep everything else
+# add the NCBI nr search (off by default; hours per protein)
 curl -F files=@system.pdb \
-     -F 'config_json={"identifiers": {"blast_nr_protein": false, "blast_nr_protein_similarity": false}}' \
+     -F 'config_json={"identifiers": {"blast_nr_protein": true, "blast_nr_protein_similarity": true}}' \
      "$BIOID/runs"
 ```
 
@@ -115,8 +116,30 @@ recorded as `pipeline.preset` in results.json.
 can still carry warnings, for example a database search that timed out; the
 molecules affected may then miss matches from that database.
 
+### Incomplete runs, reruns and automatic retries
+
+`GET /runs/{id}/status` lists in `incomplete` the lookups that failed for a
+reason another attempt can fix: a database answered with a server error, was
+busy or unreachable, did not answer in time, or a stage ran out of time.
+Each entry has `service`, `reason`, `segments` and `count`; the summary has
+`incomplete_count`. Searches that do not apply to a molecule, and a local
+NCBI search that ran out of its time, are not listed (they would fail again).
+
+`POST /runs/{id}/rerun` repeats the run; lookups that worked come from the
+cache, so in practice only the failed ones are repeated. The new run has
+`rerun_of`; when the owner reruns (with `X-Owner-Token`), the old run gets
+`superseded_by` pointing to the new one.
+
+On the `repository` queue, failed lookups and lost workers can be retried
+automatically under the **same run id** (set by the BioID team: number of
+attempts and delay). While a run waits for its next attempt, its status reads
+`queued` and `retry` gives `attempt`, `max_attempts`, `reason` and `at` (unix
+time of the next attempt); `attempts` lists the earlier ones. Clients that
+poll until `success` / `failed` / `cancelled` need no change.
+
 Typical run time: a few minutes for a small structure, up to about an hour
-for a large system with every database searched. `GET /capabilities` reports
+for a large system. Deep search adds the NCBI nr/nt databases and can take
+many hours (up to 12 per search). `GET /capabilities` reports
 the deployment's typical duration and code version.
 
 ## Reading the results
@@ -146,7 +169,7 @@ How to read the confidence and the verified flag is explained in
 |---|---|
 | `GET /runs/examples` | the finished example runs shown on the front page (`?limit=`) |
 | `GET /runs` | the runs submitted from your network address (what *Your annotations* shows); other people's runs are never listed |
-| `POST /runs/{id}/rerun` | a new run with the same input files and settings; returns the new `run_id` and its `owner_token`. Optional body `{"preset": "deep"}` runs the files again with that preset on today's server settings instead |
+| `POST /runs/{id}/rerun` | a new run with the same input files and settings (on the same queue when the owner reruns, otherwise the web queue); returns the new `run_id` and its `owner_token`. With the old run's `X-Owner-Token` the old run is marked `superseded_by` the new one. Optional body `{"preset": "deep"}` runs the files again with that preset on today's server settings instead. NCBI nr/nt/core_nt are searched again only if the old run used Deep search |
 | `DELETE /runs/{id}` | deletes the run and its files; needs `X-Owner-Token` |
 
 ```bash

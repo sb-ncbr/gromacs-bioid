@@ -109,7 +109,9 @@ class ChemblResolver(IdentifierResolver):
 
 import json
 import urllib.parse
+import urllib.error
 import urllib.request
+import time
 
 
 def chembl_fetch_similarity_match(
@@ -174,8 +176,18 @@ def chembl_fetch_similarity_match(
         req = urllib.request.Request(url)
         req.add_header('Accept', 'application/json')
         
-        with urllib.request.urlopen(req, timeout=30) as response:
-            data = json.loads(response.read().decode('utf-8'))
+        from ... import service_stats
+        t0 = time.monotonic()
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                data = json.loads(response.read().decode('utf-8'))
+        except urllib.error.HTTPError as exc:
+            service_stats.record_http(url, exc.code, time.monotonic() - t0)
+            raise
+        except Exception as exc:
+            service_stats.record_http(url, None, time.monotonic() - t0, exc)
+            raise
+        service_stats.record_http(url, 200, time.monotonic() - t0)
         
         results: list[str] | list[tuple[str, float]] = []
         molecules = data.get('molecules', [])

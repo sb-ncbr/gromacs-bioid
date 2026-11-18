@@ -13,7 +13,7 @@ set -euo pipefail
 NS=ceitec-biodata-ns
 OUT=$(cd "$(dirname "$0")" && pwd)/live
 OBJECTS=(
-  deploy/bat3-ceitec-bat3-api deploy/bat3-ceitec-bat3-worker deploy/bat3-ui-worker
+  deploy/bat3-ceitec-bat3-api deploy/bat3-ceitec-bat3-worker deploy/bat3-ui-worker deploy/bat3-repo-worker
   deploy/bat3-ceitec-bat3-web deploy/bat3-redis deploy/bioid-cache-redis
   deploy/bioid-mcp deploy/validation-docs
   svc/bat3-ceitec-bat3-api svc/bat3-ceitec-bat3-web svc/bat3-redis svc/bioid-cache-redis

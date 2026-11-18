@@ -26,6 +26,13 @@ application's settings). Checked against the code on 2026-11-10.
    `config.ini` the large NCBI databases `blast_nr_protein, blast_nt,
    blast_core_nt`). They get what is left of the budget, so a slow database
    can no longer use up the time the searches after it need.
+
+The NCBI nr, nt and core_nt databases are **off by default and on in the Deep
+search preset** (since 2026-11-18). nr is 826 GB on a network volume that
+delivers about 50 MB/s to all workers together, so one nr search reads for
+hours; at a 1-hour limit it finished 1 of 30 protein searches in a week. They
+have their own per-search limit (`[blast] ncbi_timeout_s`, 12 hours), and a
+run that searches them gets that much more identification time.
 3. **Verification** builds its candidate window from the first-pass evidence
    first, then appends up to `verify_top_n_supplementary` candidates that
    only the second pass found (see
@@ -34,7 +41,7 @@ application's settings). Checked against the code on 2026-11-10.
 A deferred database is **skipped** for a molecule that a first-pass search
 already matched exactly (≥ 0.99 identity and coverage in PDB, Swiss-Prot or
 UniProt for nr; PDB nucleic for nt/core_nt): it would only re-find the same
-sequence as GenBank duplicates, at up to an hour of reading nr over NFS
+sequence as GenBank duplicates, at hours of reading nr over NFS
 (`[identifiers] skip_deferred_on_exact`, on). BLAST uses 2 threads per search
 for UI runs.
 
@@ -48,9 +55,9 @@ for UI runs.
 | `blast_pdb_nucleic` | PDB sequences (pdbnt), BLASTN | nucleotide sequence | yes | yes | local |
 | `blast_swissprot_protein` | UniProt Swiss-Prot, BLASTP | protein sequence | yes | yes | local |
 | `blast_uniprot` | the same Swiss-Prot database (no separate UniProt database is configured; counted as one evidence source with the row above) | protein sequence | yes | yes | local |
-| `blast_nr_protein` | NCBI nr, BLASTP — **deferred** in `config.ini` | protein sequence | yes | yes | local |
-| `blast_core_nt` | NCBI core_nt, BLASTN — **deferred** | nucleotide sequence | yes | yes | local |
-| `blast_nt` | NCBI nt, BLASTN — **deferred** | nucleotide sequence | yes | yes | local |
+| `blast_nr_protein` | NCBI nr, BLASTP — **deferred**, Deep search only | protein sequence | yes | yes | local |
+| `blast_core_nt` | NCBI core_nt, BLASTN — **deferred**, Deep search only | nucleotide sequence | yes | yes | local |
+| `blast_nt` | NCBI nt, BLASTN — **deferred**, Deep search only | nucleotide sequence | yes | yes | local |
 | `pdb_struct_protein` | RCSB PDB structure search | protein structure (PDB) | yes (≥ 99.9 % structural similarity) | yes | remote (RCSB) |
 | `pdb_struct_nucleotide` | RCSB PDB structure search | nucleic-acid structure | yes | skipped: RCSB rejects pure nucleic-acid similarity queries; recorded as `na_mode_unsupported`, not as an error | remote (RCSB) |
 | `mmcif_struct` | RCSB PDB structure search | mmCIF of the molecule | — | yes | remote (RCSB) |

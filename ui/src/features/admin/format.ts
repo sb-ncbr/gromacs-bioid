@@ -86,7 +86,7 @@ export function retentionSummary(r: RunRetention | null | undefined, nowMs: numb
 }
 
 /** Runs still in flight (the backend refuses to delete these). */
-export const ACTIVE_STATUSES = new Set(["queued", "running", "pending", "created"]);
+export const ACTIVE_STATUSES = new Set(["queued", "running", "pending", "created", "retry_scheduled"]);
 
 export type Tone = "ok" | "warn" | "error" | "info" | "muted";
 

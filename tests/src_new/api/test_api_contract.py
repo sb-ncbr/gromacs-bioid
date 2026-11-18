@@ -73,6 +73,11 @@ REGISTERED_ADDITIONS: dict[str, dict[str, set[str]]] = {
     "g9_residue_ranges": {"RenderSegmentSelector": {"residue_ranges"}},
     # 2026-11-17: expiry on the results page; the owner can keep a run longer
     "run_retention": {"RunSummaryResponse": {"retention"}, "RunStatusResponse": {"retention"}},
+    # 2026-11-18: incomplete runs, queues, automatic retries, rerun links
+    "run_incomplete": {"RunSummaryResponse": {"incomplete_count", "rerun_of", "superseded_by"},
+                       "RunStatusResponse": {"incomplete", "rerun_of", "superseded_by"}},
+    "run_queues": {"RunSummaryResponse": {"queue"}, "RunStatusResponse": {"queue"}},
+    "automatic_retries": {"RunSummaryResponse": {"attempt"}, "RunStatusResponse": {"retry", "attempts"}},
 }
 
 _MODELS = {

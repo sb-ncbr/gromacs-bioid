@@ -208,6 +208,21 @@ function Created({ iso, nowMs }: { iso: string | null; nowMs: number }) {
   );
 }
 
+/** Queue, attempt and failed lookups of a run (2026-11-18). */
+function QueueCell({ run }: { run: AdminRun }) {
+  return (
+    <span className="flex flex-wrap gap-1">
+      <span>{run.queue ?? "web"}</span>
+      {(run.attempt ?? 1) > 1 && <ToneBadge tone="info">attempt {run.attempt}</ToneBadge>}
+      {run.status === "retry_scheduled" && <ToneBadge tone="info">waiting to retry</ToneBadge>}
+      {(run.incomplete ?? 0) > 0 && (
+        <ToneBadge tone="warn" title="lookups a rerun could fix">{run.incomplete} failed lookups</ToneBadge>
+      )}
+      {run.superseded_by && <ToneBadge tone="muted" title={run.superseded_by}>superseded</ToneBadge>}
+    </span>
+  );
+}
+
 function ActiveRuns({ runs, nowMs }: { runs: AdminRun[]; nowMs: number }) {
   if (runs.length === 0) return <Empty>No runs in flight.</Empty>;
   return (
@@ -219,6 +234,7 @@ function ActiveRuns({ runs, nowMs }: { runs: AdminRun[]; nowMs: number }) {
           <TableHead>Created</TableHead>
           <TableHead>Running for</TableHead>
           <TableHead>Preset</TableHead>
+          <TableHead>Queue</TableHead>
           <TableHead className="text-right">
             <span className="sr-only">Actions</span>
           </TableHead>
@@ -242,6 +258,7 @@ function ActiveRuns({ runs, nowMs }: { runs: AdminRun[]; nowMs: number }) {
                 {r.status === "running" && started != null ? formatDuration((nowMs - started) / 1000) : "—"}
               </TableCell>
               <TableCell className="text-xs">{r.preset ?? "—"}</TableCell>
+              <TableCell className="text-xs"><QueueCell run={r} /></TableCell>
               <TableCell className="text-right">
                 <CancelRun run={r} />
               </TableCell>
@@ -282,6 +299,7 @@ function RecentRuns({ runs, nowMs }: { runs: AdminRun[]; nowMs: number }) {
           <TableHead>Status</TableHead>
           <TableHead>Created</TableHead>
           <TableHead>Preset</TableHead>
+          <TableHead>Queue</TableHead>
           <TableHead>Retention</TableHead>
           <TableHead className="text-right">
             <span className="sr-only">Actions</span>
@@ -312,6 +330,7 @@ function RecentRuns({ runs, nowMs }: { runs: AdminRun[]; nowMs: number }) {
               {r.preset ?? "—"}
               {r.input_kind && <span className="block text-text-muted">{r.input_kind}</span>}
             </TableCell>
+            <TableCell className="text-xs"><QueueCell run={r} /></TableCell>
             <TableCell className="text-xs">
               {r.example ? <span className="text-text-muted">example: never expires</span> : retentionSummary(r.retention, nowMs)}
             </TableCell>

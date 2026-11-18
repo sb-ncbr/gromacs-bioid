@@ -7,7 +7,7 @@
 #   deploy/release.sh --backend <sha256:digest> --code <git short sha> \
 #                     [--web <frontend tag>] [--docs <docs tag>] [--mcp <mcp tag>]
 #
-#   --backend  API, fleet workers and UI workers (one image). Refused while
+#   --backend  API, fleet, UI and repository workers (one image). Refused while
 #              any queue holds work or a run is active: restarted workers
 #              kill running runs. Pause submitters first (mdval) and wait.
 #   --web      the web frontend (bat3-frontend:<tag>); no queue check needed
@@ -57,7 +57,7 @@ image_exists() {  # the registry sometimes answers non-JSON once: retry
 [ -z "$MCP" ] || image_exists "$REG/bioid-mcp:$MCP"
 
 if [ -n "$BACKEND" ]; then
-  for q in celery validation.ui.celery bughunt; do
+  for q in celery validation.ui.celery validation.repo.celery bughunt; do
     n=$(kubectl -n $NS exec deploy/bat3-redis -- redis-cli llen $q)
     [ "$n" = "0" ] || { echo "REFUSE: queue $q holds $n"; exit 1; }
   done
@@ -75,6 +75,10 @@ mkdir -p "$SNAP"; chmod 700 "$SNAP"
 stamp=$(date +%Y%m%d-%H%M%S)
 touched=()
 [ -z "$BACKEND" ] || touched+=(bat3-ceitec-bat3-api bat3-ceitec-bat3-worker bat3-ui-worker)
+# the repository pool once it exists (deploy/bat3-repo-worker.yaml)
+if [ -n "$BACKEND" ] && kubectl -n $NS get deploy bat3-repo-worker >/dev/null 2>&1; then
+  touched+=(bat3-repo-worker); REPO=1
+else REPO=; fi
 [ -z "$WEB" ] || touched+=(bat3-ceitec-bat3-web)
 [ -z "$DOCS" ] || touched+=(validation-docs)
 [ -z "$MCP" ] || touched+=(bioid-mcp)
@@ -89,6 +93,10 @@ if [ -n "$BACKEND" ]; then
   kubectl -n $NS set env deploy/bat3-ceitec-bat3-worker -c worker BAT3_CODE_VERSION=git-$CODE
   kubectl -n $NS set image deploy/bat3-ui-worker ui-worker=$IMG
   kubectl -n $NS set env deploy/bat3-ui-worker -c ui-worker BAT3_CODE_VERSION=git-$CODE
+  if [ -n "$REPO" ]; then
+    kubectl -n $NS set image deploy/bat3-repo-worker repo-worker=$IMG
+    kubectl -n $NS set env deploy/bat3-repo-worker -c repo-worker BAT3_CODE_VERSION=git-$CODE
+  fi
   kubectl -n $NS set image deploy/bat3-ceitec-bat3-api api=$IMG
   kubectl -n $NS set env deploy/bat3-ceitec-bat3-api -c api BAT3_CODE_VERSION=git-$CODE
 fi
@@ -118,7 +126,9 @@ check_env() {  # deployment, names...
   for n in "$@"; do grep -qx "$n" <<<"$have" || echo "WARNING: $d has no $n"; done
 }
 if [ -n "$BACKEND" ]; then
-  check_env bat3-ceitec-bat3-api BAT3_IP_HASH_KEY BAT3_ADMIN_PASSWORD BAT3_RETENTION_ENFORCE BAT3_ALERT_EMAIL
+  check_env bat3-ceitec-bat3-api BAT3_IP_HASH_KEY BAT3_ADMIN_PASSWORD BAT3_RETENTION_ENFORCE BAT3_ALERT_EMAIL \
+            BAT3_SHARED_CACHE_URL
+  [ -z "$REPO" ] || check_env bat3-repo-worker NCBI_API_KEY BAT3_SHARED_CACHE_URL
   check_env bat3-ui-worker NCBI_API_KEY BAT3_SHARED_CACHE_URL
   check_env bat3-ceitec-bat3-worker NCBI_API_KEY BAT3_SHARED_CACHE_URL
   for d in bat3-ui-worker bat3-ceitec-bat3-worker; do

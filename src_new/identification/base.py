@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import time
 from abc import ABC, abstractmethod
 
 from ..config.loader import RunConfig
@@ -29,6 +30,27 @@ def safe_tmp_dir(working_directory: str | None = None) -> str:
     _os.makedirs(path, exist_ok=True)
     return path
 
+
+
+def _service(resolver, similarity: bool) -> str:
+    return f"db:{resolver.name}{'@sim' if similarity else ''}"
+
+
+def _outcome(result, error) -> str:
+    """hit | empty | not_applicable | error:<failure class> (outcomes.py)."""
+    if error:
+        from .outcomes import failure_class
+        cls = failure_class(error)
+        return cls if cls == "not_applicable" else f"error:{cls}"
+    return "hit" if result else "empty"
+
+
+def _count(resolver, similarity: bool, outcome: str, seconds: float | None = None) -> None:
+    try:
+        from .. import service_stats
+        service_stats.record(_service(resolver, similarity), outcome, seconds)
+    except Exception:
+        pass
 
 
 class IdentifierResolutionError(Exception):
@@ -163,6 +185,7 @@ class IdentifierResolver(ABC):
             shared = shared_cache.get(self, signature, as_similarity)
             if shared is not None:
                 result, self._last_resolution_metadata = shared
+                _count(self, as_similarity, "cache_shared")
                 return result
 
         # Check cache first. Cache failures (e.g. sqlite corruption surfaced
@@ -178,6 +201,7 @@ class IdentifierResolver(ABC):
                 # W3.3 A.3: health-record counters (hit vs miss per resolver).
                 record_cache_event(self.name, bool(cached))
                 if cached:
+                    _count(self, as_similarity, "cache_local")
                     return cached
             except (sqlite3.Error, OSError) as exc:
                 # v3.143 (C-13): OSError from lazy cache init (unwritable/
@@ -190,12 +214,16 @@ class IdentifierResolver(ABC):
                     self.name, exc,
                 )
         
-        # Call appropriate resolve method
+        # Call appropriate resolve method (timed and counted: service_stats)
+        from .. import service_stats
+        t0 = time.monotonic()
         try:
-            if as_similarity:
-                result = self._resolve_similarity(signature, working_directory)
-            else:
-                result = self._resolve_identity(signature, working_directory)
+            with service_stats.in_flight(_service(self, as_similarity)):
+                if as_similarity:
+                    result = self._resolve_similarity(signature, working_directory)
+                else:
+                    result = self._resolve_identity(signature, working_directory)
+            _count(self, as_similarity, _outcome(result, self._last_error), time.monotonic() - t0)
             
             # Store in cache (best effort; cache corruption must not fail
             # an otherwise successful live resolution, OQ-13)
@@ -233,10 +261,12 @@ class IdentifierResolver(ABC):
             # The error record is preserved via _last_error (manager reads
             # get_last_error() on the not-result path for UI/log telemetry).
             self._last_error = str(exc)
+            _count(self, as_similarity, _outcome(None, self._last_error), time.monotonic() - t0)
             logger.error(f"Resolution failed for {self.name}: {exc}")
             return None
         except Exception as exc:
             self._last_error = str(exc)
+            _count(self, as_similarity, _outcome(None, self._last_error), time.monotonic() - t0)
             logger.error(f"Unexpected error in {self.name} resolver: {exc}")
             return None
     

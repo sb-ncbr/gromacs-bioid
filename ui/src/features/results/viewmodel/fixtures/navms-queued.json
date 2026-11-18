@@ -17,7 +17,8 @@
   "started_at": null,
   "finished_at": null,
   "elapsed_s": null,
-  "retention_days": null
+  "retention_days": null,
+  "queue": "web"
  },
  "progress": {
   "stages": [

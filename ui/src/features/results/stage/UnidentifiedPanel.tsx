@@ -8,7 +8,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { api, apiErrorMessage, endpoints } from "../../../lib/api/client";
-import { rememberOwnerToken } from "../../../lib/ownerTokens";
+import { ownerHeaders, rememberOwnerToken } from "../../../lib/ownerTokens";
 import type { Molecule } from "../viewmodel";
 import { formulaMass } from "./chemistry";
 import { ReportDialog } from "./ReportDialog";
@@ -30,7 +30,7 @@ export function UnidentifiedPanel({ molecule: m }: { molecule: Molecule }) {
   const rerunDeep = () => {
     setBusy(true);
     void api
-      .postJson<{ run_id: string; owner_token?: string | null }>(endpoints.runRerun(runId), { preset: "deep" })
+      .postJson<{ run_id: string; owner_token?: string | null }>(endpoints.runRerun(runId), { preset: "deep" }, ownerHeaders(runId))
       .then((res) => {
         rememberOwnerToken(res.run_id, res.owner_token);
         toast.success("Queued with Deep search");

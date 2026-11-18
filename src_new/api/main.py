@@ -202,6 +202,9 @@ API_ADDITIONS = [
     "segment_selectors",       # G9 — per-segment selectors on /render
     "run_retention",           # 2026-11-17 — retention on status/summary; owner POST /retention
     "warning_docs_url",        # 2026-11-17 — docs_url on warnings and errors
+    "run_incomplete",          # 2026-11-18 — incomplete gaps; rerun_of / superseded_by
+    "run_queues",              # 2026-11-18 — queue field; repository queue (X-Queue-Token)
+    "automatic_retries",       # 2026-11-18 — retry/attempts while a run waits (reads "queued")
     "capabilities",              # this endpoint
 ]
 

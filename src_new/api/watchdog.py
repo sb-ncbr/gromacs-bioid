@@ -296,6 +296,32 @@ def _check_crash_loops() -> None:
             f" `kubectl -n ceitec-biodata-ns get pods`.")
 
 
+def _check_services() -> None:
+    """Alarms from the service measurements (service_stats.py): a service
+    failing most calls for 30 min, and too many NCBI searches at once (they
+    share the database volume's ~50 MB/s; no lock, only this alarm)."""
+    from src_new import service_stats as ss
+    from . import alerts
+    client = ss.reader()
+    if client is None:
+        return
+    for f in ss.failing(ss.summarize(ss.window(client, 1800))):
+        alerts.alarm(
+            f"service:{f['service']}", f"{f['service']} failing: {f['errors']} of {f['calls']} calls in 30 min",
+            f"{f['service']} failed {f['errors']} of {f['calls']} calls in the last 30 minutes.\n"
+            f"Outcomes: {json.dumps(f['outcomes'], sort_keys=True)}\n\n"
+            "Runs searching it in this time are incomplete. See Services on the admin page (/admin).")
+    ncbi = [r for r in ss.running_now(client) if r.get("service") in ss.NCBI_SERVICES]
+    if len(ncbi) >= ss.ncbi_alarm_at():
+        alerts.alarm(
+            "ncbi-running", f"{len(ncbi)} NCBI nr/nt searches running at once",
+            f"{len(ncbi)} NCBI nr/nt/core_nt searches are running at once (alarm at "
+            f"{ss.ncbi_alarm_at()}). They share the database volume's ~50 MB/s: at 3 an nr "
+            "search needs about 6.6 h, at 6 none fits the 12 h limit.\n\n"
+            + "\n".join(f"- {r['service']} on {r.get('pod', '?')} since "
+                         f"{time.strftime('%H:%M', time.localtime(r.get('started', 0)))}" for r in ncbi))
+
+
 # -- reaper hook ---------------------------------------------------------------
 
 def tick(runs_dir: Path, now: Optional[float] = None) -> None:
@@ -305,6 +331,10 @@ def tick(runs_dir: Path, now: Optional[float] = None) -> None:
         _check_crash_loops()
     except Exception as exc:
         log.warning("watchdog: crash-loop check failed: %s", exc)
+    try:
+        _check_services()
+    except Exception as exc:
+        log.warning("watchdog: service check failed: %s", exc)
     try:
         st = state(runs_dir)
         if st.get("status") == "running":

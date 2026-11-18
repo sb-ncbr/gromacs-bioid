@@ -53,6 +53,8 @@ export function metaLine(run: Run): string {
   if (run.input.files.length > 0) parts.push(run.input.files.join(" + "));
   if (run.input.atoms > 0) parts.push(`${run.input.atoms.toLocaleString()} atoms`);
   if (run.submitted_at) parts.push(`submitted ${formatSubmitted(run.submitted_at)}`);
+  // web is the default; other queues (campaigns) are named
+  if (run.queue && run.queue !== "web") parts.push(`${run.queue} queue`);
   parts.push(`run ${run.short_id}`);
   return parts.join(" · ");
 }

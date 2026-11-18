@@ -18,7 +18,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from src_new.completeness import gaps
 from src_new.identification.outcomes import user_warnings
+from src_new.retries import lane_of
 
 from . import retention
 from .security import valid_run_id
@@ -54,6 +56,11 @@ def _summary(run_id: str, data: dict[str, Any]) -> dict[str, Any]:
         "error": first_error,
         "retention": retention.describe(data),
         "has_owner_token": bool(pipeline.get("owner_token_sha256")),
+        "queue": lane_of(pipeline),
+        "attempt": len(pipeline.get("attempts") or []) + 1,
+        "retry_at": (pipeline.get("retry") or {}).get("at") if pipeline.get("status") == "retry_scheduled" else None,
+        "incomplete": sum(g["count"] for g in gaps(data)),
+        "superseded_by": pipeline.get("superseded_by"),
         # internal (never returned by public routes)
         "_pipeline": {k: pipeline.get(k) for k in ("creator_ip", "creator_ip_hash")},
     }

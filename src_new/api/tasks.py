@@ -180,7 +180,9 @@ def run_pipeline_task(
     # hard-kill where the run actually completed) must NOT flip a
     # terminal run back to running — exit without touching results.
     status_now = read_run_status(thread_results_path)
-    if status_now in STATUS_TERMINAL:
+    # A finished attempt waiting for its automatic retry (retries.py) is
+    # re-queued by the reaper with a fresh results.json, never redelivered.
+    if status_now in STATUS_TERMINAL or status_now == "retry_scheduled":
         logger.info(
             "run %s already terminal (%s) — redelivered message skipped",
             run_id, status_now)
@@ -299,6 +301,21 @@ def run_pipeline_task(
                 pass
 
 
+def _ncbi_extension_for(config_path: Optional[str]) -> float:
+    """Extra wall-clock seconds for a run searching NCBI nr/nt/core_nt (the
+    identify budget grows by the same amount, pipeline_steps.ncbi_extension_s)."""
+    try:
+        from src_new.config.loader import RunConfig
+        from src_new.pipeline_steps import ncbi_extension_s
+        if config_path and Path(config_path).exists():
+            config = RunConfig.from_ini_path(config_path)
+        else:
+            config = RunConfig.from_default_ini()
+        return float(ncbi_extension_s(config))
+    except Exception:
+        return 0.0
+
+
 def _spawn_pipeline_child(run_id: str, input_dir: str,
                           results_path: Path,
                           config_path: Optional[str],
@@ -314,7 +331,8 @@ def _spawn_pipeline_child(run_id: str, input_dir: str,
     from src_new.results.results_manager import ResultsManager
 
     logger = logging.getLogger(f"pipeline_{run_id}")
-    limit_s = float(os.environ.get("BAT3_PIPELINE_TIMEOUT_S", 3 * 3600))
+    limit_s = float(os.environ.get("BAT3_PIPELINE_TIMEOUT_S", 3 * 3600)) \
+        + _ncbi_extension_for(config_path)
     ctx = multiprocessing.get_context("fork")
     parent_conn, child_conn = ctx.Pipe(duplex=False)
     child = ctx.Process(

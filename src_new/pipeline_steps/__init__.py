@@ -117,11 +117,32 @@ def _stage_budget_seconds(step_id: str) -> int | None:
     return int(mapping.get(step_id, _STAGE_BUDGET_DEFAULT_S))
 
 
+# NCBI nr / nt / core_nt (Deep search since 2026-11-18): one search reads
+# hundreds of GB from NFS (~50 MB/s for the whole share) and may take the full
+# [blast] ncbi_timeout_s. With any of them on, the identify budget and the run's
+# wall-clock limit (api/tasks.py) grow by that limit; other runs keep theirs.
+NCBI_DATABASES = ("blast_nr_protein", "blast_nt", "blast_core_nt")
+
+
+def ncbi_extension_s(config) -> int:
+    """Seconds added to the identify budget for this run's config (0 = none)."""
+    try:
+        ids = config.identifiers
+        if not any(getattr(ids, n, False) or getattr(ids, f"{n}_similarity", False)
+                   for n in NCBI_DATABASES):
+            return 0
+        return int(config.blast.ncbi_timeout_s or 0)
+    except Exception:
+        return 0
+
+
 def set_stage_budget(context, step_id: str) -> None:
     """Store this stage's wall-clock deadline in the context (idempotent)."""
     budget = _stage_budget_seconds(step_id)
     if budget is None:
         return
+    if step_id == "identify_molecules":
+        budget += ncbi_extension_s(getattr(context, "config", None))
     try:
         context.set_value(_STAGE_BUDGET_STATE_KEY, time.time() + budget)
     except Exception:

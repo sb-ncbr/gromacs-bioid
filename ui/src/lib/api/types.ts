@@ -109,6 +109,9 @@ export interface paths {
          *     ``preset`` (see GET /runs/config/options) is applied first, then
          *     ``config_file`` or ``config_json``; only per-run tunable fields may change.
          *
+         *     ``queue``: "web" (default) or "repository" (campaigns: own workers and
+         *     automatic retries; needs the X-Queue-Token header, issued on the admin page).
+         *
          *     The pipeline runs in the background via Celery. Returns immediately with run status.
          */
         post: operations["create_run_runs_post"];
@@ -1214,6 +1217,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/lanes/{lane}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Retry Policy
+         * @description Automatic retries of a queue: enabled, max_attempts, delay_minutes,
+         *     incomplete, worker_lost (retries.py).
+         */
+        put: operations["put_retry_policy_api_v1_admin_lanes__lane__retry_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/lanes/{lane}/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * New Queue Token
+         * @description A new submission token for the queue (shown once; replaces the old one).
+         */
+        post: operations["new_queue_token_api_v1_admin_lanes__lane__token_post"];
+        /** Revoke Queue Token */
+        delete: operations["revoke_queue_token_api_v1_admin_lanes__lane__token_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/traffic": {
         parameters: {
             query?: never;
@@ -2181,6 +2226,24 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AttemptInfo
+         * @description An earlier attempt of an automatically retried run.
+         */
+        AttemptInfo: {
+            /** Attempt */
+            attempt: number;
+            /** Reason */
+            reason?: string | null;
+            /** Started At */
+            started_at?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Gaps */
+            gaps?: {
+                [key: string]: unknown;
+            }[];
+        };
         /** Body_create_run_api_v1_runs_post */
         Body_create_run_api_v1_runs_post: {
             /** Files */
@@ -2195,6 +2258,8 @@ export interface components {
             preset?: string | null;
             /** Retention */
             retention?: string | null;
+            /** Queue */
+            queue?: string | null;
         };
         /** Body_create_run_runs_post */
         Body_create_run_runs_post: {
@@ -2210,6 +2275,8 @@ export interface components {
             preset?: string | null;
             /** Retention */
             retention?: string | null;
+            /** Queue */
+            queue?: string | null;
         };
         /**
          * CancelRunResponse
@@ -2462,6 +2529,43 @@ export interface components {
              * @description Resolvers that failed with error messages
              */
             failed_resolvers?: components["schemas"]["ResolverErrorItem"][];
+        };
+        /**
+         * IncompleteItem
+         * @description Answers a run lacks for a reason another attempt could fix (2026-11-18).
+         */
+        IncompleteItem: {
+            /**
+             * Code
+             * @description Warning code that records the gap
+             */
+            code: string;
+            /**
+             * Service
+             * @description The database, service or stage that failed
+             */
+            service: string;
+            /**
+             * Reason
+             * @description server_error, rate_limited, timeout, connection or budget
+             */
+            reason: string;
+            /**
+             * Segments
+             * @description Molecules (segments) affected
+             */
+            segments?: string[];
+            /**
+             * Count
+             * @description Number of failed lookups
+             */
+            count: number;
+            /**
+             * Example
+             * @description One of the recorded messages
+             * @default
+             */
+            example: string;
         };
         /**
          * LoadingAttemptInfo
@@ -2926,6 +3030,32 @@ export interface components {
             owner_choices?: number[];
         };
         /**
+         * RetryInfo
+         * @description The next automatic attempt of a run (queues with automatic retries).
+         */
+        RetryInfo: {
+            /**
+             * Attempt
+             * @description Number of the attempt that just finished
+             */
+            attempt: number;
+            /**
+             * Max Attempts
+             * @description Attempts allowed in all
+             */
+            max_attempts: number;
+            /**
+             * Reason
+             * @description incomplete or worker_lost
+             */
+            reason: string;
+            /**
+             * At
+             * @description When the next attempt is queued (unix seconds)
+             */
+            at: number;
+        };
+        /**
          * RunCreateResponse
          * @description Response model for creating a new run.
          */
@@ -3007,6 +3137,12 @@ export interface components {
              * @description IP address of the request that created this run
              */
             creator_ip?: string | null;
+            /**
+             * Queue
+             * @description Queue the run was submitted to: web or repository
+             * @default web
+             */
+            queue: string;
         };
         /**
          * RunListResponse
@@ -3112,6 +3248,34 @@ export interface components {
             progress?: components["schemas"]["RunStageProgress"] | null;
             /** @description How long the run is kept */
             retention?: components["schemas"]["RetentionInfo"] | null;
+            /**
+             * Incomplete
+             * @description Lookups that failed for reasons a rerun could fix
+             */
+            incomplete?: components["schemas"]["IncompleteItem"][];
+            /**
+             * Queue
+             * @description Queue the run was submitted to: web or repository
+             * @default web
+             */
+            queue: string;
+            /** @description Set while the run waits for its next automatic attempt (status shows queued) */
+            retry?: components["schemas"]["RetryInfo"] | null;
+            /**
+             * Attempts
+             * @description Earlier automatic attempts
+             */
+            attempts?: components["schemas"]["AttemptInfo"][];
+            /**
+             * Rerun Of
+             * @description Run this one re-runs
+             */
+            rerun_of?: string | null;
+            /**
+             * Superseded By
+             * @description Newer run of the same input, by its owner
+             */
+            superseded_by?: string | null;
         };
         /**
          * RunSummaryResponse
@@ -3170,6 +3334,34 @@ export interface components {
             error_count: number;
             /** @description How long the run is kept */
             retention?: components["schemas"]["RetentionInfo"] | null;
+            /**
+             * Incomplete Count
+             * @description Failed lookups a rerun could fix (see status.incomplete)
+             * @default 0
+             */
+            incomplete_count: number;
+            /**
+             * Queue
+             * @description Queue the run was submitted to: web or repository
+             * @default web
+             */
+            queue: string;
+            /**
+             * Attempt
+             * @description Automatic attempt number (1 = first)
+             * @default 1
+             */
+            attempt: number;
+            /**
+             * Rerun Of
+             * @description Run this one re-runs
+             */
+            rerun_of?: string | null;
+            /**
+             * Superseded By
+             * @description Newer run of the same input, by its owner
+             */
+            superseded_by?: string | null;
         };
         /**
          * SignatureInfo
@@ -3552,7 +3744,9 @@ export interface operations {
             query?: {
                 run_id?: string | null;
             };
-            header?: never;
+            header?: {
+                "X-Queue-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -4275,14 +4469,22 @@ export interface operations {
     rerun_single_run_runs__run_id__rerun_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Owner-Token"?: string | null;
+            };
             path: {
                 /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                } | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -4438,7 +4640,9 @@ export interface operations {
             query?: {
                 run_id?: string | null;
             };
-            header?: never;
+            header?: {
+                "X-Queue-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -5172,14 +5376,22 @@ export interface operations {
     rerun_single_run_api_v1_runs__run_id__rerun_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Owner-Token"?: string | null;
+            };
             path: {
                 /** @description Run id returned by POST /runs */
                 run_id: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                } | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -5277,6 +5489,117 @@ export interface operations {
                 authorization?: string | null;
             };
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_retry_policy_api_v1_admin_lanes__lane__retry_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                lane: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    new_queue_token_api_v1_admin_lanes__lane__token_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                lane: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_queue_token_api_v1_admin_lanes__lane__token_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                lane: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

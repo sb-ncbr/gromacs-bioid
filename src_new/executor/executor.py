@@ -109,7 +109,14 @@ class PipelineExecutor:
         # Track critical failures
         failed_critical = False
         failed_at_index = -1
-        
+
+        # This run's own service counts (persisted with run_health below).
+        try:
+            from .. import service_stats
+            service_stats.reset_run()
+        except Exception:
+            pass
+
         # Set up logging handler to capture log events
         class LogCaptureHandler(logging.Handler):
             def __init__(self, executor_self, context):
@@ -244,6 +251,12 @@ class PipelineExecutor:
                 try:
                     from ..pipeline_steps import set_stage_budget
                     set_stage_budget(context, step.id)
+                except Exception:
+                    pass
+                # Service measurements are counted per stage (service_stats).
+                try:
+                    from .. import service_stats
+                    service_stats.set_stage(step.id)
                 except Exception:
                     pass
                 # W3.3 A.3 (health record): per-stage wall seconds, persisted
@@ -410,6 +423,10 @@ class PipelineExecutor:
                 pod = os.environ.get("HOSTNAME")
                 if pod:
                     self.results_manager.set_data("run_health/pod", pod)
+                from .. import service_stats
+                calls = service_stats.run_summary()
+                if calls:
+                    self.results_manager.set_data("run_health/service_calls", calls)
             except Exception:
                 pass
 
@@ -421,7 +438,20 @@ class PipelineExecutor:
                     if step_id in self.results_manager._payload["tasks"]:
                         self.results_manager._payload["tasks"][step_id]["status"] = "skipped"
             
-            # Set pipeline final status and timestamp
-            self.results_manager.finish_run("failed" if failed_critical else "success")
+            # Set pipeline final status and timestamp. An incomplete run on a
+            # queue with automatic retries waits for its next attempt instead
+            # (retries.py; the reaper re-queues it under the same run id).
+            retry = None
+            if not failed_critical:
+                try:
+                    from .. import retries
+                    retry = retries.plan(self.results_manager._payload, "incomplete")
+                    if retry:
+                        retries.schedule(self.results_manager._payload, retry)
+                        self.results_manager._save()
+                except Exception:
+                    retry = None
+            if not retry:
+                self.results_manager.finish_run("failed" if failed_critical else "success")
         
         return context

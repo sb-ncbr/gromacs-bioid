@@ -30,6 +30,9 @@ from ..models import (
     RetentionChange,
     ReportCreate,
     RetentionInfo,
+    IncompleteItem,
+    RetryInfo,
+    AttemptInfo,
     TaskInfo,
     WarningItem,
     ErrorItem,
@@ -219,15 +222,28 @@ async def create_run(
     run_name: Optional[str] = Form(None),
     preset: Optional[str] = Form(None),
     retention: Optional[str] = Form(None),
+    queue: Optional[str] = Form(None),
+    queue_token: Optional[str] = Header(None, alias="X-Queue-Token"),
 ) -> RunCreateResponse:
     """
     Create a new run by uploading input files and optionally a config file.
 
     ``preset`` (see GET /runs/config/options) is applied first, then
     ``config_file`` or ``config_json``; only per-run tunable fields may change.
+
+    ``queue``: "web" (default) or "repository" (campaigns: own workers and
+    automatic retries; needs the X-Queue-Token header, issued on the admin page).
     
     The pipeline runs in the background via Celery. Returns immediately with run status.
     """
+    from src_new import retries
+    from .. import queue_tokens
+    lane = queue or "web"
+    if lane not in retries.LANES:
+        raise HTTPException(status_code=422, detail=f"Unknown queue {lane!r}: web or repository")
+    if lane != "web" and not queue_tokens.check(get_runs_dir(), lane, queue_token):
+        raise HTTPException(status_code=403, detail=f"The {lane} queue needs a valid X-Queue-Token header.")
+
     # Generate run_id if not provided. A client-chosen id becomes a directory
     # name under the runs dir: no separators, no "..".
     if run_id is None:
@@ -384,15 +400,13 @@ async def create_run(
         initial_results["pipeline"]["creator_ip_hash"] = ip_hash(creator_ip)
     owner_token, initial_results["pipeline"]["owner_token_sha256"] = new_owner_token()
     initial_results["pipeline"]["retention"] = retention_policy
+    initial_results["pipeline"]["queue"] = lane
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(initial_results, f, indent=2)
     
-    # Enqueue Celery task with run_id as task_id (UI lane when configured)
-    import os as _os
-    _ui_opts = {}
-    _uiq = _os.environ.get("VALIDATION_UI_QUEUE", "")
-    if _uiq:
-        _ui_opts["queue"] = _uiq
+    # Enqueue Celery task with run_id as task_id, on the lane's queue
+    _celery_queue = retries.celery_queue(lane)
+    _ui_opts = {"queue": _celery_queue} if _celery_queue else {}
     run_pipeline_task.apply_async(
         task_id=run_id,
         kwargs={
@@ -429,20 +443,25 @@ async def list_runs(request: Request, mine: int = Query(1)) -> RunListResponse:
     if requester_ip is None:
         return RunListResponse(runs=[])
 
+    from src_new import retries
     from src_new.api.run_index import summaries
     runs = [
         RunListItem(
             run_id=r["run_id"],
-            status=r["status"],
+            status=retries.client_status({"status": r["status"]}),
             created_at=r["created_at"],
             input_kind=r["input_kind"],
             run_name=r["run_name"],
+            queue=r.get("queue") or "web",
         )
         for r in summaries(runs_dir)
         if same_submitter(r["_pipeline"], requester_ip)
     ]
 
     return RunListResponse(runs=runs)
+
+#: finished runs (a rerun may link them to the new run)
+TERMINAL_STATUSES = frozenset({"success", "failed", "cancelled", "timeout", "error"})
 
 # ---------------------------------------------------------------------------
 # Landing-page example cards (v3.137)
@@ -589,7 +608,7 @@ async def delete_run(
     require_owner(pipeline, owner_token, "deleted")
     # A queued or running run's worker would write results.json again after
     # the delete and leave a half run behind (2026-11-17): cancel it first.
-    if pipeline.get("status") in ("queued", "running", "pending", "created"):
+    if pipeline.get("status") in ("queued", "running", "pending", "created", "retry_scheduled"):
         raise HTTPException(status_code=409, detail="This run is still queued or running: cancel it first, then delete it.")
     shutil.rmtree(run_dir)
     return {"message": f"Run '{run_id}' deleted successfully"}
@@ -604,10 +623,11 @@ async def get_run_summary(run_id: RunId) -> RunSummaryResponse:
     warnings_data = user_warnings(data.get("warnings", []))
     errors_data = data.get("critical_errors", [])
     
+    from src_new import completeness, retries
     return RunSummaryResponse(
         run_id=run_id,
         pipeline_name=pipeline_data.get("name", ""),
-        status=pipeline_data.get("status", "unknown"),
+        status=retries.client_status(pipeline_data) if pipeline_data.get("status") else "unknown",
         started_at=pipeline_data.get("started_at"),
         finished_at=pipeline_data.get("finished_at"),
         input_kind=pipeline_data.get("input_kind"),
@@ -616,6 +636,11 @@ async def get_run_summary(run_id: RunId) -> RunSummaryResponse:
         warning_count=len(warnings_data),
         error_count=len(errors_data),
         retention=_retention_info(run_id, data),
+        incomplete_count=sum(g["count"] for g in completeness.gaps(data)),
+        queue=retries.lane_of(pipeline_data),
+        attempt=len(pipeline_data.get("attempts") or []) + 1,
+        rerun_of=pipeline_data.get("rerun_of"),
+        superseded_by=pipeline_data.get("superseded_by"),
     )
 
 
@@ -715,11 +740,12 @@ async def get_run_status(run_id: RunId, since: Optional[str] = None) -> RunStatu
             # Ignore invalid since parameter
     
     # Build pipeline status
+    from src_new import completeness, retries
     pipeline_data = data.get("pipeline", {})
     pipeline = PipelineStatusResponse(
         run_id=run_id,
         pipeline_name=pipeline_data.get("name", ""),
-        status=pipeline_data.get("status", "created"),
+        status=retries.client_status(pipeline_data),
         started_at=pipeline_data.get("started_at"),
         finished_at=pipeline_data.get("finished_at"),
         input_kind=pipeline_data.get("input_kind"),
@@ -824,6 +850,14 @@ async def get_run_status(run_id: RunId, since: Optional[str] = None) -> RunStatu
         updated_at=updated_at,
         progress=_segment_progress(data, tasks_data),
         retention=_retention_info(run_id, data),
+        incomplete=[IncompleteItem(**g) for g in completeness.gaps(data)],
+        queue=retries.lane_of(pipeline_data),
+        retry=(RetryInfo(**{k: pipeline_data["retry"][k] for k in RetryInfo.model_fields})
+               if pipeline_data.get("status") == retries.STATUS and pipeline_data.get("retry") else None),
+        attempts=[AttemptInfo(**{k: a.get(k) for k in AttemptInfo.model_fields if k in a})
+                  for a in pipeline_data.get("attempts") or [] if isinstance(a, dict)],
+        rerun_of=pipeline_data.get("rerun_of"),
+        superseded_by=pipeline_data.get("superseded_by"),
     )
 
 
@@ -914,6 +948,13 @@ async def cancel_run(
             detail=f"Run is already in terminal state: {current_status}"
         )
     
+    # Waiting for an automatic retry: stop retrying, keep this attempt's results.
+    if current_status == "retry_scheduled":
+        results_manager = ResultsManager(str(get_runs_dir() / run_id / "results.json"))
+        results_manager._payload["pipeline"].setdefault("retry", {})["cancelled"] = True
+        results_manager.finish_run("success")
+        return CancelRunResponse(run_id=run_id, status="success")
+
     # Get Celery task result and revoke if running/pending
     result = celery.AsyncResult(run_id)
     if result.status in {"PENDING", "STARTED", "RETRY"}:
@@ -1741,7 +1782,8 @@ def _rerun_name(old_run_name: str) -> str:
 
 
 def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None,
-                         preset: Optional[str] = None) -> Optional[tuple[str, str]]:
+                         preset: Optional[str] = None,
+                         link_old: bool = False) -> Optional[tuple[str, str]]:
     """Create a new run reusing the input and config of an existing run.
 
     Copies input files and config.ini (or writes the default config) into a
@@ -1762,6 +1804,10 @@ def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None,
     executable or URL is dropped and an older run stays re-runnable after a
     server config change. HTTPException 422 for a tunable value that is no
     longer valid.
+
+    The new run records rerun_of. With link_old (the owner asked) it goes to
+    the old run's queue and the old run gets superseded_by; otherwise it goes
+    to the web queue.
     """
     from src_new.config.loader import RunConfig
     from src_new.config.presets import ConfigOverrideError, overrides_from_ini, resolve_run_config
@@ -1800,6 +1846,17 @@ def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None,
         try:
             overrides = overrides_from_ini(old_config_path.read_text(encoding="utf-8"),
                                            RunConfig.from_default_ini(), strict=False)
+            # NCBI nr/nt/core_nt were on by default until 2026-11-18 (now Deep
+            # search only, up to 12 h per search): an older run's config.ini
+            # carries them on even when nobody chose them.
+            if (old_data.get("pipeline", {}).get("preset") or "balanced") != "deep":
+                from src_new.pipeline_steps import NCBI_DATABASES
+                ids = overrides.get("identifiers") or {}
+                for name in NCBI_DATABASES:
+                    ids.pop(name, None)
+                    ids.pop(f"{name}_similarity", None)
+                if "identifiers" in overrides and not ids:
+                    overrides.pop("identifiers")
             config = resolve_run_config(None, overrides)
         except ConfigOverrideError as e:
             raise HTTPException(status_code=422,
@@ -1840,15 +1897,28 @@ def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None,
     initial_results["pipeline"]["retention"] = {"policy": "default"}
     if preset:
         initial_results["pipeline"]["preset"] = preset
+    from src_new import retries
+    # The old run's queue for its owner; anyone else reruns on the web queue
+    # (the repository queue needs a token).
+    lane = retries.lane_of(old_data.get("pipeline", {})) if link_old else "web"
+    initial_results["pipeline"]["queue"] = lane
+    initial_results["pipeline"]["rerun_of"] = old_run_id
 
     with open(new_results_path, "w", encoding="utf-8") as f:
         json.dump(initial_results, f, indent=2)
 
-    # Enqueue Celery task with run_id as task_id (UI lane when configured)
-    _ui_opts = {}
-    _uiq = os.environ.get("VALIDATION_UI_QUEUE", "")
-    if _uiq:
-        _ui_opts["queue"] = _uiq
+    if link_old and (old_data.get("pipeline", {}).get("status") or "") in TERMINAL_STATUSES:
+        try:
+            old_data.setdefault("pipeline", {})["superseded_by"] = new_run_id
+            tmp = old_results_path.with_name(f".results.{os.getpid()}.{os.urandom(4).hex()}.tmp")
+            tmp.write_text(json.dumps(old_data, indent=2), encoding="utf-8")
+            os.replace(tmp, old_results_path)
+        except OSError as exc:
+            logger.warning("rerun: could not link %s to %s: %s", old_run_id, new_run_id, exc)
+
+    # Enqueue Celery task with run_id as task_id, on the old run's queue
+    _celery_queue = retries.celery_queue(lane)
+    _ui_opts = {"queue": _celery_queue} if _celery_queue else {}
     run_pipeline_task.apply_async(
         task_id=new_run_id,
         kwargs={
@@ -1920,7 +1990,8 @@ async def rerun_all(
 
 @router.post("/{run_id}/rerun", response_model=RunCreateResponse)
 async def rerun_single_run(run_id: RunId, request: Request,
-                           body: Optional[Dict[str, Any]] = Body(None)) -> RunCreateResponse:
+                           body: Optional[Dict[str, Any]] = Body(None),
+                           owner_token: Optional[str] = Header(None, alias=OWNER_HEADER)) -> RunCreateResponse:
     """
     Re-run a single existing run by copying its input files and config into a
     new run directory and enqueuing a new Celery pipeline task.
@@ -1944,8 +2015,17 @@ async def rerun_single_run(run_id: RunId, request: Request,
     creator_ip = _requester_ip(request)
     check_submit_limits(creator_ip)
     preset = (body or {}).get("preset") or None
+    # The owner's rerun replaces the old run: it links to the new one
+    # ("superseded by"); anyone else's rerun is only their own copy.
+    link_old = False
+    if owner_token:
+        try:
+            require_owner(load_results_json(run_id).get("pipeline", {}), owner_token, "re-run")
+            link_old = True
+        except HTTPException:
+            link_old = False
     created = _create_single_rerun(old_run_dir, creator_ip=creator_ip,
-                                   preset=str(preset) if preset else None)
+                                   preset=str(preset) if preset else None, link_old=link_old)
     if created is None:
         raise HTTPException(
             status_code=404,
@@ -1977,6 +2057,8 @@ def _queue_state_for(run_data: Dict[str, Any]) -> str:
     """
     pipeline = run_data.get("pipeline", {})
     status = pipeline.get("status")
+    if status == "retry_scheduled":
+        return "queued"  # waiting for its next automatic attempt (retries.py)
     if status and status not in ("queued", "pending", "running", "created"):
         return "done"  # terminal: failed/success/cancelled/timeout/...
     if pipeline.get("status") == "running":

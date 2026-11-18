@@ -48,6 +48,8 @@ export interface SummaryView {
   submitted_at?: string | null;
   /** G1 additive field. */
   run_name?: string | null;
+  /** 2026-11-18: web | repository. */
+  queue?: string | null;
 }
 
 export interface ErrorView {
@@ -456,6 +458,7 @@ export function adapt(bundle: ApiBundle, options: AdapterOptions = {}): ViewMode
       finished_at: bundle.summary?.finished_at ?? null,
       elapsed_s: elapsed(status, bundle.summary?.started_at, bundle.summary?.finished_at, now),
       retention_days: options.retentionDays ?? null,
+      queue: bundle.summary?.queue ?? "web",
     },
     progress: {
       stages,
