@@ -20,6 +20,7 @@ CODES = {
     "stage_time_budget": "time limit",
     "structure_search_unavailable": "RCSB structure search",
     "verification_failed": "verification",
+    "annotation_fetch_failed": None,  # details.service, e.g. chebi_annotation
 }
 
 
@@ -55,7 +56,7 @@ def gaps(data: dict[str, Any]) -> list[dict[str, Any]]:
         item = out.setdefault((code, service, reason), {
             "code": code, "service": service, "reason": reason,
             "segments": [], "count": 0, "example": message[:200]})
-        item["count"] += 1
+        item["count"] += int(details.get("count") or 1) if code == "annotation_fetch_failed" else 1
         seg = _segment(code, w)
         if seg and seg not in item["segments"]:
             item["segments"].append(seg)

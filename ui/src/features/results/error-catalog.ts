@@ -222,6 +222,15 @@ export const CATALOG_CODES: CatalogCode[] = [
     details_show: ["segment"],
   },
   {
+    code: "annotation_fetch_failed",
+    kind: "warning",
+    stage: "verify",
+    user_title: "Some database records could not be fetched",
+    user_what: "The matches are the same, but their confidence was computed without the record-quality part.",
+    user_action: "Usually temporary. Re-running later gives complete confidence values.",
+    details_show: [],
+  },
+  {
     code: "stage_time_budget",
     kind: "warning",
     stage: "*",

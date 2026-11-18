@@ -137,6 +137,35 @@ class SignatureFetcher(ABC):
         pass
 
 
+# Annotation fetches that failed in this run (2026-11-18), counted per
+# service and reason. A failed fetch leaves the annotation term out of a
+# match's confidence; the verify step records the count as a warning, so
+# the run reads as incomplete. One run per process; reset by the step.
+_FETCH_FAILURES: dict[tuple[str, str], int] = {}
+_FETCH_FAILURES_LOCK = __import__("threading").Lock()
+
+
+def note_fetch_failure(service: str, reason: str) -> None:
+    """Count a failed annotation fetch; an unknown entry (HTTP 4xx other
+    than 429) is an answer, not a failure."""
+    r = str(reason)
+    if r.startswith("HTTP 4") and not r.startswith("HTTP 429"):
+        return
+    with _FETCH_FAILURES_LOCK:
+        key = (service, str(reason)[:60])
+        _FETCH_FAILURES[key] = _FETCH_FAILURES.get(key, 0) + 1
+
+
+def fetch_failures() -> dict[tuple[str, str], int]:
+    with _FETCH_FAILURES_LOCK:
+        return dict(_FETCH_FAILURES)
+
+
+def reset_fetch_failures() -> None:
+    with _FETCH_FAILURES_LOCK:
+        _FETCH_FAILURES.clear()
+
+
 def fetch_failure_reason(exc: Exception) -> str:
     """Status-bearing failure tag for the annotation health record (W3.3 A.3)."""
     status = getattr(getattr(exc, "response", None), "status_code", None)

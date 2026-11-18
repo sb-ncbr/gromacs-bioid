@@ -50,6 +50,12 @@ export const CATALOG: Record<string, CatalogEntry> = {
     body: "The candidate structures could not be compared with your molecule, so their confidence is lower than usual.",
     action: "Treat these matches with caution.",
   },
+  annotation_fetch_failed: {
+    severity: "attention",
+    title: "Some database records could not be fetched",
+    body: "The matches are the same, but their confidence was computed without the record-quality part.",
+    action: "Usually temporary. Rerun later; fetched records are kept, so a rerun is quick.",
+  },
   signature_generator_failed: {
     severity: "info",
     title: "One chemical fingerprint could not be computed for {n} molecules",

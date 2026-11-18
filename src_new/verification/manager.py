@@ -1100,7 +1100,14 @@ class VerificationManager:
                 annotation_organism: str | None = None
                 if scorer:
                     try:
-                        quality = scorer.score(normalized_id, ident_type)
+                        # Shared between runs and pods (annotation_cache.py);
+                        # only real scores are stored.
+                        from . import annotation_cache
+                        _live = bool(getattr(cfg, "annotation_live_fetch", True))
+                        quality = annotation_cache.get(ident_type, normalized_id, _live)
+                        if quality is None:
+                            quality = scorer.score(normalized_id, ident_type)
+                            annotation_cache.put(ident_type, normalized_id, _live, quality)
                         if quality is not None:
                             annotation_score = quality.normalized_score if hasattr(quality, 'normalized_score') else quality.score
                             annotation_name = getattr(quality, "name", None)

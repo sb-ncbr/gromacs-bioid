@@ -6,7 +6,7 @@ import logging
 
 import requests
 
-from ..base import AnnotationQualityScorer, fetch_failure_reason
+from ..base import AnnotationQualityScorer, fetch_failure_reason, note_fetch_failure
 from ..models import AnnotationQuality
 
 logger = logging.getLogger("annotation")
@@ -86,6 +86,7 @@ class UniProtAnnotationScorer(AnnotationQualityScorer):
             # W3.3 A.3 (health record): tagged, status-carrying failure line.
             logger.warning("ann_fetch_failed service=uniprot id=%s reason=%s",
                            uniprot_id, fetch_failure_reason(exc))
+            note_fetch_failure("uniprot", fetch_failure_reason(exc))
             return None
 
         # G5 display metadata (best-effort; absent/{} payloads -> None).

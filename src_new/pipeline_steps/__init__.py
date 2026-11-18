@@ -1381,15 +1381,42 @@ def _identify_molecules(context):
     )
 
 
+_ANNOTATION_SERVICES = {"chebi": "ChEBI", "chembl": "ChEMBL", "uniprot": "UniProt", "pubchem": "PubChem"}
+
+
+def _record_annotation_fetch_failures(context) -> None:
+    """One annotation_fetch_failed warning per service whose annotation
+    records could not be fetched (2026-11-18): those matches' confidence
+    lacks the annotation term, so the run is incomplete (retryable)."""
+    from ..verification.base import fetch_failures
+    by_service: dict[str, dict[str, int]] = {}
+    for (service, reason), n in fetch_failures().items():
+        by_service.setdefault(service, {})[reason] = n
+    if not by_service:
+        return
+    context.results.set_data("verification/_meta/annotation_fetch_failures", by_service)
+    for service, reasons in sorted(by_service.items()):
+        total = sum(reasons.values())
+        why = ", ".join(f"{r} ×{n}" for r, n in sorted(reasons.items(), key=lambda x: -x[1]))
+        name = _ANNOTATION_SERVICES.get(service, service)
+        context.add_warning(
+            "annotation_fetch_failed",
+            f"{name}: {total} annotation record{'s' if total != 1 else ''} could not be fetched ({why}); "
+            "those matches' confidence was computed without the annotation term",
+            details={"service": f"{service}_annotation", "count": total, "reasons": reasons},
+        )
+
+
 def _verify_results(context):
     """Verify identification results with optional parallelism."""
     from ..executor.parallel import run_with_thread_pool
     from .workers import _verify_results_worker
-    from ..verification.base import clear_run_memo
+    from ..verification.base import clear_run_memo, reset_fetch_failures
     
     facade = context.get_value("facade")
     if not facade:
         context.fail("missing_facade", "No facade available for verification")
+    reset_fetch_failures()
     
     # W3.2 A7: fresh fetch memo per run (fetch results, including negative
     # ones, are memoized per (fetcher class, ident type, identifier) — the
@@ -1547,6 +1574,7 @@ def _verify_results(context):
         logger.warning("verify_results: confidence meta persist failed (additive only)",
                        exc_info=True)
 
+    _record_annotation_fetch_failures(context)
     if budget_hit:
         context.add_warning(
             "stage_time_budget",

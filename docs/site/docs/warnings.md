@@ -75,6 +75,20 @@ compared with it.
 
 **What to do:** treat these matches with caution; rerun if it matters.
 
+### annotation_fetch_failed
+
+**What happened:** BioID could not fetch some candidates' database records
+(ChEBI, ChEMBL, UniProt or PubChem) while checking them, because the
+service did not answer in time or reported an error. The message names the
+service and how many records were missing.
+
+**Results:** usable. The matches are the same, but their confidence was
+computed without the record-quality part, so it can differ slightly from a
+run where the records were available.
+
+**What to do:** usually temporary. Rerun later; records fetched once are
+kept, so a rerun is quick.
+
 ### signature_generator_failed
 
 **What happened:** one chemical description (fingerprint) of a molecule could

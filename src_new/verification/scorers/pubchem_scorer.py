@@ -8,7 +8,7 @@ import time
 
 import requests
 
-from ..base import AnnotationQualityScorer, fetch_failure_reason
+from ..base import AnnotationQualityScorer, fetch_failure_reason, note_fetch_failure
 from ..models import AnnotationQuality
 
 import logging
@@ -221,6 +221,7 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
                 self._remaining -= 1
                 logger.warning("ann_fetch_failed service=pubchem reason=%s url=%s",
                                fetch_failure_reason(exc), short_url)
+                note_fetch_failure("pubchem", fetch_failure_reason(exc))
                 return None
             if r.status_code == 429 or r.status_code >= 500:
                 if attempt < _PUG_RETRIES:
@@ -236,12 +237,15 @@ class PubChemAnnotationScorer(AnnotationQualityScorer):
                 logger.warning("ann_fetch_failed service=pubchem "
                                "reason=HTTP %d throttled tries=%d url=%s",
                                r.status_code, _PUG_RETRIES, short_url)
+                note_fetch_failure("pubchem", f"HTTP {r.status_code}")
                 return None
             self._remaining -= 1
             if r.status_code != 200:
                 logger.warning("ann_fetch_failed service=pubchem "
                                "reason=HTTP %d url=%s",
                                r.status_code, short_url)
+                if r.status_code >= 500 or r.status_code == 429:
+                    note_fetch_failure("pubchem", f"HTTP {r.status_code}")
                 return None
             try:
                 return r.json()

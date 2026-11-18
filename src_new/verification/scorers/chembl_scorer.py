@@ -6,7 +6,7 @@ import logging
 
 import requests
 
-from ..base import AnnotationQualityScorer, fetch_failure_reason
+from ..base import AnnotationQualityScorer, fetch_failure_reason, note_fetch_failure
 from ..models import AnnotationQuality
 
 logger = logging.getLogger("annotation")
@@ -57,6 +57,7 @@ class ChemblAnnotationScorer(AnnotationQualityScorer):
         except Exception as exc:
             logger.warning("ann_fetch_failed service=chembl id=%s reason=%s",
                            chembl_id, fetch_failure_reason(exc))
+            note_fetch_failure("chembl", fetch_failure_reason(exc))
             return None
         
         signals = []

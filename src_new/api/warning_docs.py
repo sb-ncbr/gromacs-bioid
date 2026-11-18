@@ -11,8 +11,8 @@ PAGE = "/documentation/warnings/"
 #: Codes with their own section (heading text = code = anchor).
 DOCUMENTED = frozenset({
     "identifier_resolver_failed", "stage_time_budget", "structure_search_unavailable",
-    "identification_groups_unresolved", "verification_failed", "signature_generator_failed",
-    "chemistry_skipped_size", "pbc_jumps_detected", "pbc_unwrap_applied", "pbc_unwrap_failed",
+    "identification_groups_unresolved", "verification_failed", "annotation_fetch_failed",
+    "signature_generator_failed", "chemistry_skipped_size", "pbc_jumps_detected", "pbc_unwrap_applied", "pbc_unwrap_failed",
     "pbc_unwrap_incomplete", "insufficient_bonds", "coords_rescaled_nm_to_angstrom",
     "coords_rescaled_unexpected", "geometry_scale_anomalous", "system_export_failed",
     "segment_export_failed",
