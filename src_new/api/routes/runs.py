@@ -2087,22 +2087,17 @@ async def get_run_queue(run_id: RunId) -> RunQueueResponse:
     position: Optional[int] = None
     ahead: Optional[int] = None
     if state == "queued":
-        runs_dir = get_runs_dir()
+        # The cached run index (re-reads only changed results.json files):
+        # reading every run's results here on each poll is the 2026-11-17
+        # outage pattern (slow NFS, thousands of campaign runs).
+        from src_new.api.run_index import summaries
         queued: List[tuple] = []
-        for entry in runs_dir.iterdir():
-            if not entry.is_dir():
+        for r in summaries(get_runs_dir()):
+            row = {"created_at": r["created_at"],
+                   "pipeline": {"status": r["status"], "started_at": r["started_at"]}}
+            if _queue_state_for(row) != "queued":
                 continue
-            results_path = entry / "results.json"
-            if not results_path.exists():
-                continue
-            try:
-                with open(results_path, "r", encoding="utf-8") as f:
-                    entry_data = json.load(f)
-            except (json.JSONDecodeError, IOError, OSError):
-                continue
-            if _queue_state_for(entry_data) != "queued":
-                continue
-            queued.append((entry_data.get("created_at") or "", entry.name))
+            queued.append((r["created_at"] or "", r["run_id"]))
         queued.sort(key=lambda item: item[0])
         for idx, (_created, rid) in enumerate(queued, start=1):
             if rid == run_id:
