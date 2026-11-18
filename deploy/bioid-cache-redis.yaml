@@ -1,10 +1,15 @@
 # Shared resolver cache (src_new/identification/shared_cache.py), 2026-11-17.
 #
 # Cache only: separate from the Celery broker (bat3-redis) so a full cache
-# can never evict the job queue. Memory-capped with LRU eviction, no
-# persistence (a restart just empties the cache). Workers find it through
+# can never evict the job queue. Workers and the API find it through
 # BAT3_SHARED_CACHE_URL=redis://bioid-cache-redis:6379/0; without that env
-# the layer is off.
+# the layer is off. Holds the shared resolver answers (30-day expiry), the
+# service measurements (48 h) and, since 2026-11-18, annotation scores with
+# NO expiry (kept until we decide on one). So:
+# - volatile-lru: under memory pressure only keys WITH an expiry are evicted;
+# - snapshot to the bioid-cache-redis-data volume hourly (and on shutdown),
+#   loaded again on start, so a restart keeps the cache;
+# - memory limit about 2x maxmemory: the snapshot forks the server.
 #
 #   kubectl -n ceitec-biodata-ns apply -f deploy/bioid-cache-redis.yaml
 #   kubectl -n ceitec-biodata-ns set env deploy/bat3-ui-worker deploy/bat3-ceitec-bat3-worker \
@@ -17,6 +22,7 @@ metadata:
   labels: {app: bioid-cache-redis}
 spec:
   replicas: 1
+  strategy: {type: Recreate}  # one server per snapshot file
   selector:
     matchLabels: {app: bioid-cache-redis}
   template:
@@ -31,20 +37,35 @@ spec:
       containers:
         - name: redis
           image: redis:8-alpine
-          args: ["redis-server", "--maxmemory", "768mb", "--maxmemory-policy", "allkeys-lru",
-                 "--save", "", "--appendonly", "no", "--timeout", "0"]
+          args: ["redis-server", "--maxmemory", "1536mb", "--maxmemory-policy", "volatile-lru",
+                 "--dir", "/data", "--save", "3600 1", "--appendonly", "no", "--timeout", "0"]
           ports:
             - containerPort: 6379
           resources:
             requests: {cpu: 50m, memory: 128Mi}
-            limits: {cpu: 500m, memory: 1Gi}
+            limits: {cpu: 500m, memory: 3Gi}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: {drop: ["ALL"]}
             seccompProfile: {type: RuntimeDefault}
+          volumeMounts:
+            - {name: data, mountPath: /data}
           readinessProbe:
             exec: {command: ["redis-cli", "ping"]}
             periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: bioid-cache-redis-data}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bioid-cache-redis-data
+  labels: {app: bioid-cache-redis}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: nfs-csi
+  resources: {requests: {storage: 5Gi}}
 ---
 apiVersion: v1
 kind: Service

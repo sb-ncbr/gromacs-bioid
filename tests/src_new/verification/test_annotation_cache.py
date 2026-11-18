@@ -18,6 +18,7 @@ class FakeRedis:
         return self.kv.get(key)
 
     def set(self, key, value, ex=None):
+        assert ex is None, "annotation scores are kept with no expiry"
         self.kv[key] = value
 
 
@@ -28,7 +29,7 @@ def redis(monkeypatch):
     return r
 
 
-def test_scores_round_trip_per_mode(redis):
+def test_scores_round_trip_per_mode_without_expiry(redis):
     q = AnnotationQuality(database="ChEBI", score=75.0, signals=["name", "smiles"], name="water")
     annotation_cache.put("CHEBI_ID", "15377", True, q)
     assert annotation_cache.get("CHEBI_ID", "15377", True) == q

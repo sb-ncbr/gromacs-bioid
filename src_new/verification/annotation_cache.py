@@ -4,8 +4,11 @@ Each annotation scorer kept successful scores only in memory, and every run
 is a new process: the ChEBI entry of water was fetched again in every run.
 During an EBI slowdown (2026-11-18: ChEBI answering in 27-48 s or 504) each
 run then waited 10 s per entry and scored those matches without the
-annotation term. Successful scores are now kept in the cache-only Redis
-(BAT3_SHARED_CACHE_URL) for 30 days, like the shared resolver cache.
+annotation term. Successful scores are now kept in the cache Redis
+(BAT3_SHARED_CACHE_URL) with no expiry: the cache grows (owner's decision,
+2026-11-18; expiry once traffic grows). The cache Redis evicts only keys
+with an expiry (volatile-lru) and snapshots to disk, so these survive both
+memory pressure and restarts (deploy/bioid-cache-redis.yaml).
 
 - Key: identifier type, identifier and whether live fetches were allowed
   (offline and live scores of the same entry can differ).
@@ -27,7 +30,6 @@ from .models import AnnotationQuality
 log = logging.getLogger(__name__)
 
 PREFIX = "bioid:ann:v1"
-TTL_S = 30 * 86400
 
 _client = None
 _off_until = 0.0
@@ -80,6 +82,6 @@ def put(ident_type: str, identifier: str, live_fetch: bool, quality: Any) -> Non
         return
     try:
         client.set(_key(ident_type, identifier, live_fetch),
-                   json.dumps(dataclasses.asdict(quality), default=str), ex=TTL_S)
+                   json.dumps(dataclasses.asdict(quality), default=str))
     except Exception as exc:
         _trip(exc)
