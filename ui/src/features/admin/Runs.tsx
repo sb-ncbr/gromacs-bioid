@@ -223,9 +223,15 @@ function QueueCell({ run }: { run: AdminRun }) {
   );
 }
 
-function ActiveRuns({ runs, nowMs }: { runs: AdminRun[]; nowMs: number }) {
-  if (runs.length === 0) return <Empty>No runs in flight.</Empty>;
+/** Long lists show this many rows until "Show all". */
+const FIRST_RECENT = 15;
+
+function ActiveRuns({ runs: allRuns, nowMs }: { runs: AdminRun[]; nowMs: number }) {
+  const [all, setAll] = useState(false);
+  if (allRuns.length === 0) return <Empty>No runs in flight.</Empty>;
+  const runs = all ? allRuns : allRuns.slice(0, FIRST_RECENT);
   return (
+    <>
     <Table>
       <TableHeader>
         <TableRow>
@@ -267,6 +273,12 @@ function ActiveRuns({ runs, nowMs }: { runs: AdminRun[]; nowMs: number }) {
         })}
       </TableBody>
     </Table>
+    {allRuns.length > FIRST_RECENT && (
+      <button type="button" className="mt-2 text-xs text-(--vm-accent) hover:underline" onClick={() => setAll(!all)}>
+        {all ? `Show the first ${FIRST_RECENT}` : `Show all ${allRuns.length} runs in flight`}
+      </button>
+    )}
+    </>
   );
 }
 
@@ -289,9 +301,12 @@ function RecentFailures({ runs, nowMs }: { runs: AdminRun[]; nowMs: number }) {
   );
 }
 
-function RecentRuns({ runs, nowMs }: { runs: AdminRun[]; nowMs: number }) {
-  if (runs.length === 0) return <Empty>No runs yet.</Empty>;
+function RecentRuns({ runs: allRuns, nowMs }: { runs: AdminRun[]; nowMs: number }) {
+  const [all, setAll] = useState(false);
+  if (allRuns.length === 0) return <Empty>No runs yet.</Empty>;
+  const runs = all ? allRuns : allRuns.slice(0, FIRST_RECENT);
   return (
+    <>
     <Table>
       <TableHeader>
         <TableRow>
@@ -348,6 +363,12 @@ function RecentRuns({ runs, nowMs }: { runs: AdminRun[]; nowMs: number }) {
         ))}
       </TableBody>
     </Table>
+    {allRuns.length > FIRST_RECENT && (
+      <button type="button" className="mt-2 text-xs text-(--vm-accent) hover:underline" onClick={() => setAll(!all)}>
+        {all ? `Show the latest ${FIRST_RECENT}` : `Show all ${allRuns.length}`}
+      </button>
+    )}
+    </>
   );
 }
 

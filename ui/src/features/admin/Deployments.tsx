@@ -163,6 +163,7 @@ function DeploymentCard({ d, nowMs }: { d: DeploymentInfo | DeploymentError; now
   }
   const noActions = !d.restartable && !d.scale;
   const healthy = d.replicas != null && d.ready >= d.replicas;
+  const troubled = d.pods.some((p) => p.waiting || (!p.ready && !p.deleting));
   return (
     <Card className="min-w-0 justify-start gap-0 py-0">
       <div className="space-y-2 border-b border-(--vm-line-2) px-4 py-3">
@@ -211,11 +212,18 @@ function DeploymentCard({ d, nowMs }: { d: DeploymentInfo | DeploymentError; now
         {d.pods.length === 0 ? (
           <Empty>No pods.</Empty>
         ) : (
-          <ul className="divide-y divide-(--vm-line-2)" aria-label={`Pods of ${d.name}`}>
-            {d.pods.map((p) => (
-              <PodRow key={p.name} pod={p} canRestart={!p.name.startsWith("bat3-redis-")} nowMs={nowMs} />
-            ))}
-          </ul>
+          <details open={troubled}>
+            <summary className="cursor-pointer text-xs text-(--vm-muted) hover:text-(--vm-fg)">
+              {d.pods.length} pod{d.pods.length === 1 ? "" : "s"}
+              {troubled ? " · some need attention" : ""}
+              {d.pods.some((p) => p.restarts > 0) ? ` · ${d.pods.filter((p) => p.restarts > 0).length} restarted` : ""}
+            </summary>
+            <ul className="mt-1 divide-y divide-(--vm-line-2)" aria-label={`Pods of ${d.name}`}>
+              {d.pods.map((p) => (
+                <PodRow key={p.name} pod={p} canRestart={!p.name.startsWith("bat3-redis-")} nowMs={nowMs} />
+              ))}
+            </ul>
+          </details>
         )}
       </div>
     </Card>

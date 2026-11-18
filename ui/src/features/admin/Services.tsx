@@ -50,10 +50,15 @@ function NcbiLine({ s }: { s: ServicesSummary }) {
   );
 }
 
+const FIRST_ROWS = 12;
+
 function ServiceTable({ s, window, stage }: { s: ServicesSummary; window: Window; stage: StageFilter }) {
-  const rows = rowsFor(window === "30m" ? s.last_30m : s.last_24h, stage);
-  if (rows.length === 0) return <Empty>No calls in this window.</Empty>;
+  const [all, setAll] = useState(false);
+  const allRows = rowsFor(window === "30m" ? s.last_30m : s.last_24h, stage);
+  if (allRows.length === 0) return <Empty>No calls in this window.</Empty>;
+  const rows = all ? allRows : allRows.slice(0, FIRST_ROWS);
   return (
+    <>
     <Table>
       <TableHeader>
         <TableRow>
@@ -96,6 +101,12 @@ function ServiceTable({ s, window, stage }: { s: ServicesSummary; window: Window
         })}
       </TableBody>
     </Table>
+    {allRows.length > FIRST_ROWS && (
+      <button type="button" className="mt-2 text-xs text-(--vm-accent) hover:underline" onClick={() => setAll(!all)}>
+        {all ? "Show the first 12" : `Show all ${allRows.length} services`}
+      </button>
+    )}
+    </>
   );
 }
 

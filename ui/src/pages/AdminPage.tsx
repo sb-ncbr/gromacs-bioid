@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Label, Skeleton, Switch } from "@e-infra/design-system";
+import { Button, Card, Label, Skeleton, Switch, Tabs, TabsContent, TabsList, TabsTrigger } from "@e-infra/design-system";
 import { LogOut, RefreshCw, TriangleAlert } from "lucide-react";
 import { ApiError, apiErrorMessage } from "../lib/api/client";
 import { adminApi, isSectionError, isUnauthorized, loadSession, saveSession, type AdminSession } from "../lib/api/admin";
@@ -21,6 +21,8 @@ import { AdminProvider, OVERVIEW_KEY } from "../features/admin/session";
 import { TrafficSection } from "../features/admin/Traffic";
 import { ChecksSection, ReportsSection } from "../features/admin/ChecksReports";
 import { ServicesSection } from "../features/admin/Services";
+import { OverviewTab } from "../features/admin/OverviewTab";
+import { attention, TABS, tabFromHash, type TabId } from "../features/admin/overview";
 
 const REFRESH_MS = 5_000;
 
@@ -33,8 +35,24 @@ function useNow(intervalMs: number): number {
   return now;
 }
 
+/** The open tab, kept in the URL hash (/admin#services) for links and reloads. */
+function useTab(): [TabId, (t: TabId) => void] {
+  const [tab, setTabState] = useState<TabId>(() => tabFromHash(window.location.hash));
+  useEffect(() => {
+    const onHash = () => setTabState(tabFromHash(window.location.hash));
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  const setTab = useCallback((t: TabId) => {
+    setTabState(t);
+    window.history.replaceState(null, "", t === "overview" ? window.location.pathname : `#${t}`);
+  }, []);
+  return [tab, setTab];
+}
+
 function Dashboard({ session, signOut }: { session: AdminSession; signOut: (message?: string) => void }) {
   const [live, setLive] = useState(true);
+  const [tab, setTab] = useTab();
   const now = useNow(1_000);
   const overview = useQuery({
     queryKey: [...OVERVIEW_KEY, session.token],
@@ -135,22 +153,52 @@ function Dashboard({ session, signOut }: { session: AdminSession; signOut: (mess
         ) : (
           <>
             <TopStrip overview={data} nowMs={now} />
-            <TrafficSection live={live} />
-            <div className="grid items-start gap-4 lg:grid-cols-2">
-              <ChecksSection live={live} nowMs={now} />
-              <ReportsSection live={live} nowMs={now} />
-            </div>
-            <ServicesSection services={data.services} nowMs={now} />
-            <QueuesWorkersSection overview={data} nowMs={now} />
-            <DeploymentsSection deployments={data.deployments} nowMs={now} />
-            <RunsSection runs={data.runs} nowMs={now} />
-            <div className="grid items-start gap-4 lg:grid-cols-2">
-              <RetentionSection retention={data.retention} runs={data.runs} nowMs={now} />
-              <div className="grid gap-4">
-                <StorageSection storage={data.storage} />
-                <LimitsSection limits={data.limits} />
-              </div>
-            </div>
+            <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)}>
+              <TabsList className="h-auto flex-wrap justify-start">
+                {TABS.map((t) => {
+                  const n = t.id === "overview" ? attention(data, now).filter((a) => a.tone === "error").length : 0;
+                  return (
+                    <TabsTrigger key={t.id} value={t.id}>
+                      {t.label}
+                      {n > 0 && <span className="ml-1.5 rounded-full bg-(--vm-error-bg) px-1.5 text-xs text-(--vm-error)">{n}</span>}
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+              <TabsContent value="overview" className="mt-4">
+                <OverviewTab overview={data} nowMs={now} onTab={setTab} />
+              </TabsContent>
+              <TabsContent value="queues" className="mt-4">
+                <QueuesWorkersSection overview={data} nowMs={now} />
+              </TabsContent>
+              <TabsContent value="services" className="mt-4">
+                <ServicesSection services={data.services} nowMs={now} />
+              </TabsContent>
+              <TabsContent value="runs" className="mt-4">
+                <RunsSection runs={data.runs} nowMs={now} />
+              </TabsContent>
+              <TabsContent value="deployments" className="mt-4">
+                <DeploymentsSection deployments={data.deployments} nowMs={now} />
+              </TabsContent>
+              <TabsContent value="checks" className="mt-4">
+                <div className="grid items-start gap-4 lg:grid-cols-2">
+                  <ChecksSection live={live} nowMs={now} />
+                  <ReportsSection live={live} nowMs={now} />
+                </div>
+              </TabsContent>
+              <TabsContent value="storage" className="mt-4">
+                <div className="grid items-start gap-4 lg:grid-cols-2">
+                  <RetentionSection retention={data.retention} runs={data.runs} nowMs={now} />
+                  <div className="grid gap-4">
+                    <StorageSection storage={data.storage} />
+                    <LimitsSection limits={data.limits} />
+                  </div>
+                </div>
+              </TabsContent>
+              <TabsContent value="traffic" className="mt-4">
+                <TrafficSection live={live} />
+              </TabsContent>
+            </Tabs>
           </>
         )}
       </div>
