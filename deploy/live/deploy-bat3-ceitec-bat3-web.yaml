@@ -27,7 +27,7 @@ spec:
         app: bat3-ceitec-bat3-web
     spec:
       containers:
-      - image: cerit.io/tomsko/bat3-frontend:w42-checks
+      - image: cerit.io/tomsko/bat3-frontend:w48-annotation
         imagePullPolicy: Always
         name: web
         ports:

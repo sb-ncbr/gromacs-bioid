@@ -16,10 +16,7 @@ spec:
     matchLabels:
       app: bioid-cache-redis
   strategy:
-    rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
-    type: RollingUpdate
+    type: Recreate
   template:
     metadata:
       labels:
@@ -29,11 +26,13 @@ spec:
       - args:
         - redis-server
         - --maxmemory
-        - 768mb
+        - 1536mb
         - --maxmemory-policy
-        - allkeys-lru
+        - volatile-lru
+        - --dir
+        - /data
         - --save
-        - ''
+        - 3600 1
         - --appendonly
         - 'no'
         - --timeout
@@ -56,7 +55,7 @@ spec:
         resources:
           limits:
             cpu: 500m
-            memory: 1Gi
+            memory: 3Gi
           requests:
             cpu: 50m
             memory: 128Mi
@@ -69,6 +68,9 @@ spec:
             type: RuntimeDefault
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /data
+          name: data
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
@@ -78,3 +80,7 @@ spec:
         runAsNonRoot: true
         runAsUser: 999
       terminationGracePeriodSeconds: 30
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: bioid-cache-redis-data
