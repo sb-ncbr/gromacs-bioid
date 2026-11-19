@@ -25,6 +25,7 @@ nav:
   - Using BioID:
       - Web application: index.md
       - REST API: rest-api.md
+      - API reference: api-reference.md
       - Databases: databases.md
       - MCP server (AI assistants): mcp.md
       - results.json reference: results-json.md

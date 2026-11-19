@@ -333,7 +333,7 @@ async def create_run(
                 overrides_dict = json.loads(config_json)
             except json.JSONDecodeError as e:
                 raise HTTPException(status_code=422, detail=f"Invalid config JSON: {e}")
-            overrides = checked_overrides(overrides_dict, base)
+            overrides = checked_overrides(overrides_dict, base, keep_defaults=True)
         config = resolve_run_config(preset or None, overrides)
     except ConfigOverrideError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -422,7 +422,7 @@ async def create_run(
         run_id=run_id,
         status="queued",
         message=f"Run {run_id} queued successfully" + (f". Note: {input_note}" if input_note else ""),
-        results_url=f"/runs/{run_id}/status",
+        results_url=f"/api/v1/runs/{run_id}/status",
         owner_token=owner_token,
     )
 
@@ -457,7 +457,7 @@ async def list_runs(request: Request, mine: int = Query(1)) -> RunListResponse:
         for r in summaries(runs_dir)
         if same_submitter(r["_pipeline"], requester_ip)
     ]
-
+    runs.sort(key=lambda r: r.created_at or "", reverse=True)
     return RunListResponse(runs=runs)
 
 #: finished runs (a rerun may link them to the new run)
@@ -701,22 +701,12 @@ logger = logging.getLogger(__name__)
 
 
 def _parse_iso_datetime(dt_str: str) -> datetime:
-    """Parse ISO 8601 datetime string, handling various formats."""
-    # Try common formats
-    formats = [
-        "%Y-%m-%dT%H:%M:%S.%f%z",
-        "%Y-%m-%dT%H:%M:%S%z",
-        "%Y-%m-%dT%H:%M:%S.%fZ",
-        "%Y-%m-%dT%H:%M:%SZ",
-        "%Y-%m-%dT%H:%M:%S.%f",
-        "%Y-%m-%dT%H:%M:%S",
-    ]
-    for fmt in formats:
-        try:
-            return datetime.strptime(dt_str, fmt)
-        except ValueError:
-            continue
-    raise ValueError(f"Unable to parse datetime: {dt_str}")
+    """Parse an ISO 8601 date or date-time; without a zone it is UTC.
+
+    Always timezone-aware, so stored and requested times compare (a naive
+    ?since= used to raise TypeError: 500)."""
+    dt = datetime.fromisoformat(dt_str.strip().replace(" ", "+"))  # "+" arrives as " " when not URL-encoded
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 @router.get("/{run_id}/status", response_model=RunStatusResponse)
@@ -1058,15 +1048,17 @@ async def get_molecules(run_id: RunId) -> MoleculeSummaryResponse:
             segment_names=mol_info.get("segment_names", []),
             molecule_type=mol_info.get("molecule_type"),
             atom_count=mol_info.get("atom_count", 0),
-            residue_count=mol_info.get("residue_count", 0),
+            # fragments store the residues as indices, not a count (always 0 before)
+            residue_count=mol_info.get("residue_count") or len(mol_info.get("residue_indices") or []),
             smiles=mol_info.get("smiles"),
         )
     
     # Get type counts
     type_counts = fragments_data.get("type_counts", {})
     
-    # Get total fragment count
-    total_fragment_count = fragments_data.get("total_count", 0)
+    # Molecules counting every copy (stored as total_fragment_count; the
+    # old "total_count" key never existed, so this was always 0)
+    total_fragment_count = fragments_data.get("total_fragment_count", fragments_data.get("total_count", 0))
     
     # Get segments list — try fragments/segments list first, then universe/segment_list
     segments = []
@@ -1263,19 +1255,13 @@ async def get_molecule_info(run_id: RunId, segment: str) -> MoleculeInfoResponse
         atom_count = props.get("atoms_per_copy", 0)
         residue_count = props.get("residue_count", 0)
     
-    # Calculate confidence from verification data
-    confidence = None
-    if segment in verification_data:
-        verified_hits = verification_data[segment].get("verified_hits", [])
-        if verified_hits:
-            # Get highest final_confidence among verified hits
-            confidences = [h.get("final_confidence") for h in verified_hits if h.get("final_confidence") is not None]
-            if confidences:
-                confidence = max(confidences)
-    
-    # Name is the segment id itself
-    name = segment
-    
+    # Confidence and name as the results page and results.csv show them:
+    # the best verified hit (none for exact answers such as ions and water).
+    from src_new.api.best_hit import molecule_result
+    seg_ver = verification_data.get(segment) or {}
+    confidence = molecule_result(seg_ver.get("verified_hits") or [])["confidence"]
+    name = segment_display_name(segment, segment_resname(data.get("data", {}) or {}, segment))
+
     return MoleculeInfoResponse(
         segment=segment,
         name=name,
@@ -1427,12 +1413,9 @@ async def get_identifiers(run_id: RunId, segment: Optional[str] = None) -> Ident
     # Traverse nested structure: data.identifiers.{segment}.{generator}.{resolver}
     all_hits = []
     all_attempted_resolvers = set()
-    primary_segment = ""
-    seen_keys = set()  # For deduplication by (identifier, ident_type, resolver_name)
+    seen_keys = set()  # For deduplication by (segment, identifier, ident_type, resolver_name)
     
     for seg_name, seg_data in identifiers_data.items():
-        if not primary_segment:
-            primary_segment = seg_name
         
         # Collect attempted resolvers from all generators
         seg_attempted = set()
@@ -1501,7 +1484,7 @@ async def get_identifiers(run_id: RunId, segment: Optional[str] = None) -> Ident
                         coverage_percent = metadata.get("coverage_p") * 100.0
                     
                     # Deduplicate by (identifier, ident_type, resolver_name)
-                    dedup_key = (identifier, ident_type, resolver_name)
+                    dedup_key = (seg_name, identifier, ident_type, resolver_name)
                     if dedup_key in seen_keys:
                         continue
                     seen_keys.add(dedup_key)
@@ -1526,6 +1509,8 @@ async def get_identifiers(run_id: RunId, segment: Optional[str] = None) -> Ident
     warnings = user_warnings(data.get("warnings", []))
     for warning in warnings:
         if warning.get("code") == "identifier_resolver_failed":
+            if segment is not None and (warning.get("details") or {}).get("segment") not in (None, segment):
+                continue
             message = warning.get("message", "")
             # Parse message of the form "{resolver_name} ({generator_name}): {error}"
             match = re.match(r"^([^()]+)\s*\(([^)]+)\):\s*(.+)$", message)
@@ -1542,14 +1527,14 @@ async def get_identifiers(run_id: RunId, segment: Optional[str] = None) -> Ident
                         message=error_msg,
                     ))
     
-    # Use first segment name or "unknown"
-    seg = primary_segment or "unknown"
+    # The molecule asked for; None when the hits of every molecule are listed
+    seg = segment
     
     return IdentifiersResponse(
         run_id=run_id,
         segment=seg,
         hits=all_hits,
-        attempted_resolvers=list(all_attempted_resolvers),
+        attempted_resolvers=sorted(all_attempted_resolvers),
         failed_resolvers=failed_resolvers,
     )
 
@@ -1566,20 +1551,15 @@ async def get_verification(run_id: RunId, segment: Optional[str] = None) -> Veri
     if segment is not None:
         verification_data = {segment: verification_data.get(segment, {})} if segment in verification_data else {}
     
-    # For now, return data for the first segment or aggregate all
     all_hits = []
-    primary_segment = ""
     
     for seg_name, seg_data in verification_data.items():
         # v3.143 (D-17): `_meta` (written first by verify_all) is bookkeeping,
-        # not a segment — it must never become the "primary segment" and its
-        # keys must never leak into the hit list.
+        # not a segment: its keys must never leak into the hit list.
         if seg_name == "_meta":
             continue
         if not isinstance(seg_data, dict):
             continue
-        if not primary_segment:
-            primary_segment = seg_name
         
         # Get verified hits
         verified_hits = seg_data.get("verified_hits", [])
@@ -1614,8 +1594,8 @@ async def get_verification(run_id: RunId, segment: Optional[str] = None) -> Veri
                 organism=hit.get("organism"),
             ))
     
-    # Use first segment name or "unknown"
-    seg = primary_segment or "unknown"
+    # The molecule asked for; None when the hits of every molecule are listed
+    seg = segment
     
     return VerificationResponse(
         run_id=run_id,
@@ -1652,17 +1632,17 @@ async def get_run_logs(run_id: RunId, type: str = "normal") -> PlainTextResponse
 
 @router.get("/{run_id}/files", response_model=RunFilesResponse)
 async def get_run_files(run_id: RunId) -> RunFilesResponse:
-    """Get all files in a run directory (recursive), excluding hidden files."""
-    
-    
-    run_dir = get_runs_dir() / run_id
-    
-    if not run_dir.exists():
+    """Get all files in a run directory (recursive), excluding hidden files.
+
+    Only real runs (the runs directory also holds _settings, _reports,
+    _expired, ...: none of that is listed)."""
+    run_dir = safe_run_dir(get_runs_dir(), run_id)
+    if not (run_dir / "results.json").is_file():
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
-    
+
     files = []
     for f in run_dir.rglob('*'):
-        if f.is_file() and not f.name.startswith('.'):
+        if f.is_file() and not any(part.startswith('.') for part in f.relative_to(run_dir).parts):
             files.append(str(f.relative_to(run_dir)))
     
     return RunFilesResponse(run_id=run_id, files=sorted(files))
@@ -1724,7 +1704,7 @@ def _extract_pdb_signature(
 
 @router.get("/{run_id}/download/topology-less-pdb")
 async def download_topology_less_pdb(
-    run_id: str,
+    run_id: RunId,
     segment: Optional[str] = None,
 ) -> PlainTextResponse:
     """
@@ -1750,7 +1730,7 @@ async def download_topology_less_pdb(
 
 @router.get("/{run_id}/download/ca-only-pdb")
 async def download_ca_only_pdb(
-    run_id: str,
+    run_id: RunId,
     segment: Optional[str] = None,
 ) -> PlainTextResponse:
     """
@@ -1895,8 +1875,11 @@ def _create_single_rerun(old_run_dir: Path, creator_ip: Optional[str] = None,
         initial_results["pipeline"]["creator_ip_hash"] = ip_hash(creator_ip)
     owner_token, initial_results["pipeline"]["owner_token_sha256"] = new_owner_token()
     initial_results["pipeline"]["retention"] = {"policy": "default"}
-    if preset:
-        initial_results["pipeline"]["preset"] = preset
+    # The preset the new run stands for: the one asked for, else the old
+    # run's (a rerun of a Deep rerun is Deep too, and keeps NCBI on)
+    recorded_preset = preset or old_data.get("pipeline", {}).get("preset")
+    if recorded_preset:
+        initial_results["pipeline"]["preset"] = recorded_preset
     from src_new import retries
     # The old run's queue for its owner; anyone else reruns on the web queue
     # (the repository queue needs a token).

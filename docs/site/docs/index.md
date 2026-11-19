@@ -84,11 +84,10 @@ every database hit and the run log.
 
 ## REST API
 
-Everything the web application does is available over HTTP. The interactive
-reference (Swagger) is at
-[/docs](https://bioid-ceitec.dyn.cloud.e-infra.cz/docs); the
-[REST API](rest-api.md) page walks through submitting, polling, reading the
-results, settings, limits and error codes.
+Everything the web application does is available over HTTP. The
+[REST API](rest-api.md) guide walks through submitting, polling, reading the
+results, settings, limits and error codes; the [API reference](api-reference.md)
+lists every endpoint with real examples, and lets you try them.
 
 ```bash
 BIOID=https://bioid-ceitec.dyn.cloud.e-infra.cz/api/v1

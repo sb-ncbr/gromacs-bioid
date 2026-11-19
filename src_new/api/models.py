@@ -10,35 +10,35 @@ from pydantic import BaseModel, Field
 class PipelineStatusResponse(BaseModel):
     """Response model for pipeline status."""
 
-    run_id: str = Field(..., description="Unique run identifier")
-    pipeline_name: str = Field(..., description="Name of the pipeline")
-    status: str = Field(..., description="Pipeline status: created/running/success/failed")
+    run_id: str = Field(..., description="The run id")
+    pipeline_name: str = Field(..., description="Always BAT3")
+    status: str = Field(..., description="queued, running, success, failed or cancelled")
     started_at: Optional[str] = Field(None, description="ISO 8601 timestamp when pipeline started")
     finished_at: Optional[str] = Field(None, description="ISO 8601 timestamp when pipeline finished")
-    input_kind: Optional[str] = Field(None, description="Type of input data")
-    input_files: Optional[Dict[str, str]] = Field(None, description="Input files mapping")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Pipeline metadata")
+    input_kind: Optional[str] = Field(None, description="How the input was read: tpr, gro, amber, charmm, lammps, pdb, cif, ...")
+    input_files: Optional[Dict[str, str]] = Field(None, description="The input files by role (topology, coordinates, ...)")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Working directories on the server")
 
 
 class TaskInfo(BaseModel):
     """Information about a single task in the pipeline."""
 
-    task_id: str = Field(..., description="Task identifier")
-    name: str = Field(..., description="Task name")
+    task_id: str = Field(..., description="Stage id, e.g. load_simulation, identify_molecules")
+    name: str = Field(..., description="Stage name for display")
     status: str = Field(..., description="Task status: pending/running/success/failed/warning/skipped")
     started_at: Optional[str] = Field(None, description="ISO 8601 timestamp when task started")
     finished_at: Optional[str] = Field(None, description="ISO 8601 timestamp when task finished")
-    summary: Dict[str, Any] = Field(default_factory=dict, description="Task summary data")
-    artifacts: List[str] = Field(default_factory=list, description="List of artifact UUIDs")
+    summary: Dict[str, Any] = Field(default_factory=dict, description="Stage results in brief (counts, choices made)")
+    artifacts: List[str] = Field(default_factory=list, description="Names of the results this stage stored")
 
 
 class WarningItem(BaseModel):
     """A warning recorded during pipeline execution."""
 
-    code: str = Field(..., description="Warning code")
+    code: str = Field(..., description="Stable code; explained at docs_url")
     message: str = Field(..., description="Warning message")
-    step_id: Optional[str] = Field(None, description="Task/step ID that generated the warning")
-    details: Dict[str, Any] = Field(default_factory=dict, description="Additional warning details")
+    step_id: Optional[str] = Field(None, description="Stage that recorded it")
+    details: Dict[str, Any] = Field(default_factory=dict, description="Context, often segment (the molecule) and service (the database or search)")
     recorded_at: Optional[str] = Field(None, description="ISO 8601 timestamp when warning was recorded")
     docs_url: Optional[str] = Field(None, description="Path on the BioID host of the documentation section explaining this code")
 
@@ -48,10 +48,10 @@ class ErrorItem(BaseModel):
 
     code: str = Field(..., description="Error code")
     message: str = Field(..., description="Error message")
-    step_id: Optional[str] = Field(None, description="Task/step ID that generated the error")
-    details: Dict[str, Any] = Field(default_factory=dict, description="Additional error details")
+    step_id: Optional[str] = Field(None, description="Stage that recorded it")
+    details: Dict[str, Any] = Field(default_factory=dict, description="Context, often segment and service")
     critical: bool = Field(default=False, description="Whether this is a critical error")
-    exception_type: Optional[str] = Field(None, description="Type of exception if applicable")
+    exception_type: Optional[str] = Field(None, description="Exception class, for bug reports")
     recorded_at: Optional[str] = Field(None, description="ISO 8601 timestamp when error was recorded")
     docs_url: Optional[str] = Field(None, description="Path on the BioID host of the documentation section explaining this code")
 
@@ -78,8 +78,8 @@ class RunStageProgress(BaseModel):
     are excluded and keep the UI's own not_searched rendering.
     """
 
-    molecules_done: int = Field(..., description="Segments with identifiers recorded")
-    molecules_total: int = Field(..., description="Segments the pipeline identified")
+    molecules_done: int = Field(..., description="Molecules whose database searches have finished")
+    molecules_total: int = Field(..., description="Molecules in the system")
     per_segment: Dict[str, str] = Field(
         default_factory=dict,
         description="waiting|searching|searched per segment name",
@@ -87,7 +87,7 @@ class RunStageProgress(BaseModel):
 
 
 class RetentionInfo(BaseModel):
-    """How long a run is kept (2026-11-17)."""
+    """How long a run is kept."""
 
     policy: str = Field(..., description="default, days or preserve")
     days: Optional[int] = Field(None, description="Retention period in days (null when preserved)")
@@ -111,7 +111,7 @@ class RetentionChange(BaseModel):
 
 
 class IncompleteItem(BaseModel):
-    """Answers a run lacks for a reason another attempt could fix (2026-11-18)."""
+    """Lookups a run lacks for a reason another attempt could fix (POST /rerun repeats them)."""
 
     code: str = Field(..., description="Warning code that records the gap")
     service: str = Field(..., description="The database, service or stage that failed")
@@ -143,7 +143,7 @@ class AttemptInfo(BaseModel):
 class RunStatusResponse(BaseModel):
     """Full run status response."""
 
-    run_id: str = Field(..., description="Unique run identifier")
+    run_id: str = Field(..., description="The run id")
     pipeline: PipelineStatusResponse = Field(..., description="Pipeline status information")
     tasks: List[TaskInfo] = Field(default_factory=list, description="List of task information")
     warnings: List[WarningItem] = Field(default_factory=list, description="List of warnings")
@@ -171,27 +171,27 @@ class LoadingAttemptInfo(BaseModel):
     strategy: str = Field(..., description="Loading strategy name")
     success: bool = Field(..., description="Whether the attempt succeeded")
     error: Optional[str] = Field(None, description="Error message if failed")
-    error_code: Optional[str] = Field(None, description="Structured error code if failed (bughunt BH-014)")
+    error_code: Optional[str] = Field(None, description="Stable code of the failure, if it failed")
 
 
 class LoadingInfoResponse(BaseModel):
     """Response model for loading information."""
 
-    run_id: str = Field(..., description="Unique run identifier")
-    input_kind: Optional[str] = Field(None, description="Type of input data")
+    run_id: str = Field(..., description="The run id")
+    input_kind: Optional[str] = Field(None, description="How the input was read: tpr, gro, amber, charmm, lammps, pdb, cif, ...")
     selected_strategy: Optional[str] = Field(None, description="Selected loading strategy")
     topology_files: List[str] = Field(default_factory=list, description="Topology files found")
     attempts: List[LoadingAttemptInfo] = Field(default_factory=list, description="Loading attempts")
     final_strategy: Optional[str] = Field(None, description="Final successful strategy")
     success: bool = Field(default=False, description="Whether loading succeeded")
     warnings: List[str] = Field(default_factory=list, description="Loading warnings")
-    failure_summary: Optional[dict] = Field(None, description="Structured failure reason (bughunt BH-014): reason, message, details")
+    failure_summary: Optional[dict] = Field(None, description="Why loading failed: reason, message, details (null when it worked)")
 
 
 class MoleculeInstanceInfo(BaseModel):
     """Information about a molecule instance."""
 
-    segment_ids: List[str] = Field(default_factory=list, description="Segment IDs")
+    segment_ids: List[str] = Field(default_factory=list, description="Segment ids of the copies")
     # v3.143 (BACKEND_GAPS G7): additive — the full segment list of the
     # unique group (all identical instances, e.g. chains A–D), as stored
     # under fragments/unique/<key>/segment_names. segment_ids remains the
@@ -207,13 +207,13 @@ class MoleculeInstanceInfo(BaseModel):
 class MoleculeSummaryResponse(BaseModel):
     """Response model for molecule summary."""
 
-    run_id: str = Field(..., description="Unique run identifier")
+    run_id: str = Field(..., description="The run id")
     unique_molecules: Dict[str, MoleculeInstanceInfo] = Field(
         default_factory=dict, description="Unique molecules by key"
     )
-    type_counts: Dict[str, int] = Field(default_factory=dict, description="Counts by molecule type")
-    total_fragment_count: int = Field(default=0, description="Total number of fragments")
-    segments: List[str] = Field(default_factory=list, description="List of segment names")
+    type_counts: Dict[str, int] = Field(default_factory=dict, description="Number of distinct molecules per type (protein, nucleic, small_molecule, lipid, glycan, ion, water)")
+    total_fragment_count: int = Field(default=0, description="Number of molecules counting every copy (62 waters count 62)")
+    segments: List[str] = Field(default_factory=list, description="The molecules, by segment name (use these with ?segment=)")
     segment_meta: Optional[Dict[str, Any]] = Field(
         default=None, description="Metadata for each segment (type, atom_count, etc.)"
     )
@@ -229,9 +229,9 @@ class RenderSegmentSelector(BaseModel):
     virtual minority segments whose atoms share the parent
     ``auth_asym_id`` chain (``chains``)."""
 
-    chains: List[str] = Field(default_factory=list, description="auth_asym_id value(s) the segment's atoms landed in")
-    atom_index_ranges: List[List[int]] = Field(default_factory=list, description="Merged [start, end) atom_site row ranges (0-based; id = row+1)")
-    atom_count: int = Field(0, description="Total atoms addressed by the ranges")
+    chains: List[str] = Field(default_factory=list, description="Chains (mmCIF auth_asym_id) of the molecule in system.mmcif")
+    atom_index_ranges: List[List[int]] = Field(default_factory=list, description="Where the molecule's atoms are in system.mmcif: [start, end) atom rows, 0-based (atom id = row + 1)")
+    atom_count: int = Field(0, description="Atoms in those ranges")
     residue_ranges: Optional[List[List[Union[str, int]]]] = Field(
         None,
         description="All copies as [auth_asym_id, beg_auth_seq_id, end_auth_seq_id] "
@@ -240,9 +240,9 @@ class RenderSegmentSelector(BaseModel):
 
 
 class RenderPathsResponse(BaseModel):
-    """Response model for render paths (v3.137: static PNG + atom-count gate)."""
+    """Structure files and pictures of a run, and where each molecule is in the system structure."""
 
-    run_id: str = Field(..., description="Unique run identifier")
+    run_id: str = Field(..., description="The run id")
     system_mmcif: Optional[str] = Field(None, description="Path to system mmCIF file")
     segments: Dict[str, str] = Field(
         default_factory=dict, description="Mapping of segment name to mmCIF path"
@@ -291,14 +291,14 @@ class SignatureInfo(BaseModel):
     """Information about a generated signature."""
 
     segment: str = Field(..., description="Segment name")
-    generator: str = Field(..., description="Signature generator name")
-    signature: Any = Field(..., description="The signature value (SMILES, FASTA, etc.)")
+    generator: str = Field(..., description="Kind of description: smiles, inchi_key, molecular_formula, fasta_map_protein, mmcif, ...")
+    signature: Any = Field(..., description="The value: a SMILES, sequence, formula, or a whole structure file")
 
 
 class SignaturesResponse(BaseModel):
     """Response model for signatures."""
 
-    run_id: str = Field(..., description="Unique run identifier")
+    run_id: str = Field(..., description="The run id")
     signatures: List[SignatureInfo] = Field(default_factory=list, description="List of signatures")
     attempted_generators: Dict[str, List[str]] = Field(
         default_factory=dict, description="Generators attempted per segment"
@@ -308,12 +308,12 @@ class SignaturesResponse(BaseModel):
 class IdentifierHit(BaseModel):
     """An identifier hit from resolution."""
 
-    identifier: str = Field(..., description="The identifier value")
-    ident_type: str = Field(..., description="Identifier type (e.g., PDB_ID, UNIPROT_ID)")
-    hit_type: str = Field(..., description="Hit type: exact/similarity")
-    resolver_name: str = Field(..., description="Name of the resolver that found this hit")
-    segment: Optional[str] = Field(None, description="Segment name from which this hit originated")
-    score: Optional[float] = Field(None, description="Resolution score")
+    identifier: str = Field(..., description="Identifier in its database, e.g. P00760, 3PTB, 2332")
+    ident_type: str = Field(..., description="Kind of identifier: PDB_ID, UNIPROT_ID, PUBCHEM_CID, INCHIKEY, CHEMBL_ID, ...")
+    hit_type: str = Field(..., description="identity (exact match) or similarity")
+    resolver_name: str = Field(..., description="The search that found it; @sim marks a similarity search")
+    segment: Optional[str] = Field(None, description="The molecule it was found for")
+    score: Optional[float] = Field(None, description="Score of the search (null for searches without one)")
     database_url: Optional[str] = Field(None, description="URL to the database entry")
     evalue: Optional[float] = Field(None, description="BLAST e-value")
     bit_score: Optional[float] = Field(None, description="BLAST bit score")
@@ -324,16 +324,16 @@ class IdentifierHit(BaseModel):
 class ResolverErrorItem(BaseModel):
     """A resolver failure item."""
 
-    resolver_name: str = Field(..., description="Name of the resolver that failed")
-    generator: Optional[str] = Field(None, description="Generator name associated with the failure")
+    resolver_name: str = Field(..., description="The search that failed")
+    generator: Optional[str] = Field(None, description="The kind of description it searched with")
     message: str = Field(..., description="Error message")
 
 
 class IdentifiersResponse(BaseModel):
     """Response model for identifiers."""
 
-    run_id: str = Field(..., description="Unique run identifier")
-    segment: str = Field(..., description="Segment name")
+    run_id: str = Field(..., description="The run id")
+    segment: Optional[str] = Field(None, description="The molecule asked for with ?segment=; null when the hits of every molecule are listed (each hit carries its own segment)")
     hits: List[IdentifierHit] = Field(default_factory=list, description="List of identifier hits")
     attempted_resolvers: List[str] = Field(
         default_factory=list, description="Resolvers that were attempted"
@@ -346,57 +346,57 @@ class IdentifiersResponse(BaseModel):
 class VerifiedHitItem(BaseModel):
     """A verified hit with confidence scores."""
 
-    identifier: str = Field(..., description="The identifier value")
-    ident_type: str = Field(..., description="Identifier type")
-    database: str = Field(..., description="Target database name")
-    resolver_score: Optional[float] = Field(None, description="Original resolver score")
-    similarity_score: Optional[float] = Field(None, description="Similarity verification score")
+    identifier: str = Field(..., description="Identifier in its database, e.g. P00760, 3PTB, 2332")
+    ident_type: str = Field(..., description="Kind of identifier: PDB_ID, UNIPROT_ID, PUBCHEM_CID, INCHIKEY, CHEMBL_ID, ELEMENT, ...")
+    database: str = Field(..., description="Database: pdb, uniprot, pubchem, chembl, chebi, lipidmaps, alphafold, element, ...")
+    resolver_score: Optional[float] = Field(None, description="0-100: how well the database search matched")
+    similarity_score: Optional[float] = Field(None, description="0-100: how well the record's own structure or sequence matches the molecule")
     annotation_quality_score: Optional[float] = Field(
-        None, description="Annotation quality score"
+        None, description="0-100: how well the record is annotated (names, organism, references)"
     )
-    final_confidence: Optional[float] = Field(None, description="Final confidence score (always numeric as of v3.142; null only on legacy v3.140 plateau rows)")
+    final_confidence: Optional[float] = Field(None, description="0-100: how sure BioID is that this record is this molecule (>= 80 high, >= 50 medium)")
     # v3.143 (D-17): additive — without a segment filter the endpoint
     # concatenates all segments' hits into one list; each item now carries
     # its own segment (None for legacy single-segment payloads).
-    segment: Optional[str] = Field(None, description="Segment this hit belongs to")
-    is_verified: bool = Field(..., description="Whether the hit passed verification")
-    rejection_reason: Optional[str] = Field(None, description="Reason for rejection if not verified")
+    segment: Optional[str] = Field(None, description="The molecule it identifies")
+    is_verified: bool = Field(..., description="Passed verification; rejected hits say why in rejection_reason")
+    rejection_reason: Optional[str] = Field(None, description="Why verification rejected it")
     # v3.143 (BACKEND_GAPS G5): additive — display metadata threaded by the
     # verification manager from already-fetched annotation payloads; null
     # for older runs and unsupported ident types (UI falls back to db+id).
-    name: Optional[str] = Field(None, description="Hit display name (e.g. protein title)")
-    organism: Optional[str] = Field(None, description="Source organism scientific name")
-    supporting_evidence_count: int = Field(default=0, description="Number of supporting evidence")
+    name: Optional[str] = Field(None, description="What the record is, e.g. the protein or compound name")
+    organism: Optional[str] = Field(None, description="Source organism (scientific name), for biopolymers")
+    supporting_evidence_count: int = Field(default=0, description="Number of independent searches that found this record")
     database_url: Optional[str] = Field(None, description="URL to the database entry")
     ground_truth_override: Optional[str] = Field(
-        None, description="Set to 'element_monoatomic' when the element ground-truth rule (monoatomic ion, documented in verification/models.py) lifted confidence to 100"
+        None, description="Set for exact answers that need no weighing, e.g. element_monoatomic for single-atom ions"
     )
     skeleton_sim: Optional[float] = Field(
-        None, description="v3.142: skeleton-fingerprint Tanimoto vs the simulated molecule (chemical corroboration signal; null on pre-v3.142 rows or non-chemical kinds)"
+        None, description="0-1: similarity of the record's heavy-atom skeleton to the molecule's (small molecules only)"
     )
     belief: Optional[float] = Field(
-        None, description="v3.142 (R-a): calibrated agreement-structure belief 0-100 — the resolver component of final_confidence (null on pre-v3.142 rows)"
+        None, description="0-100: how strongly the searches agree on this record; part of final_confidence"
     )
     equivalence_class_id: Optional[str] = Field(
-        None, description="v3.142 (Phase 4): visual-collapse equivalence class id — same verified structure => same id across database records (null on pre-v3.142 rows)"
+        None, description="Records with the same id describe the same verified structure (e.g. one compound in PubChem and ChEMBL)"
     )
 
 
 class VerificationResponse(BaseModel):
     """Response model for verification results."""
 
-    run_id: str = Field(..., description="Unique run identifier")
-    segment: str = Field(..., description="Segment name")
+    run_id: str = Field(..., description="The run id")
+    segment: Optional[str] = Field(None, description="The molecule asked for with ?segment=; null when the hits of every molecule are listed (each hit carries its own segment)")
     hits: List[VerifiedHitItem] = Field(default_factory=list, description="List of verified hits")
 
 
 class RunCreateResponse(BaseModel):
     """Response model for creating a new run."""
 
-    run_id: str = Field(..., description="Unique run identifier")
-    status: str = Field(..., description="Run status: queued")
-    message: str = Field(..., description="Human-readable message")
-    results_url: str = Field(..., description="URL to check run status")
+    run_id: str = Field(..., description="The run id")
+    status: str = Field(..., description="Always queued")
+    message: str = Field(..., description="Confirmation, with a note when the input looks incomplete")
+    results_url: str = Field(..., description="Where to follow the run (GET)")
     owner_token: Optional[str] = Field(
         None, description="Secret for deleting or cancelling this run (X-Owner-Token header); "
                           "shown only once, keep it")
@@ -405,20 +405,20 @@ class RunCreateResponse(BaseModel):
 class RunQueueResponse(BaseModel):
     """Response model for a run's queue position."""
 
-    state: str = Field(..., description="Queued, running, or done")
-    position: Optional[int] = Field(None, description="Position in the pending queue when queued")
+    state: str = Field(..., description="queued, running or done")
+    position: Optional[int] = Field(None, description="Place in the queue while queued (1 = next)")
     ahead: Optional[int] = Field(None, description="Number of queued runs ahead of this run")
 
 
 class RunListItem(BaseModel):
     """Summary of a run for list view."""
 
-    run_id: str = Field(..., description="Unique run identifier")
-    status: str = Field(..., description="Pipeline status")
+    run_id: str = Field(..., description="The run id")
+    status: str = Field(..., description="queued, running, success, failed or cancelled")
     created_at: str = Field(..., description="ISO 8601 timestamp when run was created")
-    input_kind: Optional[str] = Field(None, description="Type of input data")
-    run_name: Optional[str] = Field(None, description="Custom run name")
-    creator_ip: Optional[str] = Field(None, description="IP address of the request that created this run")
+    input_kind: Optional[str] = Field(None, description="How the input was read: tpr, gro, amber, charmm, lammps, pdb, cif, ...")
+    run_name: Optional[str] = Field(None, description="Name given at submission")
+    creator_ip: Optional[str] = Field(None, description="Always null (addresses are not stored)")
     queue: str = Field("web", description="Queue the run was submitted to: web or repository")
 
 
@@ -429,35 +429,33 @@ class RunListResponse(BaseModel):
 
 
 class CapabilitiesResponse(BaseModel):
-    """API capability advertisement (v3.143, BACKEND_GAPS contract §2).
+    """Features of this deployment, so clients can detect what it supports.
 
-    Lets the redesigned UI feature-detect landed backend additions
-    instead of payload-shape sniffing. `api_version_marker` increments
-    once per additive wave; `additions` lists every landed feature key.
-    """
+    `api_version_marker` increases when features are added; `additions` names
+    every feature this deployment has."""
 
-    api_version_marker: int = Field(..., description="Additive-wave marker (>=1, bumps per wave)")
-    additions: List[str] = Field(default_factory=list, description="Landed additive feature keys")
+    api_version_marker: int = Field(..., description="Increases when features are added")
+    additions: List[str] = Field(default_factory=list, description="Features this deployment has")
     typical_duration_minutes: Optional[Dict[str, int]] = Field(
         None, description="Deployment-level typical wall-clock range; null when unset")
-    code_version: str = Field(..., description="Deployment code marker (BAT3_CODE_VERSION / git)")
+    code_version: str = Field(..., description="Deployed code version")
 
 
 class RunSummaryResponse(BaseModel):
     """Response model for run summary."""
 
-    run_id: str = Field(..., description="Unique run identifier")
-    pipeline_name: str = Field(..., description="Name of the pipeline")
-    status: str = Field(..., description="Pipeline status")
+    run_id: str = Field(..., description="The run id")
+    pipeline_name: str = Field(..., description="Always BAT3")
+    status: str = Field(..., description="queued, running, success, failed or cancelled")
     started_at: Optional[str] = Field(None, description="ISO 8601 timestamp when pipeline started")
     finished_at: Optional[str] = Field(None, description="ISO 8601 timestamp when pipeline finished")
-    input_kind: Optional[str] = Field(None, description="Type of input data")
+    input_kind: Optional[str] = Field(None, description="How the input was read: tpr, gro, amber, charmm, lammps, pdb, cif, ...")
     # v3.143 (BACKEND_GAPS G1): additive — passthrough of the custom run
     # name persisted in results.json since v3.137; null for older runs.
     run_name: Optional[str] = Field(None, description="Custom run name provided at submission")
-    task_count: int = Field(..., description="Number of tasks in the pipeline")
-    warning_count: int = Field(..., description="Number of warnings")
-    error_count: int = Field(..., description="Number of errors")
+    task_count: int = Field(..., description="Number of pipeline stages")
+    warning_count: int = Field(..., description="Number of warnings (see /status)")
+    error_count: int = Field(..., description="Number of critical errors")
     retention: Optional[RetentionInfo] = Field(None, description="How long the run is kept")
     incomplete_count: int = Field(0, description="Failed lookups a rerun could fix (see status.incomplete)")
     queue: str = Field("web", description="Queue the run was submitted to: web or repository")
@@ -469,18 +467,18 @@ class RunSummaryResponse(BaseModel):
 class RunFilesResponse(BaseModel):
     """Response model for listing files in a run directory."""
 
-    run_id: str = Field(..., description="Unique run identifier")
-    files: List[str] = Field(default_factory=list, description="List of file paths relative to run directory")
+    run_id: str = Field(..., description="The run id")
+    files: List[str] = Field(default_factory=list, description="Paths to fetch from /files/{run_id}/<path>")
 
 class MoleculeInfoResponse(BaseModel):
     """Response model for single molecule info endpoint."""
 
-    segment: str = Field(..., description="Segment identifier")
-    name: str = Field(..., description="Molecule name")
-    type: str = Field(..., description="Molecule type (protein, nucleic, etc.)")
+    segment: str = Field(..., description="The molecule's segment name")
+    name: str = Field(..., description="Display name (residue name for small molecules)")
+    type: str = Field(..., description="protein, nucleic, small_molecule, lipid, glycan, ion or water")
     atom_count: int = Field(..., description="Number of atoms")
     residue_count: int = Field(..., description="Number of residues")
-    confidence: Optional[float] = Field(None, description="Highest confidence from verification")
+    confidence: Optional[float] = Field(None, description="Confidence (0-100) of the best verified identification; null for exact answers and when nothing was verified")
 
 
 
@@ -503,5 +501,5 @@ class RerunAllResponse(BaseModel):
 class CancelRunResponse(BaseModel):
     """Response model for cancelling a run."""
 
-    run_id: str = Field(..., description="Run identifier that was cancelled")
-    status: str = Field(..., description="Cancellation status: cancelled")
+    run_id: str = Field(..., description="The run id")
+    status: str = Field(..., description="cancelled (success for a run that was waiting for an automatic retry)")

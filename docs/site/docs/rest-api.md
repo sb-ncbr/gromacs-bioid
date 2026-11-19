@@ -1,223 +1,312 @@
 # REST API
 
 Everything the web application does is available over HTTP, without an
-account or API key. The base URL is
+account or API key:
 
 ```text
 https://bioid-ceitec.dyn.cloud.e-infra.cz/api/v1
 ```
 
-The interactive reference (Swagger, generated from the code) is at
-[/docs](https://bioid-ceitec.dyn.cloud.e-infra.cz/docs), the OpenAPI schema
-at `/openapi.json`. This page explains the calls you need and how they fit
-together. All paths below are relative to the base URL unless they start
-with `/files`.
+This page explains how a session goes and what the answers mean, with real
+answers of the server for the trypsin example run (PDB 3PTB: trypsin, its
+inhibitor benzamidine, a calcium ion and crystal water; run id
+`1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd`, kept permanently, so every call
+below works as written). Every endpoint, parameter and error is in the
+**[API reference](api-reference.md)**, where you can also try the calls.
 
-## A complete session
+## Quick start
 
 ```bash
 BIOID=https://bioid-ceitec.dyn.cloud.e-infra.cz/api/v1
 
-# 1. submit (keep the answer: its owner_token is needed to cancel or delete the run)
-curl -s -F files=@topol.tpr -F files=@conf.gro \
-     -F run_name="lysozyme in water" -F preset=balanced \
+# 1. submit: keep the answer, its owner_token is shown only once
+curl -s -F files=@topol.tpr -F files=@conf.gro -F run_name="lysozyme in water" \
      "$BIOID/runs" > submitted.json
 RUN_ID=$(python3 -c 'import json; print(json.load(open("submitted.json"))["run_id"])')
 
-# 2. wait: poll every minute or two
-curl -s "$BIOID/runs/$RUN_ID/queue"      # {"state": "queued", "position": 3, "ahead": 2}
-curl -s "$BIOID/runs/$RUN_ID/status"     # pipeline.status: queued → running → success / failed / cancelled
+# 2. wait: poll about once a minute until pipeline.status is success, failed or cancelled
+curl -s "$BIOID/runs/$RUN_ID/status"
 
-# 3. results
+# 3. read the results
 curl -s "$BIOID/runs/$RUN_ID/molecules"
 curl -s "$BIOID/runs/$RUN_ID/verification"
-curl -o results.csv  "$BIOID/runs/$RUN_ID/download/results.csv"
-curl -o results.json "$BIOID/runs/$RUN_ID/download/results.json"
+curl -s -O -J "$BIOID/runs/$RUN_ID/download/results.csv"
 ```
 
-## Submitting a run
+The same in Python, with the 429 answer (too many submissions, queue full)
+handled:
 
-`POST /runs` — `multipart/form-data`:
+```python
+import time
+import requests
 
-| Field | Required | Meaning |
-|---|---|---|
-| `files` | yes, repeat for each file | the simulation files (formats in [Submitting a simulation](index.md#submitting-a-simulation)); a `.zip` / `.tar` / `.tar.gz` / `.tgz` bundle also works: it is unpacked on submission, folders flattened (file names must be unique), only file types BioID reads kept; at most 50 uploaded files. A `.gro` without a topology is accepted, with a note in `message` that identification will likely be incomplete |
-| `run_name` | no | a label shown in the run list and the results page |
-| `preset` | no | `balanced` (the default settings), `quick`, `exact` or `deep`; see [Presets](index.md#presets-and-advanced-configuration) |
-| `config_json` | no | settings to change, as JSON `{"section": {"field": value}}`; applied after the preset |
-| `retention` | no | how long the results are kept: omit for the default 30 days, a number of days (1–365), or `preserve` to keep them indefinitely |
-| `config_file` | no | the same as an uploaded `config.ini` (instead of `config_json`); only the fields that differ from the server's settings count |
-| `queue` | no | `web` (the default) or `repository`: the queue for campaigns, with its own workers and, when enabled, automatic retries (see below). Needs the `X-Queue-Token` header (403 without a valid one); tokens are issued by the BioID team |
+BIOID = "https://bioid-ceitec.dyn.cloud.e-infra.cz/api/v1"
 
-The response comes at once; the run is queued:
+def submit(paths, **form):
+    while True:
+        files = [("files", open(p, "rb")) for p in paths]
+        r = requests.post(f"{BIOID}/runs", files=files, data=form, timeout=600)
+        if r.status_code != 429:
+            r.raise_for_status()          # 413/422: the message in r.json()["detail"] says why
+            return r.json()               # run_id, owner_token, ...
+        time.sleep(int(r.headers.get("Retry-After", "600")))
+
+def wait(run_id):
+    while True:
+        status = requests.get(f"{BIOID}/runs/{run_id}/status", timeout=60).json()
+        if status["pipeline"]["status"] in ("success", "failed", "cancelled"):
+            return status
+        time.sleep(60)
+
+run = submit(["topol.tpr", "conf.gro"], run_name="lysozyme in water")
+status = wait(run["run_id"])
+hits = requests.get(f"{BIOID}/runs/{run['run_id']}/verification", timeout=60).json()["hits"]
+best = {}
+for h in hits:                            # best verified identification per molecule
+    if h["is_verified"] and (h["segment"] not in best
+                             or (h["final_confidence"] or 0) > (best[h["segment"]]["final_confidence"] or 0)):
+        best[h["segment"]] = h
+for segment, h in best.items():
+    print(segment, h["database"], h["identifier"], h["name"], h["final_confidence"])
+```
+
+## Submitting
+
+`POST /runs` takes `multipart/form-data`: the simulation files as `files`
+(repeat the field), and optionally `run_name`, `preset`, `config_json` and
+`retention`.
+
+| Package | Files |
+|---|---|
+| GROMACS | `.tpr` (+ `.gro`/`.xtc`), or `.gro` + `.top` (+ `.itp`) |
+| AMBER | `.prmtop`/`.parm7` + `.inpcrd`/`.rst7`/`.nc` |
+| CHARMM / NAMD | `.psf` + `.pdb`/`.crd`/`.dcd` |
+| LAMMPS | `.data` |
+| Structures | a single `.pdb`, `.cif`/`.mmcif` or `.gro` |
+
+A `.zip`, `.tar`, `.tar.gz` or `.tgz` is unpacked (folders are flattened, so
+file names must be unique). Files that do not make a complete simulation are
+refused at once with 422 and a message listing what would; a `.gro` without
+a topology is accepted with a note that identification will likely be
+incomplete.
+
+The answer comes at once:
 
 ```json
-{"run_id": "1c2a4d4b-…", "status": "queued",
- "message": "Run 1c2a4d4b-… queued successfully",
- "results_url": "/runs/1c2a4d4b-…/status",
- "owner_token": "q3J…"}
+{"run_id": "7b0e5f2c-3d41-4a8e-9f61-2c8d0a4b5e17",
+ "status": "queued",
+ "message": "Run 7b0e5f2c-3d41-4a8e-9f61-2c8d0a4b5e17 queued successfully",
+ "results_url": "/api/v1/runs/7b0e5f2c-3d41-4a8e-9f61-2c8d0a4b5e17/status",
+ "owner_token": "q3J9xVb2mT0kZr7LwP4sNd8eYh6uCa1F"}
 ```
 
-`owner_token` is shown only here. Keep it: cancelling or deleting the run
-needs it, sent as the `X-Owner-Token` header. (The web application keeps it
-in your browser.)
+**Keep the `owner_token`.** It is shown only here; cancelling, deleting and
+keeping the run longer need it, sent as the `X-Owner-Token` header. (The web
+application keeps it in your browser.) The results page in the web
+application is `https://bioid-ceitec.dyn.cloud.e-infra.cz/runs/<run_id>`.
 
-The results page in the web application is
-`https://bioid-ceitec.dyn.cloud.e-infra.cz/runs/<run_id>`.
+### Presets and settings
 
-### Changing settings
+The server starts from its own settings, the `preset` pre-fills changes, and
+your `config_json` overrides both:
 
-`GET /runs/config/options` returns two things:
+| Preset | What it does |
+|---|---|
+| `balanced` | the server's settings (the default) |
+| `quick` | skips the slow structure searches (RCSB, AlphaFind, Foldseek) and NCBI; verifies fewer candidates |
+| `exact` | exact matches only: no similarity searches |
+| `deep` | adds NCBI nr, nt and core_nt and verifies more candidates; hours per protein |
 
-- `config`: every setting a run may change, grouped by section
-  (`identifiers`, `verification`, `blast`, `chembl`, `idsm`, `pubchem`,
-  `pdb`, `signatures`, `loader`), with the server's current values;
-- `presets`: the four presets, each with its `overrides`.
-
-The server applies its own settings, then the preset, then your
-`config_json`. Post only what you want to change:
+`GET /runs/config/options` lists every setting a run may change, with the
+server's values, and the presets with their overrides. Post only what you
+change:
 
 ```bash
 # exact matches only, and mark a hit verified only from confidence 50
 curl -F files=@system.pdb -F preset=exact \
-     -F 'config_json={"verification": {"min_final_confidence": 50}}' \
-     "$BIOID/runs"
+     -F 'config_json={"verification": {"min_final_confidence": 50}}' "$BIOID/runs"
 
-# add the NCBI nr search (off by default; hours per protein)
+# the balanced settings plus NCBI nr for proteins (hours per protein)
 curl -F files=@system.pdb \
      -F 'config_json={"identifiers": {"blast_nr_protein": true, "blast_nr_protein_similarity": true}}' \
      "$BIOID/runs"
 ```
 
-Database switches are listed with what each one searches on the
-[Databases](databases.md) page. Settings that belong to the deployment
-(database paths, programs, service addresses, timeouts, parallelism) cannot
-be changed; a request that changes one is rejected with 422 before anything
-is queued. Repeating a server value unchanged is accepted, so posting back
-the whole `config` object works. Booleans must be JSON `true`/`false`;
-numbers are checked against their allowed range (for example
-`verify_top_n` 1–200, `min_final_confidence` 0–100). The preset used is
-recorded as `pipeline.preset` in results.json.
+What each database switch searches is on the [Databases](databases.md) page.
+Settings that belong to the deployment (database paths, programs, service
+addresses, timeouts) cannot be changed: 422; repeating their server value is
+accepted, so posting back the whole `config` object works.
+
+The preset only pre-fills the settings: **`config_json` has the last word**.
+`preset=quick` with `{"identifiers": {"blast_uniref50": true}}` is the quick
+preset with UniRef50 searched after all.
 
 ## Following a run
 
-| Call | Returns |
-|---|---|
-| `GET /runs/{id}/queue` | `state` (`queued`, `running`, `done`), and while queued, `position` and `ahead` (runs before yours) |
-| `GET /runs/{id}/status` | `pipeline` (with `status`), per-stage `tasks`, `warnings`, `critical_errors`, `events`, and `progress` (`molecules_done` / `molecules_total` during identification). `?since=<ISO 8601>` returns only newer warnings, errors and events. Each warning and error has a `docs_url` (path on this host) to its section in [Warnings and errors](warnings.md) |
-| `GET /runs/{id}` | a short summary: status, times, input kind, run name, counts of tasks, warnings and errors |
-| `GET /runs/{id}/loading` | how the input files were read: strategy, attempts, topology files, why a load failed |
-| `GET /runs/{id}/logs` | the run log as text (`?type=debug` for the verbose log) |
-| `POST /runs/{id}/cancel` | cancels a queued or running run; needs `X-Owner-Token` (403 without it, 400 if the run already finished) |
-| `POST /runs/{id}/reports` | reports that a molecule's identification looks wrong: body `{"segment": "<segment>", "note": "…", "suggestion": "what it really is"}` (note and suggestion optional). No token needed; at most 20 reports per address per hour (429). The BioID team reviews them |
-| `POST /runs/{id}/retention` | keeps a finished run longer: body `{"days": 30 \| 90 \| 180 \| 365}`, counted from now; needs `X-Owner-Token`. Only extends (409 if the run already expires later, is kept permanently, or has not finished). The status and summary responses carry `retention` (`policy`, `days`, `expires_at`, `example`, `owner_choices`) |
+Poll `GET /runs/{id}/status` about once a minute (`GET /runs/{id}/queue` is
+cheaper while the run waits: `{"state": "queued", "position": 3, "ahead": 2}`).
+The trypsin run, shortened:
 
-`pipeline.status` ends as `success`, `failed` or `cancelled`. A finished run
-can still carry warnings, for example a database search that timed out; the
-molecules affected may then miss matches from that database.
+```json
+{"run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
+ "pipeline": {"status": "success", "started_at": "2026-11-08T23:50:46.759861+00:00",
+              "finished_at": "2026-11-08T23:58:37.460787+00:00", "input_kind": "pdb"},
+ "tasks": [{"task_id": "discover_input", "name": "Discover Input", "status": "success", "...": "…"}],
+ "progress": {"molecules_done": 4, "molecules_total": 4,
+              "per_segment": {"A": "searched", "A__v1": "searched", "A__v2": "searched", "A__v3": "searched"}},
+ "warnings": [{"code": "pbc_unwrap_applied",
+               "message": "Periodic boundary unwrapping was applied to make molecules whole.",
+               "step_id": "unwrap_periodic_boundaries", "details": {},
+               "recorded_at": "2026-11-08T23:50:47.044822+00:00",
+               "docs_url": "/documentation/warnings/#pbc_unwrap_applied"}],
+ "critical_errors": [],
+ "incomplete": [],
+ "retention": {"policy": "preserve", "days": null, "expires_at": null, "example": true, "owner_choices": []},
+ "queue": "web", "retry": null, "attempts": [], "rerun_of": null, "superseded_by": null}
+```
 
-### Incomplete runs, reruns and automatic retries
+- `pipeline.status` goes `queued` → `running` → `success`, `failed` or
+  `cancelled`. Typical runs take 2–8 minutes; Deep search up to hours.
+- `warnings` do not mean the run failed: each has a `code`, `details` (often
+  the molecule, `segment`, and the database, `service`) and a `docs_url` into
+  [Warnings and errors](warnings.md). A database that did not answer, for
+  example, means the molecules concerned may lack its matches.
+- `?since=2026-11-08T23:55:00Z` returns only the warnings, errors and events
+  recorded from then on (no zone means UTC; write `+` as `%2B`).
 
-`GET /runs/{id}/status` lists in `incomplete` the lookups that failed for a
-reason another attempt can fix: a database answered with a server error, was
-busy or unreachable, did not answer in time, or a stage ran out of time.
-Each entry has `service`, `reason`, `segments` and `count`; the summary has
-`incomplete_count`. Searches that do not apply to a molecule, and a local
-NCBI search that ran out of its time, are not listed (they would fail again).
+### Incomplete runs and reruns
 
-`POST /runs/{id}/rerun` repeats the run; lookups that worked come from the
-cache, so in practice only the failed ones are repeated. The new run has
-`rerun_of`; when the owner reruns (with `X-Owner-Token`), the old run gets
-`superseded_by` pointing to the new one.
+`incomplete` lists lookups that failed for a reason another attempt can fix:
+a database answered with a server error, was busy or unreachable, or did not
+answer in time. `POST /runs/{id}/rerun` repeats the run; lookups that worked
+come from the cache, so in practice only the failed ones are repeated. The
+answer is a new run with its own `owner_token`. Sent with the old run's
+`X-Owner-Token`, the old run is marked `superseded_by` the new one; a body
+`{"preset": "deep"}` reruns the files with that preset instead of the old
+choices.
 
-On the `repository` queue, failed lookups and lost workers can be retried
-automatically under the **same run id** (set by the BioID team: number of
-attempts and delay). While a run waits for its next attempt, its status reads
-`queued` and `retry` gives `attempt`, `max_attempts`, `reason` and `at` (unix
-time of the next attempt); `attempts` lists the earlier ones. Clients that
-poll until `success` / `failed` / `cancelled` need no change.
-
-Typical run time: a few minutes for a small structure, up to about an hour
-for a large system. Deep search adds the NCBI nr/nt databases and can take
-many hours (up to 12 per search). `GET /capabilities` reports
-the deployment's typical duration and code version.
+On the `repository` queue (campaigns, with a queue token from the BioID
+team), failed lookups can be retried automatically under the same run id:
+while a run waits for its next attempt, `status` reads `queued` and `retry`
+says when (`at`) and why.
 
 ## Reading the results
 
-| Call | Returns |
+**`GET /runs/{id}/molecules`** says what the system is made of. Every other
+call addresses a molecule by its `segment` name:
+
+```json
+{"segments": ["A", "A__v1", "A__v2", "A__v3"],
+ "type_counts": {"protein": 1, "small_molecule": 1, "ion": 1, "water": 1},
+ "segment_meta": {
+   "A":     {"type": "protein",        "atom_count": 1629, "residue_count": 223, "copies": 1,  "display_name": "A"},
+   "A__v1": {"type": "small_molecule", "atom_count": 9,    "residue_count": 1,   "copies": 1,  "display_name": "BEN"},
+   "A__v2": {"type": "ion",            "atom_count": 1,    "residue_count": 1,   "copies": 1,  "display_name": "CA"},
+   "A__v3": {"type": "water",          "atom_count": 1,    "residue_count": 1,   "copies": 62, "display_name": "HOH"}}}
+```
+
+Identical molecules are one entry with `copies` (the 62 waters).
+
+**`GET /runs/{id}/verification`** is the main result: for each molecule the
+database records BioID found, verified ones first. `?segment=A__v1`, the
+benzamidine:
+
+```json
+{"segment": "A__v1",
+ "hits": [{"identifier": "PXXJHWLDUBFPOL-UHFFFAOYSA-N", "ident_type": "INCHIKEY", "database": "pubchem",
+           "name": "Benzamidine", "final_confidence": 80.0, "is_verified": true,
+           "resolver_score": 100.0, "similarity_score": null, "annotation_quality_score": 100.0,
+           "database_url": "https://pubchem.ncbi.nlm.nih.gov/#query=PXXJHWLDUBFPOL-UHFFFAOYSA-N",
+           "segment": "A__v1", "rejection_reason": null, "...": "…"},
+          {"identifier": "17943838", "database": "pubchem", "name": "1,1-Diaminomethylcyclohexane",
+           "final_confidence": 77.55555555555556, "is_verified": true, "...": "…"}]}
+```
+
+- `final_confidence` (0–100) is how sure BioID is that the record is this
+  molecule: **≥ 80 high, ≥ 50 medium**, below that a lead to check. The best
+  identification of a molecule is its verified hit with the highest
+  `final_confidence`; that is what the results page and results.csv show.
+- Unverified hits (`is_verified: false`) say why in `rejection_reason`.
+- Ions and water are identified exactly (`ground_truth_override` set) and have
+  no confidence to weigh.
+- How the scores are computed: [Identification & verification](identifiers.md);
+  how to read them: [Reading the results](index.md#reading-the-results).
+
+**`GET /runs/{id}/download/results.csv`** gives one row per molecule:
+
+```text
+Segment,Display Name,Kind,Copies,Atoms,Result,Identified Name,Best Database,Best Identifier,Database URL,Confidence,Confidence Label,Alternatives
+A,A,protein,1,1629,identified,Serine protease 1,UniProt,P00760,https://www.uniprot.org/uniprotkb/P00760,84.1,high,PDB:1AQ7 PDB:1AUJ PDB:1AZ8
+A__v1,BEN,small_molecule,1,9,identified,Benzamidine,PubChem,PXXJHWLDUBFPOL-UHFFFAOYSA-N,https://pubchem.ncbi.nlm.nih.gov/#query=PXXJHWLDUBFPOL-UHFFFAOYSA-N,80.0,high,PubChem:OYOFUEDXAMRQBB-UHFFFAOYSA-N PubChem:17943838 PubChem:68458528
+A__v2,CA,ion,1,1,exact,Calcium ion,Element,CA,,,,
+A__v3,HOH,water,62,1,exact,Water,PubChem,962,https://pubchem.ncbi.nlm.nih.gov/compound/962,,,
+```
+
+`Result` is `identified`, `lead` (verified, confidence below 50), `exact` or
+`not identified`.
+
+Going deeper:
+
+| Call | What it gives |
 |---|---|
-| `GET /runs/{id}/molecules` | the distinct molecules (`segments`), their type counts and per-molecule metadata (`segment_meta`: display name, number of copies, chains) |
-| `GET /runs/{id}/molecules/{segment}/info` | one molecule: name, type, atom and residue counts, confidence of its best hit |
-| `GET /runs/{id}/verification` | the ranked, verified hit table per molecule: identifier, database and link, name, organism, `final_confidence` (0–100) and its terms, `is_verified`, `rejection_reason`. `?segment=<name>` for one molecule |
-| `GET /runs/{id}/identifiers` | every raw database hit before verification, with BLAST e-value, identity and coverage where they apply, plus the searches attempted and failed. `?segment=` |
-| `GET /runs/{id}/signatures` | the molecule descriptions BioID generated (sequences, SMILES, InChIKey, formulas, structures …). `?segment=` |
-| `GET /runs/{id}/download/results.csv` | one row per molecule: best verified hit, confidence label, up to three alternatives |
-| `GET /runs/{id}/render` | paths of the whole-system mmCIF and PNG renders, and per-molecule selectors |
-| `GET /runs/{id}/files` | every file of the run directory |
-| `GET /runs/{id}/download/results.json` | the complete record of the run, without the submitter's address; structure in the [results.json reference](results-json.md) |
-| `GET /files/{id}/results.json` | the same file as stored (no `/api/v1` prefix) |
-| `GET /files/{id}/<path>` | any file listed by `/runs/{id}/files`, e.g. `results.log` or the system mmCIF |
-| `GET /runs/{id}/download/topology-less-pdb`, `.../ca-only-pdb` | a molecule's structure signature as PDB (`?segment=` when there are several) |
+| `GET /runs/{id}/identifiers?segment=A` | every raw database hit before verification: which search found it, BLAST e-value, identity and coverage |
+| `GET /runs/{id}/signatures?segment=A__v1` | what BioID searched with: sequences, SMILES, InChIKey, formula, structures |
+| `GET /runs/{id}/download/results.json` | the complete record, described in the [results.json reference](results-json.md) |
+| `GET /runs/{id}/files`, then `/files/{id}/<path>` | structures (`system.mmcif`, `<segment>.mmcif`), pictures (`render/system.png`), logs, inputs. Note: `/files` has no `/api/v1` prefix |
+| `GET /runs/{id}/render` | the same structures and pictures by molecule, and where each molecule is in `system.mmcif` |
+| `POST /runs/{id}/reports` | tell the BioID team an identification looks wrong: `{"segment": "A__v1", "note": "…", "suggestion": "…"}` |
 
-How to read the confidence and the verified flag is explained in
-[Reading the results](index.md#reading-the-results); the scoring itself in
-[Identification & verification](identifiers.md).
+## Managing runs
 
-## Other calls
-
-| Call | Returns |
-|---|---|
-| `GET /runs/examples` | the finished example runs shown on the front page (`?limit=`) |
-| `GET /runs` | the runs submitted from your network address (what *Your annotations* shows); other people's runs are never listed |
-| `POST /runs/{id}/rerun` | a new run with the same input files and settings (on the same queue when the owner reruns, otherwise the web queue); returns the new `run_id` and its `owner_token`. With the old run's `X-Owner-Token` the old run is marked `superseded_by` the new one. Optional body `{"preset": "deep"}` runs the files again with that preset on today's server settings instead. NCBI nr/nt/core_nt are searched again only if the old run used Deep search |
-| `DELETE /runs/{id}` | deletes the run and its files; needs `X-Owner-Token` |
+| Call | Needs the owner token | What it does |
+|---|---|---|
+| `POST /runs/{id}/cancel` | yes | stops a queued or running run |
+| `POST /runs/{id}/retention` `{"days": 90}` | yes | keeps a finished run 30, 90, 180 or 365 days from now (only extends) |
+| `DELETE /runs/{id}` | yes | deletes the run and its files (cancel a running run first) |
+| `POST /runs/{id}/rerun` | no (optional) | a new run with the same files and settings |
+| `GET /runs` | no | the runs submitted from your network address, newest first |
 
 ```bash
 curl -X POST   -H "X-Owner-Token: $TOKEN" "$BIOID/runs/$RUN_ID/cancel"
 curl -X DELETE -H "X-Owner-Token: $TOKEN" "$BIOID/runs/$RUN_ID"
 ```
 
-Runs submitted before 10 November 2026 and the example runs have no owner
-token and cannot be cancelled or deleted through the API.
-| `GET /capabilities` | API feature markers, typical run duration, deployed code version |
-| `GET /health` | service health |
+Finished runs are deleted 30 days after they finish unless submitted with
+another `retention` (1–365 days, or `preserve`) or kept longer. Example runs
+and runs submitted before 10 November 2026 have no owner token.
 
 ## Limits and errors
 
-- **Upload size**: at most 128 MiB per file, and the whole request is also
-  limited to 128 MiB by the web server; larger requests fail with 413.
-- **Files**: at most 50 per run; only simulation, structure, configuration
-  and archive files (the formats above) are accepted.
-- **Submissions**: at most 30 runs (new or re-runs) per hour from one network
-  address, and none while 40 runs are already waiting in the queue. Both
-  answer **429** with a `Retry-After` header (seconds) and a message saying
-  when to try again. Poll no more than about once a minute; for large
-  batches, write to the contact below first.
-- **Retention**: a finished run is deleted 30 days after it finished, unless
-  it was submitted with another `retention` (days, or `preserve`). Runs
-  submitted before 10 November 2026 are kept until at least 10 December 2026.
-  The example runs are never deleted.
+- **Uploads**: at most 128 MiB per file and per request (larger requests get
+  the web server's 413 page), 50 files per run; archives at most 500 files,
+  128 MiB each and 2 GiB unpacked.
+- **Submissions** (new runs and reruns): 30 per hour from one network
+  address, and none while 40 runs wait to start. Both answer **429** with a
+  `Retry-After` header (seconds). For large batches, write to us first.
+- **Reports**: 20 per hour from one address.
+- **Polling**: about once a minute is plenty.
+
+Errors are JSON `{"detail": "<message>"}`; the message says what to change.
+(Parameters of the wrong type give 422 with `detail` as a list.)
 
 | Status | When |
 |---|---|
-| 404 | unknown run id, or a molecule (`segment`) that is not in the run |
-| 413 | a file (or the request) is larger than 128 MiB, or more than 50 files |
-| 422 | files that do not make a complete simulation, even with every loading fallback (e.g. a trajectory without a topology; the message lists accepted combinations), an archive that cannot be unpacked or is too large unpacked (128 MiB per file, 2 GiB in all), no usable file names, duplicate file names, a file type BioID does not read, invalid `config_json`, an unknown preset, an unknown or non-changeable setting, a value of the wrong type or out of range, a malformed run id |
-| 429 | too many submissions from your address this hour, or the queue is full; see `Retry-After` |
-| 403 | cancelling or deleting without the run's owner token; deleting an example run |
-| 409 | `run_id` given for a run that already exists |
-| 400 | cancelling a run that already finished; a PDB download without `segment` when the run has several molecules |
-| 500 | a server-side failure; please report it |
-
-Error responses are JSON: `{"detail": "<message>"}`.
+| 400 | cancelling a finished run; `days` not 30/90/180/365; a PDB download without `segment` when the run has several molecules |
+| 403 | cancelling, deleting or keeping longer without the run's owner token; deleting an example run; the repository queue without a queue token |
+| 404 | unknown run id or molecule; a rerun of a run whose input files are gone |
+| 409 | deleting a queued or running run; keeping longer a run that has not finished or is already kept longer |
+| 413 | more than 50 files, or a file or request over 128 MiB |
+| 422 | files that do not make a simulation, an unreadable archive, an unknown preset, an unknown or non-changeable setting or a value out of range |
+| 429 | too many submissions or reports from your address, or the queue is full; see `Retry-After` |
+| 500 | a failure on our side: please report it |
 
 ## Privacy
 
 Runs are not tied to an account: **anyone who has a run's id can open its
-results and re-run it**; only the holder of its owner token can cancel or
-delete it. Run ids are random and are not listed to others. The service keeps
-a keyed hash of the address a run was submitted from (to list *Your
-annotations* and apply the limits), not the address itself.
+results and rerun it**; only the holder of its owner token can cancel,
+delete or keep it longer. Run ids are random and are not listed to others.
+The service keeps a keyed hash of the address a run was submitted from (to
+list *Your annotations* and apply the limits), not the address itself.
 
 For usage statistics the service records each page view of the web
 application and the documentation, and each meaningful API call
@@ -225,11 +314,11 @@ application and the documentation, and each meaningful API call
 endpoint, the kind of client, the referring site, the same keyed address
 hash and an approximate location (city, coordinates rounded to about 10 km)
 looked up from the address at that moment. The address is never stored.
-Raw records are kept 90 days. Browsers sending *Do Not Track* or *Global
-Privacy Control* are not counted. IP geolocation by
-[DB-IP](https://db-ip.com) (CC BY 4.0). Sequences and
-structures of your molecules are sent to public search services (for
-example RCSB PDB, PubChem, AlphaFind) to find matches. Do not submit data you
-are not allowed to share.
+Raw records are kept 90 days. Page views from browsers sending *Do Not
+Track* or *Global Privacy Control* are not counted. IP geolocation by
+[DB-IP](https://db-ip.com) (CC BY 4.0). Sequences and structures of your
+molecules are sent to public search services (for example RCSB PDB,
+PubChem, AlphaFind) to find matches. Do not submit data you are not allowed
+to share.
 
 Questions and bug reports: [tomas.pavlik@muni.cz](mailto:tomas.pavlik@muni.cz).

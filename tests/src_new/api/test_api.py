@@ -1055,7 +1055,8 @@ class TestIdentifiersEndpoint:
         # Validate against Pydantic model
         validated = IdentifiersResponse.model_validate(json_response)
         assert validated.run_id == run_id
-        assert validated.segment == "PROA"
+        assert validated.segment is None  # all molecules: each hit names its own
+        assert {h.segment for h in validated.hits} == {"PROA"}
         assert len(validated.hits) == 1
         assert validated.hits[0].identifier == "1234"
         assert validated.hits[0].ident_type == "PUBCHEM_CID"
@@ -1112,7 +1113,8 @@ class TestVerificationEndpoint:
         # Validate against Pydantic model
         validated = VerificationResponse.model_validate(json_response)
         assert validated.run_id == run_id
-        assert validated.segment == "PROA"
+        assert validated.segment is None  # all molecules: each hit names its own
+        assert {h.segment for h in validated.hits} == {"PROA"}
         assert len(validated.hits) == 1
         assert validated.hits[0].identifier == "1ABC"
         assert validated.hits[0].is_verified is True

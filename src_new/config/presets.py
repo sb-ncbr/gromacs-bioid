@@ -201,13 +201,18 @@ def _check_value(section: str, field: str, value: Any, current: Any) -> None:
         raise ConfigOverrideError(f"{path} must be between {lo} and {hi}")
 
 
-def checked_overrides(nested: Any, base: RunConfig) -> dict[str, dict[str, Any]]:
+def checked_overrides(nested: Any, base: RunConfig, keep_defaults: bool = False) -> dict[str, dict[str, Any]]:
     """Validate user overrides against ``base`` (the server defaults).
 
     Returns the overrides to apply: the tunable fields that differ from
     ``base``, with values coerced to the field's type. A non-tunable field is
     accepted only when it equals the server value, and then dropped. Raises
     ConfigOverrideError otherwise.
+
+    keep_defaults (config_json, 2026-11-19): tunable fields equal to the
+    server value are kept too. config_json has priority over the preset,
+    which only pre-fills it, so {"identifiers": {"blast_uniref50": true}}
+    with preset=quick turns UniRef50 back on.
     """
     if not isinstance(nested, dict):
         raise ConfigOverrideError("config must be an object of sections")
@@ -226,7 +231,8 @@ def checked_overrides(nested: Any, base: RunConfig) -> dict[str, dict[str, Any]]
             if field not in full[section]:
                 raise ConfigOverrideError(f"Unknown config field: {section}.{field}")
             current = full[section][field]
-            if value == current and type(value) is type(current):
+            if value == current and type(value) is type(current) and not (
+                    keep_defaults and field in TUNABLE.get(section, frozenset())):
                 continue
             if field not in TUNABLE.get(section, frozenset()):
                 raise ConfigOverrideError(f"{section}.{field} cannot be changed per run")

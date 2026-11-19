@@ -32,7 +32,7 @@ log = logging.getLogger(__name__)
 
 RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 #: Path parameter type for every {run_id} route.
-RunId = Annotated[str, PathParam(pattern=RUN_ID_RE.pattern + "$",
+RunId = Annotated[str, PathParam(pattern="^" + RUN_ID_RE.pattern + "$",
                                  description="Run id returned by POST /runs")]
 
 OWNER_HEADER = "X-Owner-Token"

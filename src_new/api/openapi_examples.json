@@ -1,0 +1,963 @@
+{
+ "_source": {
+  "base": "https://bioid-ceitec.dyn.cloud.e-infra.cz",
+  "run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd"
+ },
+ "status": {
+  "run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
+  "pipeline": {
+   "run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
+   "pipeline_name": "BAT3",
+   "status": "success",
+   "started_at": "2026-11-08T23:50:46.759861+00:00",
+   "finished_at": "2026-11-08T23:58:37.460787+00:00",
+   "input_kind": "pdb",
+   "input_files": null,
+   "metadata": {
+    "working_directory": "/app/runs/1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd/input",
+    "output_directory": "/app/runs/1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd"
+   }
+  },
+  "tasks": [
+   {
+    "task_id": "discover_input",
+    "name": "Discover Input",
+    "status": "success",
+    "started_at": "2026-11-08T23:50:46.770315+00:00",
+    "finished_at": "2026-11-08T23:50:46.799855+00:00",
+    "summary": {
+     "discovered": true,
+     "input_kind": "pdb"
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "load_simulation",
+    "name": "Load Simulation",
+    "status": "success",
+    "started_at": "2026-11-08T23:50:46.803800+00:00",
+    "finished_at": "2026-11-08T23:50:46.895375+00:00",
+    "summary": {
+     "loaded": true,
+     "strategy": "pdb"
+    },
+    "artifacts": []
+   },
+   {
+    "task_id": "repair_topology",
+    "name": "Repair Topology",
+    "status": "warning",
+    "started_at": "2026-11-08T23:50:46.900246+00:00",
+    "finished_at": "2026-11-08T23:50:46.929991+00:00",
+    "summary": {
+     "repaired": true,
+     "elements_guessed": 0,
+     "elements_source": "topology",
+     "masses_guessed": 0,
+     "names_fixed": 0,
+     "bonds_guessed": 0,
+     "metal_coordination_bonds": 0,
+     "warnings": []
+    },
+    "artifacts": []
+   }
+  ],
+  "warnings": [
+   {
+    "code": "insufficient_bonds",
+    "message": "Bond topology appears insufficient (21 bonds for 1701 atoms). Molecule detection and signature generation will likely fail. Consider enabling 'guess_missing_bonds' in the loader configuration.",
+    "step_id": "repair_topology",
+    "details": {
+     "bond_count": 21,
+     "atom_count": 1701
+    },
+    "recorded_at": "2026-11-08T23:50:46.914563+00:00",
+    "docs_url": "/documentation/warnings/#insufficient_bonds"
+   },
+   {
+    "code": "pbc_unwrap_applied",
+    "message": "Periodic boundary unwrapping was applied to make molecules whole.",
+    "step_id": "unwrap_periodic_boundaries",
+    "details": {},
+    "recorded_at": "2026-11-08T23:50:47.044822+00:00",
+    "docs_url": "/documentation/warnings/#pbc_unwrap_applied"
+   }
+  ],
+  "critical_errors": [],
+  "events": [
+   {
+    "kind": "step_start",
+    "timestamp": "2026-11-08T23:50:46.773978+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "discover_input"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-11-08T23:50:46.796161+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "discover_input"
+   },
+   {
+    "kind": "step_start",
+    "timestamp": "2026-11-08T23:50:46.807995+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "load_simulation"
+   },
+   {
+    "kind": "step_finish",
+    "timestamp": "2026-11-08T23:50:46.891043+00:00",
+    "level": null,
+    "message": null,
+    "task_id": "load_simulation"
+   }
+  ],
+  "updated_at": "2026-11-08T23:58:37.460808+00:00",
+  "progress": {
+   "molecules_done": 4,
+   "molecules_total": 4,
+   "per_segment": {
+    "A": "searched",
+    "A__v1": "searched",
+    "A__v2": "searched",
+    "A__v3": "searched"
+   }
+  },
+  "retention": {
+   "policy": "preserve",
+   "days": null,
+   "expires_at": null,
+   "example": true,
+   "owner_choices": []
+  },
+  "incomplete": [],
+  "queue": "web",
+  "retry": null,
+  "attempts": [],
+  "rerun_of": null,
+  "superseded_by": null
+ },
+ "summary": {
+  "run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
+  "pipeline_name": "BAT3",
+  "status": "success",
+  "started_at": "2026-11-08T23:50:46.759861+00:00",
+  "finished_at": "2026-11-08T23:58:37.460787+00:00",
+  "input_kind": "pdb",
+  "run_name": "Trypsin with benzamidine>Crystal structure (PDB 3PTB): the enzyme, its inhibitor, a calcium ion and crystal water",
+  "task_count": 10,
+  "warning_count": 6,
+  "error_count": 0,
+  "retention": {
+   "policy": "preserve",
+   "days": null,
+   "expires_at": null,
+   "example": true,
+   "owner_choices": []
+  },
+  "incomplete_count": 0,
+  "queue": "web",
+  "attempt": 1,
+  "rerun_of": null,
+  "superseded_by": null
+ },
+ "queue": {
+  "state": "done",
+  "position": null,
+  "ahead": null
+ },
+ "loading": {
+  "run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
+  "input_kind": "pdb",
+  "selected_strategy": "pdb",
+  "topology_files": [
+   "/app/runs/1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd/input/3PTB.pdb"
+  ],
+  "attempts": [
+   {
+    "strategy": "pdb",
+    "success": true,
+    "error": null,
+    "error_code": null
+   }
+  ],
+  "final_strategy": "pdb",
+  "success": true,
+  "warnings": [],
+  "failure_summary": null
+ },
+ "render": {
+  "run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
+  "system_mmcif": "system.mmcif",
+  "segments": {
+   "A__v2": "A__v2.mmcif",
+   "A": "A.mmcif",
+   "A__v1": "A__v1.mmcif",
+   "A__v3": "A__v3.mmcif"
+  },
+  "system_png": "render/system.png",
+  "segment_pngs": {
+   "A__v2": "render/segments/A__v2.png",
+   "A": "render/segments/A.png",
+   "A__v1": "render/segments/A__v1.png",
+   "A__v3": "render/segments/A__v3.png"
+  },
+  "total_atom_count": 1701,
+  "geometry": {
+   "status": "ok",
+   "atom_count": 1701,
+   "density_a3_per_atom": 137.22088109935333,
+   "span": [
+    71.41600036621094,
+    68.22999572753906,
+    47.902000427246094
+   ]
+  },
+  "segment_selectors": {
+   "A": {
+    "chains": [
+     "A"
+    ],
+    "atom_index_ranges": [
+     [
+      0,
+      1629
+     ]
+    ],
+    "atom_count": 1629,
+    "residue_ranges": [
+     [
+      "A",
+      16,
+      245
+     ]
+    ]
+   },
+   "A__v1": {
+    "chains": [
+     "A"
+    ],
+    "atom_index_ranges": [
+     [
+      1630,
+      1639
+     ]
+    ],
+    "atom_count": 9,
+    "residue_ranges": [
+     [
+      "A",
+      1,
+      1
+     ]
+    ]
+   },
+   "A__v2": {
+    "chains": [
+     "A"
+    ],
+    "atom_index_ranges": [
+     [
+      1629,
+      1630
+     ]
+    ],
+    "atom_count": 1,
+    "residue_ranges": [
+     [
+      "A",
+      480,
+      480
+     ]
+    ]
+   },
+   "A__v3": {
+    "chains": [
+     "A"
+    ],
+    "atom_index_ranges": [
+     [
+      1639,
+      1701
+     ]
+    ],
+    "atom_count": 62,
+    "residue_ranges": [
+     [
+      "A",
+      401,
+      473
+     ],
+     [
+      "A",
+      482,
+      809
+     ]
+    ]
+   }
+  }
+ },
+ "files": {
+  "run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
+  "files": [
+   "A.mmcif",
+   "A__v1.mmcif",
+   "A__v2.mmcif",
+   "A__v3.mmcif",
+   "config.ini",
+   "heartbeat",
+   "input/3PTB.pdb",
+   "render/segments/A.png",
+   "render/segments/A__v1.png",
+   "render/segments/A__v2.png",
+   "render/segments/A__v3.png",
+   "render/system.png",
+   "render/system.pre-restyle.png",
+   "results.debug.log",
+   "results.json",
+   "results.log",
+   "system.mmcif"
+  ]
+ },
+ "molecules": {
+  "run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
+  "unique_molecules": {
+   "type:protein|atoms:1629|residues:223|resnames:ILE,VAL,GLY,GLY,TYR,THR,CYS,GLY,ALA,ASN,THR,VAL,PRO,TYR,GLN,VAL,SER,LEU,ASN,SER,GLY,TYR,HIS,PHE,CYS,GLY,GLY,SER,LEU,ILE,ASN,SER,GLN,TRP,VAL,VAL,SER,ALA,ALA,HIS,CYS,TYR,LYS,SER,GLY,ILE,GLN,VAL,ARG,LEU,GLY,GLU,ASP,ASN,ILE,ASN,VAL,VAL,GLU,GLY,ASN,GLU,GLN,PHE,ILE,SER,ALA,SER,LYS,SER,ILE,VAL,HIS,PRO,SER,TYR,ASN,SER,ASN,THR,LEU,ASN,ASN,ASP,ILE,MET,LEU,ILE,LYS,LEU,LYS,SER,ALA,ALA,SER,LEU,ASN,SER,ARG,VAL,ALA,SER,ILE,SER,LEU,PRO,THR,SER,CYS,ALA,SER,ALA,GLY,THR,GLN,CYS,LEU,ILE,SER,GLY,TRP,GLY,ASN,THR,LYS,SER,SER,GLY,THR,SER,TYR,PRO,ASP,VAL,LEU,LYS,CYS,LEU,LYS,ALA,PRO,ILE,LEU,SER,ASP,SER,SER,CYS,LYS,SER,ALA,TYR,PRO,GLY,GLN,ILE,THR,SER,ASN,MET,PHE,CYS,ALA,GLY,TYR,LEU,GLU,GLY,GLY,LYS,ASP,SER,CYS,GLN,GLY,ASP,SER,GLY,GLY,PRO,VAL,VAL,CYS,SER,GLY,LYS,LEU,GLN,GLY,ILE,VAL,SER,TRP,GLY,SER,GLY,CYS,ALA,GLN,LYS,ASN,LYS,PRO,GLY,VAL,TYR,THR,LYS,VAL,CYS,ASN,TYR,VAL,SER,TRP,ILE,LYS,GLN,THR,ILE,ALA,SER,ASN|elements:C=1012,N=279,O=324,S=14": {
+    "segment_ids": [
+     "A"
+    ],
+    "segment_names": [
+     "A"
+    ],
+    "molecule_type": "protein",
+    "atom_count": 1629,
+    "residue_count": 0,
+    "smiles": null
+   },
+   "type:small_molecule|atoms:9|residues:1|elements:C=7,N=2|formula:C7N2": {
+    "segment_ids": [
+     "A__v1"
+    ],
+    "segment_names": [
+     "A__v1"
+    ],
+    "molecule_type": "small_molecule",
+    "atom_count": 9,
+    "residue_count": 0,
+    "smiles": null
+   },
+   "type:ion|atoms:1|residues:1|elements:Ca=1": {
+    "segment_ids": [
+     "A__v2"
+    ],
+    "segment_names": [
+     "A__v2"
+    ],
+    "molecule_type": "ion",
+    "atom_count": 1,
+    "residue_count": 0,
+    "smiles": null
+   },
+   "type:water|atoms:1|residues:1|elements:O=1": {
+    "segment_ids": [
+     "A__v3"
+    ],
+    "segment_names": [
+     "A__v3"
+    ],
+    "molecule_type": "water",
+    "atom_count": 1,
+    "residue_count": 0,
+    "smiles": null
+   }
+  },
+  "type_counts": {
+   "protein": 1,
+   "small_molecule": 1,
+   "ion": 1,
+   "water": 1
+  },
+  "total_fragment_count": 0,
+  "segments": [
+   "A",
+   "A__v1",
+   "A__v2",
+   "A__v3"
+  ],
+  "segment_meta": {
+   "A": {
+    "type": "protein",
+    "atom_count": 1629,
+    "residue_count": 223,
+    "copies": 1,
+    "display_name": "A",
+    "chain": null
+   },
+   "A__v1": {
+    "type": "small_molecule",
+    "atom_count": 9,
+    "residue_count": 1,
+    "copies": 1,
+    "display_name": "BEN",
+    "chain": null
+   },
+   "A__v2": {
+    "type": "ion",
+    "atom_count": 1,
+    "residue_count": 1,
+    "copies": 1,
+    "display_name": "CA",
+    "chain": null
+   },
+   "A__v3": {
+    "type": "water",
+    "atom_count": 1,
+    "residue_count": 1,
+    "copies": 62,
+    "display_name": "HOH",
+    "chain": null
+   }
+  }
+ },
+ "molecule_info": {
+  "segment": "A__v1",
+  "name": "A__v1",
+  "type": "small_molecule",
+  "atom_count": 9,
+  "residue_count": 1,
+  "confidence": 80.0
+ },
+ "verification": {
+  "run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
+  "segment": "A__v2",
+  "hits": [
+   {
+    "identifier": "CA",
+    "ident_type": "ELEMENT",
+    "database": "element",
+    "resolver_score": 100.0,
+    "similarity_score": 100.0,
+    "annotation_quality_score": null,
+    "final_confidence": 100.0,
+    "segment": "A__v2",
+    "is_verified": true,
+    "rejection_reason": null,
+    "name": "Calcium ion",
+    "organism": null,
+    "supporting_evidence_count": 1,
+    "database_url": null,
+    "ground_truth_override": "element_monoatomic",
+    "skeleton_sim": null,
+    "belief": 50.0,
+    "equivalence_class_id": "element:CA"
+   },
+   {
+    "identifier": "271",
+    "ident_type": "PUBCHEM_CID",
+    "database": "pubchem",
+    "resolver_score": 100.0,
+    "similarity_score": null,
+    "annotation_quality_score": 100.0,
+    "final_confidence": 0.0,
+    "segment": "A__v2",
+    "is_verified": false,
+    "rejection_reason": "fingerprint_unavailable",
+    "name": "Calcium Cation",
+    "organism": null,
+    "supporting_evidence_count": 2,
+    "database_url": "https://pubchem.ncbi.nlm.nih.gov/compound/271",
+    "ground_truth_override": null,
+    "skeleton_sim": null,
+    "belief": 20.62994740159002,
+    "equivalence_class_id": "skeleton:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000#t2:809a6c73"
+   },
+   {
+    "identifier": "962",
+    "ident_type": "PUBCHEM_CID",
+    "database": "pubchem",
+    "resolver_score": 100.0,
+    "similarity_score": null,
+    "annotation_quality_score": 100.0,
+    "final_confidence": 100.0,
+    "segment": "A__v3",
+    "is_verified": true,
+    "rejection_reason": null,
+    "name": "Water",
+    "organism": null,
+    "supporting_evidence_count": 3,
+    "database_url": "https://pubchem.ncbi.nlm.nih.gov/compound/962",
+    "ground_truth_override": "water_triatomic",
+    "skeleton_sim": 1.0,
+    "belief": 20.62994740159002,
+    "equivalence_class_id": "skeleton:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000#t2:8e7c6839"
+   },
+   {
+    "identifier": "24602",
+    "ident_type": "PUBCHEM_CID",
+    "database": "pubchem",
+    "resolver_score": 100.0,
+    "similarity_score": null,
+    "annotation_quality_score": 100.0,
+    "final_confidence": 0.0,
+    "segment": "A__v3",
+    "is_verified": false,
+    "rejection_reason": "water_duplicate_identity",
+    "name": "Deuterium Oxide",
+    "organism": null,
+    "supporting_evidence_count": 3,
+    "database_url": "https://pubchem.ncbi.nlm.nih.gov/compound/24602",
+    "ground_truth_override": null,
+    "skeleton_sim": 1.0,
+    "belief": 20.62994740159002,
+    "equivalence_class_id": "skeleton:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000#t2:8e7c6839"
+   },
+   {
+    "identifier": "PXXJHWLDUBFPOL-UHFFFAOYSA-N",
+    "ident_type": "INCHIKEY",
+    "database": "pubchem",
+    "resolver_score": 100.0,
+    "similarity_score": null,
+    "annotation_quality_score": 100.0,
+    "final_confidence": 80.0,
+    "segment": "A__v1",
+    "is_verified": true,
+    "rejection_reason": null,
+    "name": "Benzamidine",
+    "organism": null,
+    "supporting_evidence_count": 1,
+    "database_url": "https://pubchem.ncbi.nlm.nih.gov/#query=PXXJHWLDUBFPOL-UHFFFAOYSA-N",
+    "ground_truth_override": null,
+    "skeleton_sim": 1.0,
+    "belief": 50.0,
+    "equivalence_class_id": "skeleton:00000000000000000000000000000000000000000000000000000000400000000000000000000000000000000010000010000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000001000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000040000000000000000200000000000000100100000000000000042000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000#t2:00cb5297"
+   },
+   {
+    "identifier": "17943838",
+    "ident_type": "PUBCHEM_CID",
+    "database": "pubchem",
+    "resolver_score": 100.0,
+    "similarity_score": 68.88888888888889,
+    "annotation_quality_score": 100.0,
+    "final_confidence": 77.55555555555556,
+    "segment": "A__v1",
+    "is_verified": true,
+    "rejection_reason": null,
+    "name": "1,1-Diaminomethylcyclohexane",
+    "organism": null,
+    "supporting_evidence_count": 3,
+    "database_url": "https://pubchem.ncbi.nlm.nih.gov/compound/17943838",
+    "ground_truth_override": null,
+    "skeleton_sim": 1.0,
+    "belief": 75.0,
+    "equivalence_class_id": "skeleton:00000000000000000000000000000000000000000000000000000000400000000000000000000000000000000010000010000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000001000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000040000000000000000200000000000000100100000000000000042000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000#t2:a396ac92"
+   },
+   {
+    "identifier": "1AQ7",
+    "ident_type": "PDB_ID",
+    "database": "pdb",
+    "resolver_score": 100.0,
+    "similarity_score": 100.0,
+    "annotation_quality_score": 70.0,
+    "final_confidence": 81.40078950105126,
+    "segment": "A",
+    "is_verified": true,
+    "rejection_reason": null,
+    "name": "TRYPSIN",
+    "organism": "Bos taurus",
+    "supporting_evidence_count": 3,
+    "database_url": "https://www.rcsb.org/structure/1AQ7",
+    "ground_truth_override": null,
+    "skeleton_sim": null,
+    "belief": 68.50197375262816,
+    "equivalence_class_id": "seqref:b23546d917dd631c"
+   },
+   {
+    "identifier": "1AUJ",
+    "ident_type": "PDB_ID",
+    "database": "pdb",
+    "resolver_score": 100.0,
+    "similarity_score": 100.0,
+    "annotation_quality_score": 70.0,
+    "final_confidence": 81.40078950105126,
+    "segment": "A",
+    "is_verified": true,
+    "rejection_reason": null,
+    "name": "TRYPSIN",
+    "organism": "Bos taurus",
+    "supporting_evidence_count": 3,
+    "database_url": "https://www.rcsb.org/structure/1AUJ",
+    "ground_truth_override": null,
+    "skeleton_sim": null,
+    "belief": 68.50197375262816,
+    "equivalence_class_id": "seqref:b23546d917dd631c"
+   }
+  ]
+ },
+ "verification_segment": {
+  "run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
+  "segment": "A__v1",
+  "hits": [
+   {
+    "identifier": "PXXJHWLDUBFPOL-UHFFFAOYSA-N",
+    "ident_type": "INCHIKEY",
+    "database": "pubchem",
+    "resolver_score": 100.0,
+    "similarity_score": null,
+    "annotation_quality_score": 100.0,
+    "final_confidence": 80.0,
+    "segment": "A__v1",
+    "is_verified": true,
+    "rejection_reason": null,
+    "name": "Benzamidine",
+    "organism": null,
+    "supporting_evidence_count": 1,
+    "database_url": "https://pubchem.ncbi.nlm.nih.gov/#query=PXXJHWLDUBFPOL-UHFFFAOYSA-N",
+    "ground_truth_override": null,
+    "skeleton_sim": 1.0,
+    "belief": 50.0,
+    "equivalence_class_id": "skeleton:00000000000000000000000000000000000000000000000000000000400000000000000000000000000000000010000010000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000001000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000040000000000000000200000000000000100100000000000000042000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000#t2:00cb5297"
+   },
+   {
+    "identifier": "17943838",
+    "ident_type": "PUBCHEM_CID",
+    "database": "pubchem",
+    "resolver_score": 100.0,
+    "similarity_score": 68.88888888888889,
+    "annotation_quality_score": 100.0,
+    "final_confidence": 77.55555555555556,
+    "segment": "A__v1",
+    "is_verified": true,
+    "rejection_reason": null,
+    "name": "1,1-Diaminomethylcyclohexane",
+    "organism": null,
+    "supporting_evidence_count": 3,
+    "database_url": "https://pubchem.ncbi.nlm.nih.gov/compound/17943838",
+    "ground_truth_override": null,
+    "skeleton_sim": 1.0,
+    "belief": 75.0,
+    "equivalence_class_id": "skeleton:00000000000000000000000000000000000000000000000000000000400000000000000000000000000000000010000010000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000001000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000040000000000000000200000000000000100100000000000000042000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000#t2:a396ac92"
+   },
+   {
+    "identifier": "OYOFUEDXAMRQBB-UHFFFAOYSA-N",
+    "ident_type": "INCHIKEY",
+    "database": "pubchem",
+    "resolver_score": 100.0,
+    "similarity_score": null,
+    "annotation_quality_score": 100.0,
+    "final_confidence": 80.0,
+    "segment": "A__v1",
+    "is_verified": true,
+    "rejection_reason": null,
+    "name": "1,1-Diaminomethylcyclohexane",
+    "organism": null,
+    "supporting_evidence_count": 1,
+    "database_url": "https://pubchem.ncbi.nlm.nih.gov/#query=OYOFUEDXAMRQBB-UHFFFAOYSA-N",
+    "ground_truth_override": null,
+    "skeleton_sim": 1.0,
+    "belief": 50.0,
+    "equivalence_class_id": "skeleton:00000000000000000000000000000000000000000000000000000000400000000000000000000000000000000010000010000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000001000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000040000000000000000200000000000000100100000000000000042000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000#t2:a396ac92"
+   }
+  ]
+ },
+ "identifiers": {
+  "run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
+  "segment": "A",
+  "hits": [
+   {
+    "identifier": "4GUX",
+    "ident_type": "PDB_ID",
+    "hit_type": "identity",
+    "resolver_name": "blast_pdb_protein",
+    "segment": "A",
+    "score": null,
+    "database_url": "https://www.rcsb.org/structure/4GUX",
+    "evalue": 2.7891e-162,
+    "bit_score": 449.514,
+    "identity_percent": 100.0,
+    "coverage_percent": 100.0
+   },
+   {
+    "identifier": "P00760",
+    "ident_type": "UNIPROT_ID",
+    "hit_type": "identity",
+    "resolver_name": "blast_uniprot",
+    "segment": "A",
+    "score": null,
+    "database_url": "https://www.uniprot.org/uniprotkb/P00760",
+    "evalue": 9.48335e-162,
+    "bit_score": 449.514,
+    "identity_percent": 100.0,
+    "coverage_percent": 100.0
+   },
+   {
+    "identifier": "P00760",
+    "ident_type": "UNIPROT_ID",
+    "hit_type": "identity",
+    "resolver_name": "blast_swissprot_protein",
+    "segment": "A",
+    "score": null,
+    "database_url": "https://www.uniprot.org/uniprotkb/P00760",
+    "evalue": 9.48335e-162,
+    "bit_score": 449.514,
+    "identity_percent": 100.0,
+    "coverage_percent": 100.0
+   }
+  ],
+  "attempted_resolvers": [
+   "formula_pubchem_local",
+   "formula_pubchem@sim",
+   "formula_pubchem",
+   "name_manual",
+   "foldseek_3di",
+   "name_ccd",
+   "name_maps",
+   "blast_swissprot_protein@sim"
+  ],
+  "failed_resolvers": [
+   {
+    "resolver_name": "blast_nr_protein",
+    "generator": "fasta_map_protein",
+    "message": "BLAST timed out after 300s. Database: /app/databases/nr/nr. Executable: /usr/bin/blastp."
+   }
+  ]
+ },
+ "signatures": {
+  "run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
+  "signatures": [
+   {
+    "segment": "A__v1",
+    "generator": "smiles",
+    "signature": "[N][C]([N])[C]1[C][C][C][C][C]1"
+   },
+   {
+    "segment": "A__v1",
+    "generator": "inchi_key",
+    "signature": "OYOFUEDXAMRQBB-UHFFFAOYSA-N"
+   },
+   {
+    "segment": "A__v1",
+    "generator": "molecular_formula",
+    "signature": "C7N2"
+   },
+   {
+    "segment": "A__v1",
+    "generator": "resname",
+    "signature": "BEN"
+   }
+  ],
+  "attempted_generators": {
+   "A__v1": [
+    "smiles",
+    "smiles_not_sanitized",
+    "inchi_key",
+    "selfies",
+    "molecular_formula",
+    "molecular_formula_heavy",
+    "skeleton_fp",
+    "resname",
+    "mmcif",
+    "name_chain",
+    "name_molecule",
+    "name_segment",
+    "fingerprint"
+   ]
+  }
+ },
+ "config_options": {
+  "config": {
+   "identifiers": {
+    "blast_pdb_protein": true,
+    "blast_pdb_protein_similarity": true,
+    "blast_uniprot": true,
+    "blast_uniprot_similarity": true
+   },
+   "verification": {
+    "verify_top_n": 100,
+    "verify_top_n_supplementary": 40,
+    "similarity_top_n": 10,
+    "enable_annotation_quality": true
+   },
+   "blast": {
+    "exact_match_max_evalue": 1e-50,
+    "exact_match_min_bits": 51,
+    "exact_match_min_identity_p": 0.99,
+    "exact_match_min_query_cov_p": 0.99
+   }
+  },
+  "presets": [
+   {
+    "id": "balanced",
+    "title": "Balanced",
+    "description": "Recommended. Every database except NCBI nr/nt, exact and similar matches.",
+    "details": "The server defaults. NCBI nr, nt and core_nt are searched in Deep search only.",
+    "icon": "scale",
+    "overrides": {}
+   },
+   {
+    "id": "quick",
+    "title": "Quick look",
+    "description": "Skips the slowest searches. Minutes rather than up to an hour.",
+    "details": "No NCBI nr/nt, UniRef50 or structure searches (AlphaFind, Foldseek, RCSB); 30 candidates verified per molecule, no live annotation fetch.",
+    "icon": "zap",
+    "overrides": {
+     "identifiers": {
+      "blast_nr_protein": false,
+      "blast_nr_protein_similarity": false,
+      "blast_nt": false,
+      "blast_nt_similarity": false,
+      "blast_core_nt": false,
+      "blast_core_nt_similarity": false,
+      "blast_uniref50": false,
+      "blast_uniref50_similarity": false,
+      "alphafind_struct": false,
+      "alphafind_struct_similarity": false,
+      "foldseek_3di": false,
+      "foldseek_3di_similarity": false,
+      "foldseek_pdb": false,
+      "foldseek_pdb_similarity": false,
+      "pdb_struct_protein": false,
+      "pdb_struct_protein_similarity": false,
+      "pdb_struct_nucleotide": false,
+      "pdb_struct_nucleotide_similarity": false
+     },
+     "verification": {
+      "verify_top_n": 30,
+      "verify_top_n_supplementary": 10,
+      "similarity_top_n": 5,
+      "annotation_live_fetch": false
+     }
+    }
+   },
+   {
+    "id": "exact",
+    "title": "Exact matches",
+    "description": "Identical database entries only: no homologues or analogues.",
+    "details": "Every similarity search is off; each database is searched for identical entries only.",
+    "icon": "target",
+    "overrides": {
+     "identifiers": {
+      "alphafind_struct_similarity": false,
+      "atom_similarity": false,
+      "blast_core_nt_similarity": false,
+      "blast_nr_protein_similarity": false,
+      "blast_nt_similarity": false,
+      "blast_pdb_nucleic_similarity": false,
+      "blast_pdb_protein_similarity": false,
+      "blast_swissprot_protein_similarity": false,
+      "blast_uniprot_similarity": false,
+      "blast_uniref50_similarity": false,
+      "chebi_local_similarity": false,
+      "chembl_struct_similarity": false,
+      "foldseek_3di_similarity": false,
+      "foldseek_pdb_similarity": false,
+      "formula_hfamily_similarity": false,
+      "formula_pubchem_similarity": false,
+      "glycan_composition_similarity": false,
+      "idsm_chebi_similarity": false,
+      "idsm_chembl_similarity": false,
+      "idsm_pubchem_similarity": false,
+      "inchikey_pubchem_similarity": false,
+      "inchikey_self_similarity": false,
+      "lipid_maps_similarity": false,
+      "mmcif_struct_similarity": false,
+      "name_ccd_similarity": false,
+      "name_manual_similarity": false,
+      "name_maps_similarity": false,
+      "pdb_struct_nucleotide_similarity": false,
+      "pdb_struct_protein_similarity": false,
+      "pubchem_struct_similarity": false,
+      "swisslipids_similarity": false
+     }
+    }
+   },
+   {
+    "id": "deep",
+    "title": "Deep search",
+    "description": "Adds NCBI nr/nt, more candidates verified, more similar matches. Can take many hours.",
+    "details": "NCBI nr, nt and core_nt searched (up to 12 hours per search: hundreds of GB each), 150 candidates verified per molecule (60 more from the supplementary databases), 20 similar matches kept, mixed protein/nucleic-acid PDB complexes searched.",
+    "icon": "telescope",
+    "overrides": {
+     "identifiers": {
+      "blast_nr_protein": true,
+      "blast_nr_protein_similarity": true,
+      "blast_nt": true,
+      "blast_nt_similarity": true,
+      "blast_core_nt": true,
+      "blast_core_nt_similarity": true
+     },
+     "verification": {
+      "verify_top_n": 150,
+      "verify_top_n_supplementary": 60,
+      "similarity_top_n": 20
+     },
+     "pdb": {
+      "rcsb_include_mixed_complexes": true
+     }
+    }
+   }
+  ]
+ },
+ "examples": {
+  "examples": [
+   {
+    "run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
+    "title": "Trypsin with benzamidine",
+    "description": "Crystal structure (PDB 3PTB): the enzyme, its inhibitor, a calcium ion and crystal water",
+    "image_url": "/files/1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd/render/system.png",
+    "created_at": "2026-11-08T23:50:46.638453+00:00"
+   },
+   {
+    "run_id": "8338ea32-a5b1-4e31-81db-c157d936df25",
+    "title": "SARS-CoV-2 envelope protein in a membrane",
+    "description": "GROMACS run input (.tpr) of a membrane-protein simulation",
+    "image_url": "/files/8338ea32-a5b1-4e31-81db-c157d936df25/render/system.png",
+    "created_at": "2026-11-09T05:05:54.144957+00:00"
+   }
+  ]
+ },
+ "capabilities": {
+  "api_version_marker": 2,
+  "additions": [
+   "api_v1",
+   "run_name_summary",
+   "segment_meta_copies",
+   "segment_progress",
+   "results_csv",
+   "warning_details_segment_service",
+   "hit_name_organism",
+   "unique_segment_names",
+   "segment_selectors",
+   "run_retention",
+   "warning_docs_url",
+   "run_incomplete",
+   "run_queues",
+   "automatic_retries",
+   "capabilities"
+  ],
+  "typical_duration_minutes": {
+   "min": 2,
+   "max": 8
+  },
+  "code_version": "git-1c45e170a"
+ },
+ "health": {
+  "status": "healthy"
+ },
+ "results_csv": "Segment,Display Name,Kind,Copies,Atoms,Result,Identified Name,Best Database,Best Identifier,Database URL,Confidence,Confidence Label,Alternatives\nA,A,protein,1,1629,identified,Serine protease 1,UniProt,P00760,https://www.uniprot.org/uniprotkb/P00760,84.1,high,PDB:1AQ7 PDB:1AUJ PDB:1AZ8\nA__v1,BEN,small_molecule,1,9,identified,Benzamidine,PubChem,PXXJHWLDUBFPOL-UHFFFAOYSA-N,https://pubchem.ncbi.nlm.nih.gov/#query=PXXJHWLDUBFPOL-UHFFFAOYSA-N,80.0,high,PubChem:OYOFUEDXAMRQBB-UHFFFAOYSA-N PubChem:17943838 PubChem:68458528\nA__v2,CA,ion,1,1,exact,Calcium ion,Element,CA,,,,\nA__v3,HOH,water,62,1,exact,Water,PubChem,962,https://pubchem.ncbi.nlm.nih.gov/compound/962,,,\n",
+ "logs": "[2026-11-09 00:50:46,829] INFO MDAnalysis.topology.PDBParser: Setting segids from chainIDs because no segids found in the PDB file.\n[2026-11-09 00:50:46,860] WARNING py.warnings: /usr/local/lib/python3.11/site-packages/MDAnalysis/core/universe.py:939: UserWarning: Reader has no dt information, set to 1.0 ps\n  dt=self.trajectory.ts.dt * step,\n",
+ "topology_less_pdb": "HEADER    export\nATOM      1  N   ILE A   1      -8.096   9.599  20.309  1.00  0.00          N   \nATOM      2  CA  ILE A   1      -8.084   8.707  19.112  1.00  0.00          C   \nATOM      3  C   ILE A   1      -9.354   8.966  18.287  1.00  0.00          C   \nATOM      4  O   ILE A   1     -10.486   8.855  18.825  1.00  0.00          O   \n",
+ "ca_only_pdb": "HEADER    export\nATOM      1  CA  ILE A   1      -8.084   8.707  19.112  1.00  0.00          C   \nATOM      2  CA  VAL A   2     -10.333   9.427  16.086  1.00  0.00          C   \nATOM      3  CA  GLY A   3     -11.989   6.641  14.185  1.00  0.00          C   \nATOM      4  CA  GLY A   4     -10.840   3.880  16.668  1.00  0.00          C   \n",
+ "results_json_keys": [
+  "artifacts",
+  "created_at",
+  "critical_errors",
+  "data",
+  "events",
+  "pipeline",
+  "tasks",
+  "updated_at",
+  "warnings"
+ ]
+}

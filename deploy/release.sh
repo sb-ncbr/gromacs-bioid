@@ -10,6 +10,9 @@
 #   --backend  API, fleet, UI and repository workers (one image). Refused while
 #              any queue holds work or a run is active: restarted workers
 #              kill running runs. Pause submitters first (mdval) and wait.
+#   --allow-repository  with --backend: the repository queue (campaigns) may
+#              hold work and its runs are interrupted (with automatic retries
+#              on, they run again); the web queue must still be idle
 #   --web      the web frontend (bat3-frontend:<tag>); no queue check needed
 #   --docs     the documentation site (bat3-docs:<tag>)
 #   --mcp      the MCP server (bioid-mcp:<tag>)
@@ -28,11 +31,12 @@ set -euo pipefail
 NS=ceitec-biodata-ns
 REG=cerit.io/tomsko
 SNAP=${BIOID_SNAPSHOTS:-$HOME/bioid-release-snapshots}
-BACKEND= CODE= WEB= DOCS= MCP=
+BACKEND= CODE= WEB= DOCS= MCP= ALLOW_REPO=
 while [ $# -gt 0 ]; do
   case "$1" in
     --backend) BACKEND=$2; shift 2 ;;
     --code) CODE=$2; shift 2 ;;
+    --allow-repository) ALLOW_REPO=1; shift ;;
     --web) WEB=$2; shift 2 ;;
     --docs) DOCS=$2; shift 2 ;;
     --mcp) MCP=$2; shift 2 ;;
@@ -58,6 +62,7 @@ image_exists() {  # the registry sometimes answers non-JSON once: retry
 
 if [ -n "$BACKEND" ]; then
   for q in celery validation.ui.celery validation.repo.celery bughunt; do
+    [ -z "$ALLOW_REPO" ] || [ "$q" != validation.repo.celery ] || continue
     n=$(kubectl -n $NS exec deploy/bat3-redis -- redis-cli llen $q)
     [ "$n" = "0" ] || { echo "REFUSE: queue $q holds $n"; exit 1; }
   done
@@ -67,8 +72,10 @@ if [ -n "$BACKEND" ]; then
         -o jsonpath='{.items[0].metadata.name}')
   [ -n "$P" ] || { echo "REFUSE: no running fleet worker to ask for active runs"; exit 1; }
   act=$(kubectl -n $NS exec -c worker "$P" -- sh -c 'cd /app && timeout 90 celery -A src_new.celery_app inspect active -j 2>/dev/null' \
-        | python3 -c 'import sys,json; t=sys.stdin.read(); d=json.loads(t[t.find("{"):]); print(sum(len(v or []) for v in d.values()))')
-  [ "$act" = "0" ] || { echo "REFUSE: $act active runs"; exit 1; }
+        | SKIP=${ALLOW_REPO:+validation.repo.celery} python3 -c 'import os,sys,json; t=sys.stdin.read(); d=json.loads(t[t.find("{"):])
+skip = os.environ.get("SKIP") or None
+print(sum(1 for v in d.values() for x in (v or []) if (x.get("delivery_info") or {}).get("routing_key") != skip))')
+  [ "$act" = "0" ] || { echo "REFUSE: $act active runs${ALLOW_REPO:+ outside the repository queue}"; exit 1; }
 fi
 
 mkdir -p "$SNAP"; chmod 700 "$SNAP"
