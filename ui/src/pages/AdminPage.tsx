@@ -21,6 +21,7 @@ import { AdminProvider, OVERVIEW_KEY } from "../features/admin/session";
 import { TrafficSection } from "../features/admin/Traffic";
 import { ChecksSection, ReportsSection } from "../features/admin/ChecksReports";
 import { ServicesSection } from "../features/admin/Services";
+import { BlastServicesSection } from "../features/admin/BlastServices";
 import { OverviewTab } from "../features/admin/OverviewTab";
 import { attention, TABS, tabFromHash, type TabId } from "../features/admin/overview";
 
@@ -172,7 +173,10 @@ function Dashboard({ session, signOut }: { session: AdminSession; signOut: (mess
                 <QueuesWorkersSection overview={data} nowMs={now} />
               </TabsContent>
               <TabsContent value="services" className="mt-4">
-                <ServicesSection services={data.services} nowMs={now} />
+                <div className="grid gap-4">
+                  <BlastServicesSection services={data.blast_services} />
+                  <ServicesSection services={data.services} nowMs={now} />
+                </div>
               </TabsContent>
               <TabsContent value="runs" className="mt-4">
                 <RunsSection runs={data.runs} nowMs={now} />

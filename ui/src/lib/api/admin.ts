@@ -184,6 +184,8 @@ export interface AdminOverview {
   reports?: Section<{ open: number; total: number }>;
   checks?: Section<ChecksSummary>;
   services?: Section<ServicesSummary>;
+  /** BLAST services with an NVMe copy (2026-11-19); absent from older APIs. */
+  blast_services?: Section<BlastService[]>;
   /** One card per queue (2026-11-18); absent from older APIs. */
   lanes?: Section<LaneCard[]>;
 }
@@ -509,3 +511,29 @@ export const adminApi = {
   removeLimitException: (token: string, address: string) =>
     request<LimitSettings>(`/settings/limits/exceptions?address=${seg(address)}`, token, { method: "DELETE" }),
 };
+
+// -- BLAST services with an NVMe copy (2026-11-19) ----------------------------
+
+export interface BlastService {
+  db: string;
+  deployment: string;
+  url: string;
+  /** the release the NFS symlink points to (what workers search) */
+  nfs_release: string | null;
+  /** staging | ready | error | "no answer" */
+  state: string;
+  /** the release it serves (null while it has none) */
+  release?: string | null;
+  /** a snapshot it downloads ahead of the NFS switch */
+  prefetch?: string | null;
+  error: string;
+  blast_version?: string;
+  threads?: number;
+  counts?: { running: number; waiting: number; searches: number; timeouts: number; failures: number };
+  staging?: {
+    release?: string; source?: string; done_bytes?: number; total_bytes?: number;
+    files_done?: number; files_total?: number; started?: number; finished?: number;
+  };
+  /** workers send searches here: ready, and the same release as NFS */
+  used_by_workers: boolean;
+}

@@ -220,3 +220,32 @@ def test_identification_reports(env, client, monkeypatch):
 
     monkeypatch.setattr(reports, "PER_HOUR", 1)
     assert client.post("/api/v1/runs/done/reports", json={"segment": "seg_0_A"}).status_code == 429
+
+
+def test_blast_services_report_their_health(monkeypatch):
+    """2026-11-19: the admin page shows each BLAST service's state and download."""
+    from src_new.api import admin
+
+    class Answer:
+        def __init__(self, body):
+            self.body = body
+
+        def json(self):
+            if isinstance(self.body, Exception):
+                raise self.body
+            return self.body
+
+    def fake_get(url, timeout):
+        if "uniref50" in url:
+            raise ConnectionError("refused")
+        return Answer({"db": "nr", "state": "staging", "release": None, "prefetch": "nr-20261022-010501",
+                       "staging": {"done_bytes": 5, "total_bytes": 10, "files_done": 1, "files_total": 2},
+                       "searches": 3, "error": ""})
+
+    import requests
+    monkeypatch.setattr(requests, "get", fake_get)
+    rows = {r["db"]: r for r in admin._blast_services()}
+    assert set(rows) == {"nr", "nt", "core_nt", "uniref50"}
+    assert rows["nr"]["state"] == "staging" and rows["nr"]["staging"]["files_total"] == 2
+    assert rows["nr"]["counts"]["searches"] == 3 and rows["nr"]["used_by_workers"] is False
+    assert rows["uniref50"]["state"] == "no answer"

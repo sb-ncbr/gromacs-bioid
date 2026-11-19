@@ -381,6 +381,7 @@ async def overview() -> dict:
             "reports": _section(lambda: _cached("reports", 30, _reports_summary)),
             "checks": _section(lambda: _cached("checks", 30, _checks_summary)),
             "services": _section(lambda: _cached("services", 60, _services)),
+            "blast_services": _section(lambda: _cached("blast_services", 10, _blast_services)),
             "lanes": _section(_lanes),
         }
     return await asyncio.to_thread(build)
@@ -402,6 +403,47 @@ def _services() -> dict:
             "failing": ss.failing(last_30m),
             "running": running,
             "ncbi_running": len(ncbi), "ncbi_alarm_at": ss.ncbi_alarm_at()}
+
+
+#: BLAST services with an NVMe copy (src_new/blast_service.py): database,
+#: deployment, [blast] setting with the address
+BLAST_SERVICES = (("nr", "bioid-blast-nr", "nr_service_url"), ("nt", "bioid-blast-nt", "nt_service_url"),
+                  ("core_nt", "bioid-blast-core-nt", "core_nt_service_url"),
+                  ("uniref50", "bioid-blast-uniref50", "uniref50_service_url"))
+
+
+def _blast_services() -> list[dict]:
+    """Each BLAST service's /health (2026-11-19): what it serves, what it is
+    downloading or copying, and its searches. Workers search a database on
+    its service only while it is ready with the release NFS points to."""
+    import requests
+    from src_new.config.loader import RunConfig
+    from src_new.identification.resolvers.blast_service_client import release_of
+    cfg = RunConfig.from_default_ini()
+    db_paths = {"nr": cfg.blast.nr_aa_db, "nt": cfg.blast.nt_db, "core_nt": cfg.blast.core_nt_db,
+                "uniref50": cfg.blast.uniref50_aa_db}
+    out = []
+    for db, deployment, setting in BLAST_SERVICES:
+        url = getattr(cfg.blast, setting, "")
+        row: dict[str, Any] = {"db": db, "deployment": deployment, "url": url}
+        try:
+            row["nfs_release"] = release_of(db_paths[db])
+        except Exception:
+            row["nfs_release"] = None
+        try:
+            h = requests.get(f"{url}/health", timeout=2).json()
+            st = h.get("staging") or {}
+            row.update(state=h.get("state"), release=h.get("release"), prefetch=h.get("prefetch"),
+                       error=h.get("error") or "", blast_version=h.get("blast_version"),
+                       threads=h.get("threads"),
+                       counts={k: h.get(k, 0) for k in ("running", "waiting", "searches", "timeouts", "failures")},
+                       staging={k: st.get(k) for k in ("release", "source", "done_bytes", "total_bytes",
+                                                       "files_done", "files_total", "started", "finished")})
+            row["used_by_workers"] = h.get("state") == "ready" and h.get("release") == row["nfs_release"]
+        except Exception as exc:
+            row.update(state="no answer", error=str(exc)[:200], used_by_workers=False)
+        out.append(row)
+    return out
 
 
 #: The queues on the admin page: BioID's lanes (retries.py) first, then the

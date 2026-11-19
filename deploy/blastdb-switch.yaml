@@ -1,0 +1,52 @@
+# Unattended switch of nr, nt and core_nt to the NCBI snapshot 2026-10-22
+# (2026-11-19): waits for the downloads (deploy/blastdb-update.yaml and the
+# BLAST services), switches the symlinks, waits for the services, purges the
+# old BLAST answers from the shared cache. What it does and how to roll back:
+# deploy/blastdb-switch.py. Report: /app/databases/.staging/switch-20261022.json
+# and the Job's log.
+#   kubectl -n ceitec-biodata-ns create configmap bioid-blastdb-switch \
+#     --from-file=blastdb-switch.py=deploy/blastdb-switch.py --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl -n ceitec-biodata-ns apply -f deploy/blastdb-switch.yaml
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bioid-blastdb-switch
+  namespace: ceitec-biodata-ns
+  labels: {app: bioid-blastdb-switch}
+spec:
+  backoffLimit: 2              # every step is safe to repeat
+  activeDeadlineSeconds: 86400
+  ttlSecondsAfterFinished: 1209600
+  template:
+    metadata:
+      labels: {app: bioid-blastdb-switch}
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: switch
+          image: cerit.io/tomsko/bat3-validation-api@sha256:a433a3e4147bbcff3320e5d82f2d3cb841f4e73bcb6fdb843c4148b62c15e0bb
+          workingDir: /app
+          command: ["python", "/switch/blastdb-switch.py"]
+          env:
+            - {name: BAT3_SHARED_CACHE_URL, value: "redis://bioid-cache-redis:6379/0"}
+            - {name: PYTHONUNBUFFERED, value: "1"}
+          resources:
+            requests: {cpu: 250m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: databases, mountPath: /app/databases}
+            - {name: script, mountPath: /switch, readOnly: true}
+      volumes:
+        - name: databases
+          persistentVolumeClaim: {claimName: bat3-databases-data-ceitec}
+        - name: script
+          configMap: {name: bioid-blastdb-switch}
