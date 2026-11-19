@@ -60,7 +60,7 @@ spec:
               key: DATABASE_URL
               name: bioid-api-secrets
         - name: BAT3_CODE_VERSION
-          value: git-bb4782021
+          value: git-1c45e170a
         - name: BAT3_ADHOC_DIR
           value: /app/runs/_adhoc
         - name: BAT3_ADHOC_RETENTION_DAYS
@@ -89,7 +89,7 @@ spec:
           value: xpavlik8@fi.muni.cz
         - name: BAT3_SHARED_CACHE_URL
           value: redis://bioid-cache-redis:6379/0
-        image: cerit.io/tomsko/bat3-validation-api@sha256:e71140b38b847cd76c343a4fa9b44dafc40906eb036a3f71ebd40dda60b7a888
+        image: cerit.io/tomsko/bat3-validation-api@sha256:da56de90c0981369029b50fe199cd06587dc24816ce4f226e5e8de09fa47fa8a
         imagePullPolicy: Always
         livenessProbe:
           failureThreshold: 6
