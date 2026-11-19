@@ -240,3 +240,64 @@ def test_blast_answers_are_cached_per_release(tmp_path, blastp):
     before = shared_cache._key(r, "MKV", False)
     _release(root, "nr-2")
     assert r.cache_name() == "blast_nr_protein@nr-2" and shared_cache._key(r, "MKV", False) != before
+
+
+@pytest.fixture
+def range_bucket(tmp_path, monkeypatch, blastp):
+    """A fake NCBI bucket over HTTP with Range support, and a fake blastdbcmd."""
+    import functools
+    from http.server import SimpleHTTPRequestHandler
+    from src_new import blastdb_fetch
+    root = tmp_path / "bucket"
+    snap = root / "2026-10-22-01-05-01"
+    snap.mkdir(parents=True)
+    big = bytes(range(256)) * 40  # 10240 bytes: 5 pieces of 2048 + 0
+    vols = {"nr.pal": b"alias", "nr.pdb": big}
+    for n, data in vols.items():
+        (snap / n).write_bytes(data)
+    for n in blastdb_fetch.EXTRA:
+        (snap / n).write_bytes(b"tax")
+    (snap / "nr-prot-metadata.json").write_text(json.dumps(
+        {"dbname": "nr", "bytes-total": len(big) + 5, "files": [f"s3://x/s/{n}" for n in vols]}))
+    requests_seen = []
+
+    class Ranged(SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            rng = self.headers.get("Range")
+            if not rng:
+                return super().do_GET()
+            data = (root / self.path.lstrip("/")).read_bytes()
+            lo, hi = (int(x) for x in rng.split("=")[1].split("-"))
+            requests_seen.append(lo)
+            body = data[lo:hi + 1]
+            self.send_response(206)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Ranged, directory=str(root)))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    bindir = tmp_path / "bin"
+    (bindir / "blastdbcmd").write_text(f"#!{sys.executable}\nprint('Database: fake nr')\n")
+    (bindir / "blastdbcmd").chmod(0o755)
+    monkeypatch.setattr(blastdb_fetch, "BUCKET", f"http://127.0.0.1:{httpd.server_address[1]}")
+    monkeypatch.setattr(blastdb_fetch, "PIECE_BYTES", 2048)
+    yield big, requests_seen
+    httpd.shutdown()
+
+
+def test_large_files_come_in_pieces_and_resume(tmp_path, range_bucket):
+    from src_new import blastdb_fetch
+    big, seen = range_bucket
+    dest = tmp_path / "nfs" / "nr-20261022-010501"
+    dest.mkdir(parents=True)
+    (dest / "nr.pdb.part").write_bytes(big[:5000])  # an old front-to-back .part: 2 whole pieces valid
+    status = {}
+    blastdb_fetch.fetch("nr", "2026-10-22-01-05-01", dest, streams=3, status=status)
+    assert (dest / "nr.pdb").read_bytes() == big
+    assert not (dest / "nr.pdb.part").exists() and not (dest / "nr.pdb.part.json").exists()
+    assert sorted(seen) == [4096, 6144, 8192]  # the first two pieces were kept
+    assert status["files_done"] == status["files_total"] == 5

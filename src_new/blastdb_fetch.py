@@ -13,8 +13,14 @@ Measured 2026-11-19 from the cluster: 26 MB/s per stream, 171 MB/s with 8;
 NCBI's FTP gave 2 MB/s.
 
 Each file is written as <name>.part and renamed once its size matches the
-server's, so a rerun resumes per file. When every file is there, `blastdbcmd
--info` must read the database, and <dest>/.complete is written.
+server's, so a rerun resumes per file. Files larger than PIECE_BYTES (the
+index files: nr.pdb is 101 GB) are fetched in pieces with HTTP ranges, spread
+over all streams like small files, and the finished pieces are listed in
+<name>.part.json, so a rerun resumes per piece (2026-11-19: one stream per
+file left nr.pdb at 5 MB/s, and a stalled stream restarted it from zero). A
+.part from before has a valid prefix: its whole pieces count as done. When
+every file is there, `blastdbcmd -info` must read the database, and
+<dest>/.complete is written.
 """
 from __future__ import annotations
 
@@ -38,6 +44,7 @@ EXTRA = ("taxdb.btd", "taxdb.bti", "taxonomy4blast.sqlite3")
 COMPLETE = ".complete"
 CHUNK = 8 << 20
 ATTEMPTS = 6
+PIECE_BYTES = 1 << 30
 
 
 def release_name(db: str, snapshot: str) -> str:
@@ -95,6 +102,86 @@ def _download(url: str, target: Path, progress: Callable[[int], None]) -> int:
     return 0
 
 
+def _size(url: str) -> int:
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "bioid-blastdb-fetch"})
+    for attempt in range(1, ATTEMPTS + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return int(r.headers["Content-Length"])
+        except Exception:
+            if attempt == ATTEMPTS:
+                raise
+            time.sleep(5 * attempt)
+    return 0
+
+
+class _Pieces:
+    """One large file fetched in PIECE_BYTES ranges into <name>.part."""
+
+    def __init__(self, url: str, target: Path, size: int) -> None:
+        self.url, self.target, self.size = url, target, size
+        self.part = target.with_name(target.name + ".part")
+        self.state = target.with_name(target.name + ".part.json")
+        self.lock = threading.Lock()
+        offsets = range(0, size, PIECE_BYTES)
+        try:
+            done = set(json.loads(self.state.read_text())["done"])
+        except (OSError, ValueError, KeyError):
+            # no piece list: a .part written front to back by _download
+            have = self.part.stat().st_size if self.part.exists() else 0
+            done = {o for o in offsets if o + min(PIECE_BYTES, size - o) <= have}
+        self.done = done
+        self.todo = [o for o in offsets if o not in done]
+        with open(self.part, "ab") as f:
+            f.truncate(size)
+
+    def done_bytes(self) -> int:
+        return sum(min(PIECE_BYTES, self.size - o) for o in self.done)
+
+    def fetch(self, offset: int, progress: Callable[[int], None]) -> bool:
+        """One piece; True when it was the last one (the file is complete)."""
+        length = min(PIECE_BYTES, self.size - offset)
+        for attempt in range(1, ATTEMPTS + 1):
+            got = 0
+            try:
+                req = urllib.request.Request(self.url, headers={
+                    "User-Agent": "bioid-blastdb-fetch", "Range": f"bytes={offset}-{offset + length - 1}"})
+                with urllib.request.urlopen(req, timeout=60) as r, open(self.part, "r+b") as out:
+                    if r.status != 206:
+                        raise IOError(f"HTTP {r.status} for a range request")
+                    out.seek(offset)
+                    while got < length:
+                        buf = r.read(min(CHUNK, length - got))
+                        if not buf:
+                            break
+                        out.write(buf)
+                        got += len(buf)
+                        progress(len(buf))
+                if got != length:
+                    raise IOError(f"got {got} of {length} bytes at {offset}")
+                break
+            except Exception as exc:
+                progress(-got)
+                if attempt == ATTEMPTS:
+                    raise RuntimeError(f"{self.target.name} @{offset}: {exc}") from exc
+                log.warning("%s @%d: %s (attempt %d), retrying", self.target.name, offset, exc, attempt)
+                time.sleep(min(60, 5 * attempt))
+        with self.lock:
+            self.done.add(offset)
+            tmp = self.state.with_name(self.state.name + ".tmp")
+            tmp.write_text(json.dumps({"size": self.size, "done": sorted(self.done)}))
+            os.replace(tmp, self.state)
+            return self.finish()
+
+    def finish(self) -> bool:
+        """Rename the .part once every piece is there."""
+        if len(self.done) < len(range(0, self.size, PIECE_BYTES)):
+            return False
+        os.replace(self.part, self.target)
+        self.state.unlink(missing_ok=True)
+        return True
+
+
 def fetch(db: str, snapshot: str, dest: Path, streams: int = 8,
           status: Optional[dict] = None, lock: Optional[threading.Lock] = None) -> int:
     """Download the snapshot into dest; `status` (optional) gets done_bytes,
@@ -121,8 +208,25 @@ def fetch(db: str, snapshot: str, dest: Path, streams: int = 8,
             status["files_done"] += 1
 
     todo = [n for n in names if n not in have]
+    sizes: dict[str, int] = {}
     with ThreadPoolExecutor(max_workers=max(1, streams)) as pool:
-        for f in [pool.submit(one, n) for n in todo]:
+        for n, size in zip(todo, pool.map(lambda n: _size(f"{BUCKET}/{snapshot}/{n}"), todo)):
+            sizes[n] = size
+    big = {n: _Pieces(f"{BUCKET}/{snapshot}/{n}", dest / n, sizes[n])
+           for n in todo if sizes[n] > PIECE_BYTES}
+    with lock:
+        status["done_bytes"] += sum(p.done_bytes() for p in big.values())
+        status["files_done"] += sum(1 for p in big.values() if not p.todo and p.finish())
+
+    def piece(p: _Pieces, offset: int) -> None:
+        if p.fetch(offset, progress):
+            with lock:
+                status["files_done"] += 1
+
+    with ThreadPoolExecutor(max_workers=max(1, streams)) as pool:
+        jobs = [pool.submit(piece, p, o) for p in big.values() for o in p.todo]
+        jobs += [pool.submit(one, n) for n in todo if n not in big]
+        for f in jobs:
             f.result()  # the first failure stops the fetch (rerun resumes)
     (dest / meta["_name"]).write_text(json.dumps({k: v for k, v in meta.items() if k != "_name"}))
     info = subprocess.run(["blastdbcmd", "-db", str(dest / db), "-info"],
