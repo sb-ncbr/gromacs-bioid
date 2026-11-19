@@ -1,0 +1,109 @@
+# Exported from ceitec-biodata-ns by deploy/export-live.sh; do not edit by hand
+# without applying the same change to the cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations: {}
+  labels:
+    app: bioid-blast-core-nt
+  name: bioid-blast-core-nt
+  namespace: ceitec-biodata-ns
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: bioid-blast-core-nt
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: bioid-blast-core-nt
+    spec:
+      containers:
+      - command:
+        - python
+        - -m
+        - src_new.blast_service
+        env:
+        - name: BLAST_DB_PATH
+          value: /app/databases/core_nt/core_nt
+        - name: BLAST_LOCAL_DIR
+          value: /nvme
+        - name: BLAST_THREADS
+          value: '8'
+        - name: BLAST_SLOTS
+          value: '1'
+        - name: BLAST_STAGE_MBPS
+          value: '40'
+        - name: BLASTDB_MEM_MAP
+          value: '0'
+        - name: TZ
+          value: Europe/Prague
+        image: cerit.io/tomsko/bat3-validation-api@sha256:da56de90c0981369029b50fe199cd06587dc24816ce4f226e5e8de09fa47fa8a
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 10
+        name: blast
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: '8'
+            memory: 16Gi
+          requests:
+            cpu: '4'
+            memory: 8Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /app/databases
+          name: databases
+          readOnly: true
+        - mountPath: /nvme
+          name: nvme
+        workingDir: /app
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: databases
+        persistentVolumeClaim:
+          claimName: bat3-databases-data-ceitec
+          readOnly: true
+      - name: nvme
+        persistentVolumeClaim:
+          claimName: bioid-blast-core-nt-nvme
