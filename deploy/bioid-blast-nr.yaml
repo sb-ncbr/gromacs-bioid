@@ -46,7 +46,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: blast
-          image: cerit.io/tomsko/bat3-validation-api@sha256:da56de90c0981369029b50fe199cd06587dc24816ce4f226e5e8de09fa47fa8a
+          image: cerit.io/tomsko/bat3-validation-api@sha256:5a38eaa2ceca4e266bd3c67b8e468c3d12f1da15f3985a6daa386f0c04046d54
           imagePullPolicy: IfNotPresent
           workingDir: /app
           command: ["python", "-m", "src_new.blast_service"]

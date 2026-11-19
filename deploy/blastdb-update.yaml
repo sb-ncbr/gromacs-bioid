@@ -28,7 +28,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: fetch
-          image: IMAGE
+          image: cerit.io/tomsko/bat3-validation-api@sha256:5a38eaa2ceca4e266bd3c67b8e468c3d12f1da15f3985a6daa386f0c04046d54
           workingDir: /app
           command: ["python", "-m", "src_new.blastdb_fetch", "nr", "2026-10-22-01-05-01",
                     "/app/databases/.staging/nr-20261022-010501", "--streams", "8"]
@@ -65,7 +65,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: fetch
-          image: IMAGE
+          image: cerit.io/tomsko/bat3-validation-api@sha256:5a38eaa2ceca4e266bd3c67b8e468c3d12f1da15f3985a6daa386f0c04046d54
           workingDir: /app
           command: ["python", "-m", "src_new.blastdb_fetch", "nt", "2026-10-22-01-05-01",
                     "/app/databases/.staging/nt-20261022-010501", "--streams", "8"]
@@ -102,7 +102,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: fetch
-          image: IMAGE
+          image: cerit.io/tomsko/bat3-validation-api@sha256:5a38eaa2ceca4e266bd3c67b8e468c3d12f1da15f3985a6daa386f0c04046d54
           workingDir: /app
           command: ["python", "-m", "src_new.blastdb_fetch", "core_nt", "2026-10-22-01-05-01",
                     "/app/databases/.staging/core_nt-20261022-010501", "--streams", "8"]

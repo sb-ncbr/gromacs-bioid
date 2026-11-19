@@ -38,11 +38,13 @@ spec:
           value: '1'
         - name: BLAST_STAGE_MBPS
           value: '40'
+        - name: BLAST_FETCH_SNAPSHOT
+          value: 2026-10-22-01-05-01
         - name: BLASTDB_MEM_MAP
           value: '0'
         - name: TZ
           value: Europe/Prague
-        image: cerit.io/tomsko/bat3-validation-api@sha256:da56de90c0981369029b50fe199cd06587dc24816ce4f226e5e8de09fa47fa8a
+        image: cerit.io/tomsko/bat3-validation-api@sha256:5a38eaa2ceca4e266bd3c67b8e468c3d12f1da15f3985a6daa386f0c04046d54
         imagePullPolicy: IfNotPresent
         livenessProbe:
           failureThreshold: 6

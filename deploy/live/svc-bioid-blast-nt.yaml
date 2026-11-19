@@ -1,0 +1,23 @@
+# Exported from ceitec-biodata-ns by deploy/export-live.sh; do not edit by hand
+# without applying the same change to the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: {}
+  labels:
+    app: bioid-blast-nt
+  name: bioid-blast-nt
+  namespace: ceitec-biodata-ns
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: bioid-blast-nt
+  sessionAffinity: None
+  type: ClusterIP
