@@ -265,6 +265,17 @@ def range_bucket(tmp_path, monkeypatch, blastp):
         def log_message(self, *a):
             pass
 
+        bad_md5 = False
+
+        def end_headers(self):
+            # Google's x-goog-hash on whole-file answers
+            import base64, hashlib
+            if not self.headers.get("Range") and self.command == "GET":
+                data = (root / self.path.lstrip("/")).read_bytes() + (b"x" if Ranged.bad_md5 else b"")
+                self.send_header("x-goog-hash", "crc32c=AAAA==, md5="
+                                 + base64.b64encode(hashlib.md5(data).digest()).decode())
+            super().end_headers()
+
         def do_GET(self):
             rng = self.headers.get("Range")
             if not rng:
@@ -285,13 +296,13 @@ def range_bucket(tmp_path, monkeypatch, blastp):
     (bindir / "blastdbcmd").chmod(0o755)
     monkeypatch.setattr(blastdb_fetch, "BUCKET", f"http://127.0.0.1:{httpd.server_address[1]}")
     monkeypatch.setattr(blastdb_fetch, "PIECE_BYTES", 2048)
-    yield big, requests_seen
+    yield big, requests_seen, Ranged
     httpd.shutdown()
 
 
 def test_large_files_come_in_pieces_and_resume(tmp_path, range_bucket):
     from src_new import blastdb_fetch
-    big, seen = range_bucket
+    big, seen, _ = range_bucket
     dest = tmp_path / "nfs" / "nr-20261022-010501"
     dest.mkdir(parents=True)
     (dest / "nr.pdb.part").write_bytes(big[:5000])  # an old front-to-back .part: 2 whole pieces valid
@@ -301,3 +312,12 @@ def test_large_files_come_in_pieces_and_resume(tmp_path, range_bucket):
     assert not (dest / "nr.pdb.part").exists() and not (dest / "nr.pdb.part.json").exists()
     assert sorted(seen) == [4096, 6144, 8192]  # the first two pieces were kept
     assert status["files_done"] == status["files_total"] == 5
+
+
+def test_a_file_whose_md5_differs_is_refused(tmp_path, range_bucket, monkeypatch):
+    from src_new import blastdb_fetch
+    _, _, handler = range_bucket
+    handler.bad_md5 = True
+    monkeypatch.setattr(blastdb_fetch, "ATTEMPTS", 1)
+    with pytest.raises(RuntimeError, match="MD5"):
+        blastdb_fetch.fetch("nr", "2026-10-22-01-05-01", tmp_path / "d", streams=1)

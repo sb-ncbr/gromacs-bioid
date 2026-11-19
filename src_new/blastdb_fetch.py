@@ -9,8 +9,14 @@ volume files themselves (no archives). Downloading a named snapshot, not
 same release in parallel: both name it release_name(db, snapshot), e.g.
 nr-20261022-010501, the name the workers compare (blast_service_client).
 
-Measured 2026-11-19 from the cluster: 26 MB/s per stream, 171 MB/s with 8;
-NCBI's FTP gave 2 MB/s.
+The same snapshots are on Google Cloud Storage (gs://blast-db), byte for
+byte (checked by MD5 2026-11-19), and that is the default source: Google
+serves it from a European edge, while the route from the cluster to AWS
+us-east-1 and NCBI degrades during the day (2026-11-19 from 08:35: S3 0.3 MB/s
+per stream, Google 17 MB/s per stream, 287 MB/s with 16). BLAST_FETCH_BUCKET
+chooses another copy, e.g. https://ncbi-blast-databases.s3.amazonaws.com.
+Google's answers carry each file's MD5 (x-goog-hash); a file fetched in one
+piece is checked against it.
 
 Each file is written as <name>.part and renamed once its size matches the
 server's, so a rerun resumes per file. Files larger than PIECE_BYTES (the
@@ -25,6 +31,8 @@ every file is there, `blastdbcmd -info` must read the database, and
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 import logging
 import os
@@ -38,7 +46,7 @@ from typing import Callable, Optional
 
 log = logging.getLogger("blastdb_fetch")
 
-BUCKET = "https://ncbi-blast-databases.s3.amazonaws.com"
+BUCKET = os.environ.get("BLAST_FETCH_BUCKET", "https://storage.googleapis.com/blast-db")
 #: taxonomy files BLAST reads next to the database (as in the NFS copies)
 EXTRA = ("taxdb.btd", "taxdb.bti", "taxonomy4blast.sqlite3")
 COMPLETE = ".complete"
@@ -80,17 +88,22 @@ def _download(url: str, target: Path, progress: Callable[[int], None]) -> int:
     for attempt in range(1, ATTEMPTS + 1):
         got = 0
         try:
+            md5 = hashlib.md5()
             with _get(url) as r, open(part, "wb") as out:
                 size = int(r.headers.get("Content-Length") or -1)
+                want = _md5_header(r.headers)
                 while True:
                     buf = r.read(CHUNK)
                     if not buf:
                         break
                     out.write(buf)
+                    md5.update(buf)
                     got += len(buf)
                     progress(len(buf))
             if size >= 0 and got != size:
                 raise IOError(f"got {got} of {size} bytes")
+            if want and base64.b64encode(md5.digest()).decode() != want:
+                raise IOError("MD5 differs from the server's")
             os.replace(part, target)
             return got
         except Exception as exc:
@@ -100,6 +113,16 @@ def _download(url: str, target: Path, progress: Callable[[int], None]) -> int:
             log.warning("%s: %s (attempt %d), retrying", target.name, exc, attempt)
             time.sleep(min(60, 5 * attempt))
     return 0
+
+
+def _md5_header(headers) -> str:
+    """The base64 MD5 in Google's x-goog-hash header ("crc32c=..., md5=...")."""
+    for h in headers.get_all("x-goog-hash") or []:
+        for part in h.split(","):
+            k, _, v = part.strip().partition("=")
+            if k == "md5":
+                return v
+    return ""
 
 
 def _size(url: str) -> int:
