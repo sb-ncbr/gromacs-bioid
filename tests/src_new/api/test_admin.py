@@ -249,3 +249,73 @@ def test_blast_services_report_their_health(monkeypatch):
     assert rows["nr"]["state"] == "staging" and rows["nr"]["staging"]["files_total"] == 2
     assert rows["nr"]["counts"]["searches"] == 3 and rows["nr"]["used_by_workers"] is False
     assert rows["uniref50"]["state"] == "no answer"
+
+
+class _FakeK8s:
+    """Deployments and claims of the BLAST services, as the admin API sees them."""
+
+    def __init__(self):
+        from types import SimpleNamespace as NS
+        self.NS = NS
+        self.replicas = {"bioid-blast-nr": 1}
+        self.claims = {"bioid-blast-nr-nvme": "Bound"}
+        self.env = [NS(name="BLAST_DB_PATH"), NS(name="BLAST_FETCH_SNAPSHOT"), NS(name="TZ")]
+        self.patches = []
+
+    def _404(self):
+        exc = Exception("Not Found")
+        exc.status = 404  # as kubernetes' ApiException
+        return exc
+
+    # apps
+    def read_namespaced_deployment(self, name, ns):
+        if name not in self.replicas:
+            raise self._404()
+        NS = self.NS
+        return NS(spec=NS(replicas=self.replicas[name], template=NS(spec=NS(containers=[NS(env=self.env)]))))
+
+    def patch_namespaced_deployment_scale(self, name, ns, body):
+        self.replicas[name] = body["spec"]["replicas"]
+
+    def patch_namespaced_deployment(self, name, ns, body):
+        self.patches.append(body)
+
+    # core
+    def read_namespaced_persistent_volume_claim(self, name, ns):
+        if name not in self.claims:
+            raise self._404()
+        NS = self.NS
+        deleting = self.claims[name] == "deleting"
+        return NS(metadata=NS(deletion_timestamp="now" if deleting else None), status=NS(phase=self.claims[name]))
+
+    def delete_namespaced_persistent_volume_claim(self, name, ns):
+        self.claims.pop(name, None)
+
+    def create_namespaced_persistent_volume_claim(self, ns, body):
+        assert body["spec"]["storageClassName"] == "zfs-csi"
+        self.claims[body["metadata"]["name"]] = body["spec"]["resources"]["requests"]["storage"]
+
+
+def test_nvme_copy_off_frees_the_volume_and_on_copies_from_nfs(monkeypatch):
+    from fastapi.testclient import TestClient
+    from src_new.api import admin
+    from src_new.api.main import app
+    k = _FakeK8s()
+    monkeypatch.setattr(admin, "_k8s", lambda: (k, k))
+    app.dependency_overrides[admin.require_admin] = lambda: None
+    try:
+        c = TestClient(app)
+        assert admin._nvme_state(k, k, "bioid-blast-nr", "bioid-blast-nr-nvme", "900Gi")["on"] is True
+        assert c.post("/api/v1/admin/blast/nr/nvme", json={"on": False}).json() == {"db": "nr", "on": False}
+        assert k.replicas["bioid-blast-nr"] == 0 and "bioid-blast-nr-nvme" not in k.claims
+        assert admin._nvme_state(k, k, "bioid-blast-nr", "bioid-blast-nr-nvme", "900Gi")["on"] is False
+        assert c.post("/api/v1/admin/blast/nr/nvme", json={"on": True}).status_code == 200
+        assert k.claims["bioid-blast-nr-nvme"] == "900Gi" and k.replicas["bioid-blast-nr"] == 1
+        # never download on: the update's snapshot setting is removed
+        assert k.patches == [[{"op": "remove", "path": "/spec/template/spec/containers/0/env/1"}]]
+        k.claims["bioid-blast-nr-nvme"] = "deleting"
+        assert c.post("/api/v1/admin/blast/nr/nvme", json={"on": True}).status_code == 409
+        assert c.post("/api/v1/admin/blast/pdbaa/nvme", json={"on": True}).status_code == 404
+        assert c.post("/api/v1/admin/blast/nr/nvme", json={"on": "yes"}).status_code == 422
+    finally:
+        app.dependency_overrides.clear()

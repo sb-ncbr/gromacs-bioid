@@ -7,6 +7,8 @@
 # zfs-csi is node-local: the volume (and so the pod) stays on the node it was
 # first created on. Stop: kubectl scale --replicas=0 (the copy stays on the
 # volume; the next start is ready at once). Delete the PVC to free the disk.
+# Admin page (Services, BLAST databases on NVMe): Turn off = scale to 0 and delete
+# the PVC; Turn on = new PVC, the service copies the database from NFS.
 # NOT updated by deploy/release.sh: a restart would send in-flight searches back
 # to NFS. Update the image here when blast_service.py changes, between searches.
 #   kubectl -n ceitec-biodata-ns apply -f deploy/bioid-blast-nt.yaml
@@ -55,10 +57,6 @@ spec:
             - {name: BLAST_THREADS, value: "8"}
             - {name: BLAST_SLOTS, value: "1"}
             - {name: BLAST_STAGE_MBPS, value: "40"}
-            # NCBI database update 2026-11-19: download this AWS snapshot instead of
-            # copying NFS; served once the NFS symlink is switched to it
-            # (deploy/blastdb-update.yaml downloads the NFS copy in parallel).
-            - {name: BLAST_FETCH_SNAPSHOT, value: "2026-10-22-01-05-01"}
             - {name: BLASTDB_MEM_MAP, value: "0"}  # as on the workers
             - {name: TZ, value: Europe/Prague}
           ports:

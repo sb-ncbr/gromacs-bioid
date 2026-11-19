@@ -463,6 +463,8 @@ export const adminApi = {
   traffic: (token: string, window: TrafficWindow) =>
     request<TrafficStats>(`/traffic?window=${seg(window)}`, token),
 
+  blastNvme: (token: string, db: string, on: boolean) =>
+    post<{ db: string; on: boolean }>(`/blast/${seg(db)}/nvme`, token, { on }),
   scale: (token: string, name: string, replicas: number) =>
     post<{ name: string; replicas: number }>(`/deployments/${seg(name)}/scale`, token, { replicas }),
   restartDeployment: (token: string, name: string) =>
@@ -536,4 +538,6 @@ export interface BlastService {
   };
   /** workers send searches here: ready, and the same release as NFS */
   used_by_workers: boolean;
+  /** the NVMe copy: on = service running and volume present; off = volume deleted */
+  nvme?: { on: boolean | null; replicas?: number | null; volume?: string | null; claim: string; size: string };
 }

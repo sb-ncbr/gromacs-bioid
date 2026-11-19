@@ -16,6 +16,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import threading
 import time
@@ -27,6 +28,8 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Requ
 from fastapi.responses import PlainTextResponse
 
 from . import retention, run_index, security
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -406,10 +409,12 @@ def _services() -> dict:
 
 
 #: BLAST services with an NVMe copy (src_new/blast_service.py): database,
-#: deployment, [blast] setting with the address
-BLAST_SERVICES = (("nr", "bioid-blast-nr", "nr_service_url"), ("nt", "bioid-blast-nt", "nt_service_url"),
-                  ("core_nt", "bioid-blast-core-nt", "core_nt_service_url"),
-                  ("uniref50", "bioid-blast-uniref50", "uniref50_service_url"))
+#: deployment, [blast] setting with the address, NVMe volume claim and its
+#: size (as in deploy/bioid-blast-*.yaml)
+BLAST_SERVICES = (("nr", "bioid-blast-nr", "nr_service_url", "bioid-blast-nr-nvme", "900Gi"),
+                  ("nt", "bioid-blast-nt", "nt_service_url", "bioid-blast-nt-nvme", "1500Gi"),
+                  ("core_nt", "bioid-blast-core-nt", "core_nt_service_url", "bioid-blast-core-nt-nvme", "400Gi"),
+                  ("uniref50", "bioid-blast-uniref50", "uniref50_service_url", "bioid-blast-uniref50-nvme", "40Gi"))
 
 
 def _blast_services() -> list[dict]:
@@ -423,9 +428,13 @@ def _blast_services() -> list[dict]:
     db_paths = {"nr": cfg.blast.nr_aa_db, "nt": cfg.blast.nt_db, "core_nt": cfg.blast.core_nt_db,
                 "uniref50": cfg.blast.uniref50_aa_db}
     out = []
-    for db, deployment, setting in BLAST_SERVICES:
+    try:
+        apps, core = _k8s()
+    except Exception:
+        apps = core = None
+    for db, deployment, setting, claim, size in BLAST_SERVICES:
         url = getattr(cfg.blast, setting, "")
-        row: dict[str, Any] = {"db": db, "deployment": deployment, "url": url}
+        row: dict[str, Any] = {"db": db, "deployment": deployment, "url": url, "nvme": _nvme_state(apps, core, deployment, claim, size)}
         try:
             row["nfs_release"] = release_of(db_paths[db])
         except Exception:
@@ -444,6 +453,85 @@ def _blast_services() -> list[dict]:
             row.update(state="no answer", error=str(exc)[:200], used_by_workers=False)
         out.append(row)
     return out
+
+
+def _not_found(exc: Exception) -> bool:
+    """A Kubernetes 404 (kubernetes' ApiException carries .status)."""
+    return getattr(exc, "status", None) == 404
+
+
+def _nvme_state(apps, core, deployment: str, claim: str, size: str) -> dict:
+    """Whether a database has its NVMe copy turned on: the service runs and
+    its volume exists. Off = no volume (the NVMe is freed)."""
+    if apps is None:
+        return {"on": None, "claim": claim, "size": size}
+    try:
+        replicas = apps.read_namespaced_deployment(deployment, NAMESPACE).spec.replicas or 0
+    except Exception as exc:
+        if not _not_found(exc):
+            raise
+        replicas = None
+    try:
+        pvc = core.read_namespaced_persistent_volume_claim(claim, NAMESPACE)
+        volume = "deleting" if pvc.metadata.deletion_timestamp else pvc.status.phase
+    except Exception as exc:
+        if not _not_found(exc):
+            raise
+        volume = None
+    return {"on": bool(replicas) and volume not in (None, "deleting"), "replicas": replicas,
+            "volume": volume, "claim": claim, "size": size}
+
+
+@router.post("/blast/{db}/nvme", dependencies=[Depends(require_admin)])
+async def blast_nvme(db: str, body: dict = Body(...)) -> dict:
+    """Turn a database's NVMe copy off or on (2026-11-19).
+
+    Off: the service stops and its volume is deleted, freeing the NVMe (it is
+    expensive); workers search NFS. On: a new volume, and the service copies
+    the release NFS points to from NFS (hours for nr/nt), then serves it.
+    """
+    row = next((r for r in BLAST_SERVICES if r[0] == db), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"No BLAST service for {db!r}.")
+    if not isinstance(body.get("on"), bool):
+        raise HTTPException(status_code=422, detail="on must be true or false")
+    _, deployment, _, claim, size = row
+    apps, core = _k8s()
+    if not body["on"]:
+        apps.patch_namespaced_deployment_scale(deployment, NAMESPACE, {"spec": {"replicas": 0}})
+        try:
+            core.delete_namespaced_persistent_volume_claim(claim, NAMESPACE)
+        except Exception as exc:
+            if not _not_found(exc):
+                raise
+        log.warning("admin: NVMe copy of %s turned off (%s scaled to 0, %s deleted)", db, deployment, claim)
+    else:
+        try:
+            pvc = core.read_namespaced_persistent_volume_claim(claim, NAMESPACE)
+            if pvc.metadata.deletion_timestamp:
+                raise HTTPException(status_code=409, detail="The previous copy is still being deleted; "
+                                                            "try again in a minute.")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            if not _not_found(exc):
+                raise
+            core.create_namespaced_persistent_volume_claim(NAMESPACE, {
+                "metadata": {"name": claim, "labels": {"app": deployment}},
+                "spec": {"accessModes": ["ReadWriteOnce"], "storageClassName": "zfs-csi",
+                         "resources": {"requests": {"storage": size}}}})
+        # copy from NFS, never download: drop a snapshot left from an update
+        dep = apps.read_namespaced_deployment(deployment, NAMESPACE)
+        env = dep.spec.template.spec.containers[0].env or []
+        drop = [{"op": "remove", "path": f"/spec/template/spec/containers/0/env/{i}"}
+                for i, e in reversed(list(enumerate(env))) if e.name == "BLAST_FETCH_SNAPSHOT"]
+        if drop:
+            apps.patch_namespaced_deployment(deployment, NAMESPACE, drop)
+        apps.patch_namespaced_deployment_scale(deployment, NAMESPACE, {"spec": {"replicas": 1}})
+        log.warning("admin: NVMe copy of %s turned on (%s, copying from NFS)", db, claim)
+    _drop_cache("blast_services")
+    _drop_cache("deployments")
+    return {"db": db, "on": body["on"]}
 
 
 #: The queues on the admin page: BioID's lanes (retries.py) first, then the
