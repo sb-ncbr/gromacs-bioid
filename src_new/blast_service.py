@@ -1,0 +1,319 @@
+"""One BLAST database on a node-local NVMe volume, as an HTTP service (2026-11-19).
+
+    python -m src_new.blast_service      (deploy/bioid-blast-<db>.yaml)
+
+Workers send nr / nt / core_nt / UniRef50 searches here when the service is
+ready (identification/resolvers/blast_service_client.py); otherwise they
+search the NFS copy. On start the service copies the database release the
+NFS symlink points to onto its volume (rate-capped: NFS is shared with every
+worker), checks the sizes, then serves it. A restarted pod finds the copy
+complete and is ready at once. When the NFS symlink moves to a new release,
+the old copy keeps serving (workers see the release differ and search NFS)
+while the new one is copied; the old copy is removed once the new one is
+complete.
+
+Same image, same BLAST binary and same database files as the workers, so a
+search here returns what it would on NFS (checked 2026-11-18 on nr: same 3
+identity hits and 2,980 similarity hits, same order and scores).
+
+Env:
+    BLAST_DB_PATH     the database as workers name it, e.g. /app/databases/nr/nr
+    BLAST_LOCAL_DIR   the NVMe volume (default /nvme)
+    BLAST_THREADS     threads per search (default 8)
+    BLAST_SLOTS       searches at a time (default 1; nr reads the whole volume
+                      per search, so more at once only share its bandwidth)
+    BLAST_STAGE_MBPS  copy rate cap in MB/s (default 40)
+    PORT              (default 8080)
+
+GET /health: {db, release, source_release, state (staging|ready|error),
+staging {release, done_bytes, total_bytes, files_done, files_total},
+blast_version, running, waiting, searches, timeouts, failures, error}.
+POST /search {release, query, task, max_target_seqs, timeout_s}: 200
+{release, seconds, output: <-outfmt 15 report>}; 409 not ready or another
+release; 422 bad request; 504 out of time; 500 BLAST failed.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any, Optional
+
+log = logging.getLogger("blast_service")
+
+COMPLETE = ".complete"
+CHUNK = 8 << 20
+MAX_TIMEOUT_S = 43200
+MAX_QUERY = 100_000
+TASKS = {"blastp": {None, "blastp-short"}, "blastn": {None, "blastn-short"}}
+QUERY_RE = re.compile(r"^[A-Za-z*\-]+$")
+RECHECK_S = 600
+
+
+class Service:
+    def __init__(self, db_path: str, local_dir: str, threads: int = 8, slots: int = 1,
+                 stage_mbps: float = 40.0) -> None:
+        self.db_path = db_path
+        self.db_name = os.path.basename(db_path)
+        self.local = Path(local_dir)
+        self.threads = threads
+        self.stage_bps = stage_mbps * 1e6
+        self.slots = threading.BoundedSemaphore(max(1, slots))
+        self.lock = threading.Lock()
+        self.release: Optional[str] = None
+        self.staging: dict[str, Any] = {}
+        self.error = ""
+        self.counts = {"running": 0, "waiting": 0, "searches": 0, "timeouts": 0, "failures": 0}
+        self.program = "blastp" if self._is_protein() else "blastn"
+        self.blast_version = self._version()
+        complete = [d.name for d in self._copies() if (d / COMPLETE).exists()]
+        want = self.source_release()
+        self.release = want if want in complete else (complete[-1] if complete else None)
+
+    # -- the database -----------------------------------------------------------
+
+    def source_dir(self) -> Path:
+        return Path(os.path.realpath(os.path.dirname(self.db_path)))
+
+    def source_release(self) -> str:
+        return self.source_dir().name
+
+    def _is_protein(self) -> bool:
+        src = self.source_dir()
+        return any((src / f"{self.db_name}{ext}").exists() for ext in (".pal", ".pin", ".psq", ".00.pin"))
+
+    def _version(self) -> str:
+        try:
+            out = subprocess.run([self.program, "-version"], capture_output=True, text=True, timeout=30)
+            return (out.stdout or "").strip().splitlines()[0]
+        except Exception:
+            return ""
+
+    def _copies(self) -> list[Path]:
+        if not self.local.is_dir():
+            return []
+        return sorted(p for p in self.local.iterdir() if p.is_dir() and not p.name.startswith("."))
+
+    def _complete(self, release: str) -> bool:
+        return (self.local / release / COMPLETE).exists()
+
+    def state(self) -> str:
+        if self.release:
+            return "ready"
+        return "error" if self.error else "staging"
+
+    def health(self) -> dict[str, Any]:
+        with self.lock:
+            return {"db": self.db_name, "release": self.release,
+                    "source_release": self.source_release(), "state": self.state(),
+                    "staging": dict(self.staging), "blast_version": self.blast_version,
+                    "program": self.program, "threads": self.threads, "error": self.error,
+                    **self.counts}
+
+    # -- copying ----------------------------------------------------------------
+
+    def stage(self, release: Optional[str] = None) -> None:
+        """Copy the release the NFS symlink points to; resumable per file."""
+        src = self.source_dir()
+        release = release or src.name
+        dst = self.local / release
+        files = sorted(p for p in src.iterdir() if p.is_file())
+        total = sum(p.stat().st_size for p in files)
+        self.local.mkdir(parents=True, exist_ok=True)
+        have = sum((dst / p.name).stat().st_size for p in files if (dst / p.name).exists())
+        if shutil.disk_usage(self.local).free < (total - have) * 1.05:
+            # no room next to the old copy: drop it (workers search NFS meanwhile)
+            with self.lock:
+                self.release = None
+            for old in self._copies():
+                if old.name != release:
+                    shutil.rmtree(old, ignore_errors=True)
+        dst.mkdir(parents=True, exist_ok=True)
+        with self.lock:
+            self.staging = {"release": release, "done_bytes": 0, "total_bytes": total,
+                            "files_done": 0, "files_total": len(files), "started": time.time()}
+        done = 0
+        for i, f in enumerate(files, 1):
+            size = f.stat().st_size
+            target = dst / f.name
+            if not (target.exists() and target.stat().st_size == size):
+                self._copy(f, target, done)
+            done += size
+            with self.lock:
+                self.staging.update(done_bytes=done, files_done=i)
+        bad = [f.name for f in files if (dst / f.name).stat().st_size != f.stat().st_size]
+        if bad:
+            raise RuntimeError(f"size differs after copy: {bad[:5]}")
+        (dst / COMPLETE).write_text(json.dumps({"files": len(files), "bytes": total,
+                                                "finished": time.strftime("%FT%T")}))
+        with self.lock:
+            self.release = release
+            self.staging["finished"] = time.time()
+            self.error = ""
+        for old in self._copies():
+            if old.name != release:
+                shutil.rmtree(old, ignore_errors=True)
+        log.info("ready: %s (%d files, %.1f GB)", release, len(files), total / 1e9)
+
+    def _copy(self, src: Path, target: Path, done_before: int) -> None:
+        part = target.with_name(target.name + ".part")
+        started, copied = time.time(), 0
+        with open(src, "rb") as fi, open(part, "wb") as fo:
+            while True:
+                buf = fi.read(CHUNK)
+                if not buf:
+                    break
+                fo.write(buf)
+                copied += len(buf)
+                with self.lock:
+                    self.staging["done_bytes"] = done_before + copied
+                ahead = copied / self.stage_bps - (time.time() - started)
+                if ahead > 0:
+                    time.sleep(ahead)
+        os.replace(part, target)
+
+    def keep_current(self) -> None:
+        """Stage at start and whenever the NFS symlink moves to a new release."""
+        while True:
+            want = self.source_release()
+            if self.release != want and not self._complete(want):
+                try:
+                    self.stage(want)
+                except Exception as exc:
+                    log.exception("staging %s failed", want)
+                    with self.lock:
+                        self.error = f"staging {want}: {exc}"
+            elif self.release != want:
+                with self.lock:
+                    self.release = want
+            time.sleep(RECHECK_S)
+
+    # -- searching --------------------------------------------------------------
+
+    def search(self, req: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        release = self.release
+        if not release or req.get("release") != release:
+            return 409, {"error": f"serving {release}, asked for {req.get('release')}"}
+        query = str(req.get("query") or "")
+        task = req.get("task") or None
+        try:
+            max_targets = int(req.get("max_target_seqs") or 500)
+            timeout_s = float(req.get("timeout_s") or 0)
+        except (TypeError, ValueError):
+            return 422, {"error": "max_target_seqs and timeout_s must be numbers"}
+        if not QUERY_RE.match(query) or len(query) > MAX_QUERY:
+            return 422, {"error": "query must be one sequence of letters"}
+        if task not in TASKS[self.program]:
+            return 422, {"error": f"task {task} is not one of {sorted(t for t in TASKS[self.program] if t)}"}
+        if not 1 <= max_targets <= 5000 or not 0 < timeout_s <= MAX_TIMEOUT_S:
+            return 422, {"error": "max_target_seqs 1-5000, timeout_s 1-43200"}
+        deadline = time.time() + timeout_s
+        with self.lock:
+            self.counts["waiting"] += 1
+        acquired = self.slots.acquire(timeout=timeout_s)
+        with self.lock:
+            self.counts["waiting"] -= 1
+        if not acquired:
+            with self.lock:
+                self.counts["timeouts"] += 1
+            return 504, {"error": "timed out waiting for a free slot"}
+        try:
+            return self._run(release, query, task, max_targets, deadline)
+        finally:
+            self.slots.release()
+
+    def _run(self, release: str, query: str, task: Optional[str], max_targets: int,
+             deadline: float) -> tuple[int, dict[str, Any]]:
+        fd, out = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        cmd = [self.program, "-outfmt", "15", "-db", str(self.local / release / self.db_name),
+               "-out", out, "-num_threads", str(self.threads), "-max_target_seqs", str(max_targets)]
+        if task:
+            cmd += ["-task", task]
+        with self.lock:
+            self.counts["running"] += 1
+        started = time.time()
+        try:
+            r = subprocess.run(cmd, input=query, text=True, capture_output=True,
+                               timeout=max(1.0, deadline - time.time()))
+            if r.returncode != 0:
+                with self.lock:
+                    self.counts["failures"] += 1
+                return 500, {"error": f"BLAST exit {r.returncode}: {(r.stderr or '').strip()[:500]}"}
+            with open(out) as f:
+                report = json.load(f)
+            with self.lock:
+                self.counts["searches"] += 1
+            return 200, {"release": release, "seconds": round(time.time() - started, 1), "output": report}
+        except subprocess.TimeoutExpired:
+            with self.lock:
+                self.counts["timeouts"] += 1
+            return 504, {"error": "BLAST ran out of time"}
+        finally:
+            with self.lock:
+                self.counts["running"] -= 1
+            if os.path.exists(out):
+                os.unlink(out)
+
+
+def make_handler(service: Service) -> type[BaseHTTPRequestHandler]:
+    class Handler(BaseHTTPRequestHandler):
+        def _send(self, code: int, body: dict[str, Any]) -> None:
+            data = json.dumps(body).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self) -> None:
+            if self.path == "/health":
+                self._send(200, service.health())
+            else:
+                self._send(404, {"error": "not found"})
+
+        def do_POST(self) -> None:
+            if self.path != "/search":
+                self._send(404, {"error": "not found"})
+                return
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                req = json.loads(self.rfile.read(min(n, 1 << 20)) or b"{}")
+            except (ValueError, TypeError):
+                self._send(422, {"error": "body must be JSON"})
+                return
+            code, body = service.search(req if isinstance(req, dict) else {})
+            self._send(code, body)
+
+        def log_message(self, fmt: str, *args: Any) -> None:
+            if not (args and str(args[0]).startswith("GET /health")):
+                log.info("%s %s", self.address_string(), fmt % args)
+
+    return Handler
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    service = Service(
+        db_path=os.environ["BLAST_DB_PATH"],
+        local_dir=os.environ.get("BLAST_LOCAL_DIR", "/nvme"),
+        threads=int(os.environ.get("BLAST_THREADS", "8")),
+        slots=int(os.environ.get("BLAST_SLOTS", "1")),
+        stage_mbps=float(os.environ.get("BLAST_STAGE_MBPS", "40")),
+    )
+    threading.Thread(target=service.keep_current, daemon=True, name="stage").start()
+    server = ThreadingHTTPServer(("", int(os.environ.get("PORT", "8080"))), make_handler(service))
+    log.info("%s: %s, release %s", service.db_name, service.state(), service.release)
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

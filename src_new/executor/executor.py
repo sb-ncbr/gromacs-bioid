@@ -427,6 +427,10 @@ class PipelineExecutor:
                 calls = service_stats.run_summary()
                 if calls:
                     self.results_manager.set_data("run_health/service_calls", calls)
+                from ..identification.resolvers import blast_service_client
+                if blast_service_client.routes:
+                    self.results_manager.set_data("run_health/blast_routes",
+                                                  dict(blast_service_client.routes))
             except Exception:
                 pass
 

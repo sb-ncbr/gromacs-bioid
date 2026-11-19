@@ -20,6 +20,12 @@ OBJECTS=(
   svc/bioid-mcp svc/validation-docs
   ingress/bat3-ceitec-bat3-ingress
 )
+# BLAST services (deploy/bioid-blast-<db>.yaml), exported once they exist
+for db in nr nt core-nt uniref50; do
+  if kubectl -n $NS get deploy/bioid-blast-$db >/dev/null 2>&1; then
+    OBJECTS+=(deploy/bioid-blast-$db svc/bioid-blast-$db)
+  fi
+done
 mkdir -p "$OUT"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 for o in "${OBJECTS[@]}"; do

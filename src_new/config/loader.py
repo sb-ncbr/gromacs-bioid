@@ -261,6 +261,13 @@ class BlastConfig:
     # Per-search limit for the NCBI nr / nt / core_nt databases (0 = timeout_s).
     # Run budgets grow by it when one of them is on (pipeline_steps).
     ncbi_timeout_s: int = 0
+    # BLAST services with an NVMe copy of one database (blast_service_client):
+    # a search goes there when the service is ready with the same release,
+    # otherwise it runs on NFS. Empty = always NFS.
+    nr_service_url: str = ""
+    nt_service_url: str = ""
+    core_nt_service_url: str = ""
+    uniref50_service_url: str = ""
     local_instance_run_short_search_if_under_X_residues: int = 30
     exact_match_max_evalue: float = 1e-50
     exact_match_min_bits: int = 51

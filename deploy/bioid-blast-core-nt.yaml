@@ -1,0 +1,95 @@
+# BLAST service with a node-local NVMe copy of one database (2026-11-19),
+# src_new/blast_service.py. Workers send searches here when it is ready with
+# the same release and BLAST version as their NFS copy
+# ([blast] *_service_url in config.ini); otherwise they search NFS as before.
+# core_nt: ~264 GB of files; copy ~2 h at 40 MB/s. Not measured yet.
+#
+# zfs-csi is node-local: the volume (and so the pod) stays on the node it was
+# first created on. Stop: kubectl scale --replicas=0 (the copy stays on the
+# volume; the next start is ready at once). Delete the PVC to free the disk.
+# NOT updated by deploy/release.sh: a restart would send in-flight searches back
+# to NFS. Update the image here when blast_service.py changes, between searches.
+#   kubectl -n ceitec-biodata-ns apply -f deploy/bioid-blast-core-nt.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bioid-blast-core-nt-nvme
+  namespace: ceitec-biodata-ns
+  labels: {app: bioid-blast-core-nt}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: zfs-csi
+  resources: {requests: {storage: 320Gi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bioid-blast-core-nt
+  namespace: ceitec-biodata-ns
+  labels: {app: bioid-blast-core-nt}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}  # one pod per volume
+  selector:
+    matchLabels: {app: bioid-blast-core-nt}
+  template:
+    metadata:
+      labels: {app: bioid-blast-core-nt}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: blast
+          image: cerit.io/tomsko/bat3-validation-api:v3.143-b63
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command: ["python", "-m", "src_new.blast_service"]
+          env:
+            - {name: BLAST_DB_PATH, value: /app/databases/core_nt/core_nt}
+            - {name: BLAST_LOCAL_DIR, value: /nvme}
+            - {name: BLAST_THREADS, value: "8"}
+            - {name: BLAST_SLOTS, value: "1"}
+            - {name: BLAST_STAGE_MBPS, value: "40"}
+            - {name: BLASTDB_MEM_MAP, value: "0"}  # as on the workers
+            - {name: TZ, value: Europe/Prague}
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet: {path: /health, port: 8080}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: 8080}
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests: {cpu: "4", memory: 8Gi}
+            limits: {cpu: "8", memory: 16Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: databases, mountPath: /app/databases, readOnly: true}
+            - {name: nvme, mountPath: /nvme}
+      volumes:
+        - name: databases
+          persistentVolumeClaim: {claimName: bat3-databases-data-ceitec, readOnly: true}
+        - name: nvme
+          persistentVolumeClaim: {claimName: bioid-blast-core-nt-nvme}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bioid-blast-core-nt
+  namespace: ceitec-biodata-ns
+  labels: {app: bioid-blast-core-nt}
+spec:
+  selector: {app: bioid-blast-core-nt}
+  ports:
+    - port: 8080
+      targetPort: 8080

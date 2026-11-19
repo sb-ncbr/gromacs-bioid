@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from typing import Callable
 
@@ -92,6 +93,10 @@ class BLASTResolver(IdentifierResolver):
     # = D-13 rule (PDB fusions, NR). "drop" = no subject-coverage requirement,
     # replaced by the aligned-length floor (UniProt/Swiss-Prot — see D14 comment).
     D14_SCOV_DROPPED = False
+
+    #: [blast] <key>_service_url: a BLAST service with an NVMe copy of this
+    #: database (blast_service_client); unset = every search runs on NFS.
+    _service_key = ""
 
     def __init__(self, config: RunConfig, db_path: str, is_protein: bool, 
                  resolver_name: str, identifier_type: str) -> None:
@@ -276,6 +281,38 @@ class BLASTResolver(IdentifierResolver):
             return False
         return True
 
+    def _search_on_service(self, sequence: str, short_search: list[str],
+                           max_target_seqs: int, timeout_s: int) -> list[dict] | None:
+        """The report from this database's BLAST service, or None to search
+        locally (no service, not ready, other release, service error)."""
+        url = getattr(self.blast_config, f"{self._service_key}_service_url", "") if self._service_key else ""
+        if not url:
+            return None
+        from . import blast_service_client as svc
+        release = svc.release_of(self.db_path)
+        reason = svc.unusable_reason(url, self.db_path, self._get_exec_path())
+        if reason is None:
+            call_timeout = self._call_timeout(timeout_s)
+            if call_timeout <= 0:
+                raise subprocess.TimeoutExpired(cmd=url, timeout=timeout_s)
+            started = time.time()
+            try:
+                report = svc.search(url, release=release, query=self._sanitize_sequence(sequence),
+                                    task=short_search[1] if short_search else None,
+                                    max_target_seqs=max_target_seqs, timeout_s=call_timeout)
+            except svc.ServiceTimeout:
+                svc.routes[self.name] = {"route": "service", "release": release, "reason": "timeout"}
+                raise subprocess.TimeoutExpired(cmd=url, timeout=timeout_s)
+            except svc.ServiceUnavailable as exc:
+                reason = str(exc)
+            else:
+                svc.routes[self.name] = {"route": "service", "release": release,
+                                         "seconds": round(time.time() - started, 1)}
+                return [report]
+        logger.info(f"{self.name}: searching locally, BLAST service not used ({reason})")
+        svc.routes[self.name] = {"route": "local", "release": release, "reason": reason}
+        return None
+
     def _run_blast_local(self, sequence: str, working_directory: str) -> list[dict] | None:
         """
         Execute BLAST search locally.
@@ -309,7 +346,11 @@ class BLASTResolver(IdentifierResolver):
             num_threads = self._num_threads()
             max_target_seqs = self.blast_config.max_target_seqs
             timeout_s = self._search_timeout_s()
-            
+
+            routed = self._search_on_service(sequence, short_search, max_target_seqs, timeout_s)
+            if routed is not None:
+                return routed
+
             cmd = [
                 executable_path, 
                 "-outfmt", "15", 
@@ -777,6 +818,8 @@ class _NCBIDatabase:
 
 class BLASTResolverNR(_NCBIDatabase, BLASTResolver):
     """BLAST resolver for NR (non-redundant protein) database."""
+
+    _service_key = "nr"
     
     def __init__(self, config: RunConfig) -> None:
         """Initialize BLAST resolver for NR protein sequences."""
@@ -808,6 +851,8 @@ class BLASTResolverSWISSPROT(BLASTResolver):
 
 class BLASTResolverCORENT(_NCBIDatabase, BLASTResolver):
     """BLAST resolver for core_nt (core nucleotide) database."""
+
+    _service_key = "core_nt"
     
     def __init__(self, config: RunConfig) -> None:
         """Initialize BLAST resolver for core_nt nucleotide sequences."""
@@ -823,6 +868,8 @@ class BLASTResolverCORENT(_NCBIDatabase, BLASTResolver):
 
 class BLASTResolverNT(_NCBIDatabase, BLASTResolver):
     """BLAST resolver for nt (full nucleotide) database."""
+
+    _service_key = "nt"
     
     def __init__(self, config: RunConfig) -> None:
         """Initialize BLAST resolver for nt nucleotide sequences."""
@@ -861,6 +908,7 @@ class BLASTResolverUNIREF50(BLASTResolver):
 
     D14_SCOV_DROPPED = True  # representatives are full-length UniProt entries
     supplementary = True
+    _service_key = "uniref50"
 
     def __init__(self, config: RunConfig) -> None:
         super().__init__(

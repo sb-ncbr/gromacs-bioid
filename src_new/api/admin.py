@@ -44,6 +44,12 @@ DEPLOYMENTS: dict[str, tuple[str, Optional[tuple[int, int]], bool]] = {
     "bat3-ceitec-bat3-web": ("Web application", None, True),
     "bioid-mcp": ("MCP server", (0, 3), True),
     "validation-docs": ("Documentation", None, True),
+    # BLAST services with an NVMe copy (deploy/bioid-blast-<db>.yaml): 0 = stopped,
+    # the copy stays on the volume; workers search NFS meanwhile.
+    "bioid-blast-nr": ("BLAST service — NCBI nr on NVMe", (0, 1), True),
+    "bioid-blast-nt": ("BLAST service — NCBI nt on NVMe", (0, 1), True),
+    "bioid-blast-core-nt": ("BLAST service — NCBI core_nt on NVMe", (0, 1), True),
+    "bioid-blast-uniref50": ("BLAST service — UniRef50 on NVMe", (0, 1), True),
     "bat3-redis": ("Redis — queue broker (restart loses queued runs)", None, False),
 }
 PVCS = ("bat3-runs-data-ceitec", "bat3-databases-data-ceitec")
@@ -168,6 +174,8 @@ def _deployments() -> list[dict[str, Any]]:
         try:
             d = apps.read_namespaced_deployment(name, NAMESPACE)
         except Exception as exc:
+            if name.startswith("bioid-blast-") and getattr(exc, "status", None) == 404:
+                continue  # that BLAST service has not been set up
             out.append({"name": name, "label": label, "error": str(exc)[:200]})
             continue
         selector = ",".join(f"{k}={v}" for k, v in (d.spec.selector.match_labels or {}).items())
