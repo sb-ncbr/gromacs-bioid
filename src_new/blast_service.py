@@ -23,6 +23,10 @@ Env:
     BLAST_SLOTS       searches at a time (default 1; nr reads the whole volume
                       per search, so more at once only share its bandwidth)
     BLAST_STAGE_MBPS  copy rate cap in MB/s (default 40)
+    BLAST_FETCH_SNAPSHOT  download this NCBI AWS snapshot (blastdb_fetch) instead
+                      of copying from NFS; served once NFS points to the same
+                      release (database updates: both download in parallel)
+    BLAST_FETCH_STREAMS   parallel downloads (default 8)
     PORT              (default 8080)
 
 GET /health: {db, release, source_release, state (staging|ready|error),
@@ -55,12 +59,13 @@ MAX_TIMEOUT_S = 43200
 MAX_QUERY = 100_000
 TASKS = {"blastp": {None, "blastp-short"}, "blastn": {None, "blastn-short"}}
 QUERY_RE = re.compile(r"^[A-Za-z*\-]+$")
-RECHECK_S = 600
+RECHECK_S = 60
 
 
 class Service:
     def __init__(self, db_path: str, local_dir: str, threads: int = 8, slots: int = 1,
-                 stage_mbps: float = 40.0) -> None:
+                 stage_mbps: float = 40.0, snapshot: Optional[str] = None, streams: int = 8) -> None:
+        from .blastdb_fetch import release_name
         self.db_path = db_path
         self.db_name = os.path.basename(db_path)
         self.local = Path(local_dir)
@@ -69,6 +74,10 @@ class Service:
         self.slots = threading.BoundedSemaphore(max(1, slots))
         self.lock = threading.Lock()
         self.release: Optional[str] = None
+        # AWS snapshot to download ahead of the NFS switch (blastdb_fetch)
+        self.snapshot = snapshot
+        self.prefetch = release_name(self.db_name, snapshot) if snapshot else None
+        self.streams = streams
         self.staging: dict[str, Any] = {}
         self.error = ""
         self.counts = {"running": 0, "waiting": 0, "searches": 0, "timeouts": 0, "failures": 0}
@@ -111,9 +120,10 @@ class Service:
         return "error" if self.error else "staging"
 
     def health(self) -> dict[str, Any]:
+        source = self.source_release()
         with self.lock:
-            return {"db": self.db_name, "release": self.release,
-                    "source_release": self.source_release(), "state": self.state(),
+            return {"db": self.db_name, "release": self.release, "prefetch": self.prefetch,
+                    "source_release": source, "state": self.state(),
                     "staging": dict(self.staging), "blast_version": self.blast_version,
                     "program": self.program, "threads": self.threads, "error": self.error,
                     **self.counts}
@@ -181,20 +191,44 @@ class Service:
         os.replace(part, target)
 
     def keep_current(self) -> None:
-        """Stage at start and whenever the NFS symlink moves to a new release."""
+        """Copy the release NFS points to, at start and whenever the symlink
+        moves. With a snapshot (BLAST_FETCH_SNAPSHOT), download that from AWS
+        instead and serve it once NFS points to the same release: the NFS
+        copy is downloaded in parallel, then the symlink is switched."""
         while True:
             want = self.source_release()
-            if self.release != want and not self._complete(want):
-                try:
+            try:
+                if self.prefetch and not self._complete(self.prefetch):
+                    self._drop(keep={self.release, self.prefetch})
+                    self.fetch_snapshot()
+                if self._complete(want):
+                    if self.release != want:
+                        with self.lock:
+                            self.release = want
+                elif not self.prefetch:
                     self.stage(want)
-                except Exception as exc:
-                    log.exception("staging %s failed", want)
-                    with self.lock:
-                        self.error = f"staging {want}: {exc}"
-            elif self.release != want:
+                if self.prefetch:
+                    self._drop(keep={self.release, self.prefetch})
+            except Exception as exc:
+                log.exception("getting %s failed", self.prefetch or want)
                 with self.lock:
-                    self.release = want
+                    self.error = f"{self.prefetch or want}: {exc}"
             time.sleep(RECHECK_S)
+
+    def fetch_snapshot(self) -> None:
+        from . import blastdb_fetch
+        with self.lock:
+            self.error = ""
+        blastdb_fetch.fetch(self.db_name, self.snapshot, self.local / self.prefetch,
+                            self.streams, self.staging, self.lock)
+        log.info("downloaded %s; served once NFS points to it", self.prefetch)
+
+    def _drop(self, keep: set) -> None:
+        """Remove copies other than `keep` (old or partial releases)."""
+        for d in self._copies():
+            if d.name not in keep:
+                log.info("removing %s", d.name)
+                shutil.rmtree(d, ignore_errors=True)
 
     # -- searching --------------------------------------------------------------
 
@@ -308,6 +342,8 @@ def main() -> None:
         threads=int(os.environ.get("BLAST_THREADS", "8")),
         slots=int(os.environ.get("BLAST_SLOTS", "1")),
         stage_mbps=float(os.environ.get("BLAST_STAGE_MBPS", "40")),
+        snapshot=os.environ.get("BLAST_FETCH_SNAPSHOT") or None,
+        streams=int(os.environ.get("BLAST_FETCH_STREAMS", "8")),
     )
     threading.Thread(target=service.keep_current, daemon=True, name="stage").start()
     server = ThreadingHTTPServer(("", int(os.environ.get("PORT", "8080"))), make_handler(service))

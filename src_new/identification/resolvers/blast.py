@@ -281,6 +281,13 @@ class BLASTResolver(IdentifierResolver):
             return False
         return True
 
+    def cache_name(self) -> str:
+        """Cached answers belong to one database release (2026-11-19): after a
+        database update (the symlink moves) old answers are not reused."""
+        from .blast_service_client import release_of
+        release = release_of(self.db_path) if self.db_path else ""
+        return f"{self.name}@{release}" if release else self.name
+
     def _search_on_service(self, sequence: str, short_search: list[str],
                            max_target_seqs: int, timeout_s: int) -> list[dict] | None:
         """The report from this database's BLAST service, or None to search

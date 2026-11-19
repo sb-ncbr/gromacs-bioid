@@ -110,6 +110,11 @@ class IdentifierResolver(ABC):
             return default
         return max(0.0, min(default, rem))
 
+    def cache_name(self) -> str:
+        """Name the resolver's answers are cached under (local and shared
+        cache); resolvers over a versioned database add the release."""
+        return self.name
+
     @property
     def enabled_identity(self) -> bool:
         """Identity-attempt enablement from ``[identifiers] <name>`` toggle
@@ -195,9 +200,9 @@ class IdentifierResolver(ABC):
             try:
                 from .cache_manager import record_cache_event
                 if as_similarity:
-                    cached = cache.fetch_similarity_identifiers(self.name, signature)
+                    cached = cache.fetch_similarity_identifiers(self.cache_name(), signature)
                 else:
-                    cached = cache.fetch_identity_identifiers(self.name, signature)
+                    cached = cache.fetch_identity_identifiers(self.cache_name(), signature)
                 # W3.3 A.3: health-record counters (hit vs miss per resolver).
                 record_cache_event(self.name, bool(cached))
                 if cached:
@@ -230,19 +235,19 @@ class IdentifierResolver(ABC):
             if cache is not None and result is not None:
                 try:
                     if as_similarity:
-                        cache.save_similarity_identifiers(self.name, signature, result)
+                        cache.save_similarity_identifiers(self.cache_name(), signature, result)
                     else:
                         # Convert to list[str] if needed
                         if isinstance(result, list) and len(result) > 0:
                             if isinstance(result[0], tuple):
                                 # Extract just identifiers
                                 cache.save_identity_identifiers(
-                                    self.name, 
+                                    self.cache_name(), 
                                     signature, 
                                     [ident for ident, _ in result]
                                 )
                             else:
-                                cache.save_identity_identifiers(self.name, signature, result)
+                                cache.save_identity_identifiers(self.cache_name(), signature, result)
                 except (sqlite3.Error, OSError) as exc:
                     # v3.143 (C-13): same for the write side.
                     logger.warning(

@@ -171,3 +171,72 @@ def test_service_keys_and_default_urls():
     assert BLASTResolverUNIREF50(cfg)._service_key == "uniref50"
     assert cfg.blast.nr_service_url == "http://bioid-blast-nr:8080"
     assert cfg.blast.uniref50_service_url == "http://bioid-blast-uniref50:8080"
+
+
+# -- database updates: AWS snapshots downloaded ahead of the NFS switch ------------
+
+def test_release_names_match_the_nfs_naming():
+    from src_new.blastdb_fetch import release_name
+    assert release_name("nr", "2026-10-22-01-05-01") == "nr-20261022-010501"
+    assert release_name("core_nt", "2026-10-22-01-05-01") == "core_nt-20261022-010501"
+
+
+@pytest.fixture
+def bucket(tmp_path, monkeypatch, blastp):
+    """A fake NCBI bucket served from tmp_path/bucket, and a fake blastdbcmd."""
+    from src_new import blastdb_fetch
+    snap = tmp_path / "bucket" / "2026-10-22-01-05-01"
+    snap.mkdir(parents=True)
+    vols = {"nr.pal": b"alias", "nr.000.psq": b"q" * 3000, "nr.000.pin": b"i" * 10}
+    for n, data in vols.items():
+        (snap / n).write_bytes(data)
+    for n in blastdb_fetch.EXTRA:
+        (snap / n).write_bytes(b"tax")
+    (snap / "nr-prot-metadata.json").write_text(json.dumps(
+        {"dbname": "nr", "bytes-total": 3015, "files": [f"s3://x/2026-10-22-01-05-01/{n}" for n in vols]}))
+    bindir = tmp_path / "bin"
+    (bindir / "blastdbcmd").write_text(f"#!{sys.executable}\nprint('Database: fake nr')\n")
+    (bindir / "blastdbcmd").chmod(0o755)
+    monkeypatch.setattr(blastdb_fetch, "BUCKET", (tmp_path / "bucket").as_uri())
+    return snap
+
+
+def test_fetch_downloads_resumes_and_marks_complete(tmp_path, bucket):
+    from src_new import blastdb_fetch
+    dest = tmp_path / "nfs" / ".staging" / "nr-20261022-010501"
+    dest.mkdir(parents=True)
+    (dest / "nr.000.psq").write_bytes(b"q" * 3000)          # already there: kept
+    (dest / "nr.pal.part").write_bytes(b"half")              # interrupted: fetched again
+    status = {}
+    blastdb_fetch.fetch("nr", "2026-10-22-01-05-01", dest, streams=2, status=status)
+    assert (dest / "nr.pal").read_bytes() == b"alias" and not (dest / "nr.pal.part").exists()
+    assert (dest / "taxdb.btd").exists() and (dest / "nr-prot-metadata.json").exists()
+    assert json.loads((dest / ".complete").read_text())["snapshot"] == "2026-10-22-01-05-01"
+    assert status["files_done"] == status["files_total"] == 6
+
+
+def test_service_prefetches_and_serves_after_the_switch(tmp_path, bucket):
+    root = tmp_path / "dbs"
+    db = _release(root, "nr-20260729-070107")                   # NFS: the July copy
+    s = blast_service.Service(db, str(tmp_path / "nvme"), snapshot="2026-10-22-01-05-01", streams=2)
+    (tmp_path / "nvme" / "nr-20260729-070107").mkdir(parents=True)  # a partial July copy
+    s.fetch_snapshot()
+    s._drop(keep={s.release, s.prefetch})
+    assert s.release is None and s.state() == "staging"         # NFS still on July: workers use NFS
+    assert sorted(p.name for p in (tmp_path / "nvme").iterdir()) == ["nr-20261022-010501"]
+    _release(root, "nr-20261022-010501")                         # the switch
+    assert s._complete(s.source_release())
+    s.release = s.source_release()                               # what keep_current does next
+    h = s.health()
+    assert h["state"] == "ready" and h["release"] == h["source_release"] == "nr-20261022-010501"
+
+
+def test_blast_answers_are_cached_per_release(tmp_path, blastp):
+    from src_new.identification import shared_cache
+    root = tmp_path / "dbs"
+    db = _release(root, "nr-1")
+    r = _resolver(db, "", blastp)
+    assert r.cache_name() == "blast_nr_protein@nr-1"
+    before = shared_cache._key(r, "MKV", False)
+    _release(root, "nr-2")
+    assert r.cache_name() == "blast_nr_protein@nr-2" and shared_cache._key(r, "MKV", False) != before

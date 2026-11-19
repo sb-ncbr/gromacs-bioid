@@ -56,6 +56,10 @@ spec:
             - {name: BLAST_THREADS, value: "8"}
             - {name: BLAST_SLOTS, value: "1"}
             - {name: BLAST_STAGE_MBPS, value: "40"}
+            # NCBI database update 2026-11-19: download this AWS snapshot instead of
+            # copying NFS; served once the NFS symlink is switched to it
+            # (deploy/blastdb-update.yaml downloads the NFS copy in parallel).
+            - {name: BLAST_FETCH_SNAPSHOT, value: "2026-10-22-01-05-01"}
             - {name: BLASTDB_MEM_MAP, value: "0"}  # as on the workers
             - {name: TZ, value: Europe/Prague}
           ports:

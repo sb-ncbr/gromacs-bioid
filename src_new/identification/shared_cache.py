@@ -74,7 +74,7 @@ def fingerprint(config: Any) -> str:
 
 def _key(resolver: Any, signature: str, similarity: bool) -> str:
     sig = hashlib.sha256(signature.encode("utf-8", "surrogatepass")).hexdigest()
-    return f"{PREFIX}:{fingerprint(resolver.config)}:{resolver.name}:{'sim' if similarity else 'id'}:{sig}"
+    return f"{PREFIX}:{fingerprint(resolver.config)}:{resolver.cache_name()}:{'sim' if similarity else 'id'}:{sig}"
 
 
 def get(resolver: Any, signature: str, similarity: bool) -> Optional[tuple[list, Optional[dict]]]:

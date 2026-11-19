@@ -1,0 +1,119 @@
+# NCBI BLAST database update, 2026-11-19: download AWS snapshot
+# 2026-10-22-01-05-01 of nr, nt and core_nt onto NFS (src_new/blastdb_fetch.py)
+# next to the July copies, while the BLAST services download the same snapshot
+# onto their NVMe volumes. Then: pause campaigns, drain, switch the symlinks
+#   cd /app/databases && ln -sfn .staging/nr-20261022-010501 nr.new && mv -T nr.new nr
+# (likewise nt, core_nt); workers and services pick the new release up.
+# Reruns resume per file: kubectl delete job ... && kubectl apply -f this file.
+#   kubectl -n ceitec-biodata-ns apply -f deploy/blastdb-update.yaml
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bioid-blastdb-fetch-nr
+  namespace: ceitec-biodata-ns
+  labels: {app: bioid-blastdb-fetch}
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels: {app: bioid-blastdb-fetch}
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: fetch
+          image: IMAGE
+          workingDir: /app
+          command: ["python", "-m", "src_new.blastdb_fetch", "nr", "2026-10-22-01-05-01",
+                    "/app/databases/.staging/nr-20261022-010501", "--streams", "8"]
+          resources:
+            requests: {cpu: "1", memory: 1Gi}
+            limits: {cpu: "2", memory: 2Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: databases, mountPath: /app/databases}
+      volumes:
+        - name: databases
+          persistentVolumeClaim: {claimName: bat3-databases-data-ceitec}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bioid-blastdb-fetch-nt
+  namespace: ceitec-biodata-ns
+  labels: {app: bioid-blastdb-fetch}
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels: {app: bioid-blastdb-fetch}
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: fetch
+          image: IMAGE
+          workingDir: /app
+          command: ["python", "-m", "src_new.blastdb_fetch", "nt", "2026-10-22-01-05-01",
+                    "/app/databases/.staging/nt-20261022-010501", "--streams", "8"]
+          resources:
+            requests: {cpu: "1", memory: 1Gi}
+            limits: {cpu: "2", memory: 2Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: databases, mountPath: /app/databases}
+      volumes:
+        - name: databases
+          persistentVolumeClaim: {claimName: bat3-databases-data-ceitec}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bioid-blastdb-fetch-core-nt
+  namespace: ceitec-biodata-ns
+  labels: {app: bioid-blastdb-fetch}
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels: {app: bioid-blastdb-fetch}
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: fetch
+          image: IMAGE
+          workingDir: /app
+          command: ["python", "-m", "src_new.blastdb_fetch", "core_nt", "2026-10-22-01-05-01",
+                    "/app/databases/.staging/core_nt-20261022-010501", "--streams", "8"]
+          resources:
+            requests: {cpu: "1", memory: 1Gi}
+            limits: {cpu: "2", memory: 2Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: databases, mountPath: /app/databases}
+      volumes:
+        - name: databases
+          persistentVolumeClaim: {claimName: bat3-databases-data-ceitec}
