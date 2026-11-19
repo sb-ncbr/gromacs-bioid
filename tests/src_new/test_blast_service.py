@@ -270,7 +270,7 @@ def range_bucket(tmp_path, monkeypatch, blastp):
         def end_headers(self):
             # Google's x-goog-hash on whole-file answers
             import base64, hashlib
-            if not self.headers.get("Range") and self.command == "GET":
+            if not self.headers.get("Range") and self.command in ("GET", "HEAD"):
                 data = (root / self.path.lstrip("/")).read_bytes() + (b"x" if Ranged.bad_md5 else b"")
                 self.send_header("x-goog-hash", "crc32c=AAAA==, md5="
                                  + base64.b64encode(hashlib.md5(data).digest()).decode())
@@ -321,3 +321,55 @@ def test_a_file_whose_md5_differs_is_refused(tmp_path, range_bucket, monkeypatch
     monkeypatch.setattr(blastdb_fetch, "ATTEMPTS", 1)
     with pytest.raises(RuntimeError, match="MD5"):
         blastdb_fetch.fetch("nr", "2026-10-22-01-05-01", tmp_path / "d", streams=1)
+
+
+def test_a_restart_after_the_part_grew_does_not_count_it_done(tmp_path, range_bucket):
+    """2026-11-19: a .part extended to full size, then the process restarted
+    before a piece finished: the next start took it for a finished download."""
+    from src_new import blastdb_fetch
+    big, seen, _ = range_bucket
+    dest = tmp_path / "nr-20261022-010501"
+    dest.mkdir()
+    url = f"{blastdb_fetch.BUCKET}/2026-10-22-01-05-01/nr.pdb"
+    blastdb_fetch._Pieces(url, dest / "nr.pdb", len(big))  # grows the .part, then "dies"
+    assert (dest / "nr.pdb.part").stat().st_size == len(big)
+    blastdb_fetch.fetch("nr", "2026-10-22-01-05-01", dest, streams=2)
+    assert (dest / "nr.pdb").read_bytes() == big
+    assert sorted(seen) == [0, 2048, 4096, 6144, 8192]
+
+
+def test_a_file_with_holes_is_removed_and_fetched_again(tmp_path, range_bucket, monkeypatch):
+    from src_new import blastdb_fetch
+    big, _, _ = range_bucket
+    dest = tmp_path / "nr-20261022-010501"
+    dest.mkdir()
+    (dest / "nr.pdb").write_bytes(b"")  # "finished", but never written
+    with open(dest / "nr.pdb", "r+b") as f:
+        f.truncate(len(big))
+    (dest / ".complete").write_text("{}")  # an old marker
+    blastdb_fetch.fetch("nr", "2026-10-22-01-05-01", dest, streams=2, check="md5")
+    assert (dest / "nr.pdb").read_bytes() == big
+    assert json.loads((dest / ".complete").read_text())["checked"] == "md5"
+
+
+def test_blocks_check_sees_a_sparse_file(tmp_path):
+    from src_new import blastdb_fetch
+    f = tmp_path / "x"
+    with open(f, "wb") as out:
+        out.truncate(100 << 20)
+    assert blastdb_fetch._has_holes(f, "blocks", "")
+    f.write_bytes(b"x" * (100 << 20))
+    assert not blastdb_fetch._has_holes(f, "blocks", "")
+
+
+def test_a_downloaded_copy_without_a_checked_marker_is_fetched_again(tmp_path, bucket):
+    root = tmp_path / "dbs"
+    db = _release(root, "nr-20261022-010501")
+    s = blast_service.Service(db, str(tmp_path / "nvme"), snapshot="2026-10-22-01-05-01", streams=2)
+    s.fetch_snapshot()
+    marker = tmp_path / "nvme" / "nr-20261022-010501" / ".complete"
+    assert json.loads(marker.read_text())["checked"] == "md5" and s._complete(s.prefetch)
+    marker.write_text(json.dumps({"snapshot": "2026-10-22-01-05-01"}))  # before 2026-11-19
+    assert not s._complete(s.prefetch)
+    again = blast_service.Service(db, str(tmp_path / "nvme"), snapshot="2026-10-22-01-05-01")
+    assert again.release is None

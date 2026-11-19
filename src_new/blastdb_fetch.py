@@ -155,8 +155,18 @@ class _Pieces:
             done = {o for o in offsets if o + min(PIECE_BYTES, size - o) <= have}
         self.done = done
         self.todo = [o for o in offsets if o not in done]
+        # The piece list goes to disk BEFORE the .part grows to full size: a
+        # full-size .part without a list would read as a finished front-to-back
+        # download on the next start (2026-11-19: ~1,000 nt volumes and nr's
+        # indexes were renamed as complete while all zeros).
+        self._save()
         with open(self.part, "ab") as f:
             f.truncate(size)
+
+    def _save(self) -> None:
+        tmp = self.state.with_name(self.state.name + ".tmp")
+        tmp.write_text(json.dumps({"size": self.size, "done": sorted(self.done)}))
+        os.replace(tmp, self.state)
 
     def done_bytes(self) -> int:
         return sum(min(PIECE_BYTES, self.size - o) for o in self.done)
@@ -191,9 +201,7 @@ class _Pieces:
                 time.sleep(min(60, 5 * attempt))
         with self.lock:
             self.done.add(offset)
-            tmp = self.state.with_name(self.state.name + ".tmp")
-            tmp.write_text(json.dumps({"size": self.size, "done": sorted(self.done)}))
-            os.replace(tmp, self.state)
+            self._save()
             return self.finish()
 
     def finish(self) -> bool:
@@ -205,19 +213,48 @@ class _Pieces:
         return True
 
 
+def _has_holes(path: Path, check: str, url: str) -> bool:
+    """Whether a downloaded file is not all data.
+
+    "blocks" (NFS/GPFS, no compression): a file larger than 64 MB must have
+    its whole size allocated; a never-written region is a hole. "md5" (the
+    NVMe copies on compressing ZFS, where allocation says nothing): a file
+    larger than PIECE_BYTES must have the server's MD5 (local disk reads are
+    fast; smaller files were checked while downloading)."""
+    size = path.stat().st_size
+    if check == "blocks":
+        return size > 64 << 20 and path.stat().st_blocks * 512 < 0.97 * size
+    if check == "md5" and size > PIECE_BYTES:
+        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "bioid-blastdb-fetch"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            want = _md5_header(r.headers)
+        if not want:
+            return False
+        md5 = hashlib.md5()
+        with open(path, "rb") as f:
+            for buf in iter(lambda: f.read(CHUNK), b""):
+                md5.update(buf)
+        return base64.b64encode(md5.digest()).decode() != want
+    return False
+
+
 def fetch(db: str, snapshot: str, dest: Path, streams: int = 8,
-          status: Optional[dict] = None, lock: Optional[threading.Lock] = None) -> int:
+          status: Optional[dict] = None, lock: Optional[threading.Lock] = None,
+          check: str = "blocks", _again: bool = False) -> int:
     """Download the snapshot into dest; `status` (optional) gets done_bytes,
-    total_bytes, files_done, files_total as it goes. Returns the bytes."""
+    total_bytes, files_done, files_total as it goes. Returns the bytes.
+    `check` is how finished files are checked for never-written regions
+    (_has_holes): "blocks", "md5" or "none"."""
     status = {} if status is None else status
     lock = lock or threading.Lock()
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
+    (dest / COMPLETE).unlink(missing_ok=True)  # complete again only once checked below
     meta = metadata(db, snapshot)
     names = files(meta)
     have = {n: (dest / n).stat().st_size for n in names if (dest / n).exists()}
     with lock:
-        status.update(release=dest.name, snapshot=snapshot, source="aws",
+        status.update(release=dest.name, snapshot=snapshot, source=BUCKET,
                       total_bytes=int(meta.get("bytes-total") or 0), done_bytes=sum(have.values()),
                       files_total=len(names), files_done=len(have), started=time.time())
 
@@ -251,13 +288,25 @@ def fetch(db: str, snapshot: str, dest: Path, streams: int = 8,
         jobs += [pool.submit(one, n) for n in todo if n not in big]
         for f in jobs:
             f.result()  # the first failure stops the fetch (rerun resumes)
+    with ThreadPoolExecutor(max_workers=max(1, streams)) as pool:
+        flags = list(pool.map(lambda n: _has_holes(dest / n, check, f"{BUCKET}/{snapshot}/{n}"), names))
+    holes = [n for n, bad in zip(names, flags) if bad]
+    if holes:
+        for n in holes:
+            (dest / n).unlink()
+        listed = ", ".join(holes[:5]) + (", ..." if len(holes) > 5 else "")
+        if _again:
+            raise RuntimeError(f"{len(holes)} files still incomplete after fetching them again: {listed}")
+        log.warning("%d files were incomplete (%s): removed, fetching them again", len(holes), listed)
+        return fetch(db, snapshot, dest, streams, status, lock, check, _again=True)
     (dest / meta["_name"]).write_text(json.dumps({k: v for k, v in meta.items() if k != "_name"}))
     info = subprocess.run(["blastdbcmd", "-db", str(dest / db), "-info"],
                           capture_output=True, text=True, timeout=600)
     if info.returncode != 0:
         raise RuntimeError(f"blastdbcmd cannot read {dest / db}: {info.stderr.strip()[:300]}")
     total = sum((dest / n).stat().st_size for n in names)
-    (dest / COMPLETE).write_text(json.dumps({"snapshot": snapshot, "files": len(names), "bytes": total,
+    (dest / COMPLETE).write_text(json.dumps({"snapshot": snapshot, "checked": check,
+                                             "files": len(names), "bytes": total,
                                              "info": info.stdout.strip().splitlines()[:4],
                                              "finished": time.strftime("%FT%T")}))
     with lock:
@@ -272,6 +321,8 @@ def main() -> None:
     p.add_argument("snapshot")
     p.add_argument("dest", help="directory, e.g. /app/databases/.staging/nr-20261022-010501")
     p.add_argument("--streams", type=int, default=8)
+    p.add_argument("--check", choices=("blocks", "md5", "none"), default="blocks",
+                   help="how finished files are checked for never-written regions")
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     status: dict = {}
@@ -287,7 +338,7 @@ def main() -> None:
                          s["files_done"], s["files_total"])
 
     threading.Thread(target=report, daemon=True).start()
-    fetch(a.db, a.snapshot, Path(a.dest), a.streams, status, lock)
+    fetch(a.db, a.snapshot, Path(a.dest), a.streams, status, lock, check=a.check)
     done.set()
 
 

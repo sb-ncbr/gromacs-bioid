@@ -83,7 +83,7 @@ class Service:
         self.counts = {"running": 0, "waiting": 0, "searches": 0, "timeouts": 0, "failures": 0}
         self.program = "blastp" if self._is_protein() else "blastn"
         self.blast_version = self._version()
-        complete = [d.name for d in self._copies() if (d / COMPLETE).exists()]
+        complete = [d.name for d in self._copies() if self._complete(d.name)]
         want = self.source_release()
         self.release = want if want in complete else (complete[-1] if complete else None)
 
@@ -112,7 +112,17 @@ class Service:
         return sorted(p for p in self.local.iterdir() if p.is_dir() and not p.name.startswith("."))
 
     def _complete(self, release: str) -> bool:
-        return (self.local / release / COMPLETE).exists()
+        marker = self.local / release / COMPLETE
+        if not marker.exists():
+            return False
+        if release != self.prefetch:
+            return True
+        # a downloaded copy counts once its files were checked for holes
+        # (blastdb_fetch since 2026-11-19; an older marker is checked again)
+        try:
+            return json.loads(marker.read_text()).get("checked") in ("md5", "blocks")
+        except (OSError, ValueError):
+            return False
 
     def state(self) -> str:
         if self.release:
@@ -220,7 +230,7 @@ class Service:
         with self.lock:
             self.error = ""
         blastdb_fetch.fetch(self.db_name, self.snapshot, self.local / self.prefetch,
-                            self.streams, self.staging, self.lock)
+                            self.streams, self.staging, self.lock, check="md5")
         log.info("downloaded %s; served once NFS points to it", self.prefetch)
 
     def _drop(self, keep: set) -> None:
