@@ -53,7 +53,7 @@ spec:
         - name: BLASTDB_MEM_MAP
           value: '0'
         - name: BAT3_CODE_VERSION
-          value: git-1c45e170a
+          value: git-bc24e1841
         - name: BAT3_ADHOC_DIR
           value: /app/runs/_adhoc
         - name: BAT3_IDENTIFIERS_CACHE_DIR
@@ -67,7 +67,7 @@ spec:
               name: bioid-api-secrets
         - name: BAT3_SHARED_CACHE_URL
           value: redis://bioid-cache-redis:6379/0
-        image: cerit.io/tomsko/bat3-validation-api@sha256:da56de90c0981369029b50fe199cd06587dc24816ce4f226e5e8de09fa47fa8a
+        image: cerit.io/tomsko/bat3-validation-api@sha256:ffbea11885e7b9e7454e3319c6db4605273934595d95476a06529d16f3264e7a
         imagePullPolicy: Always
         name: repo-worker
         resources:

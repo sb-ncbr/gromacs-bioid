@@ -333,7 +333,7 @@
     ],
     "molecule_type": "protein",
     "atom_count": 1629,
-    "residue_count": 0,
+    "residue_count": 223,
     "smiles": null
    },
    "type:small_molecule|atoms:9|residues:1|elements:C=7,N=2|formula:C7N2": {
@@ -345,7 +345,7 @@
     ],
     "molecule_type": "small_molecule",
     "atom_count": 9,
-    "residue_count": 0,
+    "residue_count": 1,
     "smiles": null
    },
    "type:ion|atoms:1|residues:1|elements:Ca=1": {
@@ -357,7 +357,7 @@
     ],
     "molecule_type": "ion",
     "atom_count": 1,
-    "residue_count": 0,
+    "residue_count": 1,
     "smiles": null
    },
    "type:water|atoms:1|residues:1|elements:O=1": {
@@ -369,7 +369,7 @@
     ],
     "molecule_type": "water",
     "atom_count": 1,
-    "residue_count": 0,
+    "residue_count": 1,
     "smiles": null
    }
   },
@@ -379,7 +379,7 @@
    "ion": 1,
    "water": 1
   },
-  "total_fragment_count": 0,
+  "total_fragment_count": 65,
   "segments": [
    "A",
    "A__v1",
@@ -423,7 +423,7 @@
  },
  "molecule_info": {
   "segment": "A__v1",
-  "name": "A__v1",
+  "name": "BEN",
   "type": "small_molecule",
   "atom_count": 9,
   "residue_count": 1,
@@ -431,7 +431,7 @@
  },
  "verification": {
   "run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
-  "segment": "A__v2",
+  "segment": null,
   "hits": [
    {
     "identifier": "CA",
@@ -706,13 +706,13 @@
    }
   ],
   "attempted_resolvers": [
-   "formula_pubchem_local",
-   "formula_pubchem@sim",
-   "formula_pubchem",
-   "name_manual",
-   "foldseek_3di",
-   "name_ccd",
-   "name_maps",
+   "alphafind_struct",
+   "alphafind_struct@sim",
+   "blast_nr_protein",
+   "blast_nr_protein@sim",
+   "blast_pdb_protein",
+   "blast_pdb_protein@sim",
+   "blast_swissprot_protein",
    "blast_swissprot_protein@sim"
   ],
   "failed_resolvers": [
@@ -940,7 +940,7 @@
    "min": 2,
    "max": 8
   },
-  "code_version": "git-1c45e170a"
+  "code_version": "git-bc24e1841"
  },
  "health": {
   "status": "healthy"
