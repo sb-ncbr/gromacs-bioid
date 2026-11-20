@@ -284,7 +284,7 @@ export interface CheckAnswer {
 }
 
 export interface CheckDiff {
-  kind: "identity" | "database" | "run";
+  kind: "identity" | "database" | "not_asked" | "run";
   segment?: string;
   resolver?: string;
   expected?: string;
