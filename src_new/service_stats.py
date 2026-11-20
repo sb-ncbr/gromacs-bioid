@@ -201,6 +201,20 @@ def _ensure_flusher() -> None:
 
 # -- HTTP ------------------------------------------------------------------------
 
+# Hosts that answer "not found" with a 5xx status: CACTUS returns 500 with a
+# "Page not found (404)" page for an InChIKey it does not know (2026-11-20).
+NOT_FOUND_5XX = {"cactus.nci.nih.gov": "Page not found"}
+
+
+def not_found_5xx(url: str, status: Optional[int], text: Optional[str]) -> bool:
+    """A 5xx that is really 'not found' (NOT_FOUND_5XX)."""
+    if status is None or status < 500:
+        return False
+    from urllib.parse import urlsplit
+    marker = NOT_FOUND_5XX.get(urlsplit(url).hostname or "")
+    return bool(marker) and isinstance(text, str) and marker in text
+
+
 def _http_outcome(status: Optional[int], exc: Optional[BaseException]) -> str:
     if exc is not None:
         return f"error:{type(exc).__name__}"
@@ -242,8 +256,11 @@ def install_http_hook() -> bool:
             raise
         try:
             retries = getattr(getattr(response.raw, "retries", None), "history", None) or ()
-            record_http(request.url, response.status_code, time.monotonic() - t0,
-                        retries=len(retries))
+            status = response.status_code
+            if status >= 500 and not kwargs.get("stream") and not_found_5xx(
+                    request.url, status, getattr(response, "text", "")):
+                status = 404
+            record_http(request.url, status, time.monotonic() - t0, retries=len(retries))
         except Exception:
             pass
         return response

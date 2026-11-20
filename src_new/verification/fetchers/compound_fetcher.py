@@ -9,6 +9,7 @@ import os
 import time
 
 import requests
+from ... import service_stats
 from ...utils.net import prefer_ipv4 as _prefer_ipv4
 _prefer_ipv4()
 
@@ -110,6 +111,8 @@ def _polite_get(url: str, tries: int = 4) -> requests.Response | None:
             logger.warning(f"GET failed {url}: {exc}")
             return None
         status = r.status_code if isinstance(getattr(r, "status_code", None), int) else 200
+        if service_stats.not_found_5xx(url, status, getattr(r, "text", "")):
+            return None  # CACTUS's unknown InChIKey: an answer, not an outage
         if status in (429, 500, 502, 503) and attempt < tries - 1:
             time.sleep(delay)
             delay *= 2

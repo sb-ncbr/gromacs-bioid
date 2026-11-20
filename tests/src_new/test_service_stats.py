@@ -152,6 +152,27 @@ def test_http_hook_counts_and_passes_through(fake, monkeypatch):
     assert row["retries"] == 2
 
 
+def test_cactus_not_found_500_counts_as_4xx(fake, monkeypatch):
+    # CACTUS answers an unknown InChIKey with 500 + "Page not found (404)"
+    import requests
+
+    def cactus(self, request, **kw):
+        r = requests.Response()
+        r.status_code, r._content = 500, (b"<h1>Page not found (404)</h1>" if "UNKNOWN" in request.url
+                                          else b"<h1>Server Error (500)</h1>")
+        return r
+
+    monkeypatch.setattr(requests.Session, "send", cactus)
+    ss.install_http_hook()
+    for key in ("UNKNOWN", "BROKEN"):
+        req = requests.Request("GET", f"https://cactus.nci.nih.gov/chemical/structure/{key}/smiles").prepare()
+        assert requests.Session().send(req).status_code == 500  # passed through unchanged
+    ss.flush()
+    (row,) = ss.summarize(ss.window(fake, 600))
+    assert row["outcomes"] == {"http_4xx": 1, "http_5xx": 1} and row["errors"] == 1
+    assert not ss.not_found_5xx("https://other.example.org/x", 500, "Page not found")
+
+
 def test_resolver_lookups_are_counted(fake):
     from src_new.config.loader import RunConfig
     from src_new.identification.base import IdentifierResolutionError, IdentifierResolver
