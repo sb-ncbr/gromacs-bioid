@@ -139,6 +139,18 @@ def resolve_cids_offline(cids) -> dict[str, str]:
     return {c: r.smiles for c, r in rows.items() if r and r.smiles}
 
 
+def inchikey_cids_offline(inchikey: str) -> list[int]:
+    """Mirror-only full InChIKey -> CIDs (ascending); [] without a mirror."""
+    db = _local_db()
+    if db is None:
+        return []
+    try:
+        return db.cids_by_inchikey(inchikey)
+    except Exception as exc:
+        logger.warning(f"mirror cids_by_inchikey({inchikey}) failed: {exc}")
+        return []
+
+
 def prefetch_pubchem(cids) -> int:
     """Batch-warm the NFS SMILES cache for a list of CIDs (CSV chunked).
 

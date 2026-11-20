@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 logger = logging.getLogger("verification")
@@ -274,6 +274,42 @@ def collect_hits(results: ResultsManager, segment: str) -> list[RawHit]:
                         ))
     
     return hits
+
+
+def merge_inchikey_hits(hits: list[RawHit], cids_for_key) -> list[RawHit]:
+    """Re-key InChIKey hits as the PubChem CID of the same compound.
+
+    2026-11-20: an InChIKey hit (inchikey_self, name tables) and the CID it
+    names are one compound, but grouped apart they compete as rivals: run
+    bddb8fca showed POPC as its InChIKey because the CID 5497103 group had
+    lost one resolver. Re-keyed, the resolvers that named the InChIKey count
+    as evidence for the CID. ``cids_for_key(key)`` gives the mirror's CIDs
+    for a full InChIKey (ascending).
+
+    Only into a CID other resolvers already found: a CID group is scored by
+    structure similarity to the molecule, an InChIKey group is not. Trypsin
+    case 1c2a4d4b: benzamidine named by the CCD (InChIKey only) against a
+    ligand whose bonds were read as saturated; re-keyed to CID 2332 it would
+    be scored 13 % similar and lose to the misread structure's CID.
+    """
+    present = {h.identifier for h in hits if h.ident_type.upper() == "PUBCHEM_CID"}
+    chosen: dict[str, str | None] = {}
+    out: list[RawHit] = []
+    for h in hits:
+        if h.ident_type.upper() in ("INCHIKEY", "INCHI_KEY"):
+            key = h.identifier.strip().upper()
+            if key not in chosen:
+                try:
+                    cids = [str(c) for c in cids_for_key(key)]
+                except Exception as exc:
+                    logger.warning(f"merge_inchikey_hits: lookup of {key} failed: {exc}")
+                    cids = []
+                in_run = [c for c in cids if c in present]
+                chosen[key] = in_run[0] if in_run else None
+            if chosen[key]:
+                h = replace(h, identifier=chosen[key], ident_type="PUBCHEM_CID")
+        out.append(h)
+    return out
 
 
 def deduplicate_and_score(

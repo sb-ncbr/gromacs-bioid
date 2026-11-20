@@ -16,9 +16,9 @@ if TYPE_CHECKING:
     from ..results.results_manager import ResultsManager
 
 from .base import VerificationWorker, SignatureFetcher, AnnotationQualityScorer, TransientFetchError
-from .dedup import RawHit, collect_hits, deduplicate_and_score, BELIEF_RHO, BELIEF_KAPPA
+from .dedup import RawHit, collect_hits, deduplicate_and_score, merge_inchikey_hits, BELIEF_RHO, BELIEF_KAPPA
 from ..identification.supplementary import SUPPLEMENTARY_RESOLVERS
-from .fetchers.compound_fetcher import resolve_cids_offline
+from .fetchers.compound_fetcher import inchikey_cids_offline, resolve_cids_offline
 from .models import VerifiedHit, VerificationScore, AnnotationQuality, similarity_meets_floor
 
 _SEQUENCE_SIG_TAGS = ("residue_sequence",)
@@ -800,6 +800,8 @@ class VerificationManager:
             raw_hits = collect_hits(results, segment)
             if not raw_hits:
                 continue
+            # One compound, one group: InChIKey hits join their PubChem CID.
+            raw_hits = merge_inchikey_hits(raw_hits, inchikey_cids_offline)
             
             # D2 (corpus c13): structure evidence scoring mode — "full"
             # (default): structure matches count as corroborating sources;

@@ -674,6 +674,15 @@ class PubChemDB:
         )
         return self._to_row(raw[0]) if raw else None
 
+    def cids_by_inchikey(self, inchikey: str) -> list[int]:
+        """Every CID with this full InChIKey, ascending (PubChem keeps
+        tautomers, which share a standard InChIKey, as separate CIDs)."""
+        rows = self._query(
+            "SELECT cid FROM compounds WHERE inchikey=? ORDER BY cid",
+            ((inchikey or "").strip().upper(),),
+        )
+        return [r[0] for r in rows]
+
     def by_formula(self, formula: str, limit: int = 10) -> list[int]:
         """Formula -> CIDs (ascending, capped like PUG MaxRecords semantics).
 

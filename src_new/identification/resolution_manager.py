@@ -65,7 +65,7 @@ def pubchem_breaker_active() -> bool:
     return not _pubchem_healthy()
 
 
-def _breaker_blocked(resolver, pug_up: bool) -> bool:
+def _breaker_blocked(resolver, pug_up: bool, as_similarity: bool = False) -> bool:
     """Whether the PubChem circuit breaker should skip this resolver.
 
     Resolvers listed in _PUBCHEM_RESOLVERS are skipped while PUG is
@@ -74,18 +74,25 @@ def _breaker_blocked(resolver, pug_up: bool) -> bool:
     The H-family local backend is the canonical case: the 2026-09-24 NCBI
     blacklist left the breaker permanently open, which otherwise blinds a
     channel that needs no network at all.
+
+    offline_identity() == True exempts only the identity phase
+    (pubchem_struct: exact matches come from the mirror; its similarity
+    search still needs PUG).
     """
     if pug_up:
         return False
     if getattr(resolver, "name", "") not in _PUBCHEM_RESOLVERS:
         return False
-    check_offline = getattr(resolver, "offline_capable", None)
-    if callable(check_offline):
-        try:
-            if check_offline():
-                return False
-        except Exception:
-            pass
+    checks = [getattr(resolver, "offline_capable", None)]
+    if not as_similarity:
+        checks.append(getattr(resolver, "offline_identity", None))
+    for check_offline in checks:
+        if callable(check_offline):
+            try:
+                if check_offline() is True:
+                    return False
+            except Exception:
+                pass
     return True
 
 
@@ -192,8 +199,8 @@ class IdentifierResolutionManager:
         
         _pug_up = _pubchem_healthy()
 
-        def _blocked(resolver) -> bool:
-            return _breaker_blocked(resolver, _pug_up)
+        def _blocked(resolver, as_similarity: bool = False) -> bool:
+            return _breaker_blocked(resolver, _pug_up, as_similarity)
 
         for resolver in identity_resolvers:
             if _over_budget():
@@ -269,7 +276,7 @@ class IdentifierResolutionManager:
             if _over_budget():
                 logger.warning(f"identify: stage deadline exceeded; skipping remaining similarity resolvers for {segment}")
                 break
-            if _blocked(resolver):
+            if _blocked(resolver, as_similarity=True):
                 logger.debug(f"Skipping {resolver.name}: PubChem circuit breaker open")
                 attempted_resolvers.append(f"{resolver.name}:skipped:breaker")
                 continue

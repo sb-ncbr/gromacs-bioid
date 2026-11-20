@@ -56,6 +56,58 @@ class PubChemResolver(IdentifierResolver):
             retry_attempts=config.pubchem.retry_attempts,
             retry_delay=config.pubchem.retry_delay_s,
         )
+        # Exact matches from the local PubChem mirror (2026-11-20): the same
+        # CIDs PUG's identity search returns (checked on the known-answers
+        # cases), with no NCBI call. Similarity and mirror misses stay online.
+        self._local_db = None
+        path = getattr(config.pubchem, "local_db_path", "")
+        if path:
+            try:
+                from ...molecules.pubchem_db import PubChemDB
+
+                db = PubChemDB(path)
+                if db.exists():
+                    self._local_db = db
+            except Exception:
+                self._local_db = None
+
+    def offline_identity(self) -> bool:
+        """True when exact matches can come from the mirror (breaker exemption
+        for the identity phase only)."""
+        return self._local_db is not None
+
+    def _mirror_cids(self, smiles: str) -> list[str]:
+        """CIDs whose full InChIKey equals the query's; [] on a miss.
+
+        Several CIDs can share a standard InChIKey (water 962 and
+        '[H+].[OH-]' 22247451; tautomers): the one whose own SMILES is the
+        same structure as the query is PUG's identity answer, so when exactly
+        one matches, only it is returned.
+        """
+        if self._local_db is None:
+            return []
+        try:
+            from rdkit import Chem, RDLogger
+
+            RDLogger.DisableLog("rdApp.*")
+            mol = Chem.MolFromSmiles(smiles)
+            key = Chem.MolToInchiKey(mol) if mol is not None else ""
+            cids = [str(c) for c in self._local_db.cids_by_inchikey(key)] if key else []
+            if len(cids) > 1:
+                query = Chem.MolToSmiles(mol)
+                rows = self._local_db.by_cids(cids)
+                same = []
+                for cid in cids:
+                    row = rows.get(cid)
+                    other = Chem.MolFromSmiles(row.smiles) if row and row.smiles else None
+                    if other is not None and Chem.MolToSmiles(other) == query:
+                        same.append(cid)
+                if len(same) == 1:
+                    return same
+            return cids
+        except Exception as exc:
+            logger.warning(f"pubchem_struct: mirror lookup failed: {exc}")
+            return []
 
     def _is_applicable(self, signature: str) -> bool:
         """Check if signature is applicable for PubChem search.
@@ -83,6 +135,19 @@ class PubChemResolver(IdentifierResolver):
         """
         # Decode SELFIES to SMILES if needed
         smiles = self._decode_selfies(signature)
+        if self._local_db is not None:
+            cids = self._mirror_cids(smiles)
+            # One CID: the mirror's answer. Several (tautomers sharing a
+            # standard InChIKey): PUG's identity search tells them apart.
+            if len(cids) == 1:
+                return cids
+            from ..resolution_manager import _pubchem_healthy
+
+            if not _pubchem_healthy():
+                if cids:
+                    return cids
+                raise IdentifierResolutionError(
+                    "[Identifier] not in the local PubChem mirror and PubChem is unreachable")
         return pubchem_fetch_identity_match(smiles, self._session, self.config)
 
     def _resolve_similarity(self, signature: str, working_directory: str) -> list[tuple[str, float]]:
