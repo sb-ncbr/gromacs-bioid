@@ -13,6 +13,8 @@ service changing, a database gone) show up here and nowhere else.
 - identity changed                       -> red
 - a database stopped answering            -> amber; red when the same
                                              database is missing two nights running
+- a database not asked (PubChem breaker    -> amber, never red: the service was
+  open, e.g. NCBI throttling us)              down, not the answer wrong
 - a rerun did not finish (4 h)            -> amber
 Red mails an alarm. Green check runs are deleted; others are kept 7 days.
 """
@@ -75,8 +77,10 @@ def answers(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
         if not isinstance(ver, dict) or seg.startswith("_"):
             continue
         r = molecule_result(ver.get("verified_hits") or [])
+        idents = (d.get("identifiers") or {}).get(seg)
         out[seg] = {"state": r["state"], "database": r["database"], "identifier": r["identifier"],
-                    "answered_by": sorted(_answered_by((d.get("identifiers") or {}).get(seg)))}
+                    "answered_by": sorted(_answered_by(idents)),
+                    "not_asked": sorted(_not_asked(idents))}
     return out
 
 
@@ -93,8 +97,24 @@ def _answered_by(seg_idents: Any) -> set[str]:
     return found
 
 
+def _not_asked(seg_idents: Any) -> set[str]:
+    """Resolvers the PubChem circuit breaker skipped ('name:skipped:breaker'
+    in attempted; the similarity phase records the same name)."""
+    skipped: set[str] = set()
+    if not isinstance(seg_idents, dict):
+        return skipped
+    for gen, by_resolver in seg_idents.items():
+        if gen.startswith("_") or not isinstance(by_resolver, dict):
+            continue
+        for entry in by_resolver.get("attempted") or []:
+            if isinstance(entry, str) and entry.endswith(":skipped:breaker"):
+                skipped.add(entry.split(":", 1)[0])
+    return skipped
+
+
 def compare(expected: dict[str, dict], observed: dict[str, dict]) -> list[dict[str, Any]]:
-    """Differences: kind 'identity' (red) or 'database' (amber)."""
+    """Differences: kind 'identity' (red), 'database' (amber) or 'not_asked'
+    (amber; the breaker skipped it, so it neither counts nor repeats)."""
     diffs = []
     for seg, exp in expected.items():
         obs = observed.get(seg)
@@ -103,7 +123,12 @@ def compare(expected: dict[str, dict], observed: dict[str, dict]) -> list[dict[s
             continue
         if (exp["identifier"], exp["database"], exp["state"]) != (obs["identifier"], obs["database"], obs["state"]):
             diffs.append({"segment": seg, "kind": "identity", "expected": _label(exp), "observed": _label(obs)})
+        not_asked = set(obs.get("not_asked") or [])
         for resolver in sorted(set(exp.get("answered_by") or []) - set(obs.get("answered_by") or [])):
+            if resolver.split("@", 1)[0] in not_asked:
+                diffs.append({"segment": seg, "kind": "not_asked", "resolver": resolver,
+                              "expected": "answered", "observed": "not asked (PubChem unreachable)"})
+                continue
             diffs.append({"segment": seg, "kind": "database", "resolver": resolver,
                           "expected": "answered", "observed": "no answer"})
     return diffs

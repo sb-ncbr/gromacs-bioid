@@ -13,12 +13,14 @@ from src_new.api import alerts, watchdog
 PRAGUE = ZoneInfo("Europe/Prague")
 
 
-def results(status="success", uniprot="P00760", answered=("blast_swissprot_protein", "chembl_struct")):
+def results(status="success", uniprot="P00760", answered=("blast_swissprot_protein", "chembl_struct"),
+            skipped=()):
     hits = [{"database": "uniprot", "identifier": uniprot, "ident_type": "UNIPROT_ID",
              "is_verified": True, "final_confidence": 90}] if uniprot else []
     return {"pipeline": {"status": status, "run_name": "Trypsin"}, "data": {
         "verification": {"seg_0_A": {"verified_hits": hits}},
         "identifiers": {"seg_0_A": {"fasta": {r: {"hits": ["x"]} for r in answered},
+                                    "formula": {"attempted": [f"{r}:skipped:breaker" for r in skipped]},
                                     "attempted": ["x"]}}}}
 
 
@@ -74,7 +76,8 @@ def test_add_case_records_answers_and_keeps_the_run(env):
     runs, _, _ = env
     case = watchdog.cases(runs)[0]
     assert case["expected"]["seg_0_A"] == {"state": "identified", "database": "UniProt", "identifier": "P00760",
-                                           "answered_by": ["blast_swissprot_protein", "chembl_struct"]}
+                                           "answered_by": ["blast_swissprot_protein", "chembl_struct"],
+                                           "not_asked": []}
     assert json.loads((runs / "case-1/results.json").read_text())["pipeline"]["retention"] == {"policy": "preserve"}
     write(runs, "failed-run", results(status="failed"))
     with pytest.raises(ValueError):
@@ -114,6 +117,27 @@ def test_a_missing_database_is_amber_once_red_twice(env):
             assert st["status"] == "amber" and sent == []
         else:
             assert st["status"] == "red" and diff["repeated"] and len(sent) == 1
+
+
+def test_a_database_the_breaker_skipped_stays_amber(env):
+    # NCBI throttling us (2026-11-20): not asked is not "stopped answering"
+    runs, sent, created = env
+    for night, now in ((0, 1000.0), (1, 90000.0)):
+        watchdog.start_check(runs, now=now)
+        write(runs, created[night], results(answered=("blast_swissprot_protein",), skipped=("chembl_struct",)))
+        st = watchdog.progress_check(runs, now=now + 100)
+        diff = st["results"]["case-1"]["diffs"][0]
+        assert diff == {**diff, "kind": "not_asked", "resolver": "chembl_struct"}
+        assert st["status"] == "amber" and "repeated" not in diff and sent == []
+
+
+def test_breaker_skip_covers_the_similarity_listing():
+    exp = {"m": {"state": "identified", "database": "PubChem", "identifier": "1",
+                 "answered_by": ["pubchem_struct", "pubchem_struct@sim", "chembl_struct"]}}
+    obs = {"m": {**exp["m"], "answered_by": [], "not_asked": ["pubchem_struct"]}}
+    kinds = {d["resolver"]: d["kind"] for d in watchdog.compare(exp, obs)}
+    assert kinds == {"pubchem_struct": "not_asked", "pubchem_struct@sim": "not_asked",
+                     "chembl_struct": "database"}
 
 
 def test_unfinished_run_times_out_amber(env):

@@ -127,7 +127,9 @@ export function ChecksSection({ live, nowMs }: { live: boolean; nowMs: number })
                       <ul className="mt-1 list-disc pl-5 text-(--vm-fg-2)">
                         {r.diffs.map((x, i) => (
                           <li key={i}>
-                            {x.kind === "database" ? `${x.resolver} stopped answering` : x.kind === "run" ? x.observed
+                            {x.kind === "database" ? `${x.resolver} stopped answering`
+                              : x.kind === "not_asked" ? `${x.resolver} not checked (PubChem unreachable)`
+                              : x.kind === "run" ? x.observed
                               : `expected ${x.expected}, got ${x.observed}`}
                             {x.segment ? ` (${x.segment})` : ""}{x.repeated ? " · second night" : ""}
                           </li>
