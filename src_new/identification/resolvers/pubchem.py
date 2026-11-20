@@ -145,6 +145,8 @@ class PubChemResolver(IdentifierResolver):
 
             if not _pubchem_healthy():
                 if cids:
+                    # ambiguous stand-in for PUG's answer: never cached
+                    self._uncacheable = True
                     return cids
                 raise IdentifierResolutionError(
                     "[Identifier] not in the local PubChem mirror and PubChem is unreachable")

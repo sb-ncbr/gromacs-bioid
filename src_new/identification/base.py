@@ -181,6 +181,8 @@ class IdentifierResolver(ABC):
         # Clear metadata from previous resolution
         self._last_resolution_metadata = None
         self._last_error = None
+        # set by a resolver whose answer is a stopgap (e.g. PubChem down)
+        self._uncacheable = False
         
         # Shared cache (between worker pods, shared_cache.py) first: it keeps
         # the hits metadata the local cache drops. Off unless configured;
@@ -232,7 +234,7 @@ class IdentifierResolver(ABC):
             
             # Store in cache (best effort; cache corruption must not fail
             # an otherwise successful live resolution, OQ-13)
-            if cache is not None and result is not None:
+            if cache is not None and result is not None and not self._uncacheable:
                 try:
                     if as_similarity:
                         cache.save_similarity_identifiers(self.cache_name(), signature, result)

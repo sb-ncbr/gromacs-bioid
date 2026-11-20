@@ -167,3 +167,20 @@ def test_merge_keeps_unknown_keys_and_lookup_failures():
     def boom(_key):
         raise RuntimeError("mirror gone")
     assert merge_inchikey_hits(hits, boom) == hits
+
+
+def test_stopgap_answer_is_not_cached(mirror, monkeypatch):
+    # several CIDs returned only because PubChem is down: PUG's answer later
+    # must not be masked by a cached stopgap
+    r, _, _ = _resolver(mirror, monkeypatch, pug_up=False)
+    r.name, r.enabled = "pubchem_struct", True
+    cache = MagicMock()
+    cache.fetch_identity_identifiers.return_value = []
+    monkeypatch.setattr("src_new.identification.shared_cache.get", lambda *a: None)
+    put = MagicMock()
+    monkeypatch.setattr("src_new.identification.shared_cache.put", put)
+    assert r.resolve("CCO", cache=cache) == ["702", "9999"]
+    cache.save_identity_identifiers.assert_not_called()
+    put.assert_not_called()
+    assert r.resolve("CC(=O)OC1=CC=CC=C1C(=O)O", cache=cache) == ["2244"]
+    cache.save_identity_identifiers.assert_called_once()
