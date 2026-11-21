@@ -86,6 +86,18 @@ def test_terminal_overhang_override_applies_to_nucleotides():
     assert r.get_last_resolution_metadata()["9NA2_B"]["scov_gate"] == "terminal_override"
 
 
+def test_overhang_override_needs_most_of_a_short_subject():
+    """30-nt piece of a 70-nt RNA: 20 nt unaligned at each end is within the
+    25-nt protein allowance, but covers only 43% of the subject: similarity."""
+    query = SEQ_1KX5_I[:30]
+    hits = [_hit("9NA3_C", 70, [_hsp(30, 30, (1, 30), (21, 50), *MEASURED[30])])]
+    r, out = _identity(hits, query)
+    assert out == []
+    r.blast_config.similarity_match_max_evalue = 0.1
+    r._run_blast_similarity(query, "")
+    assert r.get_last_resolution_metadata()["9NA3_C"]["identity_gate_fail"] == "scov"
+
+
 def test_one_mismatch_in_60nt_stays_similarity():
     """59/60 = 0.983 identity is below the 0.99 floor, despite e = 1e-24."""
     query = SEQ_1KX5_I[:60]

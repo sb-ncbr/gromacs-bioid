@@ -42,7 +42,7 @@ class BlastHit:
     # unobserved termini apart from domain-in-larger-protein matches.
     subject_span: tuple[int, int] | None = None
     subject_max_internal_gap: int | None = None
-    # 2026-11-21 (mdval audit item 1): blastn searches both strands; True when
+    # 2026-11-21 (mdval audit item 3): blastn searches both strands; True when
     # every HSP aligns the query to the subject's reverse complement (the
     # partner strand of a duplex, not the same chain).
     opposite_strand: bool = False
@@ -67,11 +67,14 @@ _SHORT_IDENTITY_MAX_QLEN = 25
 # than a few residues (a domain-sized internal gap means a different
 # construct). Identity >= 0.99 and query coverage >= 0.99 stay mandatory;
 # <99%-identity engineered constructs remain similarity untouched.
-# 2026-11-21 (mdval audit item 1): nucleotide identity (queries > 25 nt)
+# 2026-11-21 (mdval audit item 3): nucleotide identity (queries > 25 nt)
 # uses the same geometry, in nucleotides: unmodelled terminal nucleotides
-# are in the pdbnt (SEQRES) sequence but not in the simulated chain.
+# are in the pdbnt (SEQRES) sequence but not in the simulated chain. Nucleic
+# acids are short, so 25 nt at each end could be most of the subject (a
+# 30-nt piece of a 70-nt RNA): the override also needs this subject coverage.
 EXACT_MATCH_MAX_TERMINAL_OVERHANG_AA = 25
 EXACT_MATCH_MAX_INTERNAL_GAP_AA = 5
+NUCLEIC_OVERHANG_MIN_SUBJECT_COV = 0.75
 
 # D-14 (reviewer 2026-10-27, pre-full-corpus rule): UniProt/Swiss-Prot
 # references routinely extend well past the deposited MD construct
@@ -458,7 +461,7 @@ class BLASTResolver(IdentifierResolver):
                 total_align = sum(h.get("align_len", 0) for h in hsps)
                 identity_p = total_identity / total_align if total_align > 0 else 0.0
 
-                # 2026-11-21 (mdval audit item 1): a minus-strand blastn HSP
+                # 2026-11-21 (mdval audit item 3): a minus-strand blastn HSP
                 # reports hit_from > hit_to (checked with blastn 2.x JSON);
                 # intervals are normalised to (low, high), the unnormalised
                 # pair gave negative subject coverage and spans.
@@ -579,6 +582,8 @@ class BLASTResolver(IdentifierResolver):
             return True
         if hit.subject_span is None or not hit.subject_len:
             return False
+        if not self.is_protein and hit.subject_cov_p < NUCLEIC_OVERHANG_MIN_SUBJECT_COV:
+            return False
         left_overhang = hit.subject_span[0] - 1
         right_overhang = hit.subject_len - hit.subject_span[1]
         internal_gap = hit.subject_max_internal_gap or 0
@@ -596,7 +601,7 @@ class BLASTResolver(IdentifierResolver):
         least D14_MIN_ALIGNED_LEN_AA — the subject is the full-length
         protein by accession definition, so construct-vs-reference overhang
         is biology, not a fusion artefact.
-        2026-11-21 (mdval audit item 1): nucleotide hits use the same gate,
+        2026-11-21 (mdval audit item 3): nucleotide hits use the same gate,
         plus two rules: a reverse-complement alignment ('strand') is the
         partner strand, not the same chain; and unknown subject coverage is
         not admissible (every blastn report carries hit_from/hit_to, and
@@ -624,7 +629,7 @@ class BLASTResolver(IdentifierResolver):
         return None
 
     def _nucleotide_gate_applies(self, sequence: str) -> bool:
-        """2026-11-21 (mdval audit item 1): nucleotide queries longer than
+        """2026-11-21 (mdval audit item 3): nucleotide queries longer than
         _SHORT_IDENTITY_MAX_QLEN are decided by _identity_gate_fail; shorter
         ones only by the F-N1c short-identity rule."""
         query_len = len(sequence.strip()) if sequence else 0
@@ -655,7 +660,7 @@ class BLASTResolver(IdentifierResolver):
             query_len_prot = len(sequence.strip()) if sequence else 0
             strict_hits = [h for h in hits if self._identity_gate_fail(h, query_len_prot) is None]
         elif self._nucleotide_gate_applies(sequence):
-            # 2026-11-21 (mdval audit item 1): nucleotides get the same
+            # 2026-11-21 (mdval audit item 3): nucleotides get the same
             # absolute rule. The old e <= 1e-50 / bits >= 51 gates made a
             # PERFECT match of ~26-104 nt unreachable (measured on production
             # pdbnt, substrings of 1KX5_I: 30 nt e=4.8e-10, 60 nt 3e-26,
