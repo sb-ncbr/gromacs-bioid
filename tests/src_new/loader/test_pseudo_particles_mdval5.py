@@ -335,3 +335,30 @@ class TestPsfPdbNameTruncation:
         _write(["C210", "DC22", "H10R"])
         with pytest.raises(_GateFailure):
             _check_topology_structure_names(u, pdb)
+
+
+def _tip4p_box(n=3):
+    names = ["OW", "HW1", "HW2", "MW"] * n
+    u = Universe.empty(4 * n, n_residues=n, n_segments=1,
+                       atom_resindex=[i // 4 for i in range(4 * n)],
+                       residue_segindex=[0] * n, trajectory=True)
+    u.add_TopologyAttr("names", names)
+    u.add_TopologyAttr("resnames", ["SOL"] * n)
+    u.add_TopologyAttr("resids", list(range(1, n + 1)))
+    u.add_TopologyAttr("segids", ["SOL"])
+    u.add_TopologyAttr("masses", [15.9994, 1.008, 1.008, 0.0] * n)
+    u.add_TopologyAttr("bonds", [(4 * k + a, 4 * k + b) for k in range(n) for a, b in ((0, 1), (0, 2))])
+    pos = [np.add(xyz, (5.0 * (i // 4), 0, 0)) for i, xyz in
+           enumerate([(0, 0, 0), (0.96, 0, 0), (-0.24, 0.93, 0), (0.1, 0.1, 0)] * n)]
+    u.load_new(np.array(pos, dtype=np.float32)[np.newaxis], format="memory")
+    return u
+
+
+def test_no_notice_for_plain_four_site_water():
+    # every TIP4P box has massless MW sites: not worth a note on each run
+    from src_new.pipeline_steps import _only_water_sites
+    u = _tip4p_box()
+    report = TopologyRepair(u, RunConfig()).run()
+    assert report.pseudo_particles == 3 and _only_water_sites(u, report)
+    drude = _drude_system()
+    assert not _only_water_sites(drude, TopologyRepair(drude, RunConfig()).run())

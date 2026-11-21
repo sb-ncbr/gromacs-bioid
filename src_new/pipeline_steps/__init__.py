@@ -321,8 +321,10 @@ def _repair_topology(context):
         )
 
     # 2026-11-21 (mdval audit item 5): Drude particles, lone pairs and
-    # virtual sites are kept out of the chemistry — say so.
-    if report.pseudo_particles:
+    # virtual sites are kept out of the chemistry — say so, unless they are
+    # only the massless sites of 4/5-site water models (TIP4P MW, TIP5P EP),
+    # which every such water box has.
+    if report.pseudo_particles and not _only_water_sites(universe, report):
         names = ", ".join(report.pseudo_particle_names[:5])
         context.add_warning(
             "pseudo_particles_ignored",
@@ -339,6 +341,19 @@ def _repair_topology(context):
         summary={"repaired": True, **report.to_dict()},
         context_updates={"repair_report": report}
     )
+
+
+def _only_water_sites(universe, report) -> bool:
+    """True when every pseudo particle is a non-Drude site in a water residue."""
+    from src_new.loader.repair import _PSEUDO_WATER_RESNAMES
+    from src_new.molecules.instances import WATER_RESNAMES
+    idx = report.pseudo_indices
+    if not idx:
+        return False
+    waters = WATER_RESNAMES | _PSEUDO_WATER_RESNAMES
+    atoms = universe.atoms[list(idx)]
+    return all(str(r).upper() in waters for r in atoms.resnames) and not any(
+        str(n).upper().startswith("D") for n in atoms.names)
 
 
 def _unwrap_periodic_boundaries(context):
