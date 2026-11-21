@@ -68,10 +68,17 @@ if [ -n "$BACKEND" ]; then
   done
   # ask a live fleet worker (a fixed pod name goes stale after any rollout)
   # (no `| awk ... exit`: it closes the pipe early and pipefail aborts on SIGPIPE)
-  P=$(kubectl -n $NS get pods -l app=bat3-ceitec-bat3-worker --field-selector=status.phase=Running \
-        -o jsonpath='{.items[0].metadata.name}')
-  [ -n "$P" ] || { echo "REFUSE: no running fleet worker to ask for active runs"; exit 1; }
-  act=$(kubectl -n $NS exec -c worker "$P" -- sh -c 'cd /app && timeout 90 celery -A src_new.celery_app inspect active -j 2>/dev/null' \
+  # Any pool answers for the whole cluster; the fleet pool may be scaled to 0.
+  P= C=
+  for app in bat3-ceitec-bat3-worker bat3-ui-worker bat3-repo-worker; do
+    P=$(kubectl -n $NS get pods -l app=$app --field-selector=status.phase=Running \
+          -o jsonpath='{.items[*].metadata.name}' | awk '{print $1}')
+    if [ -n "$P" ]; then
+      C=$(kubectl -n $NS get pod "$P" -o jsonpath='{.spec.containers[0].name}'); break
+    fi
+  done
+  [ -n "$P" ] || { echo "REFUSE: no running worker to ask for active runs"; exit 1; }
+  act=$(kubectl -n $NS exec -c "$C" "$P" -- sh -c 'cd /app && timeout 90 celery -A src_new.celery_app inspect active -j 2>/dev/null' \
         | SKIP=${ALLOW_REPO:+validation.repo.celery} python3 -c 'import os,sys,json; t=sys.stdin.read(); d=json.loads(t[t.find("{"):])
 skip = os.environ.get("SKIP") or None
 print(sum(1 for v in d.values() for x in (v or []) if (x.get("delivery_info") or {}).get("routing_key") != skip))')

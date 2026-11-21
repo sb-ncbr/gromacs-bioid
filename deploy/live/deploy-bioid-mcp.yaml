@@ -35,7 +35,7 @@ spec:
           value: https://bioid-ceitec.dyn.cloud.e-infra.cz
         - name: BIOID_MCP_MAX_UPLOAD_MB
           value: '50'
-        image: cerit.io/tomsko/bioid-mcp:0.2.4
+        image: cerit.io/tomsko/bioid-mcp:0.2.5
         imagePullPolicy: IfNotPresent
         livenessProbe:
           failureThreshold: 3

@@ -27,7 +27,7 @@ spec:
         app: bat3-ceitec-bat3-web
     spec:
       containers:
-      - image: cerit.io/tomsko/bat3-frontend:w51-check-not-asked
+      - image: cerit.io/tomsko/bat3-frontend:w52-audit-cache
         imagePullPolicy: Always
         name: web
         ports:
