@@ -61,6 +61,13 @@ for UI runs.
 | `pdb_struct_protein` | RCSB PDB structure search | protein structure (PDB) | yes (≥ 99.9 % structural similarity) | yes | remote (RCSB) |
 | `pdb_struct_nucleotide` | RCSB PDB structure search | nucleic-acid structure | yes | skipped: RCSB rejects pure nucleic-acid similarity queries; recorded as `na_mode_unsupported`, not as an error | remote (RCSB) |
 | `mmcif_struct` | RCSB PDB structure search | mmCIF of the molecule | — | yes | remote (RCSB) |
+
+RCSB structure search cannot process large queries: a structure above 1,500
+residues or 12,000 atoms is searched without hydrogens, then chain by chain
+(chains found from chain labels, or from breaks between consecutive residues:
+peptide or phosphodiester bond, CA–CA over 4.2 Å, P–P over 8 Å). A chain still
+above the limit is not sent; when no chain fits, the search records
+`query_too_large`, a skip, not an error.
 | `alphafind_struct` | AlphaFind (AlphaFold DB) | Cα model | yes | yes | remote |
 | `foldseek_3di` | Foldseek against AlphaFold DB / Swiss-Prot | Cα model | — | yes | local Foldseek; the public Foldseek server if the local search fails |
 
@@ -95,6 +102,15 @@ route (see [API](api.md#the-rcsb-file-serving-contract)).
 Formula and similarity searches only *propose* candidates: every chemical
 candidate must pass the skeleton-fingerprint check at verification
 (Tanimoto ≥ 0.7 between the simulated molecule and the database structure).
+
+A SMILES with a valence no compound has (for example a carbon with 17
+bonds, from bonds guessed on a crowded system) is not sent to `pubchem_struct`,
+`chembl_struct` or the `idsm_*` searches: they record `invalid_valence`, a
+skip, not an error. Bonds to metals do not count for the ligand atom, so
+metal complexes (heme, chlorophyll, ferrocene, carbonyls) are searched as
+usual. `pubchem_struct`, ChEMBL's REST fallback and `glycan_composition`
+retry busy answers (HTTP 429, 5xx), timeouts and connection errors twice;
+a query the service rejects (any other 4xx) is not retried.
 
 `pubchem_struct`, `formula_pubchem` and `formula_hfamily` sit behind a
 PubChem circuit breaker: while PubChem's REST service does not answer a probe

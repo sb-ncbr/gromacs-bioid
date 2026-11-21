@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import requests
 
+from ... import http_retry
 from ..base import IdentifierResolver, IdentifierResolutionError
 
 if TYPE_CHECKING:
@@ -110,8 +111,13 @@ class GlycanCompositionResolver(IdentifierResolver):
         url = "https://api.glycosmos.org/glycancompositionconverter/1.0.0/composition2wurcs"
         
         try:
-            response = self._session.post(
+            # 2026-11-21 (mdval audit item 6): retried on 429/5xx/timeouts
+            # (http_retry); one attempt before
+            response = http_retry.request(
+                "POST",
                 url,
+                session=self._session,
+                give_up=self._over_budget,
                 json=composition_dict,
                 headers={"Content-Type": "application/json"},
                 timeout=30

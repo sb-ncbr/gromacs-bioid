@@ -12,7 +12,10 @@ to do.
 
 Some searches do not apply to some molecules: a nucleic-acid structure search
 on a protein (`na_mode_unsupported`), a polymer structure search on a small
-molecule (`no_polymer_payload`). These are skips, not failures. Runs record
+molecule (`no_polymer_payload`), a chemical search for a SMILES with an
+impossible valence, such as a carbon with 17 bonds from bonds guessed on a
+crowded system (`invalid_valence`), a structure search whose every chain is
+above RCSB's size limit (`query_too_large`). These are skips, not failures. Runs record
 them in `results.json` under `data.identification._meta.not_applicable.<segment>`
 (resolver, generator, reason); they are not counted as warnings. Runs from
 before 2026-11-17 stored them as `identifier_resolver_failed` warnings; the API
@@ -30,7 +33,10 @@ search and the reason; `details` names the segment.
 only that database would have found may be missing.
 
 **What to do:** usually temporary. Rerun later if you need that database's
-matches.
+matches. A query the service rejected as malformed (IDSM `QueryBadFormed`,
+PubChem `PUGREST.BadRequest`, ChEMBL "Problem standardizing the query
+molecule") would be rejected again: it does not make the run incomplete and
+is not retried automatically.
 
 ### stage_time_budget
 

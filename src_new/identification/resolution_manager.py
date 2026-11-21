@@ -238,7 +238,8 @@ class IdentifierResolutionManager:
                     signature=signature,
                     as_similarity=False,
                     working_directory=working_directory,
-                    cache=cache
+                    cache=cache,
+                    signature_type=signature_type,
                 )
             except Exception as e:
                 errors.append({"resolver": resolver.name, "generator": signature_generator_name, "error": str(e)})
@@ -312,7 +313,8 @@ class IdentifierResolutionManager:
                     signature=signature,
                     as_similarity=True,
                     working_directory=working_directory,
-                    cache=cache
+                    cache=cache,
+                    signature_type=signature_type,
                 )
             except Exception as e:
                 errors.append({"resolver": sim_name, "generator": signature_generator_name, "error": str(e)})

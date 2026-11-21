@@ -58,7 +58,9 @@ Safeguards:
   under `identification/structure_search_unavailable`;
 - `stage_errors/identifiers/<molecule>` holds bounded failure records.
   `na_mode_unsupported` there is a declared skip (RCSB does not search
-  pure nucleic-acid structures), not an error.
+  pure nucleic-acid structures), not an error; so are `query_too_large`
+  (no chain within RCSB's size limit) and `invalid_valence` (a SMILES with
+  an impossible valence, not sent to PubChem, ChEMBL or IDSM).
 
 ## Stage 3 — verification
 

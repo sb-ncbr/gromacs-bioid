@@ -160,11 +160,25 @@ export function catalog(code: string): CatalogEntry {
 }
 
 /**
- * identifier_resolver_failed with `na_mode_unsupported` is a nucleotide
- * search on a protein, and with `no_polymer_payload` a structure search on
- * a small molecule: both are declared "not applicable" outcomes, not
- * failures, so they are hidden (COPY.md §3 / DATA.md §3.1). In g1 they were
- * the notes on 96% and 48% of runs.
+ * Not-applicable reasons (src_new/identification/outcomes.py
+ * NOT_APPLICABLE_REASONS). identifier_resolver_failed with
+ * `na_mode_unsupported` is a nucleotide search on a protein, and with
+ * `no_polymer_payload` a structure search on a small molecule: both are
+ * declared "not applicable" outcomes, not failures, so they are hidden
+ * (COPY.md §3 / DATA.md §3.1). In g1 they were the notes on 96% and 48% of
+ * runs. 2026-11-21 (mdval audit item 6): `invalid_valence` (a SMILES with an
+ * impossible valence, not sent) and `query_too_large` (every chain above the
+ * RCSB size limit) are skips too.
+ */
+const NOT_APPLICABLE_REASONS = [
+  "na_mode_unsupported",
+  "no_polymer_payload",
+  "invalid_valence",
+  "query_too_large",
+];
+
+/**
+ * identifier_resolver_failed with a not-applicable reason is hidden (above).
  *
  * pbc_unwrap_failed with "No box information" means the input has no
  * periodic box, so nothing can be split across one; a real split is
@@ -173,7 +187,7 @@ export function catalog(code: string): CatalogEntry {
 export function isHidden(code: string, message: string): boolean {
   if (HIDDEN_CODES.has(code)) return true;
   if (code === "identifier_resolver_failed"
-      && (message.includes("na_mode_unsupported") || message.includes("no_polymer_payload"))) {
+      && NOT_APPLICABLE_REASONS.some((reason) => message.includes(reason))) {
     return true;
   }
   if (code === "pbc_unwrap_failed" && message.includes("No box information")) {

@@ -46,10 +46,12 @@ describe("notes (DATA.md §3)", () => {
   it("hides declared not-applicable outcomes and box-less unwrap notes", () => {
     const { notes: out, hidden } = notes([
       w("identifier_resolver_failed", "mmcif_struct@sim (mmcif): no_polymer_payload"),
+      w("identifier_resolver_failed", "idsm_pubchem@sim (smiles): invalid_valence: C with 17 bonds"),
+      w("identifier_resolver_failed", "pdb_struct_protein@sim (topology_less_pdb): query_too_large"),
       w("pbc_unwrap_failed", "Periodic boundary unwrapping failed: No box information available."),
     ]);
     expect(out).toHaveLength(0);
-    expect(hidden).toBe(2);
+    expect(hidden).toBe(4);
   });
 
   it("still shows a real unwrap failure", () => {
