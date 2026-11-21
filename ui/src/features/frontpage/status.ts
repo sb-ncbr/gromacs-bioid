@@ -6,6 +6,7 @@
  * which have dark-mode values). No raw codes, paths or exception text reach the user.
  */
 import { splitRunName } from "../../lib/runName";
+import { completenessSuffix } from "../../lib/runCompleteness";
 
 export type StatusVariant = "default" | "error" | "secondary" | "outline";
 
@@ -15,9 +16,21 @@ export interface StatusStyle {
   label: string;
 }
 
-/** Map a pipeline status string to a Badge variant + Tailwind color classes. */
-export function statusStyle(status: string | null | undefined): StatusStyle {
+/**
+ * Map a pipeline status string to a Badge variant + Tailwind color classes.
+ * 2026-11-21 (mdval audit item 7): a successful run that is partial or
+ * incomplete (`completeness`) reads "Completed: partial" in amber.
+ */
+export function statusStyle(status: string | null | undefined, completeness?: string | null): StatusStyle {
   const s = (status || "").toLowerCase();
+  const gap = completenessSuffix(completeness);
+  if (gap && (s === "success" || s === "completed" || s === "done")) {
+    return {
+      variant: "outline",
+      className: "border-(--vm-attention-line) bg-(--vm-attention-bg) text-(--vm-attention)",
+      label: `Completed: ${gap}`,
+    };
+  }
   switch (s) {
     case "pending":
     case "queued":

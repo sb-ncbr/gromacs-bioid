@@ -62,6 +62,18 @@ def test_captured_examples_still_match_the_response_models(key, model):
     model.model_validate(openapi_docs.examples()[key])
 
 
+def test_partial_run_example_is_documented():
+    # 2026-11-21 (mdval audit item 7)
+    models.RunSummaryResponse.model_validate(openapi_docs.PARTIAL_SUMMARY)
+    schema = client.get("/openapi.json").json()
+    ok = schema["paths"]["/api/v1/runs/{run_id}"]["get"]["responses"]["200"]["content"]["application/json"]
+    assert ok["examples"]["partial"]["value"]["completeness"] == "partial"
+    assert ok["examples"]["run"]["value"]["completeness"] == "complete"
+    for name in ("PipelineStatusResponse", "RunSummaryResponse", "RunListItem"):
+        props = schema["components"]["schemas"][name]["properties"]
+        assert {"completeness", "partial_stages"} <= set(props), name
+
+
 def _run(tmp_path: Path, run_id: str, pipeline: dict, data: dict | None = None, **top) -> Path:
     d = tmp_path / run_id
     d.mkdir()

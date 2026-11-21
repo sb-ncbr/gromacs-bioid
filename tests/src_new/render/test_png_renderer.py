@@ -257,6 +257,15 @@ def test_from_env_defaults(monkeypatch):
     assert cfg.reduced_style_at_atoms == 1_000_000
 
 
+def test_from_env_disable(monkeypatch):
+    # 2026-11-21 (mdval audit item 8c)
+    monkeypatch.delenv("BAT3_RENDER_DISABLE", raising=False)
+    assert RenderConfig.from_env().disabled is False
+    assert RenderConfig.from_env({"BAT3_RENDER_DISABLE": "1"}).disabled is True
+    assert RenderConfig.from_env({"BAT3_RENDER_DISABLE": "0"}).disabled is False
+    assert RenderConfig.from_env({"BAT3_RENDER_DISABLE": ""}).disabled is False
+
+
 def test_from_env_overrides(monkeypatch):
     monkeypatch.setenv("BAT3_RENDER_PYMOL_BIN", "/opt/pymol")
     monkeypatch.setenv("BAT3_RENDER_TOTAL_BUDGET_S", "60")

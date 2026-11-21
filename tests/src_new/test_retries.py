@@ -291,3 +291,76 @@ def test_cancel_a_waiting_retry_keeps_results(client, runs_dir):
     assert res.json()["status"] == "success"
     p = json.loads(path.read_text())["pipeline"]
     assert p["status"] == "success" and p["retry"]["cancelled"] is True
+
+
+# 2026-11-21 (mdval audit item 7): partial runs and their retries
+
+W_ID_BUDGET = {"code": "stage_time_budget", "step_id": "identify_molecules",
+               "message": "identify_molecules exceeded its time budget; proceeding with partial identifications"}
+
+
+def test_completeness_tells_partial_from_incomplete():
+    ok = {"pipeline": {"status": "success"}, "warnings": [W_NA, W_BLAST]}
+    assert completeness.state(ok) == {"completeness": "complete", "partial_stages": []}
+    remote = {"pipeline": {"status": "success"}, "warnings": [W500]}
+    assert completeness.state(remote) == {"completeness": "incomplete", "partial_stages": []}
+    cut = {"pipeline": {"status": "success"}, "warnings": [W500, W_BUDGET, W_ID_BUDGET],
+           "tasks": {"generate_signatures": {"summary": {"partial": False}},
+                     "identify_molecules": {"summary": {"partial": True}},
+                     "verify_results": {"summary": {}}}}
+    assert completeness.state(cut) == {"completeness": "partial",
+                                       "partial_stages": ["identify_molecules", "verify_results"]}
+    # a summary flag alone counts; unfinished runs have no verdict yet
+    flag = {"pipeline": {"status": "running"}, "tasks": {"generate_signatures": {"summary": {"partial": True}}}}
+    assert completeness.state(flag) == {"completeness": None, "partial_stages": ["generate_signatures"]}
+    assert completeness.state({"pipeline": {"status": "failed"}})["completeness"] is None
+
+
+def test_time_limits_alone_are_not_retried(runs_dir):
+    retries.set_policy("repository", {"enabled": True, "max_attempts": 3})
+    assert retries.plan(_payload(warnings=[W_ID_BUDGET]), "incomplete") is None
+    assert retries.plan(_payload(warnings=[W_BUDGET, W_ID_BUDGET]), "incomplete") is None
+    plan = retries.plan(_payload(warnings=[W500, W_ID_BUDGET]), "incomplete")
+    assert plan["gaps"] == [{"service": "chembl_struct@sim", "reason": "server_error", "count": 1}]
+
+
+def test_a_partial_run_ends_success_with_completeness(runs_dir):
+    from src_new.executor.executor import PipelineExecutor
+    from src_new.executor.task import PipelineStep, StepResult
+    from src_new.results.results_manager import ResultsManager
+    retries.set_policy("repository", {"enabled": True})
+    results_path = runs_dir / "r1" / "results.json"
+    results_path.parent.mkdir()
+    results_path.write_text(json.dumps({"pipeline": {"name": "BAT3", "status": "queued", "queue": "repository"}}))
+
+    def identify(context):
+        context.add_warning(W_ID_BUDGET["code"], W_ID_BUDGET["message"])
+        return StepResult(summary={"identified": True, "partial": True})
+
+    PipelineExecutor(steps=[PipelineStep(step_id="identify_molecules", name="Identify", handler=identify)],
+                     results_manager=ResultsManager(results_path)).run()
+    pipeline = json.loads(results_path.read_text())["pipeline"]
+    assert pipeline["status"] == "success" and "retry" not in pipeline  # not retried: same budget
+    assert pipeline["completeness"] == "partial"
+    assert pipeline["partial_stages"] == ["identify_molecules"]
+
+
+def test_api_reports_completeness_next_to_status(client, runs_dir):
+    from src_new.api.security import ip_hash
+    run = runs_dir / "r1"
+    run.mkdir()
+    payload = _payload(warnings=[W500, W_ID_BUDGET])
+    payload["pipeline"].update(status="success", creator_ip_hash=ip_hash("testclient"))
+    payload["tasks"] = {"identify_molecules": {"name": "Identify", "status": "warning",
+                                               "summary": {"partial": True}}}
+    (run / "results.json").write_text(json.dumps(payload))
+    status = client.get("/api/v1/runs/r1/status").json()
+    assert status["pipeline"]["status"] == "success"
+    assert status["pipeline"]["completeness"] == "partial"
+    assert status["pipeline"]["partial_stages"] == ["identify_molecules"]
+    summary = client.get("/api/v1/runs/r1").json()
+    assert (summary["status"], summary["completeness"], summary["partial_stages"]) == (
+        "success", "partial", ["identify_molecules"])
+    listed = client.get("/api/v1/runs").json()["runs"]
+    assert [(r["run_id"], r["completeness"], r["partial_stages"]) for r in listed] == [
+        ("r1", "partial", ["identify_molecules"])]

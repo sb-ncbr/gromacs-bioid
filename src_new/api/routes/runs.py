@@ -452,6 +452,8 @@ async def list_runs(request: Request, mine: int = Query(1)) -> RunListResponse:
             input_kind=r["input_kind"],
             run_name=r["run_name"],
             queue=r.get("queue") or "web",
+            completeness=r.get("completeness"),
+            partial_stages=r.get("partial_stages") or [],
         )
         for r in summaries(runs_dir)
         if same_submitter(r["_pipeline"], requester_ip)
@@ -636,6 +638,7 @@ async def get_run_summary(run_id: RunId) -> RunSummaryResponse:
         error_count=len(errors_data),
         retention=_retention_info(run_id, data),
         incomplete_count=sum(g["count"] for g in completeness.gaps(data)),
+        **completeness.state(data),
         queue=retries.lane_of(pipeline_data),
         attempt=len(pipeline_data.get("attempts") or []) + 1,
         rerun_of=pipeline_data.get("rerun_of"),
@@ -740,6 +743,7 @@ async def get_run_status(run_id: RunId, since: Optional[str] = None) -> RunStatu
         input_kind=pipeline_data.get("input_kind"),
         input_files=pipeline_data.get("input_files"),
         metadata=pipeline_data.get("metadata", {}),
+        **completeness.state(data),
     )
     
     # Build task list (always return all tasks)

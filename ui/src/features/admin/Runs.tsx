@@ -32,6 +32,7 @@ import {
   parseCustomDays,
   relativeTime,
   retentionSummary,
+  runStatusBadge,
   statusTone,
   toMs,
 } from "./format";
@@ -56,8 +57,9 @@ export function RunLink({ run }: { run: Pick<AdminRun, "run_id" | "run_name"> })
   );
 }
 
-export function StatusBadge({ status }: { status: string }) {
-  return <ToneBadge tone={statusTone(status)}>{status}</ToneBadge>;
+export function StatusBadge({ status, run }: { status: string; run?: Pick<AdminRun, "completeness" | "partial_stages"> }) {
+  const b = runStatusBadge(status, run?.completeness, run?.partial_stages);
+  return <ToneBadge tone={b.tone} title={b.title}>{b.text}</ToneBadge>;
 }
 
 function CustomDaysDialog({ run, open, onOpenChange }: { run: AdminRun; open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -255,7 +257,7 @@ function ActiveRuns({ runs: allRuns, nowMs }: { runs: AdminRun[]; nowMs: number 
                 <RunLink run={r} />
               </TableCell>
               <TableCell>
-                <StatusBadge status={r.status} />
+                <StatusBadge status={r.status} run={r} />
               </TableCell>
               <TableCell>
                 <Created iso={r.created_at} nowMs={nowMs} />
@@ -329,7 +331,7 @@ function RecentRuns({ runs: allRuns, nowMs }: { runs: AdminRun[]; nowMs: number 
             </TableCell>
             <TableCell>
               <div className="flex flex-wrap gap-1">
-                <StatusBadge status={r.status} />
+                <StatusBadge status={r.status} run={r} />
                 {r.example && <ToneBadge tone="info">example</ToneBadge>}
                 {r.warning_count > 0 && (
                   <ToneBadge tone="warn" title="warnings">

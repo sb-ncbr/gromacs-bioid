@@ -45,7 +45,9 @@ is not retried automatically.
 its time limit before finishing every molecule.
 
 **Results:** partial. Molecules handled before the limit are complete; the
-rest may have fewer matches or none.
+rest may have fewer matches or none. The run still ends `success`, with
+`completeness: "partial"` and the stage in `partial_stages` (status, summary
+and run list); the results page shows *Finished: partial*.
 
 **What to do:** rerun later, when the service is less busy, or contact us if
 it keeps happening.

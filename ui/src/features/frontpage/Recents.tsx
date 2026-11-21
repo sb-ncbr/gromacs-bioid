@@ -37,6 +37,7 @@ import {
 } from "./status";
 import { toast } from "sonner";
 import { api, apiErrorMessage, endpoints } from "../../lib/api/client";
+import { completenessHint } from "../../lib/runCompleteness";
 import { forgetOwnerToken, ownerHeaders, rememberOwnerToken } from "../../lib/ownerTokens";
 
 interface RunItem {
@@ -46,6 +47,9 @@ interface RunItem {
   input_kind?: string | null;
   run_name?: string | null;
   creator_ip?: string | null;
+  /** 2026-11-21: complete | partial | incomplete (null until success) */
+  completeness?: string | null;
+  partial_stages?: string[];
 }
 interface RunListResponse {
   runs?: RunItem[];
@@ -79,7 +83,8 @@ function QueueChip({ runId, status }: { runId: string; status: string }) {
 function RunRow({ run }: { run: RunItem }) {
   const qc = useQueryClient();
   const [pending, setPending] = useState<"rerun" | "delete" | null>(null);
-  const st = statusStyle(run.status);
+  const st = statusStyle(run.status, run.completeness);
+  const hint = completenessHint(run.completeness, run.partial_stages) ?? undefined;
   const title = runTitle(run);
 
   // Only the browser that submitted a run holds its owner token.
@@ -123,7 +128,7 @@ function RunRow({ run }: { run: RunItem }) {
           </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
-          <Badge variant={st.variant} className={st.className}>
+          <Badge variant={st.variant} className={st.className} title={hint}>
             {st.label}
           </Badge>
           <QueueChip runId={run.run_id} status={run.status} />

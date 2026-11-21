@@ -1660,6 +1660,12 @@ def _render_png(context):
     """
     from ..render.png_renderer import RenderConfig, plan_renders, render_all, summarize
 
+    cfg = RenderConfig.from_env()
+    if cfg.disabled:
+        # 2026-11-21 (mdval audit item 8c): switched off for the deployment
+        # (repository workers); a choice, not a problem, so no warning.
+        return StepResult(summary={"rendered": 0, "reason": "disabled"})
+
     facade = context.get_value("facade")
     if not facade:
         # No structure loaded — nothing to render; not an error for the pipeline.
@@ -1667,7 +1673,6 @@ def _render_png(context):
         return StepResult(summary={"rendered": 0, "reason": "no_facade"})
 
     run_root = Path(context.output_directory)
-    cfg = RenderConfig.from_env()
     if not cfg.pymol_bin:
         context.add_warning(
             "render_pymol_unavailable",

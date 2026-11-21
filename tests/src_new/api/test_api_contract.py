@@ -78,6 +78,8 @@ REGISTERED_ADDITIONS: dict[str, dict[str, set[str]]] = {
                        "RunStatusResponse": {"incomplete", "rerun_of", "superseded_by"}},
     "run_queues": {"RunSummaryResponse": {"queue"}, "RunStatusResponse": {"queue"}},
     "automatic_retries": {"RunSummaryResponse": {"attempt"}, "RunStatusResponse": {"retry", "attempts"}},
+    # 2026-11-21 (mdval audit item 7): partial runs (status stays success)
+    "run_completeness": {"RunSummaryResponse": {"completeness", "partial_stages"}},
 }
 
 _MODELS = {

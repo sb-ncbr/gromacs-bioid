@@ -105,6 +105,9 @@ export interface AdminRun {
   retry_at?: number | null;
   incomplete?: number;
   superseded_by?: string | null;
+  /** 2026-11-21: complete | partial | incomplete (null until success) */
+  completeness?: string | null;
+  partial_stages?: string[];
 }
 
 export interface RunsSection {

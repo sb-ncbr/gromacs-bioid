@@ -150,7 +150,8 @@ The trypsin run, shortened:
 ```json
 {"run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
  "pipeline": {"status": "success", "started_at": "2026-11-08T23:50:46.759861+00:00",
-              "finished_at": "2026-11-08T23:58:37.460787+00:00", "input_kind": "pdb"},
+              "finished_at": "2026-11-08T23:58:37.460787+00:00", "input_kind": "pdb",
+              "completeness": "complete", "partial_stages": []},
  "tasks": [{"task_id": "discover_input", "name": "Discover Input", "status": "success", "...": "…"}],
  "progress": {"molecules_done": 4, "molecules_total": 4,
               "per_segment": {"A": "searched", "A__v1": "searched", "A__v2": "searched", "A__v3": "searched"}},
@@ -167,6 +168,14 @@ The trypsin run, shortened:
 
 - `pipeline.status` goes `queued` → `running` → `success`, `failed` or
   `cancelled`. Typical runs take 2–8 minutes; Deep search up to hours.
+- `pipeline.completeness` says how complete a successful run is (null
+  before): `complete`; `partial`, a stage ran out of its time limit
+  (`partial_stages`, e.g. `["identify_molecules"]`) and molecules handled
+  after the limit may have fewer matches or none; or `incomplete`, database
+  lookups failed (listed in `incomplete`, below). **`status` stays `success`
+  in all three**, so a client that stores results should check
+  `completeness` as well. The run summary (`GET /runs/{id}`) and the run list
+  (`GET /runs`) carry the same two fields next to `status`.
 - `warnings` do not mean the run failed: each has a `code`, `details` (often
   the molecule, `segment`, and the database, `service`) and a `docs_url` into
   [Warnings and errors](warnings.md). A database that did not answer, for
@@ -188,7 +197,10 @@ choices.
 On the `repository` queue (campaigns, with a queue token from the BioID
 team), failed lookups can be retried automatically under the same run id:
 while a run waits for its next attempt, `status` reads `queued` and `retry`
-says when (`at`) and why.
+says when (`at`) and why. A run whose only gaps are time limits
+(`completeness: partial`, `incomplete` listing only `time limit (…)`) is not
+retried automatically: under the same limit it would most likely run out of
+time again.
 
 ## Reading the results
 
