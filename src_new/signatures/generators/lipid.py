@@ -9,6 +9,7 @@ from MDAnalysis import AtomGroup
 from ...config.loader import SignaturesConfig
 from ...molecules.instances import MoleculeInstance, MoleculeType
 from ...loader.universe_facade import LoadedUniverse
+from ...molecules.lipid_names import LIPID21_HEADS, LIPID21_TAIL_CHAINS
 from ..forcefield_maps import LIPID_FORCEFIELD_MAPS
 from ..base import SignatureGenerator
 
@@ -19,12 +20,9 @@ logger = logging.getLogger("base")
 
 # B-15 (red-team 4.9): AMBER Lipid14/17/21 split a lipid into one head
 # residue (PC/PE/PG/PS) and two tail residues named by the fatty acid.
-_LIPID21_HEADS = {"PC", "PE", "PG", "PS"}
-_LIPID21_TAILS = {
-    "LA": "12:0", "MY": "14:0", "PA": "16:0", "PO": "16:1(9Z)",
-    "ST": "18:0", "OL": "18:1(9Z)", "LI": "18:2(9Z,12Z)",
-    "AR": "20:4(5Z,8Z,11Z,14Z)",
-}
+# (2026-11-21: moved to molecules/lipid_names, the typing uses them too)
+_LIPID21_HEADS = LIPID21_HEADS
+_LIPID21_TAILS = LIPID21_TAIL_CHAINS
 
 
 def _lipid21_composition(resnames) -> str | None:
@@ -56,6 +54,12 @@ class LipidShorthandGenerator(SignatureGenerator):
         fragment: AtomGroup,
         facade: LoadedUniverse,
     ) -> bool:
+        # 2026-11-21 (mdval audit item 8b): a coarse-grained lipid has no
+        # atoms to verify a LIPID MAPS structure against (every candidate
+        # was rejected, fingerprint_unavailable) — its Martini name is
+        # carried as a by-name lead instead (fragment_store).
+        if (getattr(instance, "provenance", None) or {}).get("coarse_grained"):
+            return False
         return instance.molecule_type == MoleculeType.LIPID
     
     def _generate(
@@ -64,7 +68,8 @@ class LipidShorthandGenerator(SignatureGenerator):
         fragment: AtomGroup,
         facade: LoadedUniverse,
     ) -> str:
-        # Use charmm36 as default forcefield
+        # all-atom names (2026-11-21, mdval audit item 4: ~200 CHARMM36 /
+        # CHARMM-GUI / Slipids names from molecules/lipid_names)
         ff_maps = LIPID_FORCEFIELD_MAPS.get("charmm36", {})
         
         # B-15: keep the multiset — Lipid21 splits repeat tail residues

@@ -136,7 +136,7 @@ export function rowOf(m: Molecule, runStatus: RunStatus): RowView {
     icon,
     line2,
     score: conf == null ? null : Math.round(conf),
-    hint: ICON_HINTS[icon],
+    hint: r?.state === "coarse_grained" ? "Coarse-grained, not checked" : ICON_HINTS[icon],
   };
 }
 
@@ -238,7 +238,7 @@ export function identGroups(molecules: Molecule[]): IdentRow[] {
   const groups = new Map<string, Molecule[]>();
   for (const m of molecules) {
     const best = m.result?.best;
-    const key = m.result && best && m.result.state !== "not_identified"
+    const key = m.result && best && m.result.state !== "not_identified" && m.result.state !== "coarse_grained"
       ? `${best.db}|${best.id}`
       : `none|${m.id}`;
     const list = groups.get(key) ?? [];

@@ -26,6 +26,7 @@ class SimpleSmilesGenerator(SignatureGenerator):
     """SMILES generator with sanitization."""
     
     name = "smiles"
+    real_atoms_only = True  # 2026-11-21 (mdval audit item 4): no Drude/LP particles
     signature_type = "smiles"
     MAX_PERCEPTION_ATOMS = 150
 

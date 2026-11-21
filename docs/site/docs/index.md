@@ -78,6 +78,13 @@ databases agree on the match, how closely the molecule matches the entry
 TM-score), and how complete the database record is. **Verified** means the
 candidate was re-fetched from its database and checked against the molecule.
 
+**Coarse-grained** systems (Martini and similar) model several atoms as one
+bead, so BioID has no atoms to check against a database structure. Their
+molecules read *Coarse-grained (Martini POPE)*: the name comes from the
+residue name only and was not checked. Protein chains are the exception: a
+coarse-grained chain keeps its residue names, so its sequence can still be
+searched and verified.
+
 The buttons in the run header download the identifications as CSV or the
 full results as JSON; the *Technical details* fold shows the signatures,
 every database hit and the run log.

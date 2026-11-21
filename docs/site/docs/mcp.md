@@ -115,7 +115,9 @@ web page or the REST API's `config_json` for that.
   weak match.
 - `state` is `identified`, `lead`, `exact` (a monoatomic ion matched to its
   element) or `not_identified` (no hit passed verification; the rejected hits
-  say why).
+  say why). On the results page a molecule of a coarse-grained model (Martini
+  beads) with nothing verified reads *Coarse-grained (Martini POPE)*: its
+  name comes from the residue name only and was not checked.
 - Force fields often rename or remove atoms (hydrogens, protonation states,
   united-atom or coarse-grained models), so a correct identification can
   still have a medium confidence.

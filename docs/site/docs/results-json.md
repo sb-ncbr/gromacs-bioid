@@ -54,11 +54,17 @@ section below is keyed by segment name.
 
 | Key | Meaning |
 |---|---|
-| `segments` | List of `{segment, type, copies, atoms_per_copy}` — the molecule list of the run. `type` is `protein`, `nucleic`, `small_molecule`, `lipid`, `ion`, `water` or `unknown`. |
+| `segments` | List of `{segment, type, copies, atoms_per_copy}` — the molecule list of the run. `type` is `protein`, `nucleic`, `small_molecule`, `lipid`, `ion`, `water` or `unknown`. A molecule of a coarse-grained model also has `coarse_grained`: `{model, residue, by_name}` — `model` is `Martini` when the bead names are Martini's (otherwise empty), `by_name` (Martini lipids only) is the lipid the residue name stands for, never checked. |
 | `type_counts` | Number of distinct molecules per type. |
 | `unique` | One record per distinct molecule (key is a composition fingerprint): `molecule_type`, `segment_names`, `chain_ids`, `resnames`, `atom_count`, `element_composition`, `copy_count`. |
 | `total_fragment_count` | Connected fragments in the system, all copies counted. |
 | `metals` | Metal atoms found and their context. |
+
+`data.universe.repair_report` says how the topology was repaired:
+`elements_source` (`topology`, `repaired` or `coarse_grained_blank`) and, for
+a coarse-grained model, `coarse_grained: true` with `coarse_grained_reason`
+and `coarse_grained_model`. Its beads get no chemical elements, so nothing in
+it can be verified against a database structure.
 
 `data.molecules` repeats the counts (`count`, `unique_count`, `type_counts`,
 `system.atom_count`); `data.universe.segments.<seg>.properties` has the

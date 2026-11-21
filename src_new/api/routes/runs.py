@@ -1114,6 +1114,12 @@ async def get_molecules(run_id: RunId) -> MoleculeSummaryResponse:
         seg_props["display_name"] = segment_display_name(
             seg_name, segment_resname(data.get("data", {}) or {}, seg_name))
         seg_props["chain"] = chain_of(strip_seg(seg_name))
+        # 2026-11-21 (mdval audit item 8b): additive — {"model", "residue",
+        # "by_name"?} for a coarse-grained molecule (ui derive.ts stateOf)
+        from src_new.api.best_hit import coarse_grained_of
+        cg = coarse_grained_of(data, seg_name)
+        if cg is not None:
+            seg_props["coarse_grained"] = cg
         segment_meta[seg_name] = seg_props
     
     return MoleculeSummaryResponse(
@@ -1156,7 +1162,7 @@ async def download_results_csv(run_id: RunId) -> PlainTextResponse:
     fragments_segments = fragments_data.get("segments") or []
     verification_data = payload_data.get("verification", {}) or {}
 
-    from src_new.api.best_hit import molecule_result
+    from src_new.api.best_hit import coarse_grained_of, molecule_result
 
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -1180,7 +1186,7 @@ async def download_results_csv(run_id: RunId) -> PlainTextResponse:
         atoms = entry.get("atoms_per_copy", 0) or 0
 
         seg_ver = verification_data.get(seg) or {}
-        r = molecule_result(seg_ver.get("verified_hits") or [])
+        r = molecule_result(seg_ver.get("verified_hits") or [], coarse_grained_of(data, seg))
         best = r["best"] or {}
         writer.writerow([
             seg,
@@ -1189,7 +1195,7 @@ async def download_results_csv(run_id: RunId) -> PlainTextResponse:
             copies,
             atoms,
             r["state_label"],
-            (hit_display_name(best) if best else "") or "",
+            (hit_display_name(best) if best else "") or r.get("name") or "",
             r["database"],
             r["identifier"],
             r["url"],
@@ -1260,9 +1266,10 @@ async def get_molecule_info(run_id: RunId, segment: str) -> MoleculeInfoResponse
     
     # Confidence and name as the results page and results.csv show them:
     # the best verified hit (none for exact answers such as ions and water).
-    from src_new.api.best_hit import molecule_result
+    from src_new.api.best_hit import coarse_grained_of, molecule_result
     seg_ver = verification_data.get(segment) or {}
-    confidence = molecule_result(seg_ver.get("verified_hits") or [])["confidence"]
+    confidence = molecule_result(seg_ver.get("verified_hits") or [],
+                                 coarse_grained_of(data, segment))["confidence"]
     name = segment_display_name(segment, segment_resname(data.get("data", {}) or {}, segment))
 
     return MoleculeInfoResponse(

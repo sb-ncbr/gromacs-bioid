@@ -217,7 +217,10 @@ call addresses a molecule by its `segment` name:
    "A__v3": {"type": "water",          "atom_count": 1,    "residue_count": 1,   "copies": 62, "display_name": "HOH"}}}
 ```
 
-Identical molecules are one entry with `copies` (the 62 waters).
+Identical molecules are one entry with `copies` (the 62 waters). A molecule
+of a coarse-grained model also carries `"coarse_grained": {"model": "Martini",
+"residue": "POPE", "by_name": "PE(16:0/18:1(9Z))"}` (see
+[results.json](results-json.md#datafragments)).
 
 **`GET /runs/{id}/verification`** is the main result: for each molecule the
 database records BioID found, verified ones first. `?segment=A__v1`, the
@@ -254,8 +257,10 @@ A__v2,CA,ion,1,1,exact,Calcium ion,Element,CA,,,,
 A__v3,HOH,water,62,1,exact,Water,PubChem,962,https://pubchem.ncbi.nlm.nih.gov/compound/962,,,
 ```
 
-`Result` is `identified`, `lead` (verified, confidence below 50), `exact` or
-`not identified`.
+`Result` is `identified`, `lead` (verified, confidence below 50), `exact`,
+`not identified` or `coarse-grained` (a bead model with nothing verified: it
+has no atoms to check against a database; `Identified Name` reads e.g.
+`Coarse-grained (Martini POPE)`).
 
 Going deeper:
 

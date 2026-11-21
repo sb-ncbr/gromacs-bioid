@@ -52,7 +52,21 @@ _ORGANIC_FIRST = set("CNOSPHFI")
 # Martini/coarse-grained bead names for CG detection.
 _MARTINI_NAMES = {"BB", "SC1", "SC2", "SC3", "SC4", "SC5", "PO4", "NC3",
                   "NH3", "CNO", "GL1", "GL2", "ROH", "W", "WF", "PW",
-                  "BAS", "TP1", "C1", "R1"}
+                  "BAS", "TP1", "C1", "R1",
+                  # 2026-11-21 (mdval audit item 8b): polarizable / big
+                  # water beads, sphingosine/sterol/PIP head beads
+                  # (not C2/C3/P1: atomistic ligand names)
+                  "WP", "WM", "BW", "AM1", "AM2", "R2", "R3", "R4", "R5",
+                  "T1A", "T2A", "NA+", "CL-"}
+# 2026-11-21 (mdval audit item 8b): Martini lipid tail beads C1A..C5B /
+# D2A..D4B (zenodo/10612097: a Martini membrane in polarizable water, only
+# 30% of its names were in the set above, so its beads became C/N/P atoms)
+_MARTINI_TAIL_RE = re.compile(r"^[CD][1-6][A-D]$")
+
+
+def _is_martini_name(name) -> bool:
+    nm = str(name).strip().upper()
+    return nm in _MARTINI_NAMES or bool(_MARTINI_TAIL_RE.match(nm))
 
 # Mass-match tolerance: force-field masses are isotope/rounding variants of
 # the table (Cl 35.45 vs 35.453); anything further away is not a mass match.
@@ -316,6 +330,13 @@ def guess_bonds_union(u, vdwradii, fudge_factor: float, logger=logging) -> int:
             }
         except Exception:
             pass  # no residue table (LAMMPS .data): unchanged behaviour
+    # 2026-11-21 (mdval audit item 4): a GUESSED H-H bond is never chemistry
+    # outside H2 — geminal hydrogens 0.5-1.2 A apart in a strained frame
+    # (CHARMM-GUI step5_input, YiiP_system.pdb) bonded to each other, and
+    # every POPE copy became its own species (figshare/8202149: 50 POPE
+    # variants, identification ran out of time). Authored bonds are kept.
+    if guessed:
+        guessed = _drop_guessed_hydrogen_pairs(u, guessed - existing) | (guessed & existing)
     union = sorted(existing | guessed)
     if union:
         # wave-2 item 6b: a guessed proton can sit within fudge of several
@@ -325,6 +346,32 @@ def guess_bonds_union(u, vdwradii, fudge_factor: float, logger=logging) -> int:
         u.add_TopologyAttr(Bonds(sorted(pruned)))
         return len(pruned)
     return 0
+
+
+def _drop_guessed_hydrogen_pairs(u, guessed: set) -> set:
+    """2026-11-21 (mdval audit item 4): drop guessed H-H bonds when BOTH
+    hydrogens also bond a heavy atom (H2, or a hydrogen whose only partner
+    is the other H, keeps its bond — no stranded atoms). Unchanged when the
+    universe has no elements."""
+    try:
+        elements = [str(e).strip().upper() for e in u.atoms.elements]
+    except Exception:
+        return guessed
+    hydrogen = {"H", "D"}
+    heavy_bonded: set[int] = set()
+    hh: set[tuple[int, int]] = set()
+    for a, b in guessed:
+        ea, eb = elements[a], elements[b]
+        if ea in hydrogen and eb in hydrogen:
+            hh.add((a, b))
+        elif ea in hydrogen:
+            heavy_bonded.add(a)
+        elif eb in hydrogen:
+            heavy_bonded.add(b)
+    if not hh:
+        return guessed
+    drop = {(a, b) for a, b in hh if a in heavy_bonded and b in heavy_bonded}
+    return guessed - drop
 
 
 def _prune_multi_bonded_hydrogens(u, bond_pairs: set) -> set:
@@ -362,6 +409,11 @@ class RepairReport:
     # names/masses because the source was missing or parser-guessed),
     # or "coarse_grained_blank".
     elements_source: str = ""
+    # 2026-11-21 (mdval audit item 8b): the coarse-grained verdict itself
+    # (run level), why, and the model family when recognisable ("Martini")
+    coarse_grained: bool = False
+    coarse_grained_reason: str = ""
+    coarse_grained_model: str = ""
     masses_guessed: int = 0
     names_fixed: int = 0
     bonds_guessed: int = 0
@@ -374,6 +426,9 @@ class RepairReport:
         return {
             "elements_guessed": self.elements_guessed,
             "elements_source": self.elements_source,
+            "coarse_grained": self.coarse_grained,
+            "coarse_grained_reason": self.coarse_grained_reason,
+            "coarse_grained_model": self.coarse_grained_model,
             "masses_guessed": self.masses_guessed,
             "names_fixed": self.names_fixed,
             "bonds_guessed": self.bonds_guessed,
@@ -519,6 +574,9 @@ class TopologyRepair:
         coarse_grained, _cg_why = self._looks_coarse_grained(masses_trusted)
         if coarse_grained:
             self.report.elements_source = "coarse_grained_blank"
+            self.report.coarse_grained = True
+            self.report.coarse_grained_reason = _cg_why
+            self.report.coarse_grained_model = self._coarse_grained_model()
             self.report.warnings.append(
                 f"Coarse-grained topology detected ({_cg_why}) - "
                 "elements left blank (no atomistic chemistry to guess)")
@@ -600,7 +658,7 @@ class TopologyRepair:
                           if str(nm).strip()[:1].upper() in _ORGANIC_FIRST) / len(names0)
             standard = any(_is_polymer_resname(r) for r in resnames0)
             martini = sum(1 for nm in names0
-                          if str(nm).upper() in _MARTINI_NAMES) / len(names0)
+                          if _is_martini_name(nm)) / len(names0)
             if organic >= 0.6 and martini <= 0.2 and (standard or not resnames0):
                 return False, ""
         if masses_trusted:
@@ -622,10 +680,53 @@ class TopologyRepair:
                                   f"BB in {has_bb}/{len(prot)}")
         names = list(getattr(self.u.atoms, 'names', []))
         if names:
-            frac = sum(1 for nm in names if str(nm).upper() in _MARTINI_NAMES) / max(n, 1)
+            frac = sum(1 for nm in names if _is_martini_name(nm)) / max(n, 1)
             if frac > 0.5:
                 return True, f"martini bead names {frac:.0%}"
+        # 2026-11-21 (mdval audit item 8b): lipids of a dozen beads. An
+        # all-atom lipid has >= 50 atoms (united-atom POPE 52, C6 DHPC 60),
+        # a Martini one 8-20 beads.
+        lipid_sizes = self._lipid_residue_sizes()
+        if len(lipid_sizes) >= 5:
+            lipid_sizes.sort()
+            median = lipid_sizes[len(lipid_sizes) // 2]
+            if median <= 25:
+                return True, (f"lipid residues median {median} atoms "
+                              f"({len(lipid_sizes)} lipids)")
         return False, ""
+
+    def _lipid_residue_sizes(self) -> list[int]:
+        """Atom counts of the lipid-named residues (all-atom or Martini
+        names), at most 2000 residues sampled."""
+        from ..molecules.instances import CG_LIPID_RESNAMES, LIPID_RESNAMES
+        names = LIPID_RESNAMES | CG_LIPID_RESNAMES
+        sizes: list[int] = []
+        try:
+            residues = self.u.residues
+        except Exception:
+            return sizes
+        for res in residues:
+            try:
+                if str(res.resname).strip().upper() in names:
+                    sizes.append(int(res.atoms.n_atoms))
+            except Exception:
+                continue
+            if len(sizes) >= 2000:
+                break
+        return sizes
+
+    def _coarse_grained_model(self) -> str:
+        """2026-11-21 (mdval audit item 8b): 'Martini' when Martini bead
+        names make up a fifth of the atoms (Martini 2 and 3 share them),
+        otherwise '' (an unrecognised coarse-grained model)."""
+        try:
+            names = list(self.u.atoms.names)
+        except Exception:
+            return ""
+        if not names:
+            return ""
+        frac = sum(1 for nm in names if _is_martini_name(nm)) / len(names)
+        return "Martini" if frac >= 0.2 else ""
 
     def _guess_single_element(self, existing: str, name: str | None, mass: float | None,
                               atom_type: str | None,

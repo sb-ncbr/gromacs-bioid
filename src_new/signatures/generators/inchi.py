@@ -22,6 +22,7 @@ class InchiKeyGenerator(SignatureGenerator):
     """InChI Key generator using RDKit."""
     
     name = "inchi_key"
+    real_atoms_only = True  # 2026-11-21 (mdval audit item 4): no Drude/LP particles
     signature_type = "inchikey"
     
     def __init__(self, config: SignaturesConfig) -> None:
