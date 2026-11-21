@@ -86,6 +86,12 @@ export const CATALOG: Record<string, CatalogEntry> = {
     body: "Even after guessing bonds from the coordinates, few were found, so molecules may be split or merged.",
     action: "Upload a topology (.tpr, .prmtop, .psf) with the coordinates.",
   },
+  pseudo_particles_ignored: {
+    severity: "info",
+    title: "Pseudo particles were left out of the chemistry",
+    body: "Your input has Drude particles, lone pairs or virtual sites. They are not atoms, so molecules were identified from their real atoms only.",
+    action: null,
+  },
   geometry_scale_anomalous: {
     severity: "attention",
     title: "Coordinate units look wrong",

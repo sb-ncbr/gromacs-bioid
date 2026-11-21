@@ -312,6 +312,16 @@ export const CATALOG_CODES: CatalogCode[] = [
     details_show: [],
   },
   {
+    code: "pseudo_particles_ignored",
+    kind: "info",
+    stage: "prepare",
+    user_title: "Pseudo particles were left out of the chemistry",
+    user_what:
+      "The input has {pseudo_particles} Drude particles, lone pairs or virtual sites. They are force-field devices, not atoms, so molecule compositions and signatures use the real atoms only. They are still in the exported structure.",
+    user_action: null,
+    details_show: ["pseudo_particles"],
+  },
+  {
     code: "coords_rescaled_nm_to_angstrom",
     kind: "info",
     stage: "prepare",

@@ -33,6 +33,17 @@ def _safe(val, default="."):
     return str(val).strip()
 
 
+# 2026-11-21 (mdval audit item 6c): chain id for an atom whose segid is
+# blank. Repair names blank segments (TopologyRepair._name_blank_segids);
+# this keeps the writer alive when one gets here anyway — Biopython's
+# mmCIF writer indexes val[0] and crashed the whole system export on ''.
+_BLANK_CHAIN_ID = "SYSTEM"
+
+
+def _chain_label(segid) -> str:
+    return _safe(segid, default=_BLANK_CHAIN_ID)
+
+
 def _get_universe_dimensions(universe):
     """Safely get universe dimensions, returning None if unavailable.
     
@@ -122,9 +133,9 @@ def _build_biopython_structure(universe: MDAnalysis.Universe, filter_segment: st
     chains = {}
     
     for atom in universe.atoms:
-        chain_id = atom.segid
-        if filter_segment is not None and chain_id != filter_segment:
+        if filter_segment is not None and atom.segid != filter_segment:
             continue
+        chain_id = _chain_label(atom.segid)
         
         resname = _safe(atom.resname, default="UNK")
         atom_name = _safe(atom.name, default="X")
@@ -273,7 +284,7 @@ def _segment_selectors(facade: LoadedUniverse, residue_ids: dict | None = None) 
     chain_order: list[str] = []
     per_chain_atoms: dict[str, list[int]] = {}
     for atom in universe.atoms:
-        seg = str(atom.segid)
+        seg = _chain_label(atom.segid)
         if seg not in per_chain_atoms:
             chain_order.append(seg)
             per_chain_atoms[seg] = []
@@ -313,7 +324,7 @@ def _segment_selectors(facade: LoadedUniverse, residue_ids: dict | None = None) 
         if not rows:
             continue
         entry = {
-            "chains": sorted({str(s) for s in atoms.segids}),
+            "chains": sorted({_chain_label(s) for s in atoms.segids}),
             "atom_index_ranges": _indices_to_ranges(rows),
             "atom_count": len(rows),
         }

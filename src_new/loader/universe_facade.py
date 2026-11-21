@@ -136,10 +136,44 @@ class LoadedUniverse:
         # every call (>=5 times per segment).
         self._selected_cache: dict[str, AtomGroup] = {}
         self._rep_cache: dict[str, AtomGroup] = {}
+        # 2026-11-21 (mdval audit item 5): pseudo particles (Drude, lone
+        # pairs, virtual sites) never enter a fragment — signatures,
+        # compositions and copy clustering see real atoms only. The atoms
+        # stay in the universe (system export, selectors).
+        self._pseudo_mask = self._resolve_pseudo_mask(universe, repair_report)
         self._analyze()
         self._discover_virtual_segments()
         self._record_summary()
     
+    @staticmethod
+    def _resolve_pseudo_mask(universe, repair_report):
+        """Boolean mask over universe atoms (None when there are none):
+        the repair step's finding, else detected here (facades built
+        without a repair run)."""
+        import numpy as _np
+        idx = getattr(repair_report, "pseudo_indices", None)
+        if idx is None:
+            try:
+                from .repair import find_pseudo_particles
+                idx = find_pseudo_particles(universe)
+            except Exception:
+                idx = []
+        if not len(idx):
+            return None
+        mask = _np.zeros(universe.atoms.n_atoms, dtype=bool)
+        mask[_np.asarray(idx, dtype=_np.int64)] = True
+        return mask
+
+    def _chem_atoms(self, atoms: AtomGroup) -> AtomGroup:
+        """2026-11-21 (mdval audit item 5): `atoms` without pseudo
+        particles; unchanged when it holds nothing else."""
+        if self._pseudo_mask is None or len(atoms) == 0:
+            return atoms
+        keep = ~self._pseudo_mask[atoms.indices]
+        if keep.all() or not keep.any():
+            return atoms
+        return atoms[keep]
+
     def _is_polymer_segment(self, selected: AtomGroup) -> bool:
         """Check if segment is a polymer (protein or nucleic acid).
         
@@ -183,11 +217,14 @@ class LoadedUniverse:
             
             # Get representative fragment using same logic as get_fragment
             fragment = self.get_fragment(segment_name)
+            # 2026-11-21 (mdval audit item 5): compared and flagged without
+            # pseudo particles (the fragment never holds them)
+            chem = self._chem_atoms(selected)
             
-            if len(fragment.atoms) == len(selected.atoms):
+            if len(fragment.atoms) == len(chem.atoms):
                 # Fallback case: no bonds or representative == whole segment
-                props.atom_count_fragment = len(selected.atoms)
-                props.bond_count_fragment = len(selected.bonds) if hasattr(selected.atoms, "bonds") else 0
+                props.atom_count_fragment = len(chem.atoms)
+                props.bond_count_fragment = len(chem.bonds) if hasattr(chem.atoms, "bonds") else 0
                 try:
                     fragments = self._seg_fragments(selected)
                 except MDAnalysis.exceptions.NoDataError:
@@ -214,7 +251,7 @@ class LoadedUniverse:
                 props.residue_count = len(fragment.residues)
             
             # Compute flags using the same representative fragment
-            props.flags, na_meta = self._compute_flags(selected, fragment)
+            props.flags, na_meta = self._compute_flags(chem, fragment)
             props.na_detection = na_meta["na_detection"]
             props.na_structural_promotions = na_meta["na_structural_promotions"]
             
@@ -675,6 +712,17 @@ class LoadedUniverse:
             bidx = selected.bonds.indices
         except MDAnalysis.exceptions.NoDataError:
             raise
+        if self._pseudo_mask is not None:
+            # 2026-11-21 (mdval audit item 5): pseudo particles are no
+            # fragment's atoms (bondless after repair, each would be a
+            # one-"atom" species of its own); per-atom arrays below are
+            # read from the remaining atoms
+            keep = ~self._pseudo_mask[idx]
+            if not keep.all():
+                idx = idx[keep]
+                if len(idx) == 0:
+                    return []
+                selected = self.universe.atoms[idx]
         pos = {int(i): k for k, i in enumerate(idx)}
         # B4 (BH-002): metal/ion coordination edges (a CONECT-authored
         # Na..GLN-OE1 / Na..HOH) are NOT covalent chain material — cutting
@@ -898,8 +946,11 @@ class LoadedUniverse:
             fragments = []
         
         if not fragments:
-            self._rep_cache[segment_name] = selected
-            return selected  # fallback when no bonds
+            # fallback when no bonds (2026-11-21, mdval audit item 5:
+            # without pseudo particles)
+            rep = self._chem_atoms(selected)
+            self._rep_cache[segment_name] = rep
+            return rep
         
         # Get largest fragment
         largest = max(fragments, key=lambda f: len(f.atoms))
@@ -940,14 +991,15 @@ class LoadedUniverse:
             return rep
 
         # If largest fragment is most of the segment, return it
-        if len(largest.atoms) >= len(selected.atoms) * 0.8:
+        chem = self._chem_atoms(selected)
+        if len(largest.atoms) >= len(chem.atoms) * 0.8:
             self._rep_cache[segment_name] = largest
             return largest
 
         # If this is a polymer segment, return full segment (broken bonds case)
         if self._is_polymer_segment(selected):
-            self._rep_cache[segment_name] = selected
-            return selected
+            self._rep_cache[segment_name] = chem
+            return chem
 
         # Otherwise return largest fragment (small molecule case)
         self._rep_cache[segment_name] = largest

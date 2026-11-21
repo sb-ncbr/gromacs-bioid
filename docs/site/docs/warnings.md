@@ -158,6 +158,19 @@ usually a PDB file without CONECT records), so molecules may be split or merged.
 
 **What to do:** upload a topology (.tpr, .prmtop, .psf) with the coordinates.
 
+### pseudo_particles_ignored
+
+**What happened:** the input has pseudo particles: Drude particles, lone
+pairs or virtual sites (CHARMM Drude `DC21`, `LPOA`, SWM4 `OM`/`DOH2`, TIP4P
+`MW`). They are force-field devices, not atoms, so BioID left them out of
+molecule compositions and signatures. The message gives the count and some
+of their names.
+
+**Results:** usable. Molecules are identified from their real atoms. The
+particles are still in the exported structure.
+
+**What to do:** nothing.
+
 ### coords_rescaled_nm_to_angstrom
 
 **What happened:** coordinates were in nanometres and were converted to

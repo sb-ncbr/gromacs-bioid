@@ -120,6 +120,122 @@ _EXACT_TYPE_IONS = {
 }
 
 
+# 2026-11-21 (mdval audit item 5): elements a NAME prefix may never yield —
+# the transuranics. Drude ion 'DSOD' in a two-atom SOD residue went
+# through the two-letter rule to 'Ds' (darmstadtium); no simulation atom is
+# one of these unless its topology mass says so (the mass rules still can).
+_NEVER_FROM_NAME = frozenset({
+    "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr",
+    "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Nh", "Fl",
+    "Mc", "Lv", "Ts", "Og"})
+
+# 2026-11-21 (mdval audit item 5): pseudo particles — Drude oscillators,
+# lone pairs, virtual sites — are force-field devices, not atoms. CHARMM
+# Drude inputs (zenodo 7916287/7932361) gave every POPC 60 of them
+# (DC21.., LPOA..) and SWM4 water OM + DOH2; their blank elements broke
+# every RDKit signature ("Element '' not found"). They stay in the
+# universe (exports, atom indices) but leave the chemistry: elements and
+# masses are never guessed for them, their bonds are dropped and the
+# facade keeps them out of fragments and compositions.
+_PSEUDO_MASS_MAX = 0.5
+# name prefixes of virtual sites / lone pairs (same as the element guard)
+_PSEUDO_NAME_PREFIXES = ("MW", "EPW", "EP", "LP", "DP", "VS", "DUM")
+# the SWM4/TIP4P-style massless M site, only inside a water residue (a
+# ligand oxygen may legitimately be called OM)
+_PSEUDO_WATER_SITE_NAMES = frozenset({"OM"})
+_PSEUDO_WATER_RESNAMES = frozenset({"SWM4", "SWM6", "TIP4", "TIP5"})
+# a Drude particle sits on its parent (D + parent name), displaced by
+# ~0.1 A; no covalent bond is shorter than ~0.7 A
+_DRUDE_PARENT_MAX_A = 0.5
+
+
+def _masses_trusted(u) -> bool:
+    """Masses come from the topology, not from MDAnalysis' name guesser."""
+    attr = getattr(u._topology, 'masses', None)
+    return bool(attr is not None and not getattr(attr, 'is_guessed', False))
+
+
+def find_pseudo_particles(u) -> list[int]:
+    """2026-11-21 (mdval audit item 5): universe indices of pseudo particles.
+
+    With topology masses: mass < 0.5 (Drude 0.4, lone pairs and virtual
+    sites 0) — and a real mass makes an atom real whatever its name. A
+    topology whose masses are mostly zero carries no mass information; the
+    name rules decide then, as they do for PDB-only loads: type DRUD*,
+    names MW/EP/LP/DP/VS/DUM*, OM inside a water residue, and D<name of an
+    atom in the same residue> within 0.5 A of it (PDB names are cut to four
+    characters: DC210 -> DC21 sits on C210)."""
+    import numpy as np
+    from ..molecules.instances import WATER_RESNAMES
+
+    n = u.atoms.n_atoms
+    if n == 0:
+        return []
+    masses = None
+    if _masses_trusted(u):
+        try:
+            masses = np.asarray(u.atoms.masses, dtype=float)
+        except Exception:
+            masses = None
+    if masses is not None:
+        light = masses < _PSEUDO_MASS_MAX
+        if light.sum() * 2 <= n:
+            return [int(i) for i in np.flatnonzero(light)]
+    try:
+        names = [str(x).strip().upper() for x in u.atoms.names]
+    except Exception:
+        names = None
+    try:
+        types = [str(x).strip().upper() for x in u.atoms.types]
+    except Exception:
+        types = None
+    try:
+        resindices = [int(r) for r in u.atoms.resindices]
+        resnames = [str(r).strip().upper() for r in u.residues.resnames]
+    except Exception:
+        resindices, resnames = None, None
+    pseudo: set[int] = set()
+    if types is not None:
+        pseudo |= {i for i, t in enumerate(types) if t.startswith("DRUD")}
+    if names is None:
+        return sorted(pseudo)
+    waters = WATER_RESNAMES | _PSEUDO_WATER_RESNAMES
+    for i, nm in enumerate(names):
+        if nm.startswith(_PSEUDO_NAME_PREFIXES):
+            pseudo.add(i)
+        elif (nm in _PSEUDO_WATER_SITE_NAMES and resindices is not None
+              and resnames[resindices[i]] in waters):
+            pseudo.add(i)
+    if resindices is None:
+        return sorted(pseudo)
+    drude = [i for i, nm in enumerate(names)
+             if len(nm) >= 2 and nm[0] == "D" and i not in pseudo]
+    if not drude:
+        return sorted(pseudo)
+    try:
+        pos = u.atoms.positions
+    except Exception:
+        return sorted(pseudo)  # no coordinates: no proximity evidence
+    by_residue: dict[int, list[int]] = {}
+    wanted = {resindices[i] for i in drude}
+    for i, ri in enumerate(resindices):
+        if ri in wanted:
+            by_residue.setdefault(ri, []).append(i)
+    for i in drude:
+        rest = names[i][1:]
+        for j in by_residue[resindices[i]]:
+            if j == i:
+                continue
+            other = names[j]
+            if other != rest and not (len(names[i]) == 4 and len(other) > 3
+                                      and other.startswith(rest)):
+                continue
+            if float(np.linalg.norm(pos[i] - pos[j])) <= _DRUDE_PARENT_MAX_A:
+                pseudo.add(i)
+                break
+    return sorted(pseudo)
+
+
 def _is_polymer_resname(resname: str | None) -> bool:
     """Protein (KNOWN_RESIDUE_CODES) or nucleic (tier-1 normalizer) residue."""
     if not resname:
@@ -262,13 +378,17 @@ def bond_stranded_residue_metals(u, report=None) -> int:
     return len(new_bonds)
 
 
-def guess_bonds_union(u, vdwradii, fudge_factor: float, logger=logging) -> int:
+def guess_bonds_union(u, vdwradii, fudge_factor: float, logger=logging,
+                      exclude_atoms=None) -> int:
     """Guess bonds from coordinates and UNION them with the existing
     (CONECT) bonds — the guesser must never drop authored bonds (wave-2
     item 6a; 1XJR-type partial CONECT). MDAnalysis' guess_TopologyAttrs
     skips attributes that already exist, so the union dance is:
     snapshot → del → guess → re-add (re-add replaces). On guesser failure
     the original bonds are restored.
+
+    exclude_atoms: universe indices that never get a GUESSED bond
+    (2026-11-21, mdval audit item 5: pseudo particles; None = find them).
 
     Returns the final bond count (0 only when truly nothing could be made).
     """
@@ -316,6 +436,20 @@ def guess_bonds_union(u, vdwradii, fudge_factor: float, logger=logging) -> int:
             }
         except Exception:
             pass  # no residue table (LAMMPS .data): unchanged behaviour
+    # 2026-11-21 (mdval audit item 5): a Drude particle 0.1 A from its
+    # parent bonds to everything around it — pseudo particles get no
+    # guessed bonds (before the hydrogen pruning, which must not prefer
+    # a lone pair over the real partner).
+    if guessed:
+        if exclude_atoms is None:
+            try:
+                exclude_atoms = find_pseudo_particles(u)
+            except Exception:
+                exclude_atoms = ()
+        excluded = set(int(i) for i in exclude_atoms)
+        if excluded:
+            guessed = {(a, b) for a, b in guessed
+                       if a not in excluded and b not in excluded}
     union = sorted(existing | guessed)
     if union:
         # wave-2 item 6b: a guessed proton can sit within fudge of several
@@ -368,6 +502,17 @@ class RepairReport:
     # W3.1 item 11: coordination bonds added to stranded residue
     # metals (heme Fe, chlorophyll Mg, Fe-S clusters)
     metal_coordination_bonds: int = 0
+    # 2026-11-21 (mdval audit item 5): pseudo particles (Drude, lone pairs,
+    # virtual sites) kept out of the chemistry. pseudo_indices is the
+    # facade's input (universe indices; not serialised, can be large).
+    pseudo_particles: int = 0
+    pseudo_particle_names: list[str] = field(default_factory=list)
+    pseudo_bonds_removed: int = 0
+    pseudo_indices: list[int] | None = None
+    # 2026-11-21 (mdval audit item 6c): atoms whose blank segment id was
+    # named (segids_named: the label used)
+    blank_segid_atoms: int = 0
+    segids_named: str = ""
     warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -378,6 +523,11 @@ class RepairReport:
             "names_fixed": self.names_fixed,
             "bonds_guessed": self.bonds_guessed,
             "metal_coordination_bonds": self.metal_coordination_bonds,
+            "pseudo_particles": self.pseudo_particles,
+            "pseudo_particle_names": self.pseudo_particle_names,
+            "pseudo_bonds_removed": self.pseudo_bonds_removed,
+            "blank_segid_atoms": self.blank_segid_atoms,
+            "segids_named": self.segids_named,
             "warnings": self.warnings,
         }
 
@@ -390,6 +540,9 @@ class TopologyRepair:
 
     def run(self) -> RepairReport:
         """Run all enabled repairs."""
+        # 2026-11-21 (mdval audit item 5): pseudo particles first — element,
+        # mass and bond guessing must all leave them alone.
+        self._find_pseudo_particles()
         if self.config.loader.guess_missing_elements:
             self.guess_elements()
         if self.config.loader.guess_missing_masses:
@@ -405,11 +558,97 @@ class TopologyRepair:
             # (heme Fe, chlorophyll Mg, Fe-S clusters) must be bonded to
             # its coordination partners — see bond_stranded_residue_metals.
             self.bond_stranded_residue_metals()
-        
+        self._detach_pseudo_particles()
+
+        # 2026-11-21 (mdval audit item 6c): a blank segment id gets a name
+        # before the duplicates are split
+        self._name_blank_segids()
         # Deduplicate segids to prevent protein and water chains from merging
         self._deduplicate_segids()
         
         return self.report
+
+    def _find_pseudo_particles(self) -> set[int]:
+        """2026-11-21 (mdval audit item 5) — see find_pseudo_particles."""
+        if getattr(self, "_pseudo", None) is not None:
+            return self._pseudo
+        try:
+            found = find_pseudo_particles(self.u)
+        except Exception as exc:  # never fail a load over the detector
+            logger.warning(f"pseudo-particle detection failed: {exc}")
+            found = []
+        self._pseudo = set(found)
+        self.report.pseudo_particles = len(found)
+        self.report.pseudo_indices = list(found)
+        if found:
+            try:
+                names = self.u.atoms[np.asarray(found, dtype=np.int64)].names
+                counts: dict[str, int] = {}
+                for nm in names:
+                    counts[str(nm)] = counts.get(str(nm), 0) + 1
+                self.report.pseudo_particle_names = [
+                    nm for nm, _c in sorted(counts.items(),
+                                            key=lambda kv: (-kv[1], kv[0]))[:8]]
+            except Exception:
+                pass
+            logger.info(f"pseudo particles (Drude/lone pair/virtual site): "
+                        f"{len(found)} kept out of the chemistry")
+        return self._pseudo
+
+    def _detach_pseudo_particles(self) -> None:
+        """2026-11-21 (mdval audit item 5): pseudo particles end with a blank
+        element and no bonds. The PSF bonds every Drude particle and lone
+        pair to its parent; left in place, the facade's fragments (which
+        leave the particles out) would see those as bonds cut at the
+        fragment edge and cap each parent with a hydrogen."""
+        pseudo = self._find_pseudo_particles()
+        if not pseudo:
+            return
+        idx = np.asarray(sorted(pseudo), dtype=np.int64)
+        if hasattr(self.u.atoms, 'elements'):
+            elements = np.asarray(self.u.atoms.elements, dtype=object)
+            if any(str(e).strip() for e in elements[idx]):
+                elements[idx] = ""
+                self.u.atoms.elements = list(elements)
+        if not hasattr(self.u.atoms, 'bonds') or not len(self.u.atoms.bonds):
+            return
+        pairs = np.asarray(self.u.atoms.bonds.indices, dtype=np.int64).reshape(-1, 2)
+        touch = np.isin(pairs, idx).any(axis=1)
+        dropped = int(touch.sum())
+        if not dropped:
+            return
+        from MDAnalysis.core.topologyattrs import Bonds
+        keep = [(int(a), int(b)) for a, b in pairs[~touch]]
+        self.u.del_TopologyAttr('bonds')
+        self.u.add_TopologyAttr(Bonds(keep))
+        self.report.pseudo_bonds_removed = dropped
+        logger.info(f"pseudo particles: {dropped} bonds to them removed")
+
+    def _name_blank_segids(self) -> None:
+        """2026-11-21 (mdval audit item 6c): a PDB with some chain IDs blank
+        loads those atoms into segment '' (MDAnalysis names the segment
+        'SYSTEM' only when EVERY chain ID is blank). The empty name crashed
+        the mmCIF writer (figshare 24161301: no system mmCIF, no selectors)
+        and made a segment file '.mmcif'. Name it 'SYSTEM' as MDAnalysis
+        does, or SYSTEM_<k> when that is taken."""
+        if not hasattr(self.u, 'segments') or len(self.u.segments) == 0:
+            return
+        segids = [str(s) for s in self.u.segments.segids]
+        blank = [k for k, s in enumerate(segids) if not s.strip()]
+        if not blank:
+            return
+        used = {s.strip() for s in segids}
+        label, k = "SYSTEM", 1
+        while label in used:
+            label = f"SYSTEM_{k}"
+            k += 1
+        n_atoms = sum(len(self.u.segments[k].atoms) for k in blank)
+        self.u.segments.segids = [label if not s.strip() else s for s in segids]
+        self.report.blank_segid_atoms = n_atoms
+        self.report.segids_named = label
+        self.report.warnings.append(
+            f"{n_atoms} atoms without a chain/segment ID placed in segment '{label}'")
+        logger.info(f"blank segment id: {n_atoms} atoms named segment '{label}'")
 
     def _has_elements(self) -> bool:
         """Return True only if ALL atoms have valid chemical element symbols."""
@@ -422,13 +661,15 @@ class TopologyRepair:
         return all(self._is_valid_element(e) for e in elements)
 
     def _has_masses(self) -> bool:
-        """Return True only if ALL atoms have mass > 0."""
+        """Return True only if ALL atoms have mass > 0 (pseudo particles
+        excepted: a lone pair's 0 is its real mass)."""
         if not hasattr(self.u.atoms, 'masses'):
             return False
         masses = self.u.atoms.masses
         if len(masses) == 0:
             return False
-        return all(m > 0 for m in masses)
+        pseudo = self._find_pseudo_particles()
+        return all(m > 0 for i, m in enumerate(masses) if i not in pseudo)
 
     def _has_names(self) -> bool:
         return hasattr(self.u.atoms, 'names') and any(n for n in self.u.atoms.names)
@@ -441,7 +682,8 @@ class TopologyRepair:
         if not self._has_bonds():
             return False
         bond_count = len(self.u.atoms.bonds)
-        atom_count = self.u.atoms.n_atoms
+        # 2026-11-21 (mdval audit item 5): pseudo particles are not atoms
+        atom_count = self.u.atoms.n_atoms - len(self._find_pseudo_particles())
         # Loose heuristic: fully bonded systems typically exceed 0.25 bonds/atom.
         return bond_count >= atom_count * 0.25
 
@@ -517,6 +759,8 @@ class TopologyRepair:
         masses_trusted = bool(
             masses_attr is not None and not getattr(masses_attr, 'is_guessed', False))
         coarse_grained, _cg_why = self._looks_coarse_grained(masses_trusted)
+        if masses_trusted:
+            masses = self._masses_with_drude_returned(masses)
         if coarse_grained:
             self.report.elements_source = "coarse_grained_blank"
             self.report.warnings.append(
@@ -528,15 +772,27 @@ class TopologyRepair:
         # (ion) vs polymer residues decide the name-prefix strategy. Group by
         # resindex (true residue identity, v3.143 A-02).
         resindex_arr = self.u.atoms.resindices if hasattr(self.u.atoms, 'resindices') else None
+        # 2026-11-21 (mdval audit item 5): real atoms only — a Drude ion
+        # (SOD + DSOD, CLA + DCLA) is a single-atom residue, not 'C' of CLA.
+        pseudo = self._find_pseudo_particles()
         if resindex_arr is not None:
             residue_sizes: dict[int, int] = {}
-            for ri in resindex_arr:
+            for i, ri in enumerate(resindex_arr):
+                if i in pseudo:
+                    continue
                 ri = int(ri)
                 residue_sizes[ri] = residue_sizes.get(ri, 0) + 1
         else:
             residue_sizes = {}
 
         for i in range(n_atoms):
+            if i in pseudo:
+                # 2026-11-21 (mdval audit item 5): a pseudo particle has no
+                # element ('DC21'/'LPOA' -> '', 'DSOD' -> Ds, 'OM' -> O before)
+                if elements[i]:
+                    elements[i] = ""
+                    self._virtual_sites_blanked = getattr(self, "_virtual_sites_blanked", 0) + 1
+                continue
             # Only guess if element is blank or invalid (or we are
             # re-deriving parser-guessed elements).
             if force_all or not self._is_valid_element(elements[i]):
@@ -567,6 +823,34 @@ class TopologyRepair:
             self.u.add_TopologyAttr('elements', elements)
         else:
             self.u.atoms.elements = elements
+
+    def _masses_with_drude_returned(self, masses: list) -> list:
+        """2026-11-21 (mdval audit item 5): a CHARMM Drude particle carries
+        0.4 u of its parent's mass (C 11.611, Cl 35.053, Na 22.590) and the
+        united-atom/HMR mass rule read the remainder as S+3H for Cl and
+        Mg-2H for Na. For element guessing only, each parent gets its
+        bonded Drude particles' mass back; the stored masses are kept."""
+        pseudo = self._find_pseudo_particles()
+        if not pseudo or not hasattr(self.u.atoms, 'bonds') or not len(self.u.atoms.bonds):
+            return masses
+        try:
+            m = np.asarray(masses, dtype=float)
+        except (TypeError, ValueError):
+            return masses
+        mask = np.zeros(len(m), dtype=bool)
+        mask[np.asarray(sorted(pseudo), dtype=np.int64)] = True
+        pairs = np.asarray(self.u.atoms.bonds.indices, dtype=np.int64).reshape(-1, 2)
+        isp = mask[pairs]
+        one = isp[:, 0] ^ isp[:, 1]
+        if not one.any():
+            return masses
+        p = np.where(isp[one, 0], pairs[one, 0], pairs[one, 1])
+        r = np.where(isp[one, 0], pairs[one, 1], pairs[one, 0])
+        mp = m[p]
+        sel = (mp > 0) & (mp < _PSEUDO_MASS_MAX)
+        out = m.copy()
+        np.add.at(out, r[sel], mp[sel])
+        return [float(x) for x in out]
 
     def _is_valid_element(self, elem: str) -> bool:
         """Check if element string is a known chemical symbol (case-insensitive)."""
@@ -668,6 +952,13 @@ class TopologyRepair:
             # keeps them out of composition and completeness checks.
             if name_upper.startswith(('MW', 'EPW', 'EP', 'LP', 'DP', 'VS', 'DUM')):
                 return ''
+            # 2026-11-21 (mdval audit item 5): SWM4/TIP4P 'OM' is the
+            # massless M site, not oxygen — unless the topology gives it
+            # an atom's mass. Drude particles (D<parent>) need residue
+            # context: find_pseudo_particles blanks them in the caller.
+            if (name_upper in _PSEUDO_WATER_SITE_NAMES
+                    and not (mass_trusted and mass is not None and mass > 0.5)):
+                return ''
 
         # W3 A3: coarse-grained systems keep elements blank upstream.
         if coarse_grained:
@@ -714,7 +1005,7 @@ class TopologyRepair:
 
             if two_letter_first and len(stripped) >= 2:
                 two_char = stripped[:2].capitalize()
-                if two_char in ATOMTABLE_ELEMENTS_MASSES:
+                if two_char in ATOMTABLE_ELEMENTS_MASSES and two_char not in _NEVER_FROM_NAME:
                     return two_char
 
             first_char = stripped[:1].upper() if stripped else ""
@@ -724,7 +1015,7 @@ class TopologyRepair:
             if not two_letter_first and len(stripped) >= 2:
                 # polymer path: 2-letter only after 1-letter failed
                 two_char = stripped[:2].capitalize()
-                if two_char in ATOMTABLE_ELEMENTS_MASSES:
+                if two_char in ATOMTABLE_ELEMENTS_MASSES and two_char not in _NEVER_FROM_NAME:
                     return two_char
 
             # Full alpha prefix (properly capitalised this time)
@@ -735,7 +1026,7 @@ class TopologyRepair:
                 else:
                     break
             prefix = prefix.capitalize()
-            if prefix in ATOMTABLE_ELEMENTS_MASSES:
+            if prefix in ATOMTABLE_ELEMENTS_MASSES and prefix not in _NEVER_FROM_NAME:
                 return prefix
 
         # 5. From atom type: exact ion-style types only — never
@@ -795,9 +1086,12 @@ class TopologyRepair:
             masses = [0.0] * n_atoms
 
         elements = list(self.u.atoms.elements) if hasattr(self.u.atoms, 'elements') else [None] * n_atoms
+        # 2026-11-21 (mdval audit item 5): a virtual site's 0 is its mass
+        # (SWM4 OM became 16 u once guessed as O)
+        pseudo = self._find_pseudo_particles()
         for i in range(n_atoms):
             # Only fill if mass is zero or missing
-            if masses[i] <= 0:
+            if masses[i] <= 0 and i not in pseudo:
                 elem = elements[i] if i < len(elements) else None
                 # Defensive: only look up mass if element is valid
                 if elem and elem.strip().capitalize() in ATOMTABLE_ELEMENTS_MASSES:
@@ -880,6 +1174,7 @@ class TopologyRepair:
             vdwradii=element_based_vdwradii(self.u),
             fudge_factor=self.config.loader.bond_guess_vdw_factor,
             logger=logger,
+            exclude_atoms=self._find_pseudo_particles(),
         )
         if count == 0:
             self.report.warnings.append("bond_guess_failed: guesser produced no bonds")

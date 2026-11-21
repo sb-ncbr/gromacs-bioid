@@ -971,6 +971,18 @@ def _normalise_atom_name(name) -> str:
     return s
 
 
+def _atom_names_match(topology_name, structure_name) -> bool:
+    """Same atom in topology and structure: H-name-normalised equality, or
+    (2026-11-21, mdval audit item 5) the PDB's four-character truncation of
+    a longer topology name — CHARMM-GUI writes PSF 'DC210' as PDB 'DC21'
+    (zenodo 7596011 fell back to PDB-only and lost the PSF masses/bonds)."""
+    if _normalise_atom_name(topology_name) == _normalise_atom_name(structure_name):
+        return True
+    t = str(topology_name).strip().upper()
+    s = str(structure_name).strip().upper()
+    return len(s) == 4 and len(t) > 4 and t.startswith(s)
+
+
 def _topology_structure_universe(top_path, pdb_path, build_kwargs):
     """W3.1 item 10 (A8): topology + static-structure build with the
     SOLVENT-STRIPPED PREFIX fallback.
@@ -998,7 +1010,7 @@ def _topology_structure_universe(top_path, pdb_path, build_kwargs):
         if not (0 < k < n):
             raise direct_exc
         names_match = all(
-            _normalise_atom_name(a) == _normalise_atom_name(b)
+            _atom_names_match(a, b)
             for a, b in zip(u_top.atoms[:k].names, u_str.atoms.names))
         if not names_match:
             raise direct_exc
@@ -1178,7 +1190,7 @@ def _check_topology_structure_names(universe, pdb_path) -> None:
         return
     for i, (a, b) in enumerate(
             zip(universe.atoms.names, u_str.atoms.names)):
-        if _normalise_atom_name(a) != _normalise_atom_name(b):
+        if not _atom_names_match(a, b):
             raise _GateFailure(
                 "structure_name_mismatch",
                 f"topology/structure atom order mismatch at index {i}: "

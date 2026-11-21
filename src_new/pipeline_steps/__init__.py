@@ -320,6 +320,20 @@ def _repair_topology(context):
                      "bonds_guessed": report.bonds_guessed}
         )
 
+    # 2026-11-21 (mdval audit item 5): Drude particles, lone pairs and
+    # virtual sites are kept out of the chemistry — say so.
+    if report.pseudo_particles:
+        names = ", ".join(report.pseudo_particle_names[:5])
+        context.add_warning(
+            "pseudo_particles_ignored",
+            f"{report.pseudo_particles} pseudo particles (Drude particles, lone pairs, "
+            f"virtual sites; e.g. {names}) are not atoms and were left out of "
+            "molecule compositions and signatures.",
+            details={"pseudo_particles": report.pseudo_particles,
+                     "names": list(report.pseudo_particle_names),
+                     "bonds_removed": report.pseudo_bonds_removed},
+        )
+
     context.record_data("repair/report", report.to_dict())
     return StepResult(
         summary={"repaired": True, **report.to_dict()},
