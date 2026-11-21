@@ -227,3 +227,26 @@ describe("bucketOf finished edge cases", () => {
     expect(rowOf(mel, "finished").icon).toBe("exact");
   });
 });
+
+describe("coarse-grained rows (2026-11-21, mdval audit item 8b)", () => {
+  const cg = (id: string, residue: string) =>
+    mol({
+      id,
+      display_name: residue,
+      kind: "lipid",
+      result: { state: "coarse_grained", name: `Coarse-grained (Martini ${residue})`, description: null,
+        best: null, confidence: null, evidence: null },
+    });
+  it("shows the model on line 2, no score, in the none bucket", () => {
+    const row = rowOf(cg("seg_1_POPE", "POPE"), "finished");
+    expect(row.line2).toBe("Coarse-grained (Martini POPE)");
+    expect(row.score).toBeNull();
+    expect(row.icon).toBe("none");
+    expect(row.hint).toBe("Coarse-grained, not checked");
+    expect(bucketOf(cg("seg_1_POPE", "POPE"), "finished")).toBe("none");
+  });
+  it("never merges two coarse-grained molecules into one identification", () => {
+    const groups = identGroups([cg("a", "POPE"), cg("b", "DPPC")]);
+    expect(groups.map((g) => g.name).sort()).toEqual(["Coarse-grained (Martini DPPC)", "Coarse-grained (Martini POPE)"]);
+  });
+});

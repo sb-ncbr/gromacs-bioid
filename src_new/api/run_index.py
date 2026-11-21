@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from src_new.completeness import gaps
+from src_new.completeness import gaps, state
 from src_new.identification.outcomes import user_warnings
 from src_new.retries import lane_of
 
@@ -60,6 +60,7 @@ def _summary(run_id: str, data: dict[str, Any]) -> dict[str, Any]:
         "attempt": len(pipeline.get("attempts") or []) + 1,
         "retry_at": (pipeline.get("retry") or {}).get("at") if pipeline.get("status") == "retry_scheduled" else None,
         "incomplete": sum(g["count"] for g in gaps(data)),
+        **state(data),  # 2026-11-21 (mdval audit item 7): completeness, partial_stages
         "superseded_by": pipeline.get("superseded_by"),
         # internal (never returned by public routes)
         "_pipeline": {k: pipeline.get(k) for k in ("creator_ip", "creator_ip_hash")},

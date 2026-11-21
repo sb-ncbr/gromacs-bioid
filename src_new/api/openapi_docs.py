@@ -148,6 +148,17 @@ RATE_429 = (429, ("Too many submissions from your network address this hour, or 
                   "Too many runs from your network address: at most 30 per hour. "
                   "Please try again in 17 minutes."))
 
+# 2026-11-21 (mdval audit item 7): status success, but not every molecule searched
+PARTIAL_SUMMARY = {
+    "run_id": "5d8f0a3e-6b2c-4e71-a9d4-0f3c2b7e8a19", "pipeline_name": "BAT3", "status": "success",
+    "started_at": "2026-11-20T08:12:03.512144+00:00", "finished_at": "2026-11-20T09:44:51.907310+00:00",
+    "input_kind": "gromacs_tpr", "run_name": "membrane patch", "task_count": 10, "warning_count": 3,
+    "error_count": 0, "retention": {"policy": "default", "days": 30,
+                                    "expires_at": "2026-12-20T09:44:51.907310+00:00",
+                                    "example": False, "owner_choices": [30, 90, 180, 365]},
+    "incomplete_count": 1, "completeness": "partial", "partial_stages": ["identify_molecules"],
+    "queue": "repository", "attempt": 1, "rerun_of": None, "superseded_by": None}
+
 
 def _owner(action: str) -> tuple[int, tuple[str, str]]:
     return 403, (NO_OWNER[0], NO_OWNER[1].format(action=action))
@@ -219,7 +230,12 @@ Poll this (about once a minute) until `pipeline.status` is `success`, `failed`
 or `cancelled`.
 
 * `pipeline`: `status` (`queued`, `running`, `success`, `failed`, `cancelled`),
-  `started_at`, `finished_at`, `input_kind`.
+  `started_at`, `finished_at`, `input_kind`, and for a successful run
+  `completeness`: `complete`, `partial` (a stage ran out of its time limit,
+  named in `partial_stages`; molecules handled after the limit may lack
+  matches) or `incomplete` (database lookups failed, listed in `incomplete`).
+  A partial or incomplete run still has `status` `success`: check
+  `completeness` before treating its results as final.
 * `tasks`: the pipeline stages (load, repair, signatures, identification,
   verification, export, render) with their status and a short summary.
 * `progress` (once the molecules are known): `molecules_done` of
@@ -229,8 +245,9 @@ or `cancelled`.
   ([Warnings and errors]({DOCS}/warnings/)). A successful run can carry
   warnings, e.g. a database that did not answer.
 * `incomplete`: lookups that failed for a reason another attempt can fix
-  (server error, busy, timeout); `POST /rerun` repeats them.
-* `retry` / `attempts`: automatic retries (repository queue only). While a run
+  (server error, busy, timeout, a stage's time limit); `POST /rerun` repeats them.
+* `retry` / `attempts`: automatic retries (repository queue only; not for time
+  limits, which a run under the same limit would hit again). While a run
   waits for its next attempt its status reads `queued`.
 * `retention`: when the run will be deleted (`expires_at`) and how the owner
   can extend it (`owner_choices`).
@@ -252,18 +269,23 @@ time; `tasks` and `progress` are always complete.""",
     ("GET", f"{V1}/{{run_id}}"): Endpoint(
         "Runs", "Run summary",
         "A short summary: status, times, input kind, run name, and the numbers of "
-        "pipeline stages, warnings, errors and incomplete lookups. `retention` says how "
-        "long the run is kept. For the details use `/status`.",
-        example="summary", errors=dict([RUN_404])),
+        "pipeline stages, warnings, errors and incomplete lookups. `completeness` "
+        "(`complete`, `partial` or `incomplete`; null until the run succeeded) and "
+        "`partial_stages` say whether a successful run is complete: see `/status`. "
+        "`retention` says how long the run is kept. For the details use `/status`.",
+        example="summary",
+        more_examples={"partial": ("A run whose database search ran out of time", PARTIAL_SUMMARY)},
+        errors=dict([RUN_404])),
     ("GET", V1): Endpoint(
         "Managing runs", "Your runs",
         "The runs submitted from your network address, newest first: what the web "
         "application shows under *Your annotations*. Other people's runs are never listed. "
         "Runs are not tied to an account, so a different network (home, VPN) shows "
-        "different runs.",
+        "different runs. `completeness` and `partial_stages` as in `/status`.",
         example={"runs": [{"run_id": EXAMPLE_RUN, "status": "success",
                            "created_at": "2026-11-08T23:50:46.638453+00:00", "input_kind": "pdb",
-                           "run_name": "Trypsin with benzamidine", "creator_ip": None, "queue": "web"}]},
+                           "run_name": "Trypsin with benzamidine", "creator_ip": None, "queue": "web",
+                           "completeness": "complete", "partial_stages": []}]},
         params={"mine": "Accepted for compatibility; only your own runs are ever listed."}),
     ("GET", f"{V1}/examples"): Endpoint(
         "Service", "Example runs",

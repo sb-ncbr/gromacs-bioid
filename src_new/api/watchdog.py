@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from .best_hit import molecule_result
+from .best_hit import coarse_grained_of, molecule_result
 
 log = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ def answers(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     for seg, ver in (d.get("verification") or {}).items():
         if not isinstance(ver, dict) or seg.startswith("_"):
             continue
-        r = molecule_result(ver.get("verified_hits") or [])
+        r = molecule_result(ver.get("verified_hits") or [], coarse_grained_of(data, seg))
         idents = (d.get("identifiers") or {}).get(seg)
         out[seg] = {"state": r["state"], "database": r["database"], "identifier": r["identifier"],
                     "answered_by": sorted(_answered_by(idents)),

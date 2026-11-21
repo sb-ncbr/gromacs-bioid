@@ -7,6 +7,7 @@ import re
 from typing import TYPE_CHECKING
 
 from ..base import IdentifierResolver, IdentifierResolutionError
+from ._smiles_query import query_smiles, refusal
 
 if TYPE_CHECKING:
     from ...config.loader import RunConfig
@@ -83,8 +84,16 @@ class ChemblResolver(IdentifierResolver):
         """
         # Decode SELFIES to SMILES if needed
         smiles = self._decode_selfies(signature)
+        # 2026-11-21 (mdval audit item 6): an impossible valence is declined
+        # here (ChEMBL answered HTTP 500, which counted as an outage)
+        reason = refusal(smiles)
+        if reason:
+            logger.info(f"{self.name}: query declined ({reason})")
+            self._last_error = reason
+            return []
         threshold = self.config.chembl.similarity_threshold
-        return chembl_fetch_similarity_match(smiles, threshold=threshold, include_similarity=True)
+        return chembl_fetch_similarity_match(smiles, threshold=threshold, include_similarity=True,
+                                             give_up=self._over_budget)
 
     def _decode_selfies(self, signature: str) -> str:
         """Decode SELFIES to SMILES if signature is SELFIES.
@@ -95,29 +104,20 @@ class ChemblResolver(IdentifierResolver):
         Returns:
             SMILES string.
         """
-        # Check if this looks like SELFIES (contains [C], [O], etc.)
-        if "[" in signature and "]" in signature:
-            try:
-                import selfies
-                return selfies.decoder(signature)
-            except ImportError:
-                logger.warning("selfies package not installed; treating as SMILES")
-            except Exception as exc:
-                logger.warning(f"SELFIES decode failed: {exc}; treating as SMILES")
-        return signature
+        # 2026-11-21 (mdval audit item 6): by the signature type
+        return query_smiles(signature, getattr(self, "_signature_type", None))
 
 
-import json
 import urllib.parse
-import urllib.error
-import urllib.request
-import time
+
+from ... import http_retry
 
 
 def chembl_fetch_similarity_match(
     smiles: str,
     threshold: int,
     include_similarity: bool = False,
+    give_up=None,
 ) -> list[str] | list[tuple[str, float]]:
     """Search ChEMBL for similarity matches of SMILES.
 
@@ -125,6 +125,8 @@ def chembl_fetch_similarity_match(
         smiles: SMILES string to search.
         threshold: Similarity threshold (0-100, 100 = identity).
         include_similarity: If True, return (id, score) tuples; else just IDs.
+        give_up: Optional callable; True stops the REST fallback's retries
+            (the stage budget ran out).
 
     Returns:
         List of ChEMBL ID strings (without "CHEMBL" prefix) or (id, score) tuples.
@@ -173,21 +175,15 @@ def chembl_fetch_similarity_match(
         
         logger.debug(f"Querying ChEMBL REST API: {url}")
         
-        req = urllib.request.Request(url)
-        req.add_header('Accept', 'application/json')
-        
-        from ... import service_stats
-        t0 = time.monotonic()
-        try:
-            with urllib.request.urlopen(req, timeout=30) as response:
-                data = json.loads(response.read().decode('utf-8'))
-        except urllib.error.HTTPError as exc:
-            service_stats.record_http(url, exc.code, time.monotonic() - t0)
-            raise
-        except Exception as exc:
-            service_stats.record_http(url, None, time.monotonic() - t0, exc)
-            raise
-        service_stats.record_http(url, 200, time.monotonic() - t0)
+        # 2026-11-21 (mdval audit item 6): requests with retries
+        # (http_retry) instead of one urllib attempt; counted by
+        # service_stats like every requests call.
+        response = http_retry.request(
+            "GET", url, headers={"Accept": "application/json"}, timeout=30, give_up=give_up)
+        if response.status_code >= 400:
+            raise IdentifierResolutionError(
+                f"HTTP {response.status_code}: {http_retry.body_excerpt(response)}")
+        data = response.json()
         
         results: list[str] | list[tuple[str, float]] = []
         molecules = data.get('molecules', [])

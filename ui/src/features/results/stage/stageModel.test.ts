@@ -154,3 +154,22 @@ describe("fasta for several chains", () => {
     expect(out).toBe(">CYS chain A\nAAA\n>CYS chain C\nCCC\n");
   });
 });
+
+describe("coarse-grained answer (2026-11-21, mdval audit item 8b)", () => {
+  const cg = mol({
+    display_name: "POPE",
+    result: { state: "coarse_grained", name: "Coarse-grained (Martini POPE)",
+      description: "By name: PE(16:0/18:1(9Z)). Not checked: the model has beads, not atoms.",
+      best: null, confidence: null, evidence: null },
+  });
+  it("badge says not checked, with no score", () => {
+    expect(badgeOf(cg, true)).toEqual({ kind: "none", text: "Coarse-grained, not checked", score: null });
+  });
+  it("headline shows the model and the by-name lipid", () => {
+    expect(headline(cg, true)).toEqual({
+      title: "Coarse-grained (Martini POPE)",
+      sub: "By name: PE(16:0/18:1(9Z)). Not checked: the model has beads, not atoms.",
+    });
+    expect(bestLine(cg, true)).toBeNull();
+  });
+});

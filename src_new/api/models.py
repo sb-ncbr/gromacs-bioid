@@ -7,6 +7,14 @@ from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 
 
+# 2026-11-21 (mdval audit item 7): next to `status` (which stays "success"
+# for a partial run) in the status, summary and run list (completeness.state).
+COMPLETENESS = ("How complete a successful run is: complete, partial (a stage ran out of time, "
+                "see partial_stages) or incomplete (remote lookups failed, see incomplete); "
+                "null until the run has succeeded")
+PARTIAL_STAGES = "Stages that ran out of their time budget; their results are partial"
+
+
 class PipelineStatusResponse(BaseModel):
     """Response model for pipeline status."""
 
@@ -16,6 +24,8 @@ class PipelineStatusResponse(BaseModel):
     started_at: Optional[str] = Field(None, description="ISO 8601 timestamp when pipeline started")
     finished_at: Optional[str] = Field(None, description="ISO 8601 timestamp when pipeline finished")
     input_kind: Optional[str] = Field(None, description="How the input was read: tpr, gro, amber, charmm, lammps, pdb, cif, ...")
+    completeness: Optional[str] = Field(None, description=COMPLETENESS)
+    partial_stages: List[str] = Field(default_factory=list, description=PARTIAL_STAGES)
     input_files: Optional[Dict[str, str]] = Field(None, description="The input files by role (topology, coordinates, ...)")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Working directories on the server")
 
@@ -420,6 +430,8 @@ class RunListItem(BaseModel):
     run_name: Optional[str] = Field(None, description="Name given at submission")
     creator_ip: Optional[str] = Field(None, description="Always null (addresses are not stored)")
     queue: str = Field("web", description="Queue the run was submitted to: web or repository")
+    completeness: Optional[str] = Field(None, description=COMPLETENESS)
+    partial_stages: List[str] = Field(default_factory=list, description=PARTIAL_STAGES)
 
 
 class RunListResponse(BaseModel):
@@ -458,6 +470,8 @@ class RunSummaryResponse(BaseModel):
     error_count: int = Field(..., description="Number of critical errors")
     retention: Optional[RetentionInfo] = Field(None, description="How long the run is kept")
     incomplete_count: int = Field(0, description="Failed lookups a rerun could fix (see status.incomplete)")
+    completeness: Optional[str] = Field(None, description=COMPLETENESS)
+    partial_stages: List[str] = Field(default_factory=list, description=PARTIAL_STAGES)
     queue: str = Field("web", description="Queue the run was submitted to: web or repository")
     attempt: int = Field(1, description="Automatic attempt number (1 = first)")
     rerun_of: Optional[str] = Field(None, description="Run this one re-runs")

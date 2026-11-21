@@ -5,6 +5,8 @@ stateOf / formatDb / confLabel, labels.ts DB_LABELS): the verified hits are
 ranked by final_confidence, highest first (ties keep the stored order); the
 top one is the answer. Ground-truth overrides and element matches are
 "exact" and carry no confidence; a verified answer below 50 is a "lead".
+A coarse-grained molecule (beads, no atoms) with nothing verified is
+"coarse_grained" (2026-11-21, mdval audit item 8b).
 Keep the two in step (tests/src_new/api/test_best_hit.py pins the rules).
 """
 from __future__ import annotations
@@ -26,7 +28,7 @@ DB_LABELS = {
 }
 
 STATE_LABELS = {"identified": "identified", "lead": "lead", "exact": "exact",
-                "not_identified": "not identified"}
+                "not_identified": "not identified", "coarse_grained": "coarse-grained"}
 
 
 def format_db(db: Optional[str]) -> str:
@@ -51,9 +53,12 @@ def ranked_verified(hits: list[Any]) -> list[dict[str, Any]]:
     return sorted(verified, key=conf, reverse=True)  # stable, like Array.sort
 
 
-def state_of(top: Optional[dict[str, Any]]) -> str:
+def state_of(top: Optional[dict[str, Any]], coarse_grained: bool = False) -> str:
     if not top:
-        return "not_identified"
+        # 2026-11-21 (mdval audit item 8b): a bead model cannot be checked
+        # against a database — not a failed identification. A verified hit
+        # (a Martini protein's sequence BLASTs fine) still wins.
+        return "coarse_grained" if coarse_grained else "not_identified"
     if top.get("ground_truth_override") or top.get("database") == "element":
         return "exact"
     conf = top.get("final_confidence")
@@ -67,12 +72,45 @@ def _display_id(hit: dict[str, Any]) -> str:
     return normalize_identifier(ident, hit.get("ident_type") or "") or ident
 
 
-def molecule_result(hits: list[Any]) -> dict[str, Any]:
+def coarse_grained_label(verdict: Optional[dict[str, Any]]) -> str:
+    """ui derive.ts cgLabel: "Coarse-grained (Martini POPE)"."""
+    verdict = verdict or {}
+    what = " ".join(x for x in (verdict.get("model"), verdict.get("residue")) if x)
+    return f"Coarse-grained ({what})" if what else "Coarse-grained"
+
+
+def coarse_grained_of(data: dict[str, Any], segment: str) -> Optional[dict[str, Any]]:
+    """2026-11-21 (mdval audit item 8b): a molecule's coarse-grained verdict
+    ({"model", "residue", "by_name"?}) or None. Runs before the verdict was
+    recorded per molecule: a coarse-grained run's molecule without elements."""
+    d = (data or {}).get("data") or data or {}
+    for entry in ((d.get("fragments") or {}).get("segments") or []):
+        if isinstance(entry, dict) and entry.get("segment") == segment:
+            if isinstance(entry.get("coarse_grained"), dict):
+                return entry["coarse_grained"]
+            break
+    report = (d.get("universe") or {}).get("repair_report") or {}
+    if report.get("coarse_grained") or report.get("elements_source") == "coarse_grained_blank":
+        props = (((d.get("universe") or {}).get("segments") or {}).get(segment) or {}).get("properties") or {}
+        if props and not props.get("has_elements", True):
+            return {"model": report.get("coarse_grained_model") or "", "residue": ""}
+    return None
+
+
+def molecule_result(hits: list[Any], coarse_grained: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """best hit, state, database label, identifier, URL, confidence, alternatives."""
     verified = ranked_verified(hits)
     top = verified[0] if verified else None
-    state = state_of(top)
+    state = state_of(top, coarse_grained=coarse_grained is not None)
     confidence = None if (top is None or state == "exact") else top.get("final_confidence")
+    if state == "coarse_grained":
+        return {
+            "best": None, "state": state, "state_label": STATE_LABELS[state],
+            "database": "", "identifier": "", "url": "",
+            "confidence": None, "confidence_label": None, "alternatives": [],
+            "name": coarse_grained_label(coarse_grained),
+            "by_name": (coarse_grained or {}).get("by_name"),
+        }
     return {
         "best": top,
         "state": state,

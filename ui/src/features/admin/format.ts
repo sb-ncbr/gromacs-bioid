@@ -1,6 +1,7 @@
 /** Pure formatting helpers for the admin dashboard (tested in format.test.ts). */
 import type { AdminOverview, AdminRun, DeploymentError, DeploymentInfo, RunRetention } from "../../lib/api/admin";
 import { isSectionError } from "../../lib/api/admin";
+import { completenessHint, completenessSuffix } from "../../lib/runCompleteness";
 
 const UNITS = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
 
@@ -89,6 +90,18 @@ export function retentionSummary(r: RunRetention | null | undefined, nowMs: numb
 export const ACTIVE_STATUSES = new Set(["queued", "running", "pending", "created", "retry_scheduled"]);
 
 export type Tone = "ok" | "warn" | "error" | "info" | "muted";
+
+/**
+ * 2026-11-21 (mdval audit item 7): "success · partial" (warn) for a run
+ * whose status is success but a stage ran out of time or lookups failed.
+ */
+export function runStatusBadge(status: string, completeness?: string | null, stages?: string[] | null):
+  { tone: Tone; text: string; title?: string } {
+  const gap = completenessSuffix(completeness);
+  if (status === "success" && gap)
+    return { tone: "warn", text: `success · ${gap}`, title: completenessHint(gap, stages) ?? undefined };
+  return { tone: statusTone(status), text: status };
+}
 
 export function statusTone(status: string): Tone {
   if (status === "success") return "ok";

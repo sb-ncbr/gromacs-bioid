@@ -6,8 +6,8 @@ sources feed it:
 - every database lookup of the identify stage (IdentifierResolver.resolve:
   local BLAST and Foldseek as well as remote searches), as "db:<resolver>";
 - every HTTP request a worker makes (requests.Session.send, patched once at
-  worker start, plus ChEMBL's urllib fallback), as "http:<host>", which
-  covers the verification stage's fetches too.
+  worker start), as "http:<host>", which covers the verification stage's
+  fetches too. (ChEMBL's REST fallback uses requests since 2026-11-21.)
 
 Counts are kept in memory and written every 10 s by a background thread to
 the cache-only Redis (BAT3_SHARED_CACHE_URL) in 5-minute buckets kept for

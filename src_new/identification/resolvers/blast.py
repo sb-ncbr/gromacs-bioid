@@ -42,6 +42,10 @@ class BlastHit:
     # unobserved termini apart from domain-in-larger-protein matches.
     subject_span: tuple[int, int] | None = None
     subject_max_internal_gap: int | None = None
+    # 2026-11-21 (mdval audit item 3): blastn searches both strands; True when
+    # every HSP aligns the query to the subject's reverse complement (the
+    # partner strand of a duplex, not the same chain).
+    opposite_strand: bool = False
 
 
 # F-N1c: exact short identity rule applies only to nucleotide queries up to
@@ -63,8 +67,14 @@ _SHORT_IDENTITY_MAX_QLEN = 25
 # than a few residues (a domain-sized internal gap means a different
 # construct). Identity >= 0.99 and query coverage >= 0.99 stay mandatory;
 # <99%-identity engineered constructs remain similarity untouched.
+# 2026-11-21 (mdval audit item 3): nucleotide identity (queries > 25 nt)
+# uses the same geometry, in nucleotides: unmodelled terminal nucleotides
+# are in the pdbnt (SEQRES) sequence but not in the simulated chain. Nucleic
+# acids are short, so 25 nt at each end could be most of the subject (a
+# 30-nt piece of a 70-nt RNA): the override also needs this subject coverage.
 EXACT_MATCH_MAX_TERMINAL_OVERHANG_AA = 25
 EXACT_MATCH_MAX_INTERNAL_GAP_AA = 5
+NUCLEIC_OVERHANG_MIN_SUBJECT_COV = 0.75
 
 # D-14 (reviewer 2026-10-27, pre-full-corpus rule): UniProt/Swiss-Prot
 # references routinely extend well past the deposited MD construct
@@ -451,9 +461,13 @@ class BLASTResolver(IdentifierResolver):
                 total_align = sum(h.get("align_len", 0) for h in hsps)
                 identity_p = total_identity / total_align if total_align > 0 else 0.0
 
+                # 2026-11-21 (mdval audit item 3): a minus-strand blastn HSP
+                # reports hit_from > hit_to (checked with blastn 2.x JSON);
+                # intervals are normalised to (low, high), the unnormalised
+                # pair gave negative subject coverage and spans.
                 def _merged_coverage(k_from: str, k_to: str, total_len) -> float | None:
                     ivs = sorted(
-                        (h[k_from], h[k_to]) for h in hsps
+                        (min(h[k_from], h[k_to]), max(h[k_from], h[k_to])) for h in hsps
                         if k_from in h and k_to in h
                     )
                     if not ivs:
@@ -473,8 +487,8 @@ class BLASTResolver(IdentifierResolver):
                     """D-13 (Fix B): merged subject span + longest internal
                     unaligned gap (1-based inclusive coords; None = unknown)."""
                     ivs = sorted(
-                        (h["hit_from"], h["hit_to"]) for h in hsps
-                        if "hit_from" in h and "hit_to" in h
+                        (min(h["hit_from"], h["hit_to"]), max(h["hit_from"], h["hit_to"]))
+                        for h in hsps if "hit_from" in h and "hit_to" in h
                     )
                     if not ivs:
                         return None, None
@@ -499,12 +513,16 @@ class BLASTResolver(IdentifierResolver):
                 # best bit score across the hit's HSPs.
                 bits: float = max((h.get("bit_score", 0.0) for h in hsps), default=0.0)
                 evalue: float = min((h.get("evalue", 1.0) for h in hsps), default=1.0)
+                # strand fields are blastn-only; absent = Plus (blastp, old fixtures)
+                opposite = bool(hsps) and all(
+                    h.get("query_strand", "Plus") != h.get("hit_strand", "Plus") for h in hsps)
 
                 results.append(BlastHit(accessions, evalue, bits, identity_p, qcov,
                                         subject_len=subject_len,
                                         subject_cov_p=scov,
                                         subject_span=subj_span,
-                                        subject_max_internal_gap=subj_gap))
+                                        subject_max_internal_gap=subj_gap,
+                                        opposite_strand=opposite))
         
         return results
 
@@ -564,6 +582,8 @@ class BLASTResolver(IdentifierResolver):
             return True
         if hit.subject_span is None or not hit.subject_len:
             return False
+        if not self.is_protein and hit.subject_cov_p < NUCLEIC_OVERHANG_MIN_SUBJECT_COV:
+            return False
         left_overhang = hit.subject_span[0] - 1
         right_overhang = hit.subject_len - hit.subject_span[1]
         internal_gap = hit.subject_max_internal_gap or 0
@@ -574,18 +594,28 @@ class BLASTResolver(IdentifierResolver):
         )
 
     def _identity_gate_fail(self, hit: BlastHit, query_len: int = 0) -> str | None:
-        """None if the hit passes the protein C-03 identity gate, else the
-        first failing gate name: 'identity' | 'qcov' | 'scov' | 'alen'.
+        """None if the hit passes the C-03 identity gate, else the
+        first failing gate name: 'identity' | 'qcov' | 'strand' | 'scov' | 'alen'.
         D-14: resolvers with D14_SCOV_DROPPED (UniProt/Swiss-Prot) skip the
         subject-coverage gate and instead require an aligned length of at
         least D14_MIN_ALIGNED_LEN_AA — the subject is the full-length
         protein by accession definition, so construct-vs-reference overhang
-        is biology, not a fusion artefact."""
+        is biology, not a fusion artefact.
+        2026-11-21 (mdval audit item 3): nucleotide hits use the same gate,
+        plus two rules: a reverse-complement alignment ('strand') is the
+        partner strand, not the same chain; and unknown subject coverage is
+        not admissible (every blastn report carries hit_from/hit_to, and
+        F-N1c never let a query inside a longer subject claim identity)."""
         id_min, qcov_min = self._identity_thresholds()
         if hit.identity_p < id_min:
             return "identity"
         if hit.coverage_p < qcov_min:
             return "qcov"
+        if not self.is_protein:
+            if hit.opposite_strand:
+                return "strand"
+            if hit.subject_cov_p is None:
+                return "scov"
         if self.D14_SCOV_DROPPED:
             if hit.subject_span is not None:
                 aligned = hit.subject_span[1] - hit.subject_span[0] + 1
@@ -597,6 +627,13 @@ class BLASTResolver(IdentifierResolver):
         if not self._subject_cov_ok(hit):
             return "scov"
         return None
+
+    def _nucleotide_gate_applies(self, sequence: str) -> bool:
+        """2026-11-21 (mdval audit item 3): nucleotide queries longer than
+        _SHORT_IDENTITY_MAX_QLEN are decided by _identity_gate_fail; shorter
+        ones only by the F-N1c short-identity rule."""
+        query_len = len(sequence.strip()) if sequence else 0
+        return not self.is_protein and query_len > _SHORT_IDENTITY_MAX_QLEN
 
     def _run_blast_identity(self, sequence: str, working_directory: str) -> list[str]:
         """Execute identity search with BLAST."""
@@ -622,23 +659,18 @@ class BLASTResolver(IdentifierResolver):
             # with the aligned-length floor (see module comment).
             query_len_prot = len(sequence.strip()) if sequence else 0
             strict_hits = [h for h in hits if self._identity_gate_fail(h, query_len_prot) is None]
+        elif self._nucleotide_gate_applies(sequence):
+            # 2026-11-21 (mdval audit item 3): nucleotides get the same
+            # absolute rule. The old e <= 1e-50 / bits >= 51 gates made a
+            # PERFECT match of ~26-104 nt unreachable (measured on production
+            # pdbnt, substrings of 1KX5_I: 30 nt e=4.8e-10, 60 nt 3e-26,
+            # 80 nt 3.6e-37, 100 nt 3.6e-48, 120 nt 3.4e-59), which is where
+            # most simulated nucleic acids are (111 of 158 NA segments of the
+            # balanced-preset audit unidentified). Queries <= 25 nt keep the
+            # F-N1c rule below (subject length == query length).
+            strict_hits = [h for h in hits if self._identity_gate_fail(h) is None]
         else:
-            strict_hits = self._filter_blast_results(
-                hits,
-                lambda hit: hit.evalue <= self.blast_config.exact_match_max_evalue,
-            )
-            strict_hits = self._filter_blast_results(
-                strict_hits,
-                lambda hit: hit.bits >= self.blast_config.exact_match_min_bits,
-            )
-            strict_hits = self._filter_blast_results(
-                strict_hits,
-                lambda hit: hit.identity_p >= self.blast_config.exact_match_min_identity_p,
-            )
-            strict_hits = self._filter_blast_results(
-                strict_hits,
-                lambda hit: hit.coverage_p >= self.blast_config.exact_match_min_query_cov_p,
-            )
+            strict_hits = []
 
         # Capture metadata for each hit
         metadata: dict[str, dict] = {}
@@ -752,7 +784,7 @@ class BLASTResolver(IdentifierResolver):
                 "coverage_p": hit.coverage_p,
                 "subject_cov_p": hit.subject_cov_p,
             }
-            if self.is_protein:
+            if self.is_protein or self._nucleotide_gate_applies(sequence):
                 fail = self._identity_gate_fail(hit)
                 if fail is not None:
                     meta["identity_gate_fail"] = fail

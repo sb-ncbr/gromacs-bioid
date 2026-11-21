@@ -150,7 +150,8 @@ The trypsin run, shortened:
 ```json
 {"run_id": "1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd",
  "pipeline": {"status": "success", "started_at": "2026-11-08T23:50:46.759861+00:00",
-              "finished_at": "2026-11-08T23:58:37.460787+00:00", "input_kind": "pdb"},
+              "finished_at": "2026-11-08T23:58:37.460787+00:00", "input_kind": "pdb",
+              "completeness": "complete", "partial_stages": []},
  "tasks": [{"task_id": "discover_input", "name": "Discover Input", "status": "success", "...": "…"}],
  "progress": {"molecules_done": 4, "molecules_total": 4,
               "per_segment": {"A": "searched", "A__v1": "searched", "A__v2": "searched", "A__v3": "searched"}},
@@ -167,6 +168,14 @@ The trypsin run, shortened:
 
 - `pipeline.status` goes `queued` → `running` → `success`, `failed` or
   `cancelled`. Typical runs take 2–8 minutes; Deep search up to hours.
+- `pipeline.completeness` says how complete a successful run is (null
+  before): `complete`; `partial`, a stage ran out of its time limit
+  (`partial_stages`, e.g. `["identify_molecules"]`) and molecules handled
+  after the limit may have fewer matches or none; or `incomplete`, database
+  lookups failed (listed in `incomplete`, below). **`status` stays `success`
+  in all three**, so a client that stores results should check
+  `completeness` as well. The run summary (`GET /runs/{id}`) and the run list
+  (`GET /runs`) carry the same two fields next to `status`.
 - `warnings` do not mean the run failed: each has a `code`, `details` (often
   the molecule, `segment`, and the database, `service`) and a `docs_url` into
   [Warnings and errors](warnings.md). A database that did not answer, for
@@ -188,7 +197,10 @@ choices.
 On the `repository` queue (campaigns, with a queue token from the BioID
 team), failed lookups can be retried automatically under the same run id:
 while a run waits for its next attempt, `status` reads `queued` and `retry`
-says when (`at`) and why.
+says when (`at`) and why. A run whose only gaps are time limits
+(`completeness: partial`, `incomplete` listing only `time limit (…)`) is not
+retried automatically: under the same limit it would most likely run out of
+time again.
 
 ## Reading the results
 
@@ -205,7 +217,10 @@ call addresses a molecule by its `segment` name:
    "A__v3": {"type": "water",          "atom_count": 1,    "residue_count": 1,   "copies": 62, "display_name": "HOH"}}}
 ```
 
-Identical molecules are one entry with `copies` (the 62 waters).
+Identical molecules are one entry with `copies` (the 62 waters). A molecule
+of a coarse-grained model also carries `"coarse_grained": {"model": "Martini",
+"residue": "POPE", "by_name": "PE(16:0/18:1(9Z))"}` (see
+[results.json](results-json.md#datafragments)).
 
 **`GET /runs/{id}/verification`** is the main result: for each molecule the
 database records BioID found, verified ones first. `?segment=A__v1`, the
@@ -242,8 +257,10 @@ A__v2,CA,ion,1,1,exact,Calcium ion,Element,CA,,,,
 A__v3,HOH,water,62,1,exact,Water,PubChem,962,https://pubchem.ncbi.nlm.nih.gov/compound/962,,,
 ```
 
-`Result` is `identified`, `lead` (verified, confidence below 50), `exact` or
-`not identified`.
+`Result` is `identified`, `lead` (verified, confidence below 50), `exact`,
+`not identified` or `coarse-grained` (a bead model with nothing verified: it
+has no atoms to check against a database; `Identified Name` reads e.g.
+`Coarse-grained (Martini POPE)`).
 
 Going deeper:
 

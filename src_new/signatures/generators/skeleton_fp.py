@@ -29,6 +29,7 @@ class SkeletonFingerprintGenerator(SignatureGenerator):
     """Heavy-atom skeleton fingerprint generator (F12)."""
 
     name = "skeleton_fp"
+    real_atoms_only = True  # 2026-11-21 (mdval audit item 4): no Drude/LP particles
     signature_type = "skeleton_fp"
     MAX_PERCEPTION_ATOMS = 150
 

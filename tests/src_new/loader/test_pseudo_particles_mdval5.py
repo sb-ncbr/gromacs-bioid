@@ -202,6 +202,20 @@ class TestElementGuessing:
         assert not any(int(a) in pseudo or int(b) in pseudo
                        for a, b in u.atoms.bonds.indices)
 
+    @pytest.mark.parametrize("pdb_only", [False, True])
+    def test_one_predicate_after_repair(self, pdb_only):
+        """Every particle repair found satisfies the shared predicate the
+        RDKit builders use (mass < 0.5, no element) and no real atom does."""
+        from src_new.loader.repair import is_pseudo_particle
+        kw = dict(with_masses=False, with_types=False, with_bonds=False) if pdb_only else {}
+        u = _drude_system(**kw)
+        if pdb_only:  # a PDB load carries name-guessed masses
+            u.guess_TopologyAttrs(to_guess=["masses"])
+        report = TopologyRepair(u, RunConfig()).run()
+        pseudo = set(report.pseudo_indices)
+        flagged = {a.index for a in u.atoms if is_pseudo_particle(a.mass, a.element)}
+        assert flagged == pseudo
+
     def test_name_guard(self):
         r = TopologyRepair(_drude_system(), RunConfig())
         assert r._guess_single_element("", "OM", None, None) == ""
@@ -249,6 +263,8 @@ class TestFacadeAndSignatures:
             assert all(str(e) for e in frag.elements), seg
 
         meoh = facade.get_fragment("MEMB")
+        from src_new.signatures.generators._perceive_cache import real_atoms
+        assert real_atoms(meoh) is meoh  # nothing left for the builders to strip
         assert sorted(meoh.names) == sorted(["CB", "OG", "HG1", "HB1", "HB2", "HB3"])
         inst = facade.extract_molecule_instance("MEMB")
         assert inst.element_composition == {"C": 1, "O": 1, "H": 4}

@@ -23,6 +23,7 @@ class SelfiesGenerator(SignatureGenerator):
     """SELFIES generator using RDKit and selfies package."""
     
     name = "selfies"
+    real_atoms_only = True  # 2026-11-21 (mdval audit item 4): no Drude/LP particles
     signature_type = "selfies"
     
     def __init__(self, config: SignaturesConfig) -> None:

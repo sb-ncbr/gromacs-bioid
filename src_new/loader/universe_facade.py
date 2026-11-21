@@ -13,11 +13,16 @@ from ..input.models import LoadDecision
 from ..loader.metal_scan import ION_CHANNEL_VOCAB
 from ..loader.repair import RepairReport
 from ..molecules.instances import (
+    CG_ION_RESNAMES,
+    CG_LIPID_RESNAMES,
+    CG_WATER_BEADS,
+    CG_WATER_RESNAMES,
     LIPID_RESNAMES,
     WATER_RESNAMES,
     MoleculeInstance,
     MoleculeType,
 )
+from ..molecules.lipid_names import LIPID21_HEADS, LIPID21_TAILS, MARTINI_SHORTHAND
 from ..molecules.nucleic_acid import (
     has_cross_residue_phosphodiester,
     normalize_nucleic_resname,
@@ -1079,7 +1084,31 @@ class LoadedUniverse:
         return composition, real
 
     @staticmethod
-    def _classify_molecule_type(props, fragment) -> MoleculeType:
+    def _classify_cg_molecule_type(composition, resnames, fragment) -> MoleculeType | None:
+        """2026-11-21 (mdval audit item 8b): bead-name typing for
+        coarse-grained molecules (no elements, so composition is empty).
+        None hands over to the generic rules (resname tables)."""
+        if composition:
+            return None  # an atomistic molecule inside a CG system
+        try:
+            names = {str(n).strip().upper() for n in fragment.atoms.names}
+        except Exception:
+            names = set()
+        try:
+            n_atoms = len(fragment.atoms)
+        except TypeError:
+            n_atoms = len(names)
+        if (resnames and resnames <= (CG_WATER_RESNAMES | WATER_RESNAMES)
+                and names and names <= CG_WATER_BEADS and n_atoms <= 4):
+            return MoleculeType.WATER
+        if n_atoms == 1 and (resnames & CG_ION_RESNAMES or names & CG_ION_RESNAMES):
+            return MoleculeType.ION
+        if resnames & (LIPID_RESNAMES | CG_LIPID_RESNAMES):
+            return MoleculeType.LIPID
+        return None
+
+    @staticmethod
+    def _classify_molecule_type(props, fragment, coarse_grained: bool = False) -> MoleculeType:
         if props.flags.get(SegmentProperty.IS_PROTEIN.value):
             return MoleculeType.PROTEIN
         if props.flags.get(SegmentProperty.IS_NUCLEIC.value):
@@ -1092,6 +1121,12 @@ class LoadedUniverse:
             resnames = {str(rn).upper() for rn in fragment.residues.resnames}
         except Exception:
             resnames = set()
+
+        if coarse_grained:
+            cg_type = LoadedUniverse._classify_cg_molecule_type(
+                composition, resnames, fragment)
+            if cg_type is not None:
+                return cg_type
 
         # bughunt BH-001: water by RESIDUE, independent of bonds and atom
         # count. Crystallographic waters carry only their O (H not resolved),
@@ -1113,10 +1148,13 @@ class LoadedUniverse:
                 elem = str(fragment.atoms.elements[0]).strip().upper()
             except Exception:
                 elem = ""
-            if not elem:
+            if not elem and not coarse_grained:
                 # no elements attribute (raw fixtures / pre-repair
                 # universes): fall back to the atom NAME — repair
-                # normally guesses elements before classification
+                # normally guesses elements before classification.
+                # 2026-11-21 (mdval audit item 8b): never in coarse-grained
+                # systems — a bead name is not an element (Martini water
+                # "W" became tungsten, typed ion).
                 try:
                     name = str(fragment.atoms.names[0]).strip().upper()
                     if 1 <= len(name) <= 2 and name.isalpha():
@@ -1135,7 +1173,17 @@ class LoadedUniverse:
             return MoleculeType.WATER
 
         # 4. Lipid nomenclature beats composition heuristics when known
-        if resnames & LIPID_RESNAMES:
+        # 2026-11-21 (mdval audit item 4): ... when the atoms can be a lipid
+        # (>= 10 carbons, or no elements at all): "PI" is also the CCD
+        # phosphate ion, and a C2H5 fragment of a PBC-broken POPC got the
+        # whole lipid's shorthand.
+        if resnames & LIPID_RESNAMES and (not composition or composition.get("C", 0) >= 10):
+            return MoleculeType.LIPID
+        # 2026-11-21 (mdval audit item 4): AMBER Lipid14/17/21 split one lipid
+        # into a head residue and tail residues (PC + PA + OL)
+        if (resnames and resnames <= (LIPID21_HEADS | LIPID21_TAILS)
+                and resnames & LIPID21_HEADS and resnames & LIPID21_TAILS
+                and composition.get("C", 0) >= 10):
             return MoleculeType.LIPID
 
         # 4b. (wave-2 item 8a) glycan NOMENCLATURE before the composition
@@ -1184,7 +1232,8 @@ class LoadedUniverse:
         fragment = self.get_fragment(segment_name)
         props = self.get_segment_properties(segment_name)
 
-        mtype = self._classify_molecule_type(props, fragment)
+        coarse_grained = self.is_coarse_grained()
+        mtype = self._classify_molecule_type(props, fragment, coarse_grained=coarse_grained)
 
         # Element composition (recorded on the instance regardless of type)
         # v3.143 (A-11/B-13): pseudo/virtual-site atoms excluded.
@@ -1211,8 +1260,33 @@ class LoadedUniverse:
             copy_number=props.molecule_count,
             atom_count=props.atom_count_fragment,
             element_composition=composition,
+            provenance=self._coarse_grained_provenance(composition, resnames),
         )
-    
+
+    def is_coarse_grained(self) -> bool:
+        """2026-11-21 (mdval audit item 8b): the repair step's run-level
+        verdict (elements were left blank for a coarse-grained topology)."""
+        report = getattr(self, "repair_report", None)
+        return bool(getattr(report, "coarse_grained", False)
+                    or getattr(report, "elements_source", "") == "coarse_grained_blank")
+
+    def _coarse_grained_provenance(self, composition, resnames) -> dict:
+        """2026-11-21 (mdval audit item 8b): per-molecule coarse-grained
+        verdict — a CG run's molecule whose atoms carry no element (beads).
+        {"coarse_grained": {"model", "residue", "by_name"?}}; by_name is the
+        Martini name's all-atom parent (never verified, shown as by name)."""
+        if composition or not self.is_coarse_grained():
+            return {}
+        model = getattr(self.repair_report, "coarse_grained_model", "") or ""
+        names = sorted({str(r).strip() for r in resnames if str(r).strip()})
+        residue = names[0] if len(names) == 1 else ""
+        verdict: dict = {"model": model, "residue": residue}
+        if residue and model == "Martini":
+            shorthand = MARTINI_SHORTHAND.get(residue.upper())
+            if shorthand:
+                verdict["by_name"] = shorthand
+        return {"coarse_grained": verdict}
+
     def get_segment_all_atoms(self, segment_name: str) -> AtomGroup:
         """Every atom of a segment across ALL its copies (G9 selectors).
 

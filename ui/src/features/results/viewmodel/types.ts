@@ -7,6 +7,8 @@
  * handoff fixtures (./fixtures/).
  */
 
+import type { Completeness } from "../../../lib/runCompleteness";
+
 export type RunStatus = "queued" | "running" | "finished" | "failed";
 
 export type StageKey = "read" | "find" | "describe" | "search" | "check" | "save";
@@ -52,7 +54,9 @@ export type MoleculeStatus =
   | "not_searched"
   | "done";
 
-export type ResultState = "identified" | "lead" | "exact" | "not_identified";
+/** 2026-11-21 (mdval audit item 8b): "coarse_grained" — a bead model with
+ * nothing verified; BioID cannot check it against a database. */
+export type ResultState = "identified" | "lead" | "exact" | "not_identified" | "coarse_grained";
 
 export interface MatchEntry {
   db: string;
@@ -150,6 +154,10 @@ export interface ViewModel {
     retention_days: number | null;
     /** Queue the run was submitted to: "web" (default) or "repository". */
     queue: string;
+    /** 2026-11-21: how complete a successful run is (null until then). */
+    completeness: Completeness | null;
+    /** Stages that ran out of their time budget. */
+    partial_stages: string[];
   };
   progress: {
     stages: Stage[];

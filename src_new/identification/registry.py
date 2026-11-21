@@ -79,11 +79,18 @@ def deferred_resolver_names(config: RunConfig) -> frozenset[str]:
 
 
 def get_deferred_resolvers(config: RunConfig) -> list[IdentifierResolver]:
-    """The default resolvers named in deferred_resolvers (second pass only)."""
+    """The default resolvers named in deferred_resolvers (second pass only)
+    that are switched on for identity or similarity.
+
+    2026-11-21 (mdval audit item 3): disabled ones (nr/nt/core_nt outside
+    Deep search) were returned too, so every balanced run logged "skips
+    blast_nr_protein (exact match already found)" and wrote
+    identification/_meta/skipped_deferred for databases it never searches."""
     names = deferred_resolver_names(config)
     if not names:
         return []
-    return [r for r in get_default_resolvers(config, include_deferred=True) if r.name in names]
+    return [r for r in get_default_resolvers(config, include_deferred=True)
+            if r.name in names and (r.enabled_identity or r.enabled_similarity)]
 
 
 def get_default_resolvers(config: RunConfig, include_deferred: bool = False) -> list[IdentifierResolver]:

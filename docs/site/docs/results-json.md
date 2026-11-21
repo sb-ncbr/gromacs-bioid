@@ -30,12 +30,13 @@ the REST API also serves the parts separately (`/molecules`, `/verification`,
 
 | Key | Meaning |
 |---|---|
-| `pipeline.status` | `queued`, `running`, `success`, `failed` or `cancelled`. Results are complete only at `success`. |
+| `pipeline.status` | `queued`, `running`, `success`, `failed` or `cancelled`. Results are final only at `success`; check `pipeline.completeness` too. |
+| `pipeline.completeness`, `pipeline.partial_stages` | Written when the run succeeds (runs before 21 November 2026 lack them; the API works them out). `complete`; `partial`: a stage ran out of its time limit, `partial_stages` names it (e.g. `["identify_molecules"]`) and molecules handled after the limit may have fewer matches or none; or `incomplete`: database lookups failed for a reason another attempt can fix (server error, busy, unreachable, no answer in time). `status` stays `success` in all three. |
 | `pipeline.input_kind` | What was uploaded, e.g. `pdb`, `gromacs_tpr`, `amber`. |
 | `pipeline.preset` | The preset the run was submitted with, if any. |
 | `pipeline.retention` | `{"policy": "default"}` (30 days after the run finished), `{"policy": "days", "days": N}` or `{"policy": "preserve"}`. |
 | `pipeline.creator_ip_hash`, `pipeline.owner_token_sha256` | A keyed hash of the submitter's network address and the hash of the run's owner token (not the token). Removed from the API download. |
-| `tasks` | One entry per pipeline stage, in order: `discover_input`, `load_simulation`, `repair_topology`, `unwrap_periodic_boundaries`, `analyze_universe`, `generate_signatures`, `identify_molecules`, `verify_results`, `export_results`, `render_png`. `status` is `success`, `warning` (finished, with something to report) or `failed`; `summary` holds a few counts. A `summary.partial: true` means the stage hit its time budget and the results of that stage are incomplete. |
+| `tasks` | One entry per pipeline stage, in order: `discover_input`, `load_simulation`, `repair_topology`, `unwrap_periodic_boundaries`, `analyze_universe`, `generate_signatures`, `identify_molecules`, `verify_results`, `export_results`, `render_png`. `status` is `success`, `warning` (finished, with something to report) or `failed`; `summary` holds a few counts. A `summary.partial: true` means the stage hit its time budget and the results of that stage are incomplete (listed in `pipeline.partial_stages`). `render_png` with `summary.reason: "disabled"` was switched off on the server (campaign runs have no pictures). |
 | `warnings` | Things worth knowing, with a stable `code` (e.g. `insufficient_bonds`, `stage_time_budget`) and `details`. Every code is explained in [Warnings and errors](warnings.md). Searches that do not apply to a molecule are not warnings: see `data.identification._meta.not_applicable`. |
 | `artifacts` | Files the run produced (mmCIF exports, PNG renders); `path` is server-side — the same files are served under `/files/<run_id>/<file>`. |
 
@@ -53,11 +54,17 @@ section below is keyed by segment name.
 
 | Key | Meaning |
 |---|---|
-| `segments` | List of `{segment, type, copies, atoms_per_copy}` — the molecule list of the run. `type` is `protein`, `nucleic`, `small_molecule`, `lipid`, `ion`, `water` or `unknown`. |
+| `segments` | List of `{segment, type, copies, atoms_per_copy}` — the molecule list of the run. `type` is `protein`, `nucleic`, `small_molecule`, `lipid`, `ion`, `water` or `unknown`. A molecule of a coarse-grained model also has `coarse_grained`: `{model, residue, by_name}` — `model` is `Martini` when the bead names are Martini's (otherwise empty), `by_name` (Martini lipids only) is the lipid the residue name stands for, never checked. |
 | `type_counts` | Number of distinct molecules per type. |
 | `unique` | One record per distinct molecule (key is a composition fingerprint): `molecule_type`, `segment_names`, `chain_ids`, `resnames`, `atom_count`, `element_composition`, `copy_count`. |
 | `total_fragment_count` | Connected fragments in the system, all copies counted. |
 | `metals` | Metal atoms found and their context. |
+
+`data.universe.repair_report` says how the topology was repaired:
+`elements_source` (`topology`, `repaired` or `coarse_grained_blank`) and, for
+a coarse-grained model, `coarse_grained: true` with `coarse_grained_reason`
+and `coarse_grained_model`. Its beads get no chemical elements, so nothing in
+it can be verified against a database structure.
 
 `data.molecules` repeats the counts (`count`, `unique_count`, `type_counts`,
 `system.atom_count`); `data.universe.segments.<seg>.properties` has the

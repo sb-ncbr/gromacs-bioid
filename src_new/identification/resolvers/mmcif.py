@@ -15,7 +15,8 @@ from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
 # _pdb_atom_line is the single home of the PDB ATOM-line format RCSB
 # accepted live (2026-11-01 probe); the mmCIF->PDB converter reuses it.
 from ...constants import FORCE_FIELD_RESIDUE_PARENTS
-from ._rcsb_search import merge_hit_lists, post_rcsb_query, split_oversized_query
+from ._rcsb_search import (QUERY_TOO_LARGE, merge_hit_lists, post_rcsb_query,
+                           split_oversized_query)
 from ._ssh_upload import has_ssh_config, ssh_delete, ssh_upload
 
 logger = logging.getLogger("identifier")
@@ -320,6 +321,17 @@ class MmCifResolver(IdentifierResolver):
         # timeout); converted PDB queries are split per chain and merged
         if query_format == "pdb":
             queries = split_oversized_query(query_text)
+            if not queries:
+                # 2026-11-21 (mdval audit item 6): no chain fits RCSB's
+                # limits (zenodo/15653228: one 4,670-nt RNA chain)
+                logger.info("RCSB structure search skipped (mmcif): every chain "
+                            f"above the size limit; verdict={QUERY_TOO_LARGE}")
+                self._last_error = QUERY_TOO_LARGE
+                return []
+            if len(queries) == 1:
+                # 2026-11-21 (mdval audit item 6): the heavy-atom (or single
+                # fitting chain) query, not the oversized original
+                query_text = queries[0]
             if len(queries) > 1:
                 logger.info(f"RCSB structure query oversized; split into "
                             f"{len(queries)} per-chain queries")

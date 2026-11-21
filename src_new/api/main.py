@@ -194,6 +194,7 @@ API_ADDITIONS = [
     "run_incomplete",          # 2026-11-18 — incomplete gaps; rerun_of / superseded_by
     "run_queues",              # 2026-11-18 — queue field; repository queue (X-Queue-Token)
     "automatic_retries",       # 2026-11-18 — retry/attempts while a run waits (reads "queued")
+    "run_completeness",        # 2026-11-21 — completeness/partial_stages next to status (mdval audit item 7)
     "capabilities",              # this endpoint
 ]
 

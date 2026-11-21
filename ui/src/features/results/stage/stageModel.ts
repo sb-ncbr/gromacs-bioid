@@ -50,6 +50,7 @@ export function badgeOf(m: Molecule, runStatusResolved: boolean, statusText?: st
   const state: ResultState = r?.state ?? "not_identified";
   if (state === "exact") return { kind: "exact", text: "Exact match", score: null };
   if (state === "not_identified") return { kind: "none", text: "No confident match", score: null };
+  if (state === "coarse_grained") return { kind: "none", text: "Coarse-grained, not checked", score: null };
   const conf = r?.confidence ?? 0;
   const label = state === "lead" ? "low" : confLabel(conf);
   const word = label === "high" ? "High" : label === "medium" ? "Medium" : "Low";
@@ -150,6 +151,13 @@ export const NOT_IDENTIFIED_POINTS: readonly string[] = [
   "Check that the residue name and topology describe the molecule you meant to simulate.",
   "Look at the candidates BioID rejected, with the reason for each.",
   "If you know what it is, describe it by hand when you deposit the simulation.",
+];
+
+/** 2026-11-21 (mdval audit item 8b): the matches tab of a coarse-grained molecule. */
+export const COARSE_GRAINED_POINTS: readonly string[] = [
+  "Each bead stands for several atoms, so BioID cannot compare the molecule with a database structure.",
+  "The name shown comes from the residue name only; it was not checked.",
+  "To identify the molecules, submit the atomistic system the model was built from.",
 ];
 
 export const CONFIDENCE_EXPLAINER = {

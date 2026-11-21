@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   baseName,
+  cgDescription,
+  cgLabel,
   chainLabel,
   chainOf,
   clause,
@@ -97,6 +99,25 @@ describe("stateOf", () => {
   });
   it("no verified hits means not identified", () => {
     expect(stateOf(null, false)).toBe("not_identified");
+  });
+  // 2026-11-21 (mdval audit item 8b): mirrors best_hit.state_of
+  it("a coarse-grained molecule with nothing verified is coarse_grained", () => {
+    expect(stateOf(null, false, true)).toBe("coarse_grained");
+    expect(stateOf({ database: "uniprot", final_confidence: 84, is_verified: true }, true, true)).toBe("identified");
+  });
+});
+
+describe("cgLabel / cgDescription", () => {
+  it("names the model and residue", () => {
+    expect(cgLabel({ model: "Martini", residue: "POPE" })).toBe("Coarse-grained (Martini POPE)");
+    expect(cgLabel({ model: "", residue: "DPPC" })).toBe("Coarse-grained (DPPC)");
+    expect(cgLabel(null)).toBe("Coarse-grained");
+  });
+  it("shows the by-name lipid as unchecked", () => {
+    expect(cgDescription({ by_name: "PE(16:0/18:1(9Z))" })).toBe(
+      "By name: PE(16:0/18:1(9Z)). Not checked: the model has beads, not atoms.",
+    );
+    expect(cgDescription({})).toMatch(/beads, not atoms/);
   });
 });
 

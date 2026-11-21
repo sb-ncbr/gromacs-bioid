@@ -10,6 +10,7 @@ import {
   relativeTime,
   retentionSummary,
   shortDate,
+  runStatusBadge,
   statusTone,
   toMs,
 } from "./format";
@@ -77,6 +78,9 @@ describe("retentionSummary", () => {
 
 describe("small helpers", () => {
   it("tones statuses", () => {
+    expect(runStatusBadge("success", "partial", ["identify_molecules"])).toMatchObject({ tone: "warn", text: "success · partial" });
+    expect(runStatusBadge("success", "complete")).toEqual({ tone: "ok", text: "success" });
+    expect(runStatusBadge("failed", null)).toEqual({ tone: "error", text: "failed" });
     expect(statusTone("success")).toBe("ok");
     expect(statusTone("failed")).toBe("error");
     expect(statusTone("running")).toBe("info");

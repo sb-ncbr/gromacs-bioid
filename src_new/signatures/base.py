@@ -14,6 +14,13 @@ from ..loader.universe_facade import LoadedUniverse
 logger = logging.getLogger("base")
 
 
+def _real_atoms(fragment):
+    # local import: generators/_perceive_cache imports rdkit lazily, and
+    # importing it here at module level would load the generators package
+    from .generators._perceive_cache import real_atoms
+    return real_atoms(fragment)
+
+
 class SignatureGenerator(ABC):
     """Abstract base class for signature generators.
     
@@ -23,6 +30,10 @@ class SignatureGenerator(ABC):
     
     name: str = ""
     signature_type: str = ""
+    # 2026-11-21 (mdval audit item 4): chemistry generators (RDKit builds)
+    # see the fragment without its pseudo atoms (Drude particles, lone
+    # pairs, virtual sites: mass < 0.5 and no element)
+    real_atoms_only: bool = False
     
     def __init__(self, config: SignaturesConfig) -> None:
         """Initialize the generator with configuration.
@@ -51,6 +62,8 @@ class SignatureGenerator(ABC):
         """
         if not self.enabled:
             return False
+        if self.real_atoms_only:
+            fragment = _real_atoms(fragment)
         return self._is_applicable(instance, fragment, facade)
     
     def generate(
@@ -71,6 +84,8 @@ class SignatureGenerator(ABC):
         """
         if not self.enabled:
             return None
+        if self.real_atoms_only:
+            fragment = _real_atoms(fragment)
         try:
             return self._generate(instance, fragment, facade)
         except Exception as exc:

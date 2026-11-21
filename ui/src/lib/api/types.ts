@@ -2798,6 +2798,16 @@ export interface components {
              */
             input_kind?: string | null;
             /**
+             * Completeness
+             * @description How complete a successful run is: complete, partial (a stage ran out of time, see partial_stages) or incomplete (remote lookups failed, see incomplete); null until the run has succeeded
+             */
+            completeness?: string | null;
+            /**
+             * Partial Stages
+             * @description Stages that ran out of their time budget; their results are partial
+             */
+            partial_stages?: string[];
+            /**
              * Input Files
              * @description Input files mapping
              */
@@ -3143,6 +3153,16 @@ export interface components {
              * @default web
              */
             queue: string;
+            /**
+             * Completeness
+             * @description How complete a successful run is: complete, partial (a stage ran out of time, see partial_stages) or incomplete (remote lookups failed, see incomplete); null until the run has succeeded
+             */
+            completeness?: string | null;
+            /**
+             * Partial Stages
+             * @description Stages that ran out of their time budget; their results are partial
+             */
+            partial_stages?: string[];
         };
         /**
          * RunListResponse
@@ -3340,6 +3360,16 @@ export interface components {
              * @default 0
              */
             incomplete_count: number;
+            /**
+             * Completeness
+             * @description How complete a successful run is: complete, partial (a stage ran out of time, see partial_stages) or incomplete (remote lookups failed, see incomplete); null until the run has succeeded
+             */
+            completeness?: string | null;
+            /**
+             * Partial Stages
+             * @description Stages that ran out of their time budget; their results are partial
+             */
+            partial_stages?: string[];
             /**
              * Queue
              * @description Queue the run was submitted to: web or repository

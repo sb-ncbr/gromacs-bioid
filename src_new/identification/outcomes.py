@@ -1,7 +1,8 @@
 """Resolver outcomes that mean "does not apply here", not "failed".
 
-A resolver that declines its input (a nucleotide structure search given a
-protein, an mmCIF polymer search given a small molecule) reports a reason
+A resolver that declines its input (an RCSB structure search given a pure
+nucleic acid, which RCSB cannot search; an mmCIF polymer search given a small
+molecule) reports a reason
 string through the same error channel as a real failure (HTTP error,
 timeout, exception). Shown as `identifier_resolver_failed` warnings they
 were most of all warnings and taught users to ignore warnings (2026-11-17).
@@ -16,9 +17,12 @@ from typing import Any
 
 #: Reason strings resolvers return when they decline the input (substring match).
 NOT_APPLICABLE_REASONS = (
-    "na_mode_unsupported",          # pdb_struct.py, mmcif.py: nucleic-acid search mode not supported
+    "na_mode_unsupported",          # pdb_struct.py, mmcif.py: no RCSB structure search for pure nucleic acids
     "no_polymer_payload",           # mmcif.py: small molecule, no polymer to search
     "H-family not applicable",      # hfamily.py: formula without hydrogen
+    # 2026-11-21 (mdval audit item 6): queries no service could answer
+    "invalid_valence",              # idsm.py, chembl.py, pubchem.py: SMILES with an impossible valence
+    "query_too_large",              # pdb_struct.py, mmcif.py: a chain above RCSB's size limit even after splitting
 )
 
 
@@ -45,10 +49,17 @@ def user_warnings(warnings: Any) -> list:
 # later can succeed: the remote service was down, busy or slow, or the stage
 # ran out of time. A local BLAST/Foldseek timeout is not retryable (it would
 # time out again), nor is a rejected query.
+# 2026-11-21 (mdval audit item 6): a query the service rejects as malformed
+# is "rejected", checked before the HTTP status: IDSM says QueryBadFormed /
+# "too high atom valence", PubChem 400 PUGREST.BadRequest and ChEMBL 500
+# "Problem standardizing the query molecule", which used to count as an
+# outage and made the run incomplete and retried.
 
 RETRYABLE = frozenset({"rate_limited", "server_error", "timeout", "connection", "budget"})
 
 _LOCAL_TIMEOUT = ("BLAST timed out", "Foldseek local search timed out")
+_REJECTED = ("too high atom valence", "QueryBadFormed", "PUGREST.BadRequest",
+             "Problem standardizing the query molecule")
 _RATE_LIMITED = ("429", "Too Many Requests", "PUGREST.ServerBusy", "ServerBusy")
 _SERVER_ERROR = ("HTTP 5", "HTTP Error 5", "Internal Server Error", "Bad Gateway",
                  "Service Unavailable", "Gateway Time", "_unavailable: HTTP 5",
@@ -60,8 +71,8 @@ _CONNECTION = ("Connection", "connection", "reset by peer", "Name or service not
 
 
 def failure_class(reason: Any) -> str:
-    """not_applicable | local_timeout | budget | rate_limited | server_error |
-    timeout | connection | other."""
+    """not_applicable | local_timeout | budget | rejected | rate_limited |
+    server_error | timeout | connection | other."""
     text = str(reason or "")
     if is_not_applicable(text):
         return "not_applicable"
@@ -69,6 +80,8 @@ def failure_class(reason: Any) -> str:
         return "local_timeout"
     if "stage_time_budget" in text:
         return "budget"
+    if any(s in text for s in _REJECTED):
+        return "rejected"
     if any(s in text for s in _RATE_LIMITED):
         return "rate_limited"
     if any(s in text for s in _SERVER_ERROR):

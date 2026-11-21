@@ -71,8 +71,18 @@ def _post_once(request: dict, timeout_s: float) -> dict:
 
 
 def _unavailable(exc: requests.exceptions.RequestException) -> IdentifierResolutionError:
-    status = getattr(getattr(exc, "response", None), "status_code", None)
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
     detail = f"HTTP {status}" if status is not None else str(exc)
+    # 2026-11-21 (mdval audit item 6): RCSB says why it rejects a query in
+    # the body ("We could not process your search request"); it was dropped
+    if isinstance(status, int) and 400 <= status < 500:
+        try:
+            body = " ".join(str(response.text or "")[:300].split())
+        except Exception:
+            body = ""
+        logger.warning("RCSB structure search rejected the query (HTTP %s): %s",
+                       status, body or "(empty body)")
     return IdentifierResolutionError(f"structure_search_unavailable: {detail}")
 
 
@@ -164,6 +174,43 @@ def _n_residues(atoms: list[str]) -> int:
                if i == 0 or ln[17:27] != atoms[i - 1][17:27])
 
 
+# 2026-11-21 (mdval audit item 6): chain breaks in input without peptide
+# backbone atoms. A CA-only payload (MDR00106551: 2,272 residues, one label)
+# had no N/C atoms, so no break was found and the whole oversized text was
+# sent (HTTP 400). Consecutive CA atoms of one chain are 3.8 A apart and
+# consecutive phosphates up to ~7 A; farther means a new chain.
+QUERY_TOO_LARGE = "query_too_large"
+_PEPTIDE_BREAK_A = 2.0     # C(i)-N(i+1)
+_NA_LINK_BREAK_A = 2.0     # O3'(i)-P(i+1)
+_CA_BREAK_A = 4.2          # CA(i)-CA(i+1)
+_P_BREAK_A = 8.0           # P(i)-P(i+1)
+
+
+def _residues(atoms: list[str]) -> list[list[str]]:
+    out: list[list[str]] = []
+    for i, ln in enumerate(atoms):
+        if i == 0 or ln[17:27] != atoms[i - 1][17:27]:
+            out.append([])
+        out[-1].append(ln)
+    return out
+
+
+def _chain_break(prev: dict, cur: dict) -> bool:
+    """Whether residue cur does not continue the chain of residue prev
+    (atom name -> xyz), judged by the first link both residues carry."""
+    import math
+
+    for a, b, limit in (("C", "N", _PEPTIDE_BREAK_A), ("O3'", "P", _NA_LINK_BREAK_A),
+                        ("CA", "CA", _CA_BREAK_A), ("P", "P", _P_BREAK_A)):
+        if a in prev and b in cur:
+            return math.dist(prev[a], cur[b]) > limit
+    return False
+
+
+def _too_large(lines: list[str], max_residues: int, max_atoms: int) -> bool:
+    return _n_residues(lines) > max_residues or len(lines) > max_atoms
+
+
 def split_oversized_query(pdb_text: str,
                           max_residues: int = MAX_QUERY_RESIDUES,
                           max_chains: int = MAX_CHAIN_QUERIES,
@@ -173,11 +220,13 @@ def split_oversized_query(pdb_text: str,
 
     Chains come from the chain column; when the payload carries a single
     label (MDposit topology-less systems collapse every chain to 'A'),
-    chains are re-derived at broken peptide bonds (C(i)-N(i+1) > 2 A).
+    chains are re-derived at broken links between consecutive residues:
+    C(i)-N(i+1) > 2 A, O3'(i)-P(i+1) > 2 A, or, without those atoms
+    (CA-only / P-only input), CA-CA > 4.2 A or P-P > 8 A.
     Only ATOM records are kept (CONECT serials would dangle); identical
-    chain sequences are queried once."""
-    import math
-
+    chain sequences are queried once. Chains still above the limits are
+    not sent (2026-11-21, mdval audit item 6): [] when nothing fits, which
+    the resolvers record as not applicable (QUERY_TOO_LARGE)."""
     atoms = [ln for ln in pdb_text.splitlines() if ln.startswith("ATOM")]
     n_res = _n_residues(atoms)
     if n_res <= max_residues and len(atoms) <= max_atoms:
@@ -191,15 +240,14 @@ def split_oversized_query(pdb_text: str,
         for ln in atoms:
             chains.setdefault(ln[21], []).append(ln)
     else:
-        idx, last_c = 0, None
-        for ln in atoms:
-            name = ln[12:16].strip()
-            if name == "N" and last_c is not None and math.dist(_pdb_xyz(ln), last_c) > 2.0:
+        idx, prev = 0, None
+        for res in _residues(atoms):
+            cur = {ln[12:16].strip(): _pdb_xyz(ln) for ln in res}
+            if prev is not None and _chain_break(prev, cur):
                 idx += 1
-            if name == "C":
-                last_c = _pdb_xyz(ln)
+            prev = cur
             label = _CHAIN_LABELS[idx % len(_CHAIN_LABELS)]
-            chains.setdefault(f"{idx}", []).append(ln[:21] + label + ln[22:])
+            chains.setdefault(f"{idx}", []).extend(ln[:21] + label + ln[22:] for ln in res)
 
     distinct: dict[tuple, list[str]] = {}
     for lines in chains.values():
@@ -207,9 +255,13 @@ def split_oversized_query(pdb_text: str,
                if i == 0 or ln[17:27] != lines[i - 1][17:27]]
         if len(seq) >= _MIN_CHAIN_RESIDUES:
             distinct.setdefault(tuple(seq), lines)
-    if not distinct:
-        return [pdb_text]
-    picked = sorted(distinct.values(), key=len, reverse=True)[:max_chains]
+    fitting = [lines for lines in distinct.values()
+               if not _too_large(lines, max_residues, max_atoms)]
+    if len(fitting) < len(distinct):
+        logger.info("RCSB structure query: %d of %d chains above the size limit "
+                    "(%d residues / %d atoms) not sent", len(distinct) - len(fitting),
+                    len(distinct), max_residues, max_atoms)
+    picked = sorted(fitting, key=len, reverse=True)[:max_chains]
     return ["\n".join(lines + ["END"]) + "\n" for lines in picked]
 
 

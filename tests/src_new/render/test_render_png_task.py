@@ -155,3 +155,23 @@ def test_render_png_no_facade_is_warning_and_success(tmp_path, monkeypatch):
     out = _render_png(ctx)
     assert out.summary["reason"] == "no_facade"
     assert any(w["code"] == "render_no_facade" for w in ctx.results._payload["warnings"])
+
+
+# 2026-11-21 (mdval audit item 8c): repository workers switch the task off
+@pytest.mark.parametrize("value", ["1", "true", "YES"])
+def test_render_png_disabled_by_env_is_silent(tmp_path, monkeypatch, value):
+    run_dir, results, ctx = _mk_run(tmp_path)
+    monkeypatch.setenv("BAT3_RENDER_PYMOL_BIN", _stub(tmp_path))
+    monkeypatch.setenv("BAT3_RENDER_DISABLE", value)
+    out = _render_png(ctx)
+    assert out.summary == {"rendered": 0, "reason": "disabled"}
+    assert not results._payload.get("warnings")
+    assert "render" not in results._payload.get("data", {})
+    assert not (run_dir / "render").exists()
+
+
+def test_render_png_disable_off_values_still_render(tmp_path, monkeypatch):
+    run_dir, results, ctx = _mk_run(tmp_path)
+    monkeypatch.setenv("BAT3_RENDER_PYMOL_BIN", _stub(tmp_path))
+    monkeypatch.setenv("BAT3_RENDER_DISABLE", "0")
+    assert _render_png(ctx).summary["rendered"] == 2

@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from .best_hit import molecule_result
+from .best_hit import coarse_grained_of, molecule_result
 
 DIR = "_reports"
 STATUSES = ("open", "resolved", "dismissed")
@@ -35,9 +35,9 @@ def _dir(runs_dir: Path) -> Path:
 def answer_snapshot(data: dict[str, Any], segment: str) -> dict[str, Any]:
     """What BioID said about the segment, as the results page shows it."""
     ver = ((data.get("data") or {}).get("verification") or {}).get(segment) or {}
-    r = molecule_result(ver.get("verified_hits") or [])
+    r = molecule_result(ver.get("verified_hits") or [], coarse_grained_of(data, segment))
     return {k: r[k] for k in ("state", "database", "identifier", "url", "confidence")} | {
-        "name": (r["best"] or {}).get("name")}
+        "name": (r["best"] or {}).get("name") or r.get("name")}
 
 
 def create(runs_dir: Path, run_id: str, data: dict[str, Any], segment: str,
