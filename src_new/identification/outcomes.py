@@ -1,7 +1,8 @@
 """Resolver outcomes that mean "does not apply here", not "failed".
 
-A resolver that declines its input (a nucleotide structure search given a
-protein, an mmCIF polymer search given a small molecule) reports a reason
+A resolver that declines its input (an RCSB structure search given a pure
+nucleic acid, which RCSB cannot search; an mmCIF polymer search given a small
+molecule) reports a reason
 string through the same error channel as a real failure (HTTP error,
 timeout, exception). Shown as `identifier_resolver_failed` warnings they
 were most of all warnings and taught users to ignore warnings (2026-11-17).
@@ -16,7 +17,7 @@ from typing import Any
 
 #: Reason strings resolvers return when they decline the input (substring match).
 NOT_APPLICABLE_REASONS = (
-    "na_mode_unsupported",          # pdb_struct.py, mmcif.py: nucleic-acid search mode not supported
+    "na_mode_unsupported",          # pdb_struct.py, mmcif.py: no RCSB structure search for pure nucleic acids
     "no_polymer_payload",           # mmcif.py: small molecule, no polymer to search
     "H-family not applicable",      # hfamily.py: formula without hydrogen
     # 2026-11-21 (mdval audit item 6): queries no service could answer

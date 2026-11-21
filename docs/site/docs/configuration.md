@@ -94,7 +94,7 @@ Other keys:
 | `ncbi_timeout_s` | 0 (= `timeout_s`); *ini* 43200 | nr / nt / core_nt per-search limit; a run with one of them on gets this much more identify budget and wall-clock time |
 | `uniref50_num_threads`, `uniref50_timeout_s` | 1, 900; *ini* 4, 900 | UniRef50's own limits |
 | `max_target_seqs` | 500 | hits per search |
-| `exact_match_*` | e-value 1e-50, bits 51, identity 0.99, query coverage 0.99 | identity thresholds |
+| `exact_match_*` | e-value 1e-50, bits 51, identity 0.99, query coverage 0.99 | identity thresholds; identity and coverage can only be raised above 0.99, e-value and bits are no longer used (see [Databases](databases.md)) |
 | `similarity_match_*` | e-value 0.1, bits 20, identity 0.4, query coverage 0.15 | similarity thresholds |
 | `local_instance_run_short_search_if_under_X_residues` | 30 | short-query BLAST task below this length |
 

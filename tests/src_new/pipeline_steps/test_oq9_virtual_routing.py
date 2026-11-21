@@ -48,11 +48,16 @@ def _props(is_protein: bool, is_nucleic: bool) -> SegmentProperties:
 
 def _fragment():
     # n_atoms: real AtomGroups carry it; the item-6c nucleotide gate reads
-    # it for the bonds-per-atom threshold (1 bond vs 4 atoms = 0.25 >= 0.25).
+    # it for the bonds-per-atom threshold (2 bonds vs 4 atoms >= 0.25).
+    # 2026-11-21 (mdval audit item 4): the nucleotide map gate also needs an
+    # O3'(i)-P(i+1) link, so two residues joined by one (atoms 1-2).
     return types.SimpleNamespace(
         segids=["SYSTEM"],  # parent segid even for virtual fragments
         n_atoms=4,
-        bonds=types.SimpleNamespace(indices=[(0, 1)]),
+        bonds=types.SimpleNamespace(indices=[(0, 1), (1, 2)]),
+        atoms=types.SimpleNamespace(names=["P", "O3'", "P", "O3'"],
+                                    resindices=[0, 0, 1, 1], indices=[0, 1, 2, 3]),
+        residues=types.SimpleNamespace(resindices=[0, 1]),
     )
 
 

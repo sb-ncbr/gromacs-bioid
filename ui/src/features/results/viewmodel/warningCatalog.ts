@@ -162,13 +162,14 @@ export function catalog(code: string): CatalogEntry {
 /**
  * Not-applicable reasons (src_new/identification/outcomes.py
  * NOT_APPLICABLE_REASONS). identifier_resolver_failed with
- * `na_mode_unsupported` is a nucleotide search on a protein, and with
- * `no_polymer_payload` a structure search on a small molecule: both are
- * declared "not applicable" outcomes, not failures, so they are hidden
- * (COPY.md §3 / DATA.md §3.1). In g1 they were the notes on 96% and 48% of
- * runs. 2026-11-21 (mdval audit item 6): `invalid_valence` (a SMILES with an
- * impossible valence, not sent) and `query_too_large` (every chain above the
- * RCSB size limit) are skips too.
+ * `na_mode_unsupported` is an RCSB structure search skipped for a pure
+ * nucleic acid (RCSB has none; before 2026-11-21 also logged for every
+ * protein), and with `no_polymer_payload` a structure search on a small
+ * molecule: both are declared "not applicable" outcomes, not failures, so
+ * they are hidden (COPY.md §3 / DATA.md §3.1). In g1 they were the notes on
+ * 96% and 48% of runs. 2026-11-21 (mdval audit item 6): `invalid_valence` (a
+ * SMILES with an impossible valence, not sent) and `query_too_large` (every
+ * chain above the RCSB size limit) are skips too.
  */
 const NOT_APPLICABLE_REASONS = [
   "na_mode_unsupported",
