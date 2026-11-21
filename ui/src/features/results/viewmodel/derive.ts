@@ -113,13 +113,38 @@ export function confLabel(confidence: number): "high" | "medium" | "low" {
   return "low";
 }
 
-/** Result state for the top verified hit (DATA.md §2 result.state). */
-export function stateOf(top: HitView | null, hasVerified: boolean): ResultState {
-  if (!hasVerified || !top) return "not_identified";
+/** Coarse-grained verdict of a molecule (API segment_meta.coarse_grained). */
+export interface CoarseGrainedView {
+  model?: string | null;
+  residue?: string | null;
+  /** The Martini name's all-atom parent, never verified ("by name"). */
+  by_name?: string | null;
+}
+
+/**
+ * Result state for the top verified hit (DATA.md §2 result.state). A
+ * coarse-grained molecule with nothing verified is "coarse_grained", not
+ * "not identified" (2026-11-21, mdval audit item 8b; mirrors
+ * src_new/api/best_hit.state_of).
+ */
+export function stateOf(top: HitView | null, hasVerified: boolean, coarseGrained = false): ResultState {
+  if (!hasVerified || !top) return coarseGrained ? "coarse_grained" : "not_identified";
   if (top.ground_truth_override || top.database === "element") return "exact";
   const conf = top.final_confidence;
   if (conf != null && conf < MEDIUM_MIN) return "lead";
   return "identified";
+}
+
+/** "Coarse-grained (Martini POPE)" (best_hit.coarse_grained_label). */
+export function cgLabel(cg: CoarseGrainedView | null | undefined): string {
+  const what = [cg?.model, cg?.residue].filter(Boolean).join(" ");
+  return what ? `Coarse-grained (${what})` : "Coarse-grained";
+}
+
+/** Subtitle for a coarse-grained answer. */
+export function cgDescription(cg: CoarseGrainedView | null | undefined): string {
+  if (cg?.by_name) return `By name: ${cg.by_name}. Not checked: the model has beads, not atoms.`;
+  return "A coarse-grained model has beads, not atoms, so no database entry can be checked against it.";
 }
 
 const SEQUENCE_DBS = new Set(["pdb", "pdb_id", "uniprot", "uniprot_id", "alphafold"]);

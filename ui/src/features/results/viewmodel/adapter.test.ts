@@ -339,3 +339,39 @@ describe("sequence for multi-chain molecules", () => {
     ]);
   });
 });
+
+describe("coarse-grained molecules (2026-11-21, mdval audit item 8b)", () => {
+  it("read Coarse-grained (Martini POPE), not Not identified", () => {
+    const bundle = baseBundle();
+    bundle.summary!.status = "success";
+    bundle.status!.pipeline = { status: "success" };
+    bundle.molecules = {
+      segments: ["seg_1_POPE", "seg_2_W", "seg_3_LIG"],
+      segment_meta: {
+        seg_1_POPE: { type: "lipid", atom_count: 12, display_name: "POPE",
+          coarse_grained: { model: "Martini", residue: "POPE", by_name: "PE(16:0/18:1(9Z))" } },
+        seg_2_W: { type: "water", atom_count: 1, display_name: "W", coarse_grained: { model: "Martini", residue: "W" } },
+        seg_3_LIG: { type: "small_molecule", atom_count: 20, display_name: "LIG" },
+      },
+    };
+    bundle.verification = [
+      { segment: "seg_1_POPE", hits: [{ database: "lipidmaps", identifier: "LMGP02010009", is_verified: false,
+        rejection_reason: "fingerprint_unavailable" }] },
+      { segment: "seg_2_W", hits: [] },
+      { segment: "seg_3_LIG", hits: [] },
+    ];
+    const vm = adapt(bundle, { now: NOW });
+    const [pope, w, lig] = vm.molecules;
+    expect(pope.result!.state).toBe("coarse_grained");
+    expect(pope.result!.name).toBe("Coarse-grained (Martini POPE)");
+    expect(pope.result!.description).toMatch(/^By name: PE\(16:0\/18:1\(9Z\)\)/);
+    expect(pope.result!.best).toBeNull();
+    expect(pope.result!.confidence).toBeNull();
+    expect(pope.more.rejected).toBe(1);
+    expect(w.result!.name).toBe("Coarse-grained (Martini W)");
+    expect(lig.result!.state).toBe("not_identified");
+    // only the atomistic molecule feeds the "not identified" note
+    const missed = vm.notes.find((n) => n.code === "derived_not_identified");
+    expect(missed?.affects).toEqual(["seg_3_LIG"]);
+  });
+});

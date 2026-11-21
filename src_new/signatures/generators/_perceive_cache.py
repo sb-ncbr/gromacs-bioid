@@ -224,7 +224,44 @@ def _net_charge(fragment) -> int:
         q = float(fragment.atoms.charges.sum())
     except Exception:
         return 0
+    # 2026-11-21 (mdval audit item 4): a fragment stripped of its Drude
+    # particles / lone pairs (real_atoms) still owes their charge — a Drude
+    # particle carries ~-1..-2 e that its parent atom compensates.
+    try:
+        own = {int(i) for i in fragment.atoms.indices}
+        for atom in fragment.residues.atoms:
+            if int(atom.index) not in own and _is_pseudo_atom(atom):
+                q += float(atom.charge)
+    except Exception:
+        pass
     return int(round(q))
+
+
+def _is_pseudo_atom(atom) -> bool:
+    """2026-11-21 (mdval audit item 4): a massless/Drude particle (mass <
+    0.5) without an element: no chemistry (TIP4P MW, CHARMM Drude D*, LP*)."""
+    try:
+        return float(atom.mass) < 0.5 and not str(atom.element).strip()
+    except Exception:
+        return False
+
+
+def real_atoms(fragment):
+    """2026-11-21 (mdval audit item 4): the fragment without its pseudo
+    atoms. CHARMM Drude lipids (zenodo/7602770 POPE 182 = 125 atoms + 57
+    Drude/LP particles; 7872741 DPPC 188) failed smiles/inchi_key/selfies/
+    skeleton_fp with RDKit "Element '' not found". Unchanged (the same
+    object) when there is nothing to strip."""
+    try:
+        masses = fragment.atoms.masses
+        elements = fragment.atoms.elements
+    except Exception:
+        return fragment
+    keep = [i for i, (m, e) in enumerate(zip(masses, elements))
+            if not (float(m) < 0.5 and not str(e).strip())]
+    if len(keep) == len(masses) or not keep:
+        return fragment
+    return fragment.atoms[keep]
 
 
 def _reset_to_single_bonds(mol) -> None:
@@ -1181,10 +1218,22 @@ def _external_cut_counts(fragment):
     perception sees a chemically valid molecule."""
     idxset = set(int(a) for a in fragment.atoms.indices)
     counts = {}
+    universe_atoms = getattr(getattr(fragment, "universe", None), "atoms", None)
+
+    def _pseudo(idx: int) -> bool:
+        # 2026-11-21 (mdval audit item 4): a bond to a stripped Drude/LP
+        # particle is not a cut — no H cap for it
+        if universe_atoms is None:
+            return False
+        try:
+            return _is_pseudo_atom(universe_atoms[idx])
+        except Exception:
+            return False
+
     for a1, a2 in fragment.bonds.indices:
         a1, a2 = int(a1), int(a2)
-        if a1 in idxset and a2 not in idxset:
+        if a1 in idxset and a2 not in idxset and not _pseudo(a2):
             counts[a1] = counts.get(a1, 0) + 1
-        elif a2 in idxset and a1 not in idxset:
+        elif a2 in idxset and a1 not in idxset and not _pseudo(a1):
             counts[a2] = counts.get(a2, 0) + 1
     return counts

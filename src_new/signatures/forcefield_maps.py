@@ -2,51 +2,18 @@
 
 from __future__ import annotations
 
+from ..molecules.lipid_names import ALL_ATOM_SHORTHAND, MARTINI_SHORTHAND
+
+# 2026-11-21 (mdval audit item 4): the all-atom map is molecules/lipid_names
+# (CHARMM36 + CHARMM-GUI/Slipids names, ~200; was 35 hand-written entries —
+# PAPC, PAPS, DSPC, PSM, SOPE... returned None). The B-15 additions (PG
+# class, cardiolipins, "ST 27:1;O" cholesterol, SM) are part of it.
+# Coarse-grained molecules skip the generator (nothing to verify against);
+# the "martini" map gives their by-name lead (loader/fragment_store).
 LIPID_FORCEFIELD_MAPS: dict[str, dict[str, str]] = {
-    "charmm36": {
-        "POPC": "PC(16:0/18:1(9Z))",
-        "DOPC": "PC(18:1(9Z)/18:1(9Z))",
-        "DPPC": "PC(16:0/16:0)",
-        "DMPC": "PC(14:0/14:0)",
-        "POPS": "PS(16:0/18:1(9Z))",
-        "DOPS": "PS(18:1(9Z)/18:1(9Z))",
-        "POPE": "PE(16:0/18:1(9Z))",
-        "DOPE": "PE(18:1(9Z)/18:1(9Z))",
-        "DPPE": "PE(16:0/16:0)",
-        "DLPC": "PC(12:0/12:0)",
-        # B-15 (red-team 4.9): PG class + cardiolipins were unmapped and
-        # fell through to the literal "LIPID"
-        "POPG": "PG(16:0/18:1(9Z))",
-        "DOPG": "PG(18:1(9Z)/18:1(9Z))",
-        "DLPG": "PG(12:0/12:0)",
-        "DMPG": "PG(14:0/14:0)",
-        "TOCL1": "CL(18:1(9Z)/18:1(9Z)/18:1(9Z)/18:1(9Z))",
-        "TOCL2": "CL(18:1(9Z)/18:1(9Z)/18:1(9Z)/18:1(9Z))",
-        "TMCL1": "CL(14:0/14:0/14:0/14:0)",
-        "TMCL2": "CL(14:0/14:0/14:0/14:0)",
-        "CDL":  "CL",
-        "CDL1": "CL",
-        "CDL2": "CL",
-        # B-15: valid LIPID MAPS abbreviation for cholesterol (the
-        # "sterol(cholesterol)" literal resolved to nothing)
-        "CHL1": "ST 27:1;O",
-        "CHOL": "ST 27:1;O",
-        "CHL":  "ST 27:1;O",
-        "DPSC": "SM(d18:1/16:0)",
-        "DPSM": "SM(d18:1/16:0)",
-        "POPA": "PA(16:0/18:1(9Z))",
-        "DOPA": "PA(18:1(9Z)/18:1(9Z))",
-        "PI":   "PI",
-        "PAPI": "PI(16:0/20:4(5Z,8Z,11Z,14Z))",
-        "POPI": "PI(16:0/18:1(9Z))",
-    },
-    # Martini common names
-    "martini": {
-        "POPC": "PC(16:0/18:1(9Z))",
-        "DOPC": "PC(18:1(9Z)/18:1(9Z))",
-        "DPPC": "PC(16:0/16:0)",
-        "CHOL": "ST 27:1;O",
-    },
+    "charmm36": {name.upper(): shorthand for name, shorthand in ALL_ATOM_SHORTHAND.items()},
+    # Martini 2 lipidome names with a documented all-atom parent
+    "martini": dict(MARTINI_SHORTHAND),
     # GROMOS common names
     "gromos": {
         "POPC": "PC(16:0/18:1(9Z))",

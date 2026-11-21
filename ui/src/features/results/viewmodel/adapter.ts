@@ -21,6 +21,8 @@ import { KIND_LABELS } from "./labels";
 import { catalog } from "./warningCatalog";
 import {
   baseName,
+  cgDescription,
+  cgLabel,
   chainLabel,
   clause,
   elapsed,
@@ -30,6 +32,7 @@ import {
   kindOf,
   stateOf,
   statusOf,
+  type CoarseGrainedView,
   type HitView,
 } from "./derive";
 import { steps, type TaskView } from "./steps";
@@ -82,6 +85,8 @@ export interface MetaView {
   copies?: number | null;
   display_name?: string | null;
   chain?: string | null;
+  /** 2026-11-21 (mdval audit item 8b): set for coarse-grained molecules. */
+  coarse_grained?: CoarseGrainedView | null;
 }
 
 export interface MoleculesView {
@@ -224,7 +229,7 @@ function sorted(hits: HitView[]): HitView[] {
   return [...hits].sort((a, b) => (b.final_confidence ?? -1) - (a.final_confidence ?? -1));
 }
 
-function resultOf(hits: HitView[]): {
+function resultOf(hits: HitView[], cg: CoarseGrainedView | null = null): {
   result: MoleculeResult;
   matches: Molecule["matches"];
   more: Molecule["more"];
@@ -236,8 +241,21 @@ function resultOf(hits: HitView[]): {
     (h) => h.equivalence_class_id != null || (h.similarity_score == null && h.skeleton_sim != null),
   );
   const top = verified[0] ?? null;
-  const state = stateOf(top, verified.length > 0);
+  const state = stateOf(top, verified.length > 0, cg != null);
   const exact = state === "exact";
+  if (state === "coarse_grained") {
+    return {
+      result: { state, name: cgLabel(cg), description: cgDescription(cg), best: null, confidence: null, evidence: null },
+      matches: [],
+      more: { verified: 0, related: related.length, rejected: rejectedHits.length },
+      rejected: rejectedHits.map((h) => ({
+        db: formatDb(h.database),
+        id: h.identifier ?? "",
+        what: h.name ?? `${formatDb(h.database)} ${h.identifier ?? ""}`,
+        clause: clause(h.rejection_reason),
+      })),
+    };
+  }
   const best = top
     ? { db: formatDb(top.database), id: top.identifier ?? "", url: top.database_url ?? "" }
     : null;
@@ -294,7 +312,7 @@ function buildMolecules(bundle: ApiBundle, status: RunStatus, stageSearch = true
     const find = (gen: string) => mine.find((s) => s.generator === gen)?.signature;
     const { result, matches, more, rejected } =
       hits != null
-        ? resultOf(hits)
+        ? resultOf(hits, m.coarse_grained ?? null)
         : {
             result: null,
             matches: [],

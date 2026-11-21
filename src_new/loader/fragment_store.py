@@ -142,10 +142,18 @@ class FragmentStore:
         self.results.set_data("fragments/total_fragment_count", self.get_total_fragment_count())
 
         # Record instance list (simplified)
+        # 2026-11-21 (mdval audit item 8b): additive "coarse_grained" verdict
+        # per molecule ({"model", "residue", "by_name"?}; absent = atomistic)
+        def _segment_entry(inst):
+            entry = {"segment": inst.segment_ids[0], "type": inst.molecule_type.value,
+                     "copies": inst.copy_number, "atoms_per_copy": inst.atom_count}
+            cg = (inst.provenance or {}).get("coarse_grained")
+            if cg:
+                entry["coarse_grained"] = _convert_to_native(cg)
+            return entry
+
         self.results.set_data("fragments/segments", [
-            {"segment": inst.segment_ids[0], "type": inst.molecule_type.value, "copies": inst.copy_number,
-             "atoms_per_copy": inst.atom_count}
-            for inst in self._instances
+            _segment_entry(inst) for inst in self._instances
         ])
 
         # F19: presence/coordination scan for ion-channel elements (metals

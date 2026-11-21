@@ -110,7 +110,8 @@ export function AnswerHeader({ molecule, molecules, runStatus, onSelect }: Answe
               {extra > 0 && ` and ${extra} more`}
             </span>
           )}
-          {resolved && molecule.result != null && molecule.result.state !== "not_identified" && (
+          {resolved && molecule.result != null && molecule.result.state !== "not_identified" &&
+            molecule.result.state !== "coarse_grained" && (
             <ReportDialog
               segment={molecule.id}
               moleculeName={molecule.display_name}

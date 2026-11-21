@@ -29,6 +29,7 @@ import {
   CONFIDENCE_EXPLAINER,
   MATCHES_VISIBLE,
   NOT_IDENTIFIED_POINTS,
+  COARSE_GRAINED_POINTS,
   chemRows,
   fasta,
   isPolymer,
@@ -39,7 +40,8 @@ import { UnidentifiedPanel } from "./UnidentifiedPanel";
 export type StageTab = "matches" | "descriptor" | "notes";
 
 export function tabsFor(m: Molecule): { key: StageTab; label: string; attention: boolean }[] {
-  const identified = m.result != null && m.result.state !== "not_identified";
+  const identified =
+    m.result != null && m.result.state !== "not_identified" && m.result.state !== "coarse_grained";
   const out: { key: StageTab; label: string; attention: boolean }[] = [
     { key: "matches", label: identified ? `Matches ${1 + m.matches.length}` : "What you can do", attention: false },
     { key: "descriptor", label: isPolymer(m) ? "Sequence" : "Chemistry", attention: false },
@@ -113,7 +115,21 @@ function MatchesTab({ molecule: m }: { molecule: Molecule }) {
   const all = [...(bestRow ? [bestRow] : []), ...m.matches];
   const rows = showAll ? all : all.slice(0, MATCHES_VISIBLE);
   const rejected = m.rejected ?? [];
-  const identified = m.result != null && m.result.state !== "not_identified";
+  const identified =
+    m.result != null && m.result.state !== "not_identified" && m.result.state !== "coarse_grained";
+
+  if (m.result?.state === "coarse_grained") {
+    return (
+      <div className="px-5 py-4">
+        <h3 className="text-sm font-semibold">Coarse-grained model</h3>
+        <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm text-(--vm-fg-2)">
+          {COARSE_GRAINED_POINTS.map((p) => (
+            <li key={p}>{p}</li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
 
   if (!identified) {
     return (

@@ -52,7 +52,9 @@ export type MoleculeStatus =
   | "not_searched"
   | "done";
 
-export type ResultState = "identified" | "lead" | "exact" | "not_identified";
+/** 2026-11-21 (mdval audit item 8b): "coarse_grained" — a bead model with
+ * nothing verified; BioID cannot check it against a database. */
+export type ResultState = "identified" | "lead" | "exact" | "not_identified" | "coarse_grained";
 
 export interface MatchEntry {
   db: string;
