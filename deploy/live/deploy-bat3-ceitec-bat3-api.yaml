@@ -89,6 +89,8 @@ spec:
           value: xpavlik8@fi.muni.cz
         - name: BAT3_SHARED_CACHE_URL
           value: redis://bioid-cache-redis:6379/0
+        - name: BAT3_NCBI_RUNNING_ALARM
+          value: '16'
         image: cerit.io/tomsko/bat3-validation-api@sha256:f4340bb9eb6eef53fbc0e437122712d7c8c5df5bb278b58833a71339c9663299
         imagePullPolicy: Always
         livenessProbe:

@@ -35,7 +35,7 @@ spec:
         - name: BLAST_THREADS
           value: '8'
         - name: BLAST_SLOTS
-          value: '1'
+          value: '4'
         - name: BLAST_STAGE_MBPS
           value: '40'
         - name: BLAST_FETCH_SNAPSHOT
@@ -70,11 +70,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            cpu: '8'
-            memory: 16Gi
+            cpu: '32'
+            memory: 720Gi
           requests:
-            cpu: '4'
-            memory: 8Gi
+            cpu: '24'
+            memory: 64Gi
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
