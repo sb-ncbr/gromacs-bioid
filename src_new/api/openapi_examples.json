@@ -12,6 +12,8 @@
    "started_at": "2026-11-08T23:50:46.759861+00:00",
    "finished_at": "2026-11-08T23:58:37.460787+00:00",
    "input_kind": "pdb",
+   "completeness": "complete",
+   "partial_stages": [],
    "input_files": null,
    "metadata": {
     "working_directory": "/app/runs/1c2a4d4b-94cb-48ec-81a9-d0c0924af8bd/input",
@@ -158,6 +160,8 @@
    "owner_choices": []
   },
   "incomplete_count": 0,
+  "completeness": "complete",
+  "partial_stages": [],
   "queue": "web",
   "attempt": 1,
   "rerun_of": null,
@@ -934,6 +938,7 @@
    "run_incomplete",
    "run_queues",
    "automatic_retries",
+   "run_completeness",
    "capabilities"
   ],
   "typical_duration_minutes": {

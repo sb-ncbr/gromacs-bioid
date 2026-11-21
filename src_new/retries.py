@@ -6,7 +6,8 @@ run records its lane at submission (pipeline.queue; older runs: web).
 
 Automatic retries are set per lane on the admin page (off by default):
 maximum attempts, delay between them, and which failures count (a run
-incomplete for retryable reasons, completeness.py; a worker lost mid-run).
+incomplete for retryable reasons, completeness.py, except time limits; a
+worker lost mid-run).
 A retried run keeps its run id, so clients need no extra logic:
 
 1. The worker finishing an incomplete attempt (or the reaper finding a lost
@@ -116,8 +117,11 @@ def plan(payload: dict[str, Any], why: str, runs_dir: Optional[Path] = None,
             return None
         gaps: list = []
         if why == "incomplete":
-            from .completeness import gaps as run_gaps
-            gaps = [{k: g[k] for k in ("service", "reason", "count")} for g in run_gaps(payload)]
+            # 2026-11-21 (mdval audit item 7): time limits are not retried
+            # automatically: the next attempt runs under the same budget and
+            # would most likely run out of time again. Remote failures are.
+            from .completeness import remote_gaps
+            gaps = [{k: g[k] for k in ("service", "reason", "count")} for g in remote_gaps(payload)]
             if not gaps:
                 return None
         now = time.time() if now is None else now

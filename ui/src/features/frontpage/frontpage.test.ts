@@ -208,6 +208,12 @@ describe("status: statusStyle", () => {
     expect(statusStyle("warning").variant).toBe("outline");
     expect(statusStyle("mystery").label).toBe("Unknown");
   });
+  it("marks a partial or incomplete success (2026-11-21)", () => {
+    expect(statusStyle("success", "partial").label).toBe("Completed: partial");
+    expect(statusStyle("success", "incomplete").className).toContain("--vm-attention");
+    expect(statusStyle("success", "complete").label).toBe("Completed");
+    expect(statusStyle("failed", "partial").label).toBe("Failed");
+  });
 });
 
 describe("status: runTitle", () => {

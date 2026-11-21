@@ -114,6 +114,19 @@ describe("adapt · queued run", () => {
   });
 });
 
+describe("adapt · partial run (2026-11-21, mdval audit item 7)", () => {
+  it("takes completeness from the polled status, then the summary", () => {
+    const bundle = baseBundle();
+    bundle.summary = { status: "success", completeness: "incomplete", partial_stages: [] };
+    expect(adapt(bundle, { now: NOW }).run.completeness).toBe("incomplete");
+    bundle.status!.pipeline = { status: "success", completeness: "partial", partial_stages: ["identify_molecules"] };
+    const vm = adapt(bundle, { now: NOW });
+    expect(vm.run.completeness).toBe("partial");
+    expect(vm.run.partial_stages).toEqual(["identify_molecules"]);
+    expect(adapt(baseBundle(), { now: NOW }).run.completeness).toBeNull();
+  });
+});
+
 describe("adapt · finished run", () => {
   const bundle = baseBundle();
   bundle.summary = { status: "success", started_at: ISO(10), finished_at: ISO(11, 35), input_kind: "gromacs" };

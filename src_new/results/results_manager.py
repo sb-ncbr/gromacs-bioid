@@ -475,6 +475,15 @@ class ResultsManager:
     def finish_run(self, status: str) -> None:
         """Set pipeline final status and finished_at timestamp."""
         self._payload["pipeline"]["status"] = status
+        if status == "success":
+            # 2026-11-21 (mdval audit item 7): status stays "success";
+            # pipeline.completeness / partial_stages say whether a stage ran
+            # out of time or remote lookups failed (completeness.py).
+            try:
+                from ..completeness import state
+                self._payload["pipeline"].update(state(self._payload))
+            except Exception:
+                pass
         self._payload["pipeline"]["finished_at"] = _now_iso()
         self._save()
 

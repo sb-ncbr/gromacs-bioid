@@ -30,12 +30,13 @@ the REST API also serves the parts separately (`/molecules`, `/verification`,
 
 | Key | Meaning |
 |---|---|
-| `pipeline.status` | `queued`, `running`, `success`, `failed` or `cancelled`. Results are complete only at `success`. |
+| `pipeline.status` | `queued`, `running`, `success`, `failed` or `cancelled`. Results are final only at `success`; check `pipeline.completeness` too. |
+| `pipeline.completeness`, `pipeline.partial_stages` | Written when the run succeeds (runs before 21 November 2026 lack them; the API works them out). `complete`; `partial`: a stage ran out of its time limit, `partial_stages` names it (e.g. `["identify_molecules"]`) and molecules handled after the limit may have fewer matches or none; or `incomplete`: database lookups failed for a reason another attempt can fix (server error, busy, unreachable, no answer in time). `status` stays `success` in all three. |
 | `pipeline.input_kind` | What was uploaded, e.g. `pdb`, `gromacs_tpr`, `amber`. |
 | `pipeline.preset` | The preset the run was submitted with, if any. |
 | `pipeline.retention` | `{"policy": "default"}` (30 days after the run finished), `{"policy": "days", "days": N}` or `{"policy": "preserve"}`. |
 | `pipeline.creator_ip_hash`, `pipeline.owner_token_sha256` | A keyed hash of the submitter's network address and the hash of the run's owner token (not the token). Removed from the API download. |
-| `tasks` | One entry per pipeline stage, in order: `discover_input`, `load_simulation`, `repair_topology`, `unwrap_periodic_boundaries`, `analyze_universe`, `generate_signatures`, `identify_molecules`, `verify_results`, `export_results`, `render_png`. `status` is `success`, `warning` (finished, with something to report) or `failed`; `summary` holds a few counts. A `summary.partial: true` means the stage hit its time budget and the results of that stage are incomplete. |
+| `tasks` | One entry per pipeline stage, in order: `discover_input`, `load_simulation`, `repair_topology`, `unwrap_periodic_boundaries`, `analyze_universe`, `generate_signatures`, `identify_molecules`, `verify_results`, `export_results`, `render_png`. `status` is `success`, `warning` (finished, with something to report) or `failed`; `summary` holds a few counts. A `summary.partial: true` means the stage hit its time budget and the results of that stage are incomplete (listed in `pipeline.partial_stages`). `render_png` with `summary.reason: "disabled"` was switched off on the server (campaign runs have no pictures). |
 | `warnings` | Things worth knowing, with a stable `code` (e.g. `insufficient_bonds`, `stage_time_budget`) and `details`. Every code is explained in [Warnings and errors](warnings.md). Searches that do not apply to a molecule are not warnings: see `data.identification._meta.not_applicable`. |
 | `artifacts` | Files the run produced (mmCIF exports, PNG renders); `path` is server-side — the same files are served under `/files/<run_id>/<file>`. |
 

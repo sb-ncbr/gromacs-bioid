@@ -135,7 +135,7 @@ check_env() {  # deployment, names...
 if [ -n "$BACKEND" ]; then
   check_env bat3-ceitec-bat3-api BAT3_IP_HASH_KEY BAT3_ADMIN_PASSWORD BAT3_RETENTION_ENFORCE BAT3_ALERT_EMAIL \
             BAT3_SHARED_CACHE_URL
-  [ -z "$REPO" ] || check_env bat3-repo-worker NCBI_API_KEY BAT3_SHARED_CACHE_URL
+  [ -z "$REPO" ] || check_env bat3-repo-worker NCBI_API_KEY BAT3_SHARED_CACHE_URL BAT3_RENDER_DISABLE
   check_env bat3-ui-worker NCBI_API_KEY BAT3_SHARED_CACHE_URL
   check_env bat3-ceitec-bat3-worker NCBI_API_KEY BAT3_SHARED_CACHE_URL
   for d in bat3-ui-worker bat3-ceitec-bat3-worker; do

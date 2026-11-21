@@ -34,6 +34,7 @@ import {
 } from "./derive";
 import { steps, type TaskView } from "./steps";
 import { splitRunName } from "../../../lib/runName";
+import { completenessOf } from "../../../lib/runCompleteness";
 import { notes as groupNotes, unidentifiedNote, type WarningView } from "./notes";
 
 /* ------------------------------------------------------------------ */
@@ -50,6 +51,9 @@ export interface SummaryView {
   run_name?: string | null;
   /** 2026-11-18: web | repository. */
   queue?: string | null;
+  /** 2026-11-21: complete | partial | incomplete (null until success). */
+  completeness?: string | null;
+  partial_stages?: string[] | null;
 }
 
 export interface ErrorView {
@@ -60,7 +64,7 @@ export interface ErrorView {
 }
 
 export interface StatusView {
-  pipeline?: { status?: string | null } | null;
+  pipeline?: { status?: string | null; completeness?: string | null; partial_stages?: string[] | null } | null;
   tasks?: TaskView[];
   warnings?: WarningView[];
   critical_errors?: ErrorView[];
@@ -459,6 +463,9 @@ export function adapt(bundle: ApiBundle, options: AdapterOptions = {}): ViewMode
       elapsed_s: elapsed(status, bundle.summary?.started_at, bundle.summary?.finished_at, now),
       retention_days: options.retentionDays ?? null,
       queue: bundle.summary?.queue ?? "web",
+      // the polled status first, as for the status itself
+      completeness: completenessOf(bundle.status?.pipeline?.completeness ?? bundle.summary?.completeness),
+      partial_stages: bundle.status?.pipeline?.partial_stages ?? bundle.summary?.partial_stages ?? [],
     },
     progress: {
       stages,

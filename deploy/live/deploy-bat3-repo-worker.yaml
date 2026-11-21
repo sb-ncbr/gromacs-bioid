@@ -67,6 +67,8 @@ spec:
               name: bioid-api-secrets
         - name: BAT3_SHARED_CACHE_URL
           value: redis://bioid-cache-redis:6379/0
+        - name: BAT3_RENDER_DISABLE
+          value: '1'
         image: cerit.io/tomsko/bat3-validation-api@sha256:c1805261647aece12332ee0a9935c131eda9f78a4a5c123805408104377ac010
         imagePullPolicy: Always
         name: repo-worker

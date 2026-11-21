@@ -17,9 +17,9 @@ import {
   Button,
   cn,
 } from "@e-infra/design-system";
-import { Ban, Check, CircleX, Clock, Download, FileText, Link2, Loader2, SquarePen } from "lucide-react";
+import { Ban, Check, CircleAlert, CircleX, Clock, Download, FileText, Link2, Loader2, SquarePen } from "lucide-react";
 import type { RunStatus, ViewModel } from "../viewmodel";
-import { CANCEL_CONFIRM, headerActions, metaLine, pageName } from "./headerModel";
+import { CANCEL_CONFIRM, finishedChip, headerActions, metaLine, pageName } from "./headerModel";
 
 const CHIP: Record<RunStatus, { label: string; icon: typeof Clock; cls: string }> = {
   queued: { label: "Queued", icon: Clock, cls: "border-(--vm-line) text-(--vm-muted)" },
@@ -28,6 +28,7 @@ const CHIP: Record<RunStatus, { label: string; icon: typeof Clock; cls: string }
   failed: { label: "Failed", icon: CircleX, cls: "border-(--vm-none) text-(--vm-none)" },
 };
 const CANCELLED_CHIP = { label: "Cancelled", icon: Ban, cls: "border-(--vm-line) text-(--vm-muted)" };
+const NOT_COMPLETE_CLS = "border-(--vm-attention-line) bg-(--vm-attention-bg) text-(--vm-attention)";
 
 export interface RunHeaderProps {
   run: ViewModel["run"];
@@ -48,7 +49,12 @@ function copyLinkFallback() {
 }
 
 export function RunHeader({ run, runStatus, downloads, onCopyLink, onCancel, canCancel = true, onRerun, onCite, onDownload, onReport }: RunHeaderProps) {
-  const chip = run.cancelled ? CANCELLED_CHIP : CHIP[runStatus];
+  const partial = run.cancelled ? null : finishedChip({ ...run, status: runStatus });
+  const chip = run.cancelled
+    ? CANCELLED_CHIP
+    : partial
+      ? { label: partial.label, icon: CircleAlert, cls: NOT_COMPLETE_CLS }
+      : CHIP[runStatus];
   const ChipIcon = chip.icon;
   const actions = headerActions(runStatus, downloads).filter((a) => a.kind !== "cancel" || canCancel);
 
@@ -57,7 +63,7 @@ export function RunHeader({ run, runStatus, downloads, onCopyLink, onCancel, can
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <h1 className="truncate text-2xl font-bold text-(--vm-fg)">{pageName(run)}</h1>
-          <Badge variant="outline" className={cn("gap-1.5 px-2.5 py-1 text-[13px]", chip.cls)}>
+          <Badge variant="outline" className={cn("gap-1.5 px-2.5 py-1 text-[13px]", chip.cls)} title={partial?.hint}>
             <ChipIcon size={14} aria-hidden className={runStatus === "running" ? "motion-safe:animate-spin" : undefined} />
             {chip.label}
           </Badge>

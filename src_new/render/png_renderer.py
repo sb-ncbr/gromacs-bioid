@@ -23,6 +23,7 @@ build_pymol_script(), summarize(). IO shell: render_image(), render_all().
 PyMOL specifics: batch mode `pymol -cq script.pml`, software ray tracing
 (`png ..., ray=1`) — the ONLY headless-safe path (no X/GL). Transparency via
 opaque_background=0. Binary resolved via env BAT3_RENDER_PYMOL_BIN or PATH.
+BAT3_RENDER_DISABLE=1 turns the task off (no images, no warning).
 All knobs are environment-configurable but documented here (no hidden toggles,
 per the F-21 dead-toggle lesson).
 """
@@ -68,11 +69,15 @@ class RenderConfig:
     reduced_style_at_atoms: int = REDUCED_STYLE_ATOMS_DEFAULT
     resolution_full: tuple = RESOLUTION_FULL
     resolution_reduced: tuple = RESOLUTION_REDUCED
+    #: 2026-11-21 (mdval audit item 8c): BAT3_RENDER_DISABLE=1 skips the task
+    #: (repository queue: 5-112 s per run, nobody looks at campaign pictures).
+    disabled: bool = False
 
     @staticmethod
     def from_env(env: dict | None = None) -> "RenderConfig":
         e = os.environ if env is None else env
         return RenderConfig(
+            disabled=str(e.get("BAT3_RENDER_DISABLE", "")).strip().lower() in ("1", "true", "yes", "on"),
             pymol_bin=e.get("BAT3_RENDER_PYMOL_BIN") or shutil.which("pymol"),
             total_budget_s=int(e.get("BAT3_RENDER_TOTAL_BUDGET_S", TOTAL_BUDGET_S_DEFAULT)),
             system_timeout_s=int(e.get("BAT3_RENDER_SYSTEM_TIMEOUT_S", SYSTEM_TIMEOUT_S_DEFAULT)),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ViewModel } from "../viewmodel";
-import { bugReport, formatSubmitted, headerActions, metaLine, pageName, pageTitle } from "./headerModel";
+import { bugReport, finishedChip, formatSubmitted, headerActions, metaLine, pageName, pageTitle } from "./headerModel";
 import navmsRaw from "../viewmodel/fixtures/navms-finished.json";
 
 const navms = navmsRaw as unknown as ViewModel;
@@ -66,5 +66,17 @@ describe("bugReport (SPEC §3.2)", () => {
     const txt = bugReport(navms.run, { title: "Failed", body: "b", action: "a", technical: "Traceback ..." });
     expect(txt).toContain(navms.run.id);
     expect(txt).toContain("Traceback ...");
+  });
+});
+
+describe("finishedChip (2026-11-21, mdval audit item 7)", () => {
+  it("says Finished: partial only for a finished run that is not complete", () => {
+    const chip = finishedChip({ status: "finished", completeness: "partial", partial_stages: ["identify_molecules"] });
+    expect(chip?.label).toBe("Finished: partial");
+    expect(chip?.hint).toContain("the database search ran out of time");
+    expect(finishedChip({ status: "finished", completeness: "incomplete", partial_stages: [] })?.label).toBe("Finished: incomplete");
+    expect(finishedChip({ status: "finished", completeness: "complete", partial_stages: [] })).toBeNull();
+    expect(finishedChip({ status: "finished", completeness: null, partial_stages: [] })).toBeNull();
+    expect(finishedChip({ status: "running", completeness: "partial", partial_stages: [] })).toBeNull();
   });
 });

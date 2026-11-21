@@ -65,3 +65,53 @@ def gaps(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 def is_incomplete(data: dict[str, Any]) -> bool:
     return bool(gaps(data))
+
+
+# 2026-11-21 (mdval audit item 7): a run cut by a stage's time budget used to
+# end plain "success", and the run list and API clients (mdval reads only
+# `status`) could not tell it from a complete one. `status` keeps its values;
+# `completeness` says how complete a successful run is:
+#   partial    - a stage ran out of time (partial_stages), its results are partial
+#   incomplete - remote lookups failed (server error, busy, unreachable, timeout)
+#   complete   - neither
+# null until the run has succeeded.
+COMPLETE, PARTIAL, INCOMPLETE = "complete", "partial", "incomplete"
+
+
+def partial_stages(data: dict[str, Any]) -> list[str]:
+    """Stages that ran out of their time budget, in pipeline order: a
+    stage_time_budget warning (or a lookup cut by it) or summary.partial."""
+    tasks = data.get("tasks") if isinstance(data.get("tasks"), dict) else {}
+    hit: set[str] = set()
+    for task_id, task in tasks.items():
+        if isinstance(task, dict) and (task.get("summary") or {}).get("partial"):
+            hit.add(str(task_id))
+    for w in data.get("warnings") or []:
+        if not isinstance(w, dict) or not w.get("step_id"):
+            continue
+        if w.get("code") == "stage_time_budget" or (
+                w.get("code") in CODES and "stage_time_budget" in str(w.get("message") or "")):
+            hit.add(str(w["step_id"]))
+    ordered = [t for t in tasks if t in hit]
+    return ordered + sorted(hit - set(ordered))
+
+
+def remote_gaps(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """gaps() without the time limits: lookups another attempt with the same
+    budget could fix."""
+    return [g for g in gaps(data) if g["reason"] != "budget"]
+
+
+def state(data: dict[str, Any]) -> dict[str, Any]:
+    """{"completeness": complete | partial | incomplete | None, "partial_stages": [...]}."""
+    stages = partial_stages(data)
+    pipeline = data.get("pipeline") if isinstance(data.get("pipeline"), dict) else {}
+    if pipeline.get("status") != "success":
+        level = None
+    elif stages:
+        level = PARTIAL
+    elif remote_gaps(data):
+        level = INCOMPLETE
+    else:
+        level = COMPLETE
+    return {"completeness": level, "partial_stages": stages}

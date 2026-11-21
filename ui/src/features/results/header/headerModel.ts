@@ -3,6 +3,7 @@
  * — pure derivations. Rendering lives in RunHeader.tsx / ErrorBanner.tsx.
  */
 import type { DownloadEntry, RunError, RunStatus, ViewModel } from "../viewmodel";
+import { completenessHint, completenessSuffix } from "../../../lib/runCompleteness";
 
 type Run = ViewModel["run"];
 
@@ -31,6 +32,19 @@ export function pageTitle(name: string, status: RunStatus, cancelled = false): s
     case "finished":
       return suffix;
   }
+}
+
+/**
+ * 2026-11-21 (mdval audit item 7): the "Finished" chip of a run that is not
+ * complete reads "Finished: partial" / "Finished: incomplete" (attention
+ * tone), with what is missing as its tooltip. null = the plain chip.
+ */
+export function finishedChip(run: Pick<Run, "status" | "completeness" | "partial_stages">):
+  { label: string; hint: string } | null {
+  if (run.status !== "finished") return null;
+  const suffix = completenessSuffix(run.completeness);
+  if (!suffix) return null;
+  return { label: `Finished: ${suffix}`, hint: completenessHint(suffix, run.partial_stages) ?? "" };
 }
 
 /** "11 Oct 2026, 19:37 UTC" — always UTC, always zoned (SPEC §3.1). */
