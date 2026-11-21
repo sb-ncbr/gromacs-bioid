@@ -426,6 +426,62 @@ export function saveSession(session: AdminSession | null): void {
   }
 }
 
+// -- shared cache (GET /admin/cache, 2026-11-21) ----------------------------------
+
+export interface CacheRedis {
+  used_bytes: number;
+  max_bytes: number;
+  policy: string;
+  keys: number;
+  evicted: number;
+  expired: number;
+  hits: number;
+  misses: number;
+  hit_share: number | null;
+  uptime_s: number;
+}
+
+export type CacheKind = "results" | "annotations" | "measurements";
+
+export interface CacheKeys {
+  kinds: { kind: CacheKind; label: string; expires: string; keys: number; est_bytes: number; purgeable: boolean }[];
+  databases: { cache_name: string; resolver: string; release: string | null; identity: number; similarity: number; keys: number }[];
+  other_keys: number;
+  counted_at: number;
+}
+
+export interface CacheAnswers {
+  shared: number;
+  local: number;
+  live: number;
+  answered_share: number | null;
+}
+
+export interface CacheUsage {
+  last_24h: (CacheAnswers & { service: string })[];
+  total_24h: CacheAnswers;
+  hourly: (CacheAnswers & { t: number })[];
+}
+
+export interface CachePurge {
+  running?: boolean;
+  kind?: CacheKind;
+  cache_name?: string | null;
+  deleted?: number;
+  started_at?: number;
+  finished_at?: number | null;
+  error?: string | null;
+}
+
+export type CacheStats =
+  | SectionError
+  | {
+      redis: CacheRedis | SectionError;
+      keys: CacheKeys | SectionError;
+      usage: CacheUsage | SectionError;
+      purge: CachePurge;
+    };
+
 // -- requests -------------------------------------------------------------------
 
 async function request<T>(path: string, token: string | null, init: RequestInit = {}): Promise<T> {
@@ -462,6 +518,9 @@ export const adminApi = {
   overview: (token: string) => request<AdminOverview>("/overview", token),
   traffic: (token: string, window: TrafficWindow) =>
     request<TrafficStats>(`/traffic?window=${seg(window)}`, token),
+  cache: (token: string) => request<CacheStats>("/cache", token),
+  purgeCache: (token: string, kind: CacheKind, cacheName?: string) =>
+    post<CachePurge>("/cache/purge", token, { kind, cache_name: cacheName ?? null }),
 
   blastNvme: (token: string, db: string, on: boolean) =>
     post<{ db: string; on: boolean }>(`/blast/${seg(db)}/nvme`, token, { on }),

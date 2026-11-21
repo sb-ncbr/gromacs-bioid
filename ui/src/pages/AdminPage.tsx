@@ -22,6 +22,7 @@ import { TrafficSection } from "../features/admin/Traffic";
 import { ChecksSection, ReportsSection } from "../features/admin/ChecksReports";
 import { ServicesSection } from "../features/admin/Services";
 import { BlastServicesSection } from "../features/admin/BlastServices";
+import { CacheSection } from "../features/admin/Cache";
 import { OverviewTab } from "../features/admin/OverviewTab";
 import { attention, TABS, tabFromHash, type TabId } from "../features/admin/overview";
 
@@ -177,6 +178,9 @@ function Dashboard({ session, signOut }: { session: AdminSession; signOut: (mess
                   <BlastServicesSection services={data.blast_services} />
                   <ServicesSection services={data.services} nowMs={now} />
                 </div>
+              </TabsContent>
+              <TabsContent value="cache" className="mt-4">
+                <CacheSection live={live} nowMs={now} />
               </TabsContent>
               <TabsContent value="runs" className="mt-4">
                 <RunsSection runs={data.runs} nowMs={now} />

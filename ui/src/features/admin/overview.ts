@@ -11,6 +11,7 @@ export const TABS = [
   { id: "overview", label: "Overview" },
   { id: "queues", label: "Queues & workers" },
   { id: "services", label: "Databases & services" },
+  { id: "cache", label: "Shared cache" },
   { id: "runs", label: "Runs" },
   { id: "deployments", label: "Deployments" },
   { id: "checks", label: "Checks & reports" },

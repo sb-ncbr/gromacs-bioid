@@ -767,6 +767,42 @@ async def pod_logs(name: str, tail: int = Query(300, ge=10, le=5000)) -> PlainTe
     return PlainTextResponse(text or "")
 
 
+@router.get("/cache", dependencies=[Depends(require_admin)])
+async def cache() -> dict:
+    """The shared cache (cache_admin.py): memory, keys, cache answers over time, purge."""
+    import asyncio
+    from . import cache_admin
+
+    def build() -> dict:
+        r = cache_admin.client()
+        if r is None:
+            return {"error": "BAT3_SHARED_CACHE_URL is not set on the API"}
+        return {"redis": _section(lambda: _cached("cache_redis", 10, lambda: cache_admin.redis_info(r))),
+                # a full SCAN: a few seconds for ~1M keys
+                "keys": _section(lambda: _cached("cache_keys", 300, lambda: cache_admin.keys_summary(r))),
+                "usage": _section(lambda: _cached("cache_usage", 60, lambda: cache_admin.usage(r))),
+                "purge": cache_admin.purge_state()}
+    return await asyncio.to_thread(build)
+
+
+@router.post("/cache/purge", dependencies=[Depends(require_admin)])
+async def cache_purge(body: dict = Body(...)) -> dict:
+    """Delete resolver results (all, or one database by cache name) or annotation scores."""
+    from . import cache_admin
+    r = cache_admin.client()
+    if r is None:
+        raise HTTPException(status_code=503, detail="BAT3_SHARED_CACHE_URL is not set on the API")
+    try:
+        state = cache_admin.start_purge(r, str(body.get("kind") or ""), body.get("cache_name") or None)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    _drop_cache("cache_keys", "cache_redis")
+    log.info("admin: cache purge %s %s", state["kind"], state.get("cache_name") or "(all)")
+    return state
+
+
 @router.post("/queues/{name}/{action}", dependencies=[Depends(require_admin)])
 async def queue_action(name: str, action: str) -> dict:
     if name not in QUEUES:
