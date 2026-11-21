@@ -92,6 +92,10 @@ class IdentifierResolver(ABC):
         self._stage_deadline_epoch: float | None = None
         self._last_resolution_metadata: dict[str, dict] | None = None
         self._last_error: str | None = None
+        # 2026-11-21 (mdval audit item 6): the type of the signature being
+        # resolved (resolve(signature_type=...)); smiles/selfies resolvers
+        # decode by it. None when the caller does not say.
+        self._signature_type: str | None = None
 
     def _remaining_budget_seconds(self) -> float | None:
         """Wall-clock budget left before the stage deadline (None = none)."""
@@ -164,7 +168,8 @@ class IdentifierResolver(ABC):
         signature: str, 
         as_similarity: bool = False, 
         working_directory: str = "",
-        cache: ResolverCache | None = None
+        cache: ResolverCache | None = None,
+        signature_type: str | None = None,
     ) -> list[str] | list[tuple[str, float]] | None:
         """Resolve a signature to identifiers.
         
@@ -173,6 +178,8 @@ class IdentifierResolver(ABC):
             as_similarity: If True, perform similarity search.
             working_directory: Working directory for resolver operations.
             cache: Optional cache instance. If None, no caching is performed.
+            signature_type: Type of the signature (e.g. "smiles", "selfies"),
+                kept in self._signature_type for the resolver.
             
         Returns:
             List of identifiers (identity) or list of (identifier, score) tuples (similarity),
@@ -181,6 +188,7 @@ class IdentifierResolver(ABC):
         # Clear metadata from previous resolution
         self._last_resolution_metadata = None
         self._last_error = None
+        self._signature_type = signature_type
         # set by a resolver whose answer is a stopgap (e.g. PubChem down)
         self._uncacheable = False
         

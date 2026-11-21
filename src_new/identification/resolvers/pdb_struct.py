@@ -10,7 +10,8 @@ import tempfile
 
 from ...config.loader import RunConfig
 from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
-from ._rcsb_search import merge_hit_lists, post_rcsb_query, split_oversized_query
+from ._rcsb_search import (QUERY_TOO_LARGE, merge_hit_lists, post_rcsb_query,
+                           split_oversized_query)
 from ._ssh_upload import has_ssh_config, ssh_delete, ssh_upload
 
 logger = logging.getLogger("identifier")
@@ -113,6 +114,12 @@ class PDBStructResolver(IdentifierResolver):
 
         # g1: RCSB rejects large query assemblies; split them per chain
         queries = split_oversized_query(signature)
+        if not queries:
+            # 2026-11-21 (mdval audit item 6): no chain fits RCSB's limits
+            logger.info("RCSB structure search skipped (pdb_struct): every chain "
+                        f"above the size limit; verdict={QUERY_TOO_LARGE}")
+            self._last_error = QUERY_TOO_LARGE
+            return []
         if len(queries) > 1:
             logger.info(f"RCSB structure query oversized; split into "
                         f"{len(queries)} per-chain queries")

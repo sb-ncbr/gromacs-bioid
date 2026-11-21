@@ -13,6 +13,7 @@ from ...utils.net import prefer_ipv4 as _prefer_ipv4
 _prefer_ipv4()
 
 from ..base import IdentifierResolver, IdentifierResolutionError
+from ._smiles_query import query_smiles, refusal
 
 if TYPE_CHECKING:
     from ...config.loader import RunConfig
@@ -144,6 +145,13 @@ class IDSMResolver(IdentifierResolver):
         """
         # Decode SELFIES to SMILES if needed
         smiles = self._decode_selfies(signature)
+        # 2026-11-21 (mdval audit item 6): an impossible valence is declined
+        # here (IDSM answered QueryBadFormed, "too high atom valence")
+        reason = refusal(smiles)
+        if reason:
+            logger.info(f"{self.name}: query declined ({reason})")
+            self._last_error = reason
+            return []
         threshold = self.config.idsm.similarity_threshold
         results = idsm_fetch_similarity_match(
             smiles,
@@ -165,16 +173,9 @@ class IDSMResolver(IdentifierResolver):
         Returns:
             SMILES string.
         """
-        # Check if this looks like SELFIES (contains [C], [O], etc.)
-        if "[" in signature and "]" in signature:
-            try:
-                import selfies
-                return selfies.decoder(signature)
-            except ImportError:
-                logger.warning("selfies package not installed; treating as SMILES")
-            except Exception as exc:
-                logger.warning(f"SELFIES decode failed: {exc}; treating as SMILES")
-        return signature
+        # 2026-11-21 (mdval audit item 6): by the signature type, not by
+        # '[' in the string (bracket atoms are SMILES too)
+        return query_smiles(signature, getattr(self, "_signature_type", None))
 
 
 class IDSMResolverPubchem(IDSMResolver):
