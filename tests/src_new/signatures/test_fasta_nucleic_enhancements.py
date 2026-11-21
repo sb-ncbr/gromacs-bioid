@@ -177,7 +177,9 @@ class TestEnoughBondsGate:
         gen = ResnameFastaGeneratorNucleotide(cfg)
         assert gen._is_applicable(inst, fragment, facade)
         seq = gen._generate(inst, fragment, facade)
-        assert len(seq) == 47  # one sequence per residue, 1XJR-style
+        # 2026-11-21 (mdval audit item 4): ONE 47-nt sequence — this used to
+        # pass with a dict of 47 one-nt "chains" (len() of the dict)
+        assert isinstance(seq, str) and len(seq) == 47
 
 
     def test_full_connectivity_47nt_map_on_resname_off(self):
@@ -310,3 +312,50 @@ class TestDuplicateChainLabel:
         labelled = _chain_groups_and_labels(frag, [[0, 1]])
         labels = [lab for lab, _ in labelled]
         assert len(set(labels)) == len(labels)
+
+
+class TestNoPerResidueChainSplit:
+    """2026-11-21 (mdval audit item 4): without inter-residue backbone bonds
+    the chain walk made every residue its own chain (production runs
+    bd9b50cd / f2b8d45a: fasta_map_nucleic[A]..[L], one nucleotide each)."""
+
+    RES = ["DA", "DC", "DG", "DT"] * 3
+    ATOMS = [["P", "O5'", "C5'", "C4'", "C3'", "O3'"]] * 12
+    INTRA = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]
+
+    def _intra_only(self):
+        bonds = [b for b in _chain_bonds(12, 6, self.INTRA, (0, 5)) if b[0] // 6 == b[1] // 6]
+        return _mk_universe(self.RES, self.ATOMS, bonds=bonds)
+
+    def test_intra_residue_bonds_only_resname_gives_one_sequence(self):
+        facade, fragment, inst = _mk_facade(self._intra_only())
+        cfg = SignaturesConfig()
+        applicable = [
+            MapFastaGeneratorNucleotide(cfg)._is_applicable(inst, fragment, facade),
+            ResnameFastaGeneratorNucleotide(cfg)._is_applicable(inst, fragment, facade),
+        ]
+        assert applicable == [False, True]  # enough bonds, but no O3'-P link
+        seq = ResnameFastaGeneratorNucleotide(cfg)._generate(inst, fragment, facade)
+        assert seq == "ACGT" * 3
+
+    def test_map_chains_never_split_per_residue(self):
+        from src_new.signatures.generators.fasta import fragment_to_protseq_map_based_chains
+        _facade, fragment, _inst = _mk_facade(self._intra_only())
+        chains = fragment_to_protseq_map_based_chains(fragment, SignaturesConfig(), anchor=None)
+        assert len(chains) == 1
+
+    def test_two_linked_strands_still_split(self):
+        bonds = _chain_bonds(12, 6, self.INTRA, (0, 5))
+        bonds = [b for b in bonds if b != (36, 35)]  # break between residues 6 and 7
+        facade, fragment, inst = _mk_facade(_mk_universe(self.RES, self.ATOMS, bonds=bonds))
+        cfg = SignaturesConfig()
+        gen = MapFastaGeneratorNucleotide(cfg)
+        assert gen._is_applicable(inst, fragment, facade)
+        assert gen._generate(inst, fragment, facade) == {"A": "ACGTAC", "B": "GTACGT"}
+
+    def test_chain_plus_one_unlinked_residue_still_split(self):
+        bonds = _chain_bonds(12, 6, self.INTRA, (0, 5))
+        bonds = [b for b in bonds if b != (66, 65)]  # last residue unlinked
+        facade, fragment, inst = _mk_facade(_mk_universe(self.RES, self.ATOMS, bonds=bonds))
+        out = MapFastaGeneratorNucleotide(SignaturesConfig())._generate(inst, fragment, facade)
+        assert out == {"A": "ACGTACGTACG", "B": "T"}

@@ -108,10 +108,10 @@ class MapFastaGeneratorNucleotide(SignatureGenerator):
             return False
 
         # Map-based approach requires enough bond data to build the
-        # adjacency matrix (wave-2 item 6c: any-bond -> 0.25/atom).
-        # Without sufficient bonds, fasta_resname_nucleic can still
-        # produce a sequence.
-        if not _has_enough_bonds(fragment):
+        # adjacency matrix (wave-2 item 6c: any-bond -> 0.25/atom) and,
+        # 2026-11-21 (mdval audit item 4), O3'-P links between the residues.
+        # Otherwise fasta_resname_nucleic produces the sequence.
+        if not _nucleic_map_applicable(fragment):
             return False
 
         return True
@@ -192,8 +192,9 @@ class ResnameFastaGeneratorNucleotide(SignatureGenerator):
 
         multi_atom = props.flags.get(SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value, False)
         # Applicable exactly when the map-based generator is not
-        # (wave-2 item 6c: 'enough bonds', not 'any bond').
-        return not multi_atom or not _has_enough_bonds(fragment)
+        # (wave-2 item 6c: 'enough bonds', not 'any bond'; 2026-11-21 mdval
+        # audit item 4: and a linked backbone).
+        return not multi_atom or not _nucleic_map_applicable(fragment)
     
     def _generate(
         self,
@@ -409,6 +410,40 @@ def _walk_backbone_chains(nxt, prev, all_residues):
     return chains
 
 
+def _walk_is_chain_like(chains) -> bool:
+    """2026-11-21 (mdval audit item 4): a backbone walk is a usable chain
+    split only when at least half of the residues sit in linked (>= 2
+    residue) chains. Without inter-residue O3'-P / C-N bonds (sparse CONECT,
+    intra-residue bonds only) every residue was its own "chain" and a 12-nt
+    DNA became twelve 1-nt sequences (fasta_map_nucleic[A]..[L], runs
+    bd9b50cd 1XJR and f2b8d45a 1AAY) that no database search can use.
+    Genuine singletons (an unlinked cap or ion next to a chain) still split."""
+    total = sum(len(c) for c in chains)
+    linked = sum(len(c) for c in chains if len(c) >= 2)
+    return total > 0 and 2 * linked >= total
+
+
+def _backbone_linked(fragment: AtomGroup) -> bool:
+    """2026-11-21 (mdval audit item 4): the fragment's backbone bonds order
+    its residues (see _walk_is_chain_like)."""
+    try:
+        codes = {int(r): "" for r in fragment.residues.resindices}
+        nxt, prev = _backbone_link_maps(
+            fragment.atoms.names, fragment.atoms.resindices,
+            fragment.bonds.indices, codes,
+            {int(a): i for i, a in enumerate(fragment.atoms.indices)})
+        return _walk_is_chain_like(_walk_backbone_chains(nxt, prev, set(codes)))
+    except Exception:
+        return False
+
+
+def _nucleic_map_applicable(fragment: AtomGroup) -> bool:
+    """Enough bonds (wave-2 item 6c) AND a linked backbone (2026-11-21, mdval
+    audit item 4): the map-based nucleic generator needs both, the resname
+    fallback fires exactly when it does not."""
+    return _has_enough_bonds(fragment) and _backbone_linked(fragment)
+
+
 def fragment_to_protseq_resname_based_chains(fragment: AtomGroup) -> list:
     """B-05: per-chain resname sequences as [(label, seq)].
 
@@ -429,6 +464,8 @@ def fragment_to_protseq_resname_based_chains(fragment: AtomGroup) -> list:
             fragment.bonds.indices, codes,
             {int(a): i for i, a in enumerate(fragment.atoms.indices)})
         chains = _walk_backbone_chains(nxt, prev, set(codes))
+        if not _walk_is_chain_like(chains):  # 2026-11-21 (mdval audit item 4)
+            return [("A", fragment_to_protseq_resname_based(fragment))]
         labelled = _chain_groups_and_labels(fragment, chains)
         if len(labelled) <= 1:
             return [("A", fragment_to_protseq_resname_based(fragment))]
@@ -461,7 +498,8 @@ def fragment_to_protseq_map_based_chains(fragment: AtomGroup,
             {int(a): i for i, a in enumerate(fragment.atoms.indices)})
         chains = _walk_backbone_chains(nxt, prev, set(residue_indices_to_code))
         covered = sum(len(c) for c in chains)
-        if not chains or covered != len(residue_indices_to_code):
+        # 2026-11-21 (mdval audit item 4): no per-residue split either
+        if not chains or covered != len(residue_indices_to_code) or not _walk_is_chain_like(chains):
             seq = fragment_to_protseq_map_based(fragment, config, anchor)
             return [("A", seq)] if seq is not None else [("A", None)]
         labelled = _chain_groups_and_labels(fragment, chains)

@@ -58,17 +58,29 @@ for UI runs.
 | `blast_nr_protein` | NCBI nr, BLASTP — **deferred**, Deep search only | protein sequence | yes | yes | local |
 | `blast_core_nt` | NCBI core_nt, BLASTN — **deferred**, Deep search only | nucleotide sequence | yes | yes | local |
 | `blast_nt` | NCBI nt, BLASTN — **deferred**, Deep search only | nucleotide sequence | yes | yes | local |
-| `pdb_struct_protein` | RCSB PDB structure search | protein structure (PDB) | yes (≥ 99.9 % structural similarity) | yes | remote (RCSB) |
-| `pdb_struct_nucleotide` | RCSB PDB structure search | nucleic-acid structure | yes | skipped: RCSB rejects pure nucleic-acid similarity queries; recorded as `na_mode_unsupported`, not as an error | remote (RCSB) |
+| `pdb_struct_protein` | RCSB PDB structure search | protein structure (PDB, also the quick-search `topology_less_pdb`) | — (RCSB scores are ranks, not an identity measure) | yes | remote (RCSB) |
+| `pdb_struct_nucleotide` | RCSB PDB structure search | nucleic-acid structure (`pdb_nucleic`) | — | skipped: RCSB rejects pure nucleic-acid structure queries; recorded as `na_mode_unsupported`, not as an error (also when the quick-search `topology_less_pdb` of a nucleic acid reaches `pdb_struct_protein`) | remote (RCSB) |
 | `mmcif_struct` | RCSB PDB structure search | mmCIF of the molecule | — | yes | remote (RCSB) |
 | `alphafind_struct` | AlphaFind (AlphaFold DB) | Cα model | yes | yes | remote |
 | `foldseek_3di` | Foldseek against AlphaFold DB / Swiss-Prot | Cα model | — | yes | local Foldseek; the public Foldseek server if the local search fails |
 
-BLAST exact matches need e-value ≤ `exact_match_max_evalue`, identity ≥
-`exact_match_min_identity_p` and query coverage ≥
-`exact_match_min_query_cov_p` (`[blast]`; defaults 1e-50, 0.99, 0.99);
-similar matches use the `similarity_match_*` thresholds. Short queries
-(under 30 residues) use the short-sequence BLAST task. RCSB structure
+A BLAST hit is an exact match when it is the same molecule by absolute
+measures, for proteins and nucleic acids alike: identity ≥ 0.99, query
+coverage ≥ 0.99 (`exact_match_min_identity_p`, `exact_match_min_query_cov_p`
+can only raise these) and subject coverage ≥ 0.9. A lower subject coverage
+is accepted only when the unaligned part of the database sequence is at its
+ends (at most 25 residues at each end, no internal gap over 5: expression
+tags, unmodelled termini); UniProt and Swiss-Prot entries need an aligned
+length of at least 50 residues instead. A nucleic-acid hit must align on the
+same strand (the reverse complement is the partner strand). Nucleic acids of
+up to 25 nt match exactly only a database sequence of the same length
+(identity and coverage ≥ 0.9).
+E-value and bit score are not used for exact matches (they grow with the
+query length, so a perfect 30–100 nt match could never pass a fixed cut-off);
+`exact_match_max_evalue` and `exact_match_min_bits` are kept for old configs
+and no longer change anything. Similar matches use the `similarity_match_*`
+thresholds. Short queries (under 30 residues) use the short-sequence BLAST
+task. RCSB structure
 searches fetch the query structure from this deployment's public `/files`
 route (see [API](api.md#the-rcsb-file-serving-contract)).
 

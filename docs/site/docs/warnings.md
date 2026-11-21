@@ -10,9 +10,10 @@ to do.
 
 ## Not shown as warnings
 
-Some searches do not apply to some molecules: a nucleic-acid structure search
-on a protein (`na_mode_unsupported`), a polymer structure search on a small
-molecule (`no_polymer_payload`). These are skips, not failures. Runs record
+Some searches do not apply to some molecules: the RCSB structure search for
+a pure nucleic acid, which RCSB does not offer (`na_mode_unsupported`; runs
+before 2026-11-21 also recorded it for every protein), a polymer structure
+search on a small molecule (`no_polymer_payload`). These are skips, not failures. Runs record
 them in `results.json` under `data.identification._meta.not_applicable.<segment>`
 (resolver, generator, reason); they are not counted as warnings. Runs from
 before 2026-11-17 stored them as `identifier_resolver_failed` warnings; the API

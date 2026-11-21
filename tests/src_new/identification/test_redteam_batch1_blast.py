@@ -128,16 +128,22 @@ class TestC03LengthAwareProteinIdentity:
             "identity (need subject coverage >= 0.9)"
         )
 
-    def test_nucleotide_strict_gates_unchanged(self, monkeypatch):
-        """The F-N1c short override did not weaken the nucleotide strict
-        path: a long-query perfect match with weak e-value stays OUT."""
+    def test_nucleotide_identity_is_absolute_too(self, monkeypatch):
+        """2026-11-21 (mdval audit item 1): nucleotides follow the same
+        absolute rule — a perfect full-length match is identity whatever its
+        e-value (this test used to pin the old e-value gate); a perfect match
+        inside a 4x longer subject is not."""
         r = self._resolver(monkeypatch, 400, [_hit(
             ["NA_X"], 400,
             [_hsp(identity=400, align_len=400, q_from=1, q_to=400,
                   s_from=1, s_to=400, evalue=1e-5, bits=30)],
+        ), _hit(
+            ["NA_LONG"], 1600,
+            [_hsp(identity=400, align_len=400, q_from=1, q_to=400,
+                  s_from=601, s_to=1000, evalue=1e-5, bits=30)],
         )], cls=BLASTResolverNT)
         out = r._run_blast_identity("ACGT" * 100, "")
-        assert "NA_X" not in out, "nucleotide identity gates must stay strict"
+        assert out == ["NA_X"]
 
     def test_imperfect_match_still_not_identity(self, monkeypatch):
         r = self._resolver(monkeypatch, 100, [_hit(

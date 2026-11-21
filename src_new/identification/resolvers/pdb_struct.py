@@ -12,8 +12,29 @@ from ...config.loader import RunConfig
 from ..base import IdentifierResolver, IdentifierResolutionError, safe_tmp_dir
 from ._rcsb_search import merge_hit_lists, post_rcsb_query, split_oversized_query
 from ._ssh_upload import has_ssh_config, ssh_delete, ssh_upload
+from .mmcif import _AMINO_RESNAMES, _NA_RESNAMES
+from ...constants import FORCE_FIELD_RESIDUE_PARENTS
+from ...molecules.nucleic_acid import normalize_nucleic_resname
 
 logger = logging.getLogger("identifier")
+
+
+def _na_only_pdb_payload(text: str) -> bool:
+    """2026-11-21 (mdval audit item 2): True when the PDB text has nucleic-acid
+    residues and no amino-acid residue (residue name, columns 18-21). The
+    RCSB structure search has no pure nucleic-acid mode (F-23: 1BNA payload
+    -> HTTP 400). Text with neither stays False (the server decides)."""
+    na = False
+    for line in text.splitlines():
+        if not line.startswith(("ATOM", "HETATM")):
+            continue
+        rn = line[17:21].strip().upper()
+        rn = FORCE_FIELD_RESIDUE_PARENTS.get(rn, rn)
+        if rn in _AMINO_RESNAMES:
+            return False
+        if rn in _NA_RESNAMES or normalize_nucleic_resname(rn) is not None:
+            na = True
+    return na
 
 
 class PDBStructResolver(IdentifierResolver):
@@ -39,7 +60,14 @@ class PDBStructResolver(IdentifierResolver):
         # Set resolver metadata
         self.name = "pdb_struct_protein" if as_protein else "pdb_struct_nucleotide"
         self.identifier_type = "PDB_ID"
-        self.accepted_signatures = ["pdb_protein" if as_protein else "pdb_nucleic", "topology_less_pdb"]
+        # 2026-11-21 (mdval audit item 2): topology_less_pdb (any polymer
+        # segment) goes to the protein search only: the nucleotide mode
+        # declined it for every protein segment (the na_mode_unsupported
+        # note of 96% of g1 runs, read as "nucleic acid not searched"); the
+        # protein mode declines pure nucleic-acid payloads itself
+        # (_resolve_similarity).
+        self.accepted_signatures = (["pdb_protein", "topology_less_pdb"] if as_protein
+                                    else ["pdb_nucleic"])
         
         self.config = config
 
@@ -106,6 +134,15 @@ class PDBStructResolver(IdentifierResolver):
         if getattr(self, "_nucleotide_mode", False):
             logger.info(
                 "RCSB structure search skipped (pdb_struct): nucleotide-mode "
+                "payload is rejected by design upstream; verdict=na_mode_unsupported"
+            )
+            self._last_error = "na_mode_unsupported"
+            return []
+        # 2026-11-21 (mdval audit item 2): the same for a pure nucleic-acid
+        # topology_less_pdb payload reaching the protein mode.
+        if _na_only_pdb_payload(signature):
+            logger.info(
+                "RCSB structure search skipped (pdb_struct): pure nucleic-acid "
                 "payload is rejected by design upstream; verdict=na_mode_unsupported"
             )
             self._last_error = "na_mode_unsupported"

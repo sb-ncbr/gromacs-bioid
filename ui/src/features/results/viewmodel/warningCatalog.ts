@@ -160,11 +160,12 @@ export function catalog(code: string): CatalogEntry {
 }
 
 /**
- * identifier_resolver_failed with `na_mode_unsupported` is a nucleotide
- * search on a protein, and with `no_polymer_payload` a structure search on
- * a small molecule: both are declared "not applicable" outcomes, not
- * failures, so they are hidden (COPY.md §3 / DATA.md §3.1). In g1 they were
- * the notes on 96% and 48% of runs.
+ * identifier_resolver_failed with `na_mode_unsupported` is an RCSB structure
+ * search skipped for a pure nucleic acid (RCSB has none; before 2026-11-21
+ * also logged for every protein), and with `no_polymer_payload` a structure
+ * search on a small molecule: both are declared "not applicable" outcomes,
+ * not failures, so they are hidden (COPY.md §3 / DATA.md §3.1). In g1 they
+ * were the notes on 96% and 48% of runs.
  *
  * pbc_unwrap_failed with "No box information" means the input has no
  * periodic box, so nothing can be split across one; a real split is

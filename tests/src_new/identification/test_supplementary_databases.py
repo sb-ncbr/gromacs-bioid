@@ -378,7 +378,8 @@ def test_deferral_is_off_in_the_evaluation_config():
 
 
 def test_deferred_resolvers_leave_the_first_pass():
-    from src_new.identification.registry import get_default_resolvers, get_deferred_resolvers
+    from src_new.identification.registry import (
+        deferred_resolver_names, get_default_resolvers, get_deferred_resolvers)
     cfg = RunConfig()
     cfg.identifiers.deferred_resolvers = "blast_nr_protein, blast_nt"
     first = {r.name for r in get_default_resolvers(cfg)}
@@ -386,8 +387,25 @@ def test_deferred_resolvers_leave_the_first_pass():
     assert "blast_swissprot_protein" in first
     assert sorted(r.name for r in get_deferred_resolvers(cfg)) == ["blast_nr_protein", "blast_nt"]
     ui = RunConfig.from_ini_path(REPO / "config.ini")
+    assert {"blast_nr_protein", "blast_nt", "blast_core_nt"} <= deferred_resolver_names(ui)
+    # 2026-11-21 (mdval audit item 3): off outside Deep search, so not returned
+    assert get_deferred_resolvers(ui) == []
+    from src_new.config.presets import resolve_run_config
+    deep = resolve_run_config("deep", None)
     assert {"blast_nr_protein", "blast_nt", "blast_core_nt"} <= {
-        r.name for r in get_deferred_resolvers(ui)}
+        r.name for r in get_deferred_resolvers(deep)}
+
+
+def test_disabled_deferred_resolver_is_not_returned():
+    """2026-11-21 (mdval audit item 3): a deferred database switched off for
+    both identity and similarity is neither run nor reported as skipped."""
+    from src_new.identification.registry import get_deferred_resolvers
+    cfg = RunConfig()
+    cfg.identifiers.deferred_resolvers = "blast_nr_protein, blast_nt"
+    cfg.identifiers.blast_nr_protein = False
+    cfg.identifiers.blast_nr_protein_similarity = False
+    cfg.identifiers.blast_nt = False  # similarity still on: still deferred
+    assert [r.name for r in get_deferred_resolvers(cfg)] == ["blast_nt"]
 
 
 def test_second_pass_runs_deferred_after_all_supplementary(tmp_path, monkeypatch):
