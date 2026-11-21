@@ -9,7 +9,12 @@
 # - volatile-lru: under memory pressure only keys WITH an expiry are evicted;
 # - snapshot to the bioid-cache-redis-data volume hourly (and on shutdown),
 #   loaded again on start, so a restart keeps the cache;
-# - memory limit about 2x maxmemory: the snapshot forks the server.
+# - memory limit above maxmemory: the snapshot forks the server (copy-on-write
+#   measured at a few MB, so +8Gi headroom is plenty).
+# 2026-11-21: 1.5 GB was full after 3 days (120k results evicted; 30 days of
+# results at that rate is ~34 GB): maxmemory 40gb, limit 48Gi, and a 64Gi
+# volume for the snapshot (~40% of memory; nfs-csi volumes cannot grow, so the
+# 5Gi bioid-cache-redis-data was replaced by bioid-cache-redis-data-64g).
 #
 #   kubectl -n ceitec-biodata-ns apply -f deploy/bioid-cache-redis.yaml
 #   kubectl -n ceitec-biodata-ns set env deploy/bat3-ui-worker deploy/bat3-ceitec-bat3-worker \
@@ -37,13 +42,13 @@ spec:
       containers:
         - name: redis
           image: redis:8-alpine
-          args: ["redis-server", "--maxmemory", "1536mb", "--maxmemory-policy", "volatile-lru",
+          args: ["redis-server", "--maxmemory", "40gb", "--maxmemory-policy", "volatile-lru",
                  "--dir", "/data", "--save", "3600 1", "--appendonly", "no", "--timeout", "0"]
           ports:
             - containerPort: 6379
           resources:
-            requests: {cpu: 50m, memory: 128Mi}
-            limits: {cpu: 500m, memory: 3Gi}
+            requests: {cpu: 250m, memory: 24Gi}
+            limits: {cpu: "2", memory: 48Gi}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: {drop: ["ALL"]}
@@ -55,17 +60,17 @@ spec:
             periodSeconds: 10
       volumes:
         - name: data
-          persistentVolumeClaim: {claimName: bioid-cache-redis-data}
+          persistentVolumeClaim: {claimName: bioid-cache-redis-data-64g}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: bioid-cache-redis-data
+  name: bioid-cache-redis-data-64g
   labels: {app: bioid-cache-redis}
 spec:
-  accessModes: [ReadWriteOnce]
+  accessModes: [ReadWriteMany]
   storageClassName: nfs-csi
-  resources: {requests: {storage: 5Gi}}
+  resources: {requests: {storage: 64Gi}}
 ---
 apiVersion: v1
 kind: Service
