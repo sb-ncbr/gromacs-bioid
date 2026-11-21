@@ -152,7 +152,12 @@ class TestA04BondGuessing:
         repair = TopologyRepair(u, RunConfig())
         n = repair.guess_bonds()
         assert n >= 4, "each water needs 2 O-H bonds; DUMMY type killed guessing before"
-        assert len(u.atoms.fragments) == 2, "waters must stay 2 fragments, not 1 blob"
+        # 2026-11-21 (mdval audit item 5): the massless MW sites get no bonds
+        # (they are left out of the chemistry), so the real atoms form the
+        # two 3-atom waters and each MW stands alone
+        frags = sorted(len(f) for f in u.atoms.fragments)
+        assert frags == [1, 1, 3, 3], "waters must stay 2 fragments, not 1 blob"
+        assert all(len(a.bonds) == 0 for a in u.atoms if a.name == "MW")
 
     def test_ow_hw_water_types_guess_bonds(self):
         # 3 waters with force-field types OW/HW (audit A/p_bg.py first run: bonds=0)
