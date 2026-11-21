@@ -448,7 +448,7 @@ def build_server(settings: Optional[Settings] = None, *,
                 else:
                     # a finished run without hits for a molecule searched it
                     # and verified nothing (as the web UI shows it)
-                    row.update(fmt.identification(hits or []))
+                    row.update(fmt.identification(hits or [], coarse_grained=meta.get("coarse_grained")))
                 states[row["state"]] = states.get(row["state"], 0) + 1
                 rows.append(row)
             out: dict[str, Any] = {"run_id": run_id, "status": status}
@@ -521,7 +521,7 @@ def build_server(settings: Optional[Settings] = None, *,
             if descriptors:
                 out["descriptors"] = descriptors
             hits = [h for h in verification.get("hits") or [] if (h.get("segment") or seg) == seg]
-            ident = fmt.identification(hits)
+            ident = fmt.identification(hits, coarse_grained=meta.get("coarse_grained"))
             out["state"] = ident["state"]
             verified = fmt.sorted_verified(hits)
             out["verified"] = [fmt.hit_view(h, full=True) for h in verified[:max_hits]]

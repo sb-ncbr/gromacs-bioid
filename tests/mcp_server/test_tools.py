@@ -468,3 +468,15 @@ async def test_guide_resource_and_prompt(call):
     assert "Only verified hits count" in res.contents[0].text
     prompt = await call.session.get_prompt("explain_run", {"run_id": RUN})
     assert RUN in prompt.messages[0].content.text
+
+
+def test_coarse_grained_molecule_state():
+    # 2026-11-21 (mdval audit item 8b): a Martini bead model without verified
+    # hits is coarse-grained, not "not identified"; a verified hit still wins
+    from mcp_server import format as fmt
+    cg = {"model": "Martini", "residue": "POPE"}
+    out = fmt.identification([], coarse_grained=cg)
+    assert out["state"] == "coarse_grained" and out["coarse_grained"] == cg
+    assert fmt.identification([])["state"] == "not_identified"
+    hit = {"is_verified": True, "database": "uniprot", "identifier": "P00760", "final_confidence": 90}
+    assert fmt.identification([hit], coarse_grained=cg)["state"] == "identified"
