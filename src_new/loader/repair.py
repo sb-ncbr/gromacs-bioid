@@ -396,7 +396,10 @@ class TopologyRepair:
             self.guess_masses()
         if self.config.loader.guess_missing_names:
             self.fix_names()
-        if self.config.loader.guess_missing_bonds:
+        # 2026-11-21 (mdval audit item 1): guess whenever the topology has
+        # too few bonds (a PDB without CONECT), not only when asked;
+        # guess_bonds() leaves sufficient authored bonds alone.
+        if self.config.loader.guess_missing_bonds or not self._has_sufficient_bonds():
             self.guess_bonds()
             # W3.1 item 11: a stranded metal inside a multi-atom residue
             # (heme Fe, chlorophyll Mg, Fe-S clusters) must be bonded to

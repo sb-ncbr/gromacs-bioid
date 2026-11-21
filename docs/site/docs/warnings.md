@@ -150,8 +150,9 @@ are still far apart.
 
 ### insufficient_bonds
 
-**What happened:** few chemical bonds were found, usually a PDB file without
-CONECT records, so molecules may be split or merged.
+**What happened:** few chemical bonds were found, even after BioID guessed
+bonds from the coordinates (it does this whenever the input has too few,
+usually a PDB file without CONECT records), so molecules may be split or merged.
 
 **Results:** molecule boundaries may be wrong.
 

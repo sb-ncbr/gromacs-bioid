@@ -83,7 +83,7 @@ export const CATALOG: Record<string, CatalogEntry> = {
   insufficient_bonds: {
     severity: "attention",
     title: "Few chemical bonds found in your file",
-    body: "This usually means a PDB without CONECT records, so molecules may be split or merged.",
+    body: "Even after guessing bonds from the coordinates, few were found, so molecules may be split or merged.",
     action: "Upload a topology (.tpr, .prmtop, .psf) with the coordinates.",
   },
   geometry_scale_anomalous: {

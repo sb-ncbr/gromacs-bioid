@@ -306,16 +306,18 @@ def _repair_topology(context):
     repair = TopologyRepair(universe, context.config)
     report = repair.run()
 
-    # Check for insufficient bonds and warn if guessing was disabled
+    # Bonds missing from the input are guessed from coordinates (repair.run);
+    # warn only when even that left too few.
     bond_count = len(universe.atoms.bonds) if hasattr(universe.atoms, 'bonds') else 0
     atom_count = universe.atoms.n_atoms
-    if not repair._has_sufficient_bonds() and not context.config.loader.guess_missing_bonds:
+    if not repair._has_sufficient_bonds():
         context.add_warning(
             "insufficient_bonds",
-            f"Bond topology appears insufficient ({bond_count} bonds for {atom_count} atoms). "
-            "Molecule detection and signature generation will likely fail. "
-            "Consider enabling 'guess_missing_bonds' in the loader configuration.",
-            details={"bond_count": bond_count, "atom_count": atom_count}
+            f"Bond topology appears insufficient ({bond_count} bonds for {atom_count} atoms), "
+            "even after guessing bonds from the coordinates. "
+            "Molecule detection and signature generation will likely fail.",
+            details={"bond_count": bond_count, "atom_count": atom_count,
+                     "bonds_guessed": report.bonds_guessed}
         )
 
     context.record_data("repair/report", report.to_dict())

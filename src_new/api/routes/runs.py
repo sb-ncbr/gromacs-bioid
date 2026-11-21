@@ -344,7 +344,6 @@ async def create_run(
         raise HTTPException(status_code=422, detail=str(e))
     # Apply quick structure search overrides if enabled
     if config.loader.quick_structure_search:
-        config.override("loader.guess_missing_bonds", False)
         config.override("signatures.topology_less_pdb", True)
         config.override("signatures.ca_only_pdb", True)
 

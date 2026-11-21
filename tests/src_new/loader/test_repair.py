@@ -146,6 +146,16 @@ class TestGuessBonds:
         assert hasattr(u.atoms, 'bonds')
 
 
+    def test_run_guesses_without_the_flag_when_bonds_are_missing(self):
+        # mdval audit 2026-11-21: PDB inputs without CONECT got 0 bonds from
+        # repair and an 'enable guess_missing_bonds' warning
+        u = _make_minimal_universe(4, with_elements=True)
+        config = RunConfig()
+        assert config.loader.guess_missing_bonds is False
+        report = TopologyRepair(u, config).run()
+        assert report.bonds_guessed > 0 and len(u.atoms.bonds) > 0
+
+
 class TestRepairReport:
     def test_report_to_dict_is_json_serializable(self):
         report = RepairReport(elements_guessed=2, masses_guessed=4, warnings=["missing_elements"])

@@ -146,8 +146,8 @@ export const CATALOG_CODES: CatalogCode[] = [
     stage: "prepare",
     user_title: "Bond information looks incomplete",
     user_what:
-      "The structure has very few chemical bonds, which usually happens with PDB files that lack CONECT records. Molecule detection may be unreliable.",
-    user_action: "Re-run with 'Guess missing bonds' enabled (Advanced configuration → Loader).",
+      "The structure has very few chemical bonds, even after guessing them from the coordinates. Molecule detection may be unreliable.",
+    user_action: "Upload a topology (.tpr, .prmtop, .psf) with the coordinates.",
     details_show: ["bond_count", "atom_count"],
   },
   {
