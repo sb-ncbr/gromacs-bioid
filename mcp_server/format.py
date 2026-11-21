@@ -39,7 +39,8 @@ How to read BioID results
   in the same or other databases.
 - Confidence: >= 80 high, 50-80 medium, < 50 low ("lead": a plausible but weak
   match). state="exact" means a definitive match (a monoatomic ion matched to
-  its element); state="not_identified" means nothing passed verification
+  its element); state="coarse_grained" means a bead model (e.g. Martini) that
+  no database can check; state="not_identified" means nothing passed verification
   (rejected hits explain why - e.g. sequence identity too low, different
   formula).
 - Simulation force fields often rename or strip atoms (hydrogens, protonation,
@@ -180,9 +181,10 @@ def hit_view(hit: dict[str, Any], *, full: bool = False) -> dict[str, Any]:
     return {k: v for k, v in out.items() if v is not None}
 
 
-def state_of(top: Optional[dict[str, Any]]) -> str:
+def state_of(top: Optional[dict[str, Any]], coarse_grained: bool = False) -> str:
     if not top:
-        return "not_identified"
+        # a bead model cannot be checked against a database (src_new/api/best_hit.py)
+        return "coarse_grained" if coarse_grained else "not_identified"
     if top.get("ground_truth_override") or (top.get("database") or "").lower() == "element":
         return "exact"
     conf = top.get("final_confidence")
@@ -191,12 +193,16 @@ def state_of(top: Optional[dict[str, Any]]) -> str:
     return "identified"
 
 
-def identification(hits: list[dict[str, Any]], *, other_db_limit: int = 4) -> dict[str, Any]:
-    """Per-molecule answer from that molecule's verification hits."""
+def identification(hits: list[dict[str, Any]], *, other_db_limit: int = 4,
+                   coarse_grained: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """Per-molecule answer from that molecule's verification hits;
+    `coarse_grained` is the molecule's segment_meta entry of that name."""
     verified = sorted_verified(hits)
     rejected = [h for h in hits if isinstance(h, dict) and not h.get("is_verified")]
     top = verified[0] if verified else None
-    out: dict[str, Any] = {"state": state_of(top)}
+    out: dict[str, Any] = {"state": state_of(top, coarse_grained is not None)}
+    if top is None and coarse_grained is not None:
+        out["coarse_grained"] = coarse_grained
     if top:
         out["best"] = hit_view(top)
         seen_db = {(top.get("database") or "").lower()}
