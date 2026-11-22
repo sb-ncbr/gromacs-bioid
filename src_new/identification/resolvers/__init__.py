@@ -5,7 +5,7 @@ from .chembl import ChemblResolver
 from .idsm import IDSMResolverPubchem, IDSMResolverChembl, IDSMResolverChebi
 from .inchikey import InchiKeyResolver
 from .formula import FormulaResolver
-from .blast import BLASTResolverPDBAA, BLASTResolverPDBNT, BLASTResolverUNIPROT
+from .blast import BLASTResolverPDBAA, BLASTResolverPDBNT, BLASTResolverPDBNTDC, BLASTResolverUNIPROT
 from .pdb_struct import PDBStructResolverProtein, PDBStructResolverNucleotide
 from .alphafind import AlphaFindStructResolver
 from .foldseek import Foldseek3DiResolver
@@ -26,6 +26,7 @@ __all__ = [
     # Macromolecule identifier resolvers
     "BLASTResolverPDBAA",
     "BLASTResolverPDBNT",
+    "BLASTResolverPDBNTDC",
     "BLASTResolverUNIPROT",
     "PDBStructResolverProtein",
     "PDBStructResolverNucleotide",

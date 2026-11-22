@@ -847,6 +847,7 @@
       "blast_core_nt_similarity": false,
       "blast_nr_protein_similarity": false,
       "blast_nt_similarity": false,
+      "blast_pdb_nucleic_dc_similarity": false,
       "blast_pdb_nucleic_similarity": false,
       "blast_pdb_protein_similarity": false,
       "blast_swissprot_protein_similarity": false,

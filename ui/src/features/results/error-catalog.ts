@@ -34,6 +34,7 @@ export const RESOLVER_HUMAN_NAMES: Record<string, string> = {
   blast_nr_protein: "BLAST search of the NR protein database",
   blast_pdb_protein: "protein structure search in PDB",
   blast_pdb_nucleic: "nucleic structure search in PDB",
+  blast_pdb_nucleic_dc: "nucleic structure search in PDB (modified bases)",
   blast_uniprot: "BLAST search of UniProt",
   blast_swissprot_protein: "BLAST search of Swiss-Prot",
   pdb_struct_protein: "protein structure similarity search in PDB",

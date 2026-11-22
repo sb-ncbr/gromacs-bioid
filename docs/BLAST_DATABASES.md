@@ -365,6 +365,7 @@ The following BLAST resolvers are available in the `[identifiers]` section:
 |---------------------|----------|------|-------------------|
 | `blast_pdb_protein` | pdbaa | Protein | `blast_pdb_protein_similarity` |
 | `blast_pdb_nucleic` | pdbnt | Nucleotide | `blast_pdb_nucleic_similarity` |
+| `blast_pdb_nucleic_dc` | pdbnt (dc-megablast, N-aware identity) | Nucleotide | `blast_pdb_nucleic_dc_similarity` |
 | `blast_uniprot` | swissprot | Protein | `blast_uniprot_similarity` |
 | `blast_nr_protein` | nr | Protein | `blast_nr_protein_similarity` |
 | `blast_swissprot_protein` | swissprot | Protein | `blast_swissprot_protein_similarity` |

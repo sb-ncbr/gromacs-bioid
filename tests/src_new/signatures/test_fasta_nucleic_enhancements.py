@@ -359,3 +359,34 @@ class TestNoPerResidueChainSplit:
         facade, fragment, inst = _mk_facade(_mk_universe(self.RES, self.ATOMS, bonds=bonds))
         out = MapFastaGeneratorNucleotide(SignaturesConfig())._generate(inst, fragment, facade)
         assert out == {"A": "ACGTACGTACG", "B": "T"}
+
+
+class TestModifiedNucleotidesKeepTheirPosition:
+    """2026-11-22 (blast_pdb_nucleic_dc): modified nucleotides inside an RNA
+    chain (tRNA: PSU, 5MC, OMG, 1MA, YYG, ...) are emitted as 'X' at their
+    position, never dropped, on both generator paths; BLAST receives them as
+    N (blastn itself drops an X, which shifted the alignment by one gap)."""
+
+    RES = ["A", "PSU", "G", "C", "5MC", "U", "OMG", "A", "1MA", "G", "YYG", "C"]
+    ATOMS = [["P", "O5'", "C5'", "C4'", "C3'", "O3'"]] * 12
+    INTRA = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]
+    EXPECTED = "AXGCXUXAXGXC"
+
+    def test_map_path(self):
+        bonds = _chain_bonds(12, 6, self.INTRA, (0, 5))
+        facade, fragment, inst = _mk_facade(_mk_universe(self.RES, self.ATOMS, bonds=bonds))
+        gen = MapFastaGeneratorNucleotide(SignaturesConfig())
+        assert gen._is_applicable(inst, fragment, facade)
+        assert gen._generate(inst, fragment, facade) == self.EXPECTED
+
+    def test_resname_path(self):
+        facade, fragment, inst = _mk_facade(_mk_universe(self.RES, self.ATOMS, bonds=None))
+        gen = ResnameFastaGeneratorNucleotide(SignaturesConfig())
+        assert gen._is_applicable(inst, fragment, facade)
+        assert gen._generate(inst, fragment, facade) == self.EXPECTED
+
+    def test_blast_query_has_n_in_place(self):
+        from src_new.config.loader import RunConfig
+        from src_new.identification.resolvers.blast import BLASTResolverPDBNT
+        query = BLASTResolverPDBNT(RunConfig())._sanitize_sequence(self.EXPECTED)
+        assert query == "ANGCNUNANGNC"

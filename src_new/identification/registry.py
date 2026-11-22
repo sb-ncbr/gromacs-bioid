@@ -11,7 +11,7 @@ from .resolvers.inchikey import InchiKeyResolver, InchiKeySelfResolver
 from .resolvers.hfamily import FormulaHFamilyResolver
 from .resolvers.formula import FormulaResolver, FormulaChEMBLResolver
 from .resolvers.blast import (
-    BLASTResolverPDBAA, BLASTResolverPDBNT, BLASTResolverUNIPROT,
+    BLASTResolverPDBAA, BLASTResolverPDBNT, BLASTResolverPDBNTDC, BLASTResolverUNIPROT,
     BLASTResolverNR, BLASTResolverSWISSPROT,
     BLASTResolverCORENT, BLASTResolverNT
 )
@@ -146,6 +146,8 @@ def get_default_resolvers(config: RunConfig, include_deferred: bool = False) -> 
     # Phase 3 resolvers (macromolecule identifiers)
     resolvers.append(BLASTResolverPDBAA(config))
     resolvers.append(BLASTResolverPDBNT(config))
+    # 2026-11-22: dc-megablast vs pdbnt, N-aware identity (modified bases)
+    resolvers.append(BLASTResolverPDBNTDC(config))
     resolvers.append(BLASTResolverUNIPROT(config))
     resolvers.append(BLASTResolverNR(config))
     resolvers.append(BLASTResolverSWISSPROT(config))

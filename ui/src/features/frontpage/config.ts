@@ -98,7 +98,7 @@ const WORDS: Record<string, string> = {
   rcsb: "RCSB", tm: "TM", tdi: "TDI", selfies: "SELFIES", aa: "aa", fp: "fingerprint", n: "number of",
   tps: "TPS", api: "API", struct: "structure", hfamily: "H-family", inchikey: "InChIKey",
   sifts: "SIFTS", uniref50: "UniRef50", swisslipids: "SwissLipids", "3di": "3Di",
-  evalue: "E-value", cov: "coverage",
+  evalue: "E-value", cov: "coverage", dc: "dc-megablast",
 };
 
 /** Labels for fields whose key reads badly through humanLabel. */

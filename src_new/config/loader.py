@@ -137,6 +137,12 @@ class IdentifiersConfig:
     blast_swissprot_protein_similarity: bool = True
     blast_pdb_nucleic: bool = True
     blast_pdb_nucleic_similarity: bool = True
+    # 2026-11-22: dc-megablast against pdbnt with N-aware identity (modified
+    # bases are N in PDB SEQRES), next to blast_pdb_nucleic. Declared OFF so
+    # configs that do not name it (the MDDBR evaluation's config_shared.ini)
+    # are unchanged; config.ini turns it on.
+    blast_pdb_nucleic_dc: bool = False
+    blast_pdb_nucleic_dc_similarity: bool = False
     blast_core_nt: bool = True
     blast_core_nt_similarity: bool = True
     blast_nt: bool = True

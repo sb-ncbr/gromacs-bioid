@@ -43,8 +43,9 @@ _SIFTS_MAX_ACCESSIONS = 25
 # of identify for a protein PDB 5EF9_A had matched exactly).
 _EXACT_SOURCES_FOR_DEFERRED = {
     "blast_nr_protein": ("blast_pdb_protein", "blast_swissprot_protein", "blast_uniprot"),
-    "blast_nt": ("blast_pdb_nucleic",),
-    "blast_core_nt": ("blast_pdb_nucleic",),
+    # 2026-11-22: an exact blast_pdb_nucleic_dc match (same pdbnt) counts too
+    "blast_nt": ("blast_pdb_nucleic", "blast_pdb_nucleic_dc"),
+    "blast_core_nt": ("blast_pdb_nucleic", "blast_pdb_nucleic_dc"),
 }
 _EXACT_MIN = 0.99
 

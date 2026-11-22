@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from ...config.loader import RunConfig
@@ -46,6 +46,14 @@ class BlastHit:
     # every HSP aligns the query to the subject's reverse complement (the
     # partner strand of a duplex, not the same chain).
     opposite_strand: bool = False
+    # 2026-11-22 (blast_pdb_nucleic_dc): N-aware identity. raw_identity_p is
+    # BLAST's own identity (N counted as a mismatch) when identity_p was
+    # replaced by the N-aware value; n_match_p = fraction of aligned columns
+    # credited because one side is N. hsps (raw report HSPs) are kept only
+    # for resolvers with _KEEP_HSPS. None = not computed.
+    raw_identity_p: float | None = None
+    n_match_p: float | None = None
+    hsps: list[dict] | None = field(default=None, repr=False)
 
 
 # F-N1c: exact short identity rule applies only to nucleotide queries up to
@@ -91,6 +99,89 @@ NUCLEIC_OVERHANG_MIN_SUBJECT_COV = 0.75
 D14_MIN_ALIGNED_LEN_AA = 50
 
 
+# 2026-11-22 (blast_pdb_nucleic_dc): pdbnt stores modified bases as N.
+# A column where one side is N and the other a base counts as matching for
+# the N-aware identity, but at most this fraction of the aligned columns may
+# be such columns (a run of Ns is not evidence of identity). 1EHZ_A, the
+# heavily modified yeast tRNA-Phe, has 15 N in 76 nt (0.20).
+NUCLEIC_MAX_N_MATCH_FRACTION = 0.25
+
+
+def _merged_coverage(hsps: list[dict], k_from: str, k_to: str, total_len) -> float | None:
+    """v3.143 (C-21): coverage from MERGED alignment intervals (module level
+    since 2026-11-22: blast_pdb_nucleic_dc recomputes it after extension).
+    2026-11-21 (mdval audit item 3): a minus-strand blastn HSP reports
+    hit_from > hit_to (checked with blastn 2.x JSON); intervals are
+    normalised to (low, high), the unnormalised pair gave negative subject
+    coverage and spans."""
+    ivs = sorted(
+        (min(h[k_from], h[k_to]), max(h[k_from], h[k_to])) for h in hsps
+        if k_from in h and k_to in h
+    )
+    if not ivs:
+        return None
+    covered = 0
+    cs, ce = ivs[0]
+    for st, en in ivs[1:]:
+        if st <= ce + 1:
+            ce = max(ce, en)
+        else:
+            covered += ce - cs + 1
+            cs, ce = st, en
+    covered += ce - cs + 1
+    return covered / total_len if total_len > 0 else 0.0
+
+
+def _subject_geometry(hsps: list[dict]) -> tuple[tuple[int, int] | None, int | None]:
+    """D-13 (Fix B): merged subject span + longest internal
+    unaligned gap (1-based inclusive coords; None = unknown)."""
+    ivs = sorted(
+        (min(h["hit_from"], h["hit_to"]), max(h["hit_from"], h["hit_to"]))
+        for h in hsps if "hit_from" in h and "hit_to" in h
+    )
+    if not ivs:
+        return None, None
+    span_lo, span_hi = ivs[0][0], ivs[0][1]
+    max_gap, ce = 0, ivs[0][1]
+    for st, en in ivs[1:]:
+        if st > ce + 1:
+            max_gap = max(max_gap, st - ce - 1)
+        span_lo = min(span_lo, st)
+        ce = max(ce, en)
+        span_hi = max(span_hi, en)
+    return (span_lo, span_hi), max_gap
+
+
+def _nt_column(q: str, h: str) -> str:
+    """2026-11-22: one alignment column: 'gap', 'match', 'n' (one side N:
+    an unknown or modified base) or 'mismatch'. U and T are the same base."""
+    if q == "-" or h == "-":
+        return "gap"
+    q, h = q.upper().replace("U", "T"), h.upper().replace("U", "T")
+    if q == "N" or h == "N":
+        return "n"
+    return "match" if q == h else "mismatch"
+
+
+def n_aware_counts(hsps: list[dict]) -> tuple[int, int, int] | None:
+    """2026-11-22: (matching columns, N-credited columns, aligned columns)
+    pooled over the HSPs' qseq/hseq; None when an HSP has no aligned strings.
+    Gaps stay in the column count (they count against identity)."""
+    matches = n_cols = columns = 0
+    for h in hsps:
+        qseq, hseq = h.get("qseq"), h.get("hseq")
+        if not isinstance(qseq, str) or not isinstance(hseq, str) or len(qseq) != len(hseq):
+            return None
+        for a, b in zip(qseq, hseq):
+            kind = _nt_column(a, b)
+            columns += 1
+            if kind == "match":
+                matches += 1
+            elif kind == "n":
+                n_cols += 1
+    return matches, n_cols, columns
+
+
 class BLASTResolver(IdentifierResolver):
     """
     BLASTResolver identifies residue sequences (amino acids or nucleotides) using BLAST.
@@ -107,6 +198,10 @@ class BLASTResolver(IdentifierResolver):
     #: [blast] <key>_service_url: a BLAST service with an NVMe copy of this
     #: database (blast_service_client); unset = every search runs on NFS.
     _service_key = ""
+
+    #: 2026-11-22: keep the report's HSPs (qseq/hseq) on each BlastHit for
+    #: _postprocess_hits (off: an nr report would sit in the hits cache).
+    _KEEP_HSPS = False
 
     def __init__(self, config: RunConfig, db_path: str, is_protein: bool, 
                  resolver_name: str, identifier_type: str) -> None:
@@ -203,7 +298,12 @@ class BLASTResolver(IdentifierResolver):
     def _valid_chars(self) -> set:
         if self.is_protein:
             return set(v.upper() for v in KNOWN_RESIDUE_CODES.values())
-        return set(v.upper() for v in KNOWN_NUCLEIC_ACIDS_CODES.values())
+        # 2026-11-22: 'X' (a modified nucleotide, PSU/5MC/OMG/...: the
+        # sequence generators emit X) is not a nucleotide letter: blastn's
+        # FASTA reader DROPS it ("Ignoring invalid residues"), which shifts
+        # the alignment by one gap per modified base. It becomes N like
+        # every other non-alphabet character.
+        return set(v.upper() for v in KNOWN_NUCLEIC_ACIDS_CODES.values()) - {"X"}
 
     def _sanitize_sequence(self, signature: str) -> str:
         """Replace non-alphabet characters with wildcards (X / N)."""
@@ -355,9 +455,7 @@ class BLASTResolver(IdentifierResolver):
 
         try:
             # Determine if short search task should be used
-            short_search = []
-            if len(sequence) < self.blast_config.local_instance_run_short_search_if_under_X_residues:
-                short_search = ['-task', 'blastp-short'] if self.is_protein else ['-task', 'blastn-short']
+            short_search = self._task_args(sequence)
 
             # Build BLAST command with performance and safety options
             num_threads = self._num_threads()
@@ -415,6 +513,22 @@ class BLASTResolver(IdentifierResolver):
             if os.path.exists(output_path):
                 os.unlink(output_path)
 
+    def _task_args(self, sequence: str) -> list[str]:
+        """BLAST -task arguments: the short-sequence task under
+        local_instance_run_short_search_if_under_X_residues, else the
+        program default (blastp; megablast for blastn)."""
+        if len(sequence) < self.blast_config.local_instance_run_short_search_if_under_X_residues:
+            return ['-task', 'blastp-short'] if self.is_protein else ['-task', 'blastn-short']
+        return []
+
+    def _postprocess_hits(self, hits: list[BlastHit], sequence: str) -> list[BlastHit]:
+        """2026-11-22: hook after parsing, before caching (default: none)."""
+        return hits
+
+    def _extra_metadata(self, hit: BlastHit) -> dict:
+        """2026-11-22: resolver-specific hits_metadata fields (default: none)."""
+        return {}
+
     def _process_blast_results(self, json_files: list[dict]) -> list[BlastHit]:
         """
         Parse BLAST results into standardized format.
@@ -461,54 +575,13 @@ class BLASTResolver(IdentifierResolver):
                 total_align = sum(h.get("align_len", 0) for h in hsps)
                 identity_p = total_identity / total_align if total_align > 0 else 0.0
 
-                # 2026-11-21 (mdval audit item 3): a minus-strand blastn HSP
-                # reports hit_from > hit_to (checked with blastn 2.x JSON);
-                # intervals are normalised to (low, high), the unnormalised
-                # pair gave negative subject coverage and spans.
-                def _merged_coverage(k_from: str, k_to: str, total_len) -> float | None:
-                    ivs = sorted(
-                        (min(h[k_from], h[k_to]), max(h[k_from], h[k_to])) for h in hsps
-                        if k_from in h and k_to in h
-                    )
-                    if not ivs:
-                        return None
-                    covered = 0
-                    cs, ce = ivs[0]
-                    for st, en in ivs[1:]:
-                        if st <= ce + 1:
-                            ce = max(ce, en)
-                        else:
-                            covered += ce - cs + 1
-                            cs, ce = st, en
-                    covered += ce - cs + 1
-                    return covered / total_len if total_len > 0 else 0.0
-
-                def _subject_geometry() -> tuple[tuple[int, int] | None, int | None]:
-                    """D-13 (Fix B): merged subject span + longest internal
-                    unaligned gap (1-based inclusive coords; None = unknown)."""
-                    ivs = sorted(
-                        (min(h["hit_from"], h["hit_to"]), max(h["hit_from"], h["hit_to"]))
-                        for h in hsps if "hit_from" in h and "hit_to" in h
-                    )
-                    if not ivs:
-                        return None, None
-                    span_lo, span_hi = ivs[0][0], ivs[0][1]
-                    max_gap, ce = 0, ivs[0][1]
-                    for st, en in ivs[1:]:
-                        if st > ce + 1:
-                            max_gap = max(max_gap, st - ce - 1)
-                        span_lo = min(span_lo, st)
-                        ce = max(ce, en)
-                        span_hi = max(span_hi, en)
-                    return (span_lo, span_hi), max_gap
-
-                qcov = _merged_coverage("query_from", "query_to", query_len)
+                qcov = _merged_coverage(hsps, "query_from", "query_to", query_len)
                 if qcov is None:  # malformed payload: keep legacy estimate
                     qcov = total_align / query_len if query_len > 0 else 0.0
                 subject_len = hit.get("len")
-                scov = (_merged_coverage("hit_from", "hit_to", subject_len)
+                scov = (_merged_coverage(hsps, "hit_from", "hit_to", subject_len)
                         if subject_len else None)
-                subj_span, subj_gap = _subject_geometry()
+                subj_span, subj_gap = _subject_geometry(hsps)
                 # Pooled long-run gates stay meaningful: strictest evalue and
                 # best bit score across the hit's HSPs.
                 bits: float = max((h.get("bit_score", 0.0) for h in hsps), default=0.0)
@@ -522,7 +595,8 @@ class BLASTResolver(IdentifierResolver):
                                         subject_cov_p=scov,
                                         subject_span=subj_span,
                                         subject_max_internal_gap=subj_gap,
-                                        opposite_strand=opposite))
+                                        opposite_strand=opposite,
+                                        hsps=hsps if self._KEEP_HSPS else None))
         
         return results
 
@@ -548,9 +622,9 @@ class BLASTResolver(IdentifierResolver):
         key = (self.db_path, sequence)
         if key not in cache:
             try:
-                cache[key] = self._process_blast_results(
+                cache[key] = self._postprocess_hits(self._process_blast_results(
                     self._run_blast_local(sequence, working_directory)
-                )
+                ), sequence)
             except Exception as exc:
                 cache[key] = exc
                 raise
@@ -681,6 +755,7 @@ class BLASTResolver(IdentifierResolver):
                 "identity_p": hit.identity_p,
                 "coverage_p": hit.coverage_p,
                 "subject_cov_p": hit.subject_cov_p,  # additive (C-21)
+                **self._extra_metadata(hit),
             }
             if hit.subject_cov_p is not None and hit.subject_cov_p < 0.9:
                 # D-14: UniProt/Swiss-Prot — subject coverage was not
@@ -783,6 +858,7 @@ class BLASTResolver(IdentifierResolver):
                 "identity_p": hit.identity_p,
                 "coverage_p": hit.coverage_p,
                 "subject_cov_p": hit.subject_cov_p,
+                **self._extra_metadata(hit),
             }
             if self.is_protein or self._nucleotide_gate_applies(sequence):
                 fail = self._identity_gate_fail(hit)
@@ -826,6 +902,176 @@ class BLASTResolverPDBNT(BLASTResolver):
             resolver_name="blast_pdb_nucleic",
             identifier_type="PDB_ID"
         )
+
+
+class BLASTResolverPDBNTDC(BLASTResolver):
+    """2026-11-22: discontiguous megablast against pdbnt, N-aware identity.
+
+    pdbnt (PDB SEQRES) stores modified nucleotides as N; tRNAs carry one
+    every 8-10 nt (1EHZ_A: 15 N in 76 nt). blast_pdb_nucleic (megablast,
+    28-nt seeds) cannot seed on them, and BLAST counts N as a mismatch. This
+    resolver searches the same database independently, side by side with
+    blast_pdb_nucleic (same evidence family, verification/dedup.py):
+
+    - blastn -task dc-megablast with both 16-nt templates (coding and
+      optimal, word 11): the default coding/18 template did not find 1EHZ_A
+      for the unmodified tRNA-Phe sequence on the production pdbnt;
+    - a query that itself contains N (modified residues of the simulation:
+      the generators emit X, the sanitizer N) is searched with -task blastn
+      (contiguous 11-nt words) instead: a dc-megablast query word with an N
+      in it is not used, so a simulated 1EHZ with its 15 modified residues
+      found nothing (blastn: 1EHZ_A and the unmodified tRNA-Phe entries);
+    - not applicable below local_instance_run_short_search_if_under_X_residues
+      (30 nt): dc-megablast needs long seeds, and blast_pdb_nucleic searches
+      those queries with blastn-short;
+    - identity is N-aware: a column where one side is N and the other a base
+      counts as matching, real bases must still match, gaps count against
+      it, and at most NUCLEIC_MAX_N_MATCH_FRACTION of the aligned columns may
+      be N columns (more: BLAST's own identity is kept and the identity
+      gate fails as 'n_fraction'). A local alignment never ends on an N, so
+      the alignment is extended ungapped over the unaligned ends while each
+      column is a match or an N column (subject from blastdbcmd);
+    - the identity gate is otherwise the nucleotide one (_identity_gate_fail);
+      similarity scores are the N-aware identity too.
+    """
+
+    _KEEP_HSPS = True
+    DC_TASK_ARGS = ["-task", "dc-megablast",
+                    "-template_type", "coding_and_optimal", "-template_length", "16"]
+    N_QUERY_TASK_ARGS = ["-task", "blastn"]
+    # subject sequences fetched per query for the terminal extension
+    _MAX_EXTENSION_FETCH = 100
+    # only near-identical hits are worth the subject fetch
+    _EXTENSION_MIN_IDENTITY = 0.9
+
+    def __init__(self, config: RunConfig) -> None:
+        super().__init__(
+            config=config,
+            db_path=getattr(config.blast, 'pdb_nt_db', ''),
+            is_protein=False,
+            resolver_name="blast_pdb_nucleic_dc",
+            identifier_type="PDB_ID"
+        )
+
+    def _is_applicable(self, signature: str) -> bool:
+        if not signature or len(signature.strip()) < \
+                self.blast_config.local_instance_run_short_search_if_under_X_residues:
+            return False
+        return super()._is_applicable(signature)
+
+    def _task_args(self, sequence: str) -> list[str]:
+        if "N" in self._sanitize_sequence(sequence):
+            return list(self.N_QUERY_TASK_ARGS)
+        return list(self.DC_TASK_ARGS)
+
+    def _blastdbcmd(self) -> str | None:
+        path = os.path.join(os.path.dirname(self.blast_config.blastn_exec), "blastdbcmd")
+        if os.path.isfile(path):
+            return path
+        import shutil
+        return shutil.which("blastdbcmd")
+
+    def _subject_sequences(self, accessions: list[str]) -> dict[str, str]:
+        """Accession -> pdbnt sequence; {} when blastdbcmd fails (the hits
+        then keep the alignment BLAST reported)."""
+        exe = self._blastdbcmd()
+        if not exe or not accessions:
+            return {}
+        try:
+            out = subprocess.run(
+                [exe, "-db", self.db_path, "-entry", ",".join(accessions),
+                 "-target_only", "-outfmt", "%a\t%s"],
+                capture_output=True, text=True, timeout=max(1.0, self._call_timeout(60)),
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.warning(f"{self.name}: blastdbcmd failed ({exc}); no terminal N extension")
+            return {}
+        seqs: dict[str, str] = {}
+        for line in out.stdout.splitlines():
+            acc, _, seq = line.partition("\t")
+            if acc and seq:
+                seqs[acc.strip()] = seq.strip().upper()
+        return seqs
+
+    @staticmethod
+    def _plus_plus(hit: BlastHit) -> bool:
+        return bool(hit.hsps) and all(
+            h.get("query_strand", "Plus") == "Plus" and h.get("hit_strand", "Plus") == "Plus"
+            for h in hit.hsps)
+
+    @classmethod
+    def _needs_extension(cls, hit: BlastHit, query_len: int) -> bool:
+        if not cls._plus_plus(hit):
+            return False
+        q_lo = min(min(h["query_from"], h["query_to"]) for h in hit.hsps)
+        q_hi = max(max(h["query_from"], h["query_to"]) for h in hit.hsps)
+        return q_lo > 1 or q_hi < query_len
+
+    def _postprocess_hits(self, hits: list[BlastHit], sequence: str) -> list[BlastHit]:
+        query = self._sanitize_sequence(sequence)
+        counts = {id(h): n_aware_counts(h.hsps or []) if h.hsps else None for h in hits}
+        need = []
+        for h in hits:
+            c = counts[id(h)]
+            if c and c[2] and (c[0] + c[1]) / c[2] >= self._EXTENSION_MIN_IDENTITY \
+                    and self._needs_extension(h, len(query)):
+                need.append(h.accessions[0])
+        subjects = self._subject_sequences(need[:self._MAX_EXTENSION_FETCH]) if need else {}
+        for h in hits:
+            if counts[id(h)] is not None:
+                self._apply_n_aware(h, query, counts[id(h)], subjects.get(h.accessions[0]))
+            h.hsps = None  # not needed past this point (hits cache)
+        return hits
+
+    def _apply_n_aware(self, hit: BlastHit, query: str, counts: tuple[int, int, int],
+                       subject: str | None) -> None:
+        matches, n_cols, columns = counts
+        if subject is not None and hit.subject_len == len(subject) and self._plus_plus(hit):
+            hsps = [dict(h) for h in hit.hsps]
+            left = min(hsps, key=lambda h: h["query_from"])
+            qf, hf = left["query_from"], left["hit_from"]
+            while qf > 1 and hf > 1:
+                kind = _nt_column(query[qf - 2], subject[hf - 2])
+                if kind not in ("match", "n"):
+                    break
+                matches += kind == "match"
+                n_cols += kind == "n"
+                columns += 1
+                qf, hf = qf - 1, hf - 1
+            left["query_from"], left["hit_from"] = qf, hf
+            right = max(hsps, key=lambda h: h["query_to"])
+            qt, ht = right["query_to"], right["hit_to"]
+            while qt < len(query) and ht < len(subject):
+                kind = _nt_column(query[qt], subject[ht])
+                if kind not in ("match", "n"):
+                    break
+                matches += kind == "match"
+                n_cols += kind == "n"
+                columns += 1
+                qt, ht = qt + 1, ht + 1
+            right["query_to"], right["hit_to"] = qt, ht
+            hit.coverage_p = _merged_coverage(hsps, "query_from", "query_to", len(query)) or hit.coverage_p
+            hit.subject_cov_p = _merged_coverage(hsps, "hit_from", "hit_to", hit.subject_len)
+            hit.subject_span, hit.subject_max_internal_gap = _subject_geometry(hsps)
+        if not columns:
+            return
+        hit.raw_identity_p = hit.identity_p
+        hit.n_match_p = n_cols / columns
+        if hit.n_match_p <= NUCLEIC_MAX_N_MATCH_FRACTION:
+            hit.identity_p = (matches + n_cols) / columns
+        else:
+            # too much of the alignment is N: BLAST's identity for the alignment
+            hit.identity_p = matches / columns
+
+    def _identity_gate_fail(self, hit: BlastHit, query_len: int = 0) -> str | None:
+        if hit.n_match_p is not None and hit.n_match_p > NUCLEIC_MAX_N_MATCH_FRACTION:
+            return "n_fraction"
+        return super()._identity_gate_fail(hit, query_len)
+
+    def _extra_metadata(self, hit: BlastHit) -> dict:
+        if hit.n_match_p is None:
+            return {}
+        return {"blast_identity_p": hit.raw_identity_p, "n_match_p": round(hit.n_match_p, 4)}
 
 
 class BLASTResolverUNIPROT(BLASTResolver):

@@ -57,7 +57,8 @@ for similarity searches. Defaults are `yes`, except:
   `VALIDATION_SKIP_PUG=1`);
 - supplementary `blast_uniref50`, `foldseek_pdb`, `swisslipids`,
   `chebi_local`, `sifts_uniprot` (both switches): `no` in code; *ini* `yes`
-  except `foldseek_pdb` (identity) `no`.
+  except `foldseek_pdb` (identity) `no`;
+- `blast_pdb_nucleic_dc` (both switches): `no` in code, *ini* `yes`.
 
 Other keys:
 

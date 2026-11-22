@@ -120,6 +120,7 @@ describe("config: validateNumberInput", () => {
 describe("config: humanLabel", () => {
   it("title-cases snake_case keys", () => {
     expect(humanLabel("blast_pdb_protein")).toBe("BLAST PDB protein");
+    expect(humanLabel("blast_pdb_nucleic_dc")).toBe("BLAST PDB nucleic dc-megablast");
     expect(humanLabel("global_timeout_s")).toBe("Global timeout (s)");
     expect(humanLabel("tpr_resid_from_one")).toBe("TPR resid from one");
     expect(humanLabel("bond_guess_vdw_factor")).toBe("Bond guess vdW factor");

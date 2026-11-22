@@ -78,6 +78,7 @@ RESOLVER_SOURCES: dict[str, str] = {
     "blast_swissprot_protein": "uniprot-seq",
     "blast_pdb_protein": "rcsb-seq",
     "blast_pdb_nucleic": "rcsb-seq",
+    "blast_pdb_nucleic_dc": "rcsb-seq",  # 2026-11-22: same pdbnt database
     "blast_nr_protein": "nr-seq",
     "blast_nt": "nt-seq",
     "blast_core_nt": "nt-seq",

@@ -53,6 +53,7 @@ for UI runs.
 |---|---|---|---|---|---|
 | `blast_pdb_protein` | PDB sequences (pdbaa), BLASTP | protein sequence | yes | yes | local |
 | `blast_pdb_nucleic` | PDB sequences (pdbnt), BLASTN | nucleotide sequence | yes | yes | local |
+| `blast_pdb_nucleic_dc` | the same pdbnt, discontiguous megablast, modified bases (N) count as matching (below); one evidence source with the row above | nucleotide sequence of 30 nt or more | yes | yes | local |
 | `blast_swissprot_protein` | UniProt Swiss-Prot, BLASTP | protein sequence | yes | yes | local |
 | `blast_uniprot` | the same Swiss-Prot database (no separate UniProt database is configured; counted as one evidence source with the row above) | protein sequence | yes | yes | local |
 | `blast_nr_protein` | NCBI nr, BLASTP — **deferred**, Deep search only | protein sequence | yes | yes | local |
@@ -82,6 +83,25 @@ length of at least 50 residues instead. A nucleic-acid hit must align on the
 same strand (the reverse complement is the partner strand). Nucleic acids of
 up to 25 nt match exactly only a database sequence of the same length
 (identity and coverage ≥ 0.9).
+
+PDB sequences (pdbnt) store a modified nucleotide as `N`: a tRNA has one every
+8–10 nt (1EHZ chain A, yeast tRNA-Phe: 15 in 76). BLAST counts `N` as a
+mismatch, and megablast cannot start an alignment between them, so
+`blast_pdb_nucleic` never matches such a chain exactly. `blast_pdb_nucleic_dc`
+searches the same database with discontiguous megablast (both 16-nt templates)
+and computes identity with `N` as matching: a column where one sequence has
+`N` and the other a base counts as identical, other bases must be identical
+and gaps count against identity, and at most 25 % of the aligned columns may
+be such `N` columns (more is no evidence: BLAST's own identity is kept). The
+alignment is extended over `N` columns at its ends (an alignment never starts
+on an `N`). The rest of the exact-match rule is the one above; similar matches
+are scored with the same identity. In the simulated sequence a modified
+nucleotide (PSU, 5MC, OMG, …) is `X`, searched as `N`; a sequence that contains
+one is searched with BLASTN (11-nt words) instead, since discontiguous
+megablast cannot use a query word with an `N`. Under 30 nt only
+`blast_pdb_nucleic` searches (short-sequence task). For the unmodified yeast
+tRNA-Phe sequence, `blast_pdb_nucleic` matches 19 PDB chains exactly (the
+unmodified ones), `blast_pdb_nucleic_dc` 89, 1EHZ among them.
 E-value and bit score are not used for exact matches (they grow with the
 query length, so a perfect 30–100 nt match could never pass a fixed cut-off);
 `exact_match_max_evalue` and `exact_match_min_bits` are kept for old configs
