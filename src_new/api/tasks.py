@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from src_new import cancellation
 from src_new.api.run_reaper import read_run_status
 from src_new.celery_app import celery
 
@@ -20,6 +21,9 @@ from src_new.celery_app import celery
 _LOCK_PREFIX = "bat3:runlock:"
 _LOCK_TTL_S = 120
 _LOCK_HEARTBEAT_S = 30.0  # heartbeat cadence; also refreshes the lock TTL
+# 2026-11-23: after a cancel the pipeline gets this long to stop by itself
+# (cancellation.py) before its process group is terminated.
+_CANCEL_GRACE_S = 20.0
 
 _RELEASE_LOCK_LUA = (
     "if redis.call('get', KEYS[1]) == ARGV[1] then "
@@ -121,8 +125,14 @@ def _run_pipeline_child(run_id: str, input_dir: str, results_path: str,
             output_directory=Path(input_dir).parent,
             working_directory=Path(input_dir),
             run_config=config,
+            run_id=run_id,
         )
         conn.send(("ok", None))
+    except cancellation.RunCancelled:
+        # 2026-11-23: the executor already marked the run cancelled (or the
+        # run was deleted); nothing to record here
+        logger.warning("Pipeline %s cancelled", run_id)
+        conn.send(("cancelled", None))
     except Exception as e:
         logger.error(f"Pipeline failed with exception: {e}")
         try:
@@ -188,6 +198,11 @@ def run_pipeline_task(
             run_id, status_now)
         return {"status": "skipped_terminal", "run_id": run_id,
                 "prior_status": status_now}
+    # 2026-11-23: cancelled or deleted while queued (revoke only reaches
+    # workers that are up when it is sent)
+    if cancellation.is_cancelled(run_id, run_dir):
+        logger.info("run %s was cancelled or deleted — not started", run_id)
+        return {"status": "skipped_cancelled", "run_id": run_id}
 
     # W3 A1: per-run atomic execution lock (SET NX EX + token-checked
     # refresh/release). Lock held => a duplicate execution is running
@@ -336,12 +351,14 @@ def _spawn_pipeline_child(run_id: str, input_dir: str,
     ctx = multiprocessing.get_context("fork")
     parent_conn, child_conn = ctx.Pipe(duplex=False)
     child = ctx.Process(
-        target=_run_pipeline_child,
-        args=(run_id, input_dir, str(results_path),
+        target=_child_entry,
+        args=(_run_pipeline_child, run_id, input_dir, str(results_path),
               config_path, child_conn),
         name=f"pipeline_{run_id}",
         daemon=True,
     )
+    run_dir = Path(input_dir).parent
+    cancel_seen = None  # 2026-11-23: monotonic time the cancel was first seen
 
     child.start()
     child_conn.close()
@@ -351,11 +368,7 @@ def _spawn_pipeline_child(run_id: str, input_dir: str,
     deadline = time.monotonic() + limit_s
     while child.is_alive():
         if abort_event is not None and abort_event.is_set():
-            child.terminate()
-            child.join(30.0)
-            if child.is_alive():
-                child.kill()
-                child.join(10.0)
+            _stop_child(child)
             logger.error(
                 "pipeline child for %s aborted: execution lock lost "
                 "mid-run to a duplicate execution", run_id,
@@ -376,15 +389,24 @@ def _spawn_pipeline_child(run_id: str, input_dir: str,
                 pass
             return {"status": "aborted_lock_lost", "run_id": run_id,
                     "error": "execution_lock_lost"}
+        # 2026-11-23: cancel/delete (cancellation.py; cached, so cheap here).
+        # The pipeline stops by itself within seconds; if it does not (a
+        # C-level compute, a wait not covered), stop its process group.
+        if cancellation.is_cancelled(run_id, run_dir):
+            if cancel_seen is None:
+                cancel_seen = time.monotonic()
+                logger.warning("run %s cancelled; waiting %.0fs for the pipeline to stop",
+                               run_id, _CANCEL_GRACE_S)
+            elif time.monotonic() - cancel_seen >= _CANCEL_GRACE_S:
+                logger.error("run %s cancelled; pipeline did not stop — terminating it", run_id)
+                _stop_child(child)
+                parent_conn.close()
+                return _finish_cancelled(run_id, run_dir, results_path)
         if time.monotonic() >= deadline:
             break
         child.join(0.2)
     if child.is_alive():
-        child.terminate()
-        child.join(30.0)
-        if child.is_alive():
-            child.kill()
-            child.join(10.0)
+        _stop_child(child)
         logger.error(
             "pipeline child for %s exceeded %.0fs wall-clock — killed",
             run_id, limit_s,
@@ -421,6 +443,8 @@ def _spawn_pipeline_child(run_id: str, input_dir: str,
             pass
     parent_conn.close()
 
+    if outcome == "cancelled" or (outcome != "ok" and cancellation.is_cancelled(run_id, run_dir)):
+        return _finish_cancelled(run_id, run_dir, results_path)
     if outcome == "ok":
         return {"status": "completed", "run_id": run_id}
     if outcome == "failed":
@@ -437,3 +461,61 @@ def _spawn_pipeline_child(run_id: str, input_dir: str,
     except Exception:
         pass
     return {"status": "failed", "run_id": run_id, "error": detail}
+
+
+def _child_entry(target, *args) -> None:
+    """2026-11-23: the pipeline child leads its own process group, so stopping
+    it also stops the BLAST / Foldseek processes it started (_stop_child)."""
+    try:
+        os.setpgid(0, 0)
+    except OSError:
+        pass
+    target(*args)
+
+
+def _stop_child(child, grace_s: float = 30.0) -> None:
+    """SIGTERM the pipeline child and its process group, SIGKILL after
+    `grace_s` (2026-11-23: terminate() alone left its BLAST runs behind)."""
+    try:
+        group = os.getpgid(child.pid) == child.pid
+    except OSError:
+        group = False
+
+    def send(sig) -> None:
+        try:
+            if group:
+                os.killpg(child.pid, sig)
+            else:
+                os.kill(child.pid, sig)
+        except OSError:
+            pass
+
+    send(signal.SIGTERM)
+    child.join(grace_s)
+    if child.is_alive():
+        send(signal.SIGKILL)
+        child.join(10.0)
+    elif group:
+        send(signal.SIGKILL)  # whatever of the group ignored SIGTERM
+
+
+def _finish_cancelled(run_id: str, run_dir: Path, results_path: Path) -> dict:
+    """2026-11-23: a cancelled run ends "cancelled" (a pipeline write may have
+    overwritten the API's status); a deleted run's directory stays deleted."""
+    logger = logging.getLogger(f"pipeline_{run_id}")
+    results_path = Path(results_path)
+    try:
+        if results_path.exists():
+            from src_new.results.results_manager import ResultsManager
+            rm = ResultsManager(str(results_path))
+            if rm._payload.get("pipeline", {}).get("status") != "cancelled":
+                rm.add_event("run_cancelled", detail="stopped by the worker")
+                rm.finish_run("cancelled")
+        elif run_dir.exists():
+            # deleted while the pipeline ran: whatever it wrote since then
+            import shutil
+            shutil.rmtree(run_dir, ignore_errors=True)
+            logger.warning("run %s was deleted; removed what the pipeline wrote after", run_id)
+    except Exception as exc:
+        logger.warning("run %s: cannot record the cancel (%s)", run_id, exc)
+    return {"status": "cancelled", "run_id": run_id}

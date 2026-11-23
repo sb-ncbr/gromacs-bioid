@@ -42,8 +42,24 @@ class PipelineExecutor:
         return getattr(step, 'id', None) or getattr(step, 'task_id', None) or getattr(step, 'step_id', None)
     
     def run(self, output_directory=None, working_directory=None, input_kind=None, 
-            input_files=None, run_metadata=None, run_config: RunConfig = None):
-        """Execute the pipeline."""
+            input_files=None, run_metadata=None, run_config: RunConfig = None,
+            run_id=None):
+        """Execute the pipeline.
+
+        2026-11-23: with `run_id`, a cancel or delete of the run
+        (cancellation.py) stops it before the next step, or inside the
+        identify stage's searches; the run ends "cancelled" (results.json
+        untouched when the run was deleted) and RunCancelled is raised.
+        """
+        from .. import cancellation
+        run_dir = Path(self.results_manager.path).parent
+        with cancellation.bind(run_id, run_dir):
+            return self._run(output_directory, working_directory, input_kind, input_files,
+                             run_metadata, run_config, run_id, run_dir)
+
+    def _run(self, output_directory, working_directory, input_kind, input_files,
+             run_metadata, run_config, run_id, run_dir):
+        from .. import cancellation
         # Set fallback directories
         if output_directory is None:
             output_directory = Path.cwd()
@@ -109,6 +125,7 @@ class PipelineExecutor:
         # Track critical failures
         failed_critical = False
         failed_at_index = -1
+        cancelled = False
 
         # This run's own service counts (persisted with run_health below).
         try:
@@ -145,6 +162,9 @@ class PipelineExecutor:
             # Iterate over steps in order
             for i, step in enumerate(self.steps):
                 step_id = self._step_id(step)
+                # 2026-11-23: a cancelled or deleted run stops before each step
+                if cancellation.is_cancelled(run_id, run_dir, fresh=True):
+                    raise cancellation.RunCancelled(run_id)
                 
                 # Restart-resilience (revised F-03 semantics, see RESUMABLE_ON_SUCCESS):
                 # skip heavy downstream stages whose persisted status is exactly
@@ -406,6 +426,9 @@ class PipelineExecutor:
                     context_keys=list(context.state.keys())
                 )
         
+        except cancellation.RunCancelled:
+            cancelled = True
+            raise
         finally:
             logger.removeHandler(log_handler)
 
@@ -434,28 +457,43 @@ class PipelineExecutor:
             except Exception:
                 pass
 
-            # Mark remaining tasks as skipped if there was a critical failure
-            if failed_critical and failed_at_index >= 0:
-                for i in range(failed_at_index + 1, len(self.steps)):
-                    step = self.steps[i]
-                    step_id = self._step_id(step)
-                    if step_id in self.results_manager._payload["tasks"]:
-                        self.results_manager._payload["tasks"][step_id]["status"] = "skipped"
+            # 2026-11-23: cancelled (also when the last step finished after the
+            # cancel): no retry, no success/failed; a deleted run is not
+            # written at all (ResultsManager skips a vanished results.json).
+            if cancelled or cancellation.is_cancelled(run_id, run_dir, fresh=True):
+                logger.warning("Run %s was cancelled; stopping", run_id)
+                tasks = self.results_manager._payload.get("tasks") or {}
+                for step in self.steps:
+                    entry = tasks.get(self._step_id(step))
+                    if isinstance(entry, dict) and entry.get("status") in ("pending", "running", None):
+                        entry["status"] = "skipped"
+                self.results_manager.add_event("run_cancelled", task_id=context._current_step_id)
+                self.results_manager.finish_run("cancelled")
+                if not cancelled:
+                    raise cancellation.RunCancelled(run_id)
+            else:
+                # Mark remaining tasks as skipped if there was a critical failure
+                if failed_critical and failed_at_index >= 0:
+                    for i in range(failed_at_index + 1, len(self.steps)):
+                        step = self.steps[i]
+                        step_id = self._step_id(step)
+                        if step_id in self.results_manager._payload["tasks"]:
+                            self.results_manager._payload["tasks"][step_id]["status"] = "skipped"
             
-            # Set pipeline final status and timestamp. An incomplete run on a
-            # queue with automatic retries waits for its next attempt instead
-            # (retries.py; the reaper re-queues it under the same run id).
-            retry = None
-            if not failed_critical:
-                try:
-                    from .. import retries
-                    retry = retries.plan(self.results_manager._payload, "incomplete")
-                    if retry:
-                        retries.schedule(self.results_manager._payload, retry)
-                        self.results_manager._save()
-                except Exception:
-                    retry = None
-            if not retry:
-                self.results_manager.finish_run("failed" if failed_critical else "success")
+                # Set pipeline final status and timestamp. An incomplete run on a
+                # queue with automatic retries waits for its next attempt instead
+                # (retries.py; the reaper re-queues it under the same run id).
+                retry = None
+                if not failed_critical:
+                    try:
+                        from .. import retries
+                        retry = retries.plan(self.results_manager._payload, "incomplete")
+                        if retry:
+                            retries.schedule(self.results_manager._payload, retry)
+                            self.results_manager._save()
+                    except Exception:
+                        retry = None
+                if not retry:
+                    self.results_manager.finish_run("failed" if failed_critical else "success")
         
         return context

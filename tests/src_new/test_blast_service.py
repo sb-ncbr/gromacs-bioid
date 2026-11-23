@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import threading
+import time
 from http.server import ThreadingHTTPServer
 
 import pytest
@@ -373,3 +374,70 @@ def test_a_downloaded_copy_without_a_checked_marker_is_fetched_again(tmp_path, b
     assert not s._complete(s.prefetch)
     again = blast_service.Service(db, str(tmp_path / "nvme"), snapshot="2026-10-22-01-05-01")
     assert again.release is None
+
+
+# 2026-11-23: a cancelled run's worker hangs up; the service stops the search
+SLOW_BLAST = """#!{python}
+import sys, time
+if sys.argv[1:] == ["-version"]:
+    print("blastp: 2.16.0+"); sys.exit(0)
+open({pidfile!r}, "a").write("%d\\n" % __import__("os").getpid())
+sys.stdin.read()
+time.sleep(120)
+"""
+
+
+def test_a_cancelled_run_stops_its_service_search(tmp_path, blastp, monkeypatch):
+    from src_new import cancellation
+    pidfile = tmp_path / "blast.pids"
+    exe = tmp_path / "bin" / "blastp"
+    exe.write_text(SLOW_BLAST.format(python=sys.executable, pidfile=str(pidfile)))
+    monkeypatch.setattr(blast_service, "POLL_S", 0.1)
+    monkeypatch.setattr(cancellation, "POLL_S", 0.1)
+    monkeypatch.setattr(cancellation, "CACHE_S", 0.05)
+    monkeypatch.delenv("CELERY_BROKER_URL", raising=False)
+    db = _release(tmp_path / "dbs", "nr-1")
+    s = blast_service.Service(db, str(tmp_path / "nvme"), stage_mbps=1000, slots=1)
+    s.stage()
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), blast_service.make_handler(s))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "results.json").write_text('{"pipeline": {"status": "running"}}')
+        r = _resolver(db, url, str(exe))
+        errors = {}
+
+        def search(name):
+            with cancellation.bind(name, run_dir):
+                try:
+                    r._run_blast_local("MKVLAAGIVGLLLA", str(tmp_path))
+                except BaseException as exc:  # RunCancelled
+                    errors[name] = exc
+
+        # one search runs, a second waits for the only slot
+        threads = [threading.Thread(target=search, args=("run",)) for _ in range(2)]
+        for t in threads:
+            t.start()
+        deadline = time.time() + 10
+        while time.time() < deadline and not (s.health()["running"] == 1 and s.health()["waiting"] == 1):
+            time.sleep(0.05)
+        assert (s.health()["running"], s.health()["waiting"]) == (1, 1)
+        t0 = time.time()
+        (run_dir / cancellation.MARKER).write_text("1")
+        for t in threads:
+            t.join(10)
+        assert time.time() - t0 < 5
+        assert isinstance(errors.get("run"), cancellation.RunCancelled)
+        while time.time() < deadline + 5 and s.health()["abandoned"] < 2:
+            time.sleep(0.05)
+        h = s.health()
+        assert (h["running"], h["waiting"], h["abandoned"], h["searches"]) == (0, 0, 2, 0)
+        pid = int(pidfile.read_text().split()[0])
+        time.sleep(0.2)
+        with pytest.raises(OSError):  # BLAST was killed (and reaped)
+            os.kill(pid, 0)
+        assert len(pidfile.read_text().split()) == 1  # the waiting search never started
+    finally:
+        httpd.shutdown()

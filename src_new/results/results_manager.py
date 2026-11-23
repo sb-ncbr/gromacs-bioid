@@ -69,6 +69,10 @@ class ResultsManager:
         self._defer_interval_s = self._MIN_SAVE_INTERVAL_S
         self._save_dirty = False
         self._last_save_mono = 0.0
+        # 2026-11-23: a results.json that existed when loaded and is gone now
+        # belongs to a deleted run: never write it again (atomic_write_json
+        # would recreate the run directory, leaving a half run behind).
+        self._loaded_existing = self.path.exists()
         
         if not self.path.exists():
             # Create new file with default payload
@@ -221,6 +225,9 @@ class ResultsManager:
                 self._save_dirty = True
                 if time.monotonic() - self._last_save_mono < self._defer_interval_s:
                     return
+            if self._loaded_existing and not self.path.exists():
+                self._save_dirty = False
+                return
             self._payload["updated_at"] = _now_iso()
             # Path->str converter rebuilds the container layers as it
             # walks (and atomic_write_json re-sanitizes); the previous

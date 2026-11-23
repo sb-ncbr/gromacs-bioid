@@ -31,10 +31,12 @@ Env:
 
 GET /health: {db, release, source_release, state (staging|ready|error),
 staging {release, done_bytes, total_bytes, files_done, files_total},
-blast_version, running, waiting, searches, timeouts, failures, error}.
+blast_version, running, waiting, searches, timeouts, failures, abandoned, error}.
 POST /search {release, query, task, max_target_seqs, timeout_s}: 200
 {release, seconds, output: <-outfmt 15 report>}; 409 not ready or another
-release; 422 bad request; 504 out of time; 500 BLAST failed.
+release; 422 bad request; 504 out of time; 500 BLAST failed; 499 the client
+closed the connection (a cancelled run) while it waited or ran, and the search
+was stopped (2026-11-23).
 """
 from __future__ import annotations
 
@@ -42,14 +44,16 @@ import json
 import logging
 import os
 import re
+import select
 import shutil
+import socket
 import subprocess
 import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 log = logging.getLogger("blast_service")
 
@@ -60,6 +64,8 @@ MAX_QUERY = 100_000
 TASKS = {"blastp": {None, "blastp-short"}, "blastn": {None, "blastn-short"}}
 QUERY_RE = re.compile(r"^[A-Za-z*\-]+$")
 RECHECK_S = 60
+#: how often a waiting or running search checks that its client is still there
+POLL_S = 5.0
 
 
 class Service:
@@ -80,7 +86,8 @@ class Service:
         self.streams = streams
         self.staging: dict[str, Any] = {}
         self.error = ""
-        self.counts = {"running": 0, "waiting": 0, "searches": 0, "timeouts": 0, "failures": 0}
+        self.counts = {"running": 0, "waiting": 0, "searches": 0, "timeouts": 0, "failures": 0,
+                       "abandoned": 0}
         self.program = "blastp" if self._is_protein() else "blastn"
         self.blast_version = self._version()
         complete = [d.name for d in self._copies() if self._complete(d.name)]
@@ -242,7 +249,10 @@ class Service:
 
     # -- searching --------------------------------------------------------------
 
-    def search(self, req: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    def search(self, req: dict[str, Any],
+               gone: Optional[Callable[[], bool]] = None) -> tuple[int, dict[str, Any]]:
+        """`gone()` is True once the client closed the connection (2026-11-23:
+        a cancelled run's worker hangs up); the search then stops (499)."""
         release = self.release
         if not release or req.get("release") != release:
             return 409, {"error": f"serving {release}, asked for {req.get('release')}"}
@@ -262,7 +272,14 @@ class Service:
         deadline = time.time() + timeout_s
         with self.lock:
             self.counts["waiting"] += 1
-        acquired = self.slots.acquire(timeout=timeout_s)
+        acquired = False
+        while not acquired and time.time() < deadline:
+            acquired = self.slots.acquire(timeout=max(0.0, min(POLL_S, deadline - time.time())))
+            if not acquired and gone is not None and gone():
+                with self.lock:
+                    self.counts["waiting"] -= 1
+                    self.counts["abandoned"] += 1
+                return 499, {"error": "the client went away"}
         with self.lock:
             self.counts["waiting"] -= 1
         if not acquired:
@@ -270,12 +287,12 @@ class Service:
                 self.counts["timeouts"] += 1
             return 504, {"error": "timed out waiting for a free slot"}
         try:
-            return self._run(release, query, task, max_targets, deadline)
+            return self._run(release, query, task, max_targets, deadline, gone)
         finally:
             self.slots.release()
 
     def _run(self, release: str, query: str, task: Optional[str], max_targets: int,
-             deadline: float) -> tuple[int, dict[str, Any]]:
+             deadline: float, gone: Optional[Callable[[], bool]] = None) -> tuple[int, dict[str, Any]]:
         fd, out = tempfile.mkstemp(suffix=".json")
         os.close(fd)
         cmd = [self.program, "-outfmt", "15", "-db", str(self.local / release / self.db_name),
@@ -286,8 +303,11 @@ class Service:
             self.counts["running"] += 1
         started = time.time()
         try:
-            r = subprocess.run(cmd, input=query, text=True, capture_output=True,
-                               timeout=max(1.0, deadline - time.time()))
+            r = _run_until(cmd, query, deadline, gone)
+            if r is None:
+                with self.lock:
+                    self.counts["abandoned"] += 1
+                return 499, {"error": "the client went away"}
             if r.returncode != 0:
                 with self.lock:
                     self.counts["failures"] += 1
@@ -306,6 +326,45 @@ class Service:
                 self.counts["running"] -= 1
             if os.path.exists(out):
                 os.unlink(out)
+
+
+def _run_until(cmd: list[str], query: str, deadline: float,
+               gone: Optional[Callable[[], bool]]) -> Optional[subprocess.CompletedProcess]:
+    """subprocess.run with the deadline as timeout (TimeoutExpired), checking
+    `gone()` every POLL_S: None when the client went away (BLAST killed).
+    2026-11-23."""
+    if gone is None:
+        return subprocess.run(cmd, input=query, text=True, capture_output=True,
+                              timeout=max(1.0, deadline - time.time()))
+    with subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True) as proc:
+        pending: Optional[str] = query
+        while True:
+            left = max(1.0, deadline - time.time())
+            try:
+                out, err = proc.communicate(pending, timeout=min(POLL_S, left))
+                return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+            except subprocess.TimeoutExpired:
+                pending = None
+                if gone():
+                    proc.kill()
+                    proc.communicate()
+                    log.info("client went away; BLAST stopped")
+                    return None
+                if time.time() >= deadline:
+                    proc.kill()
+                    proc.communicate()
+                    raise
+
+
+def _client_gone(sock: socket.socket) -> bool:
+    """True when the client closed its end (2026-11-23). The request was read
+    in full, so a readable socket means end of stream (or a reset)."""
+    try:
+        readable, _, _ = select.select([sock], [], [], 0)
+        return bool(readable) and sock.recv(1, socket.MSG_PEEK) == b""
+    except (OSError, ValueError):
+        return True
 
 
 def make_handler(service: Service) -> type[BaseHTTPRequestHandler]:
@@ -334,7 +393,8 @@ def make_handler(service: Service) -> type[BaseHTTPRequestHandler]:
             except (ValueError, TypeError):
                 self._send(422, {"error": "body must be JSON"})
                 return
-            code, body = service.search(req if isinstance(req, dict) else {})
+            code, body = service.search(req if isinstance(req, dict) else {},
+                                        gone=lambda: _client_gone(self.connection))
             self._send(code, body)
 
         def log_message(self, fmt: str, *args: Any) -> None:

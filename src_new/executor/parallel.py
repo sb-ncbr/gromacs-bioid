@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from typing import Callable, TypeVar, Any
@@ -45,5 +46,16 @@ def run_with_thread_pool(
     Returns:
         List of results in the same order as items.
     """
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        return list(executor.map(func, items))
+    # 2026-11-23: each item runs in a copy of the caller's context, so the
+    # worker threads see the current run (cancellation.bind).
+    ctx = contextvars.copy_context()
+
+    def call(item):
+        return ctx.copy().run(func, item)
+
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    try:
+        return list(executor.map(call, items))
+    finally:
+        # an item raised (e.g. RunCancelled): do not start the queued ones
+        executor.shutdown(wait=True, cancel_futures=True)

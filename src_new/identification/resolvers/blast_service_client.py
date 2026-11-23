@@ -22,11 +22,16 @@ local one. The route of each search is kept for run_health/blast_routes.
 """
 from __future__ import annotations
 
+import http.client
+import json
 import logging
 import os
+import socket
 import subprocess
+import threading
 import time
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 log = logging.getLogger(__name__)
 
@@ -104,22 +109,87 @@ def unusable_reason(url: str, db_path: str, exec_path: str) -> Optional[str]:
 
 def search(url: str, *, release: str, query: str, task: Optional[str],
            max_target_seqs: int, timeout_s: float) -> dict[str, Any]:
-    """Run one search on the service; returns the BLAST -outfmt 15 report."""
-    import requests
-    try:
-        r = requests.post(f"{url.rstrip('/')}/search", timeout=(5, timeout_s + 60), json={
-            "release": release, "query": query, "task": task,
-            "max_target_seqs": max_target_seqs, "timeout_s": timeout_s})
-    except requests.exceptions.ReadTimeout as exc:
-        raise ServiceTimeout(str(exc))
-    except requests.exceptions.RequestException as exc:
-        raise ServiceUnavailable(f"{type(exc).__name__}: {exc}")
-    if r.status_code == 504:
-        raise ServiceTimeout(r.text[:200])
-    if r.status_code != 200:
+    """Run one search on the service; returns the BLAST -outfmt 15 report.
+
+    2026-11-23: the request runs in a helper thread while this one polls the
+    run's cancellation every few seconds (cancellation.py). On a cancel the
+    socket is shut down, so the service sees the client go away and stops the
+    search, and RunCancelled is raised. (requests cannot be interrupted from
+    another thread: a cancelled run used to wait up to ncbi_timeout_s.)"""
+    from ... import cancellation
+    body = json.dumps({"release": release, "query": query, "task": task,
+                       "max_target_seqs": max_target_seqs, "timeout_s": timeout_s}).encode()
+    call = _Post(f"{url.rstrip('/')}/search", body, connect_timeout=5, read_timeout=timeout_s + 60)
+    worker = threading.Thread(target=call.run, daemon=True, name="blast-service-search")
+    started = time.monotonic()
+    worker.start()
+    while not call.done.wait(cancellation.POLL_S):
+        if cancellation.cancel_requested():
+            call.abort()
+            worker.join(5)
+            raise cancellation.RunCancelled(f"BLAST service search on {url}")
+    # counted like the requests calls it replaces (service_stats http hook)
+    from ... import service_stats
+    service_stats.record_http(url, call.status or None, time.monotonic() - started, call.error)
+    if isinstance(call.error, TimeoutError) and call.connected:
+        raise ServiceTimeout(str(call.error))
+    if call.error is not None:
+        raise ServiceUnavailable(f"{type(call.error).__name__}: {call.error}")
+    status, text = call.status, call.text
+    if status == 504:
+        raise ServiceTimeout(text[:200])
+    if status != 200:
         _health.pop(url, None)  # look again before the next search
-        raise ServiceUnavailable(f"HTTP {r.status_code}: {r.text[:200]}")
+        raise ServiceUnavailable(f"HTTP {status}: {text[:200]}")
     try:
-        return r.json()["output"]
+        return json.loads(text)["output"]
     except Exception as exc:
         raise ServiceUnavailable(f"bad answer: {exc}")
+
+
+class _Post:
+    """One JSON POST over http.client, abortable from another thread
+    (2026-11-23): abort() shuts the socket down, which ends the blocked read."""
+
+    def __init__(self, url: str, body: bytes, *, connect_timeout: float, read_timeout: float) -> None:
+        self.url, self.body = urlsplit(url), body
+        self.connect_timeout, self.read_timeout = connect_timeout, read_timeout
+        self.done = threading.Event()
+        self.status: int = 0
+        self.text = ""
+        self.error: Optional[BaseException] = None
+        self.connected = False
+        self._conn: Optional[http.client.HTTPConnection] = None
+        self._aborted = False
+
+    def run(self) -> None:
+        u = self.url
+        cls = http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection
+        try:
+            conn = cls(u.hostname, u.port, timeout=self.connect_timeout)
+            self._conn = conn
+            conn.connect()
+            self.connected = True
+            if self._aborted:
+                raise ConnectionAbortedError("cancelled")
+            conn.sock.settimeout(self.read_timeout)
+            conn.request("POST", u.path or "/", body=self.body,
+                         headers={"Content-Type": "application/json"})
+            r = conn.getresponse()
+            self.status, self.text = r.status, r.read().decode("utf-8", "replace")
+        except (OSError, http.client.HTTPException) as exc:
+            self.error = exc
+        finally:
+            if self._conn is not None:
+                self._conn.close()
+            self.done.set()
+
+    def abort(self) -> None:
+        self._aborted = True
+        conn = self._conn
+        sock = getattr(conn, "sock", None) if conn is not None else None
+        if sock is not None:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass

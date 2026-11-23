@@ -166,6 +166,8 @@ class IdentifierResolutionManager:
         def _over_budget() -> bool:
             return deadline_epoch is not None and _time.time() > deadline_epoch
 
+        from ..cancellation import check as _cancel_check
+
         # Determine signature type from generator name
         if self._signature_type_map is not None:
             signature_type = self._signature_type_map.get(signature_generator_name)
@@ -206,6 +208,7 @@ class IdentifierResolutionManager:
             if _over_budget():
                 logger.warning(f"identify: stage deadline exceeded; skipping remaining identity resolvers for {segment}")
                 break
+            _cancel_check()  # 2026-11-23: a cancelled run stops here (RunCancelled)
             if _blocked(resolver):
                 logger.debug(f"Skipping {resolver.name}: PubChem circuit breaker open")
                 # v3.143 (red-team C-07/C-10): breaker skips must be visible —
@@ -277,6 +280,7 @@ class IdentifierResolutionManager:
             if _over_budget():
                 logger.warning(f"identify: stage deadline exceeded; skipping remaining similarity resolvers for {segment}")
                 break
+            _cancel_check()  # 2026-11-23: a cancelled run stops here (RunCancelled)
             if _blocked(resolver, as_similarity=True):
                 logger.debug(f"Skipping {resolver.name}: PubChem circuit breaker open")
                 attempted_resolvers.append(f"{resolver.name}:skipped:breaker")

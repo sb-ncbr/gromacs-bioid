@@ -872,6 +872,10 @@ async def admin_cancel(run_id: security.RunId) -> dict:
         rm.finish_run("success")
         _drop_cache("runs")
         return {"run_id": run_id, "status": "success"}
+    # 2026-11-23: revoke only drops a queued message (threads pool); the
+    # running pipeline stops itself (cancellation.py)
+    from src_new import cancellation
+    cancellation.request_cancel(run_id, d)
     celery.AsyncResult(run_id).revoke(terminate=True)
     ResultsManager(str(d / "results.json")).finish_run("cancelled")
     _drop_cache("runs")
@@ -888,6 +892,10 @@ async def admin_delete(run_id: security.RunId) -> dict:
     status = json.loads((d / "results.json").read_text()).get("pipeline", {}).get("status")
     if status not in retention.TERMINAL:
         raise HTTPException(status_code=400, detail="Cancel the run before deleting it.")
+    # 2026-11-23: a worker still on this run stops (key only: the run can be
+    # restored from the trash)
+    from src_new import cancellation
+    cancellation.request_cancel(run_id)
     trash = _runs_dir() / retention.EXPIRED_DIR
     trash.mkdir(exist_ok=True)
     if (trash / run_id).exists():

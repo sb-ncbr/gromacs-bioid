@@ -337,7 +337,7 @@ time; `tasks` and `progress` are always complete.""",
     ("DELETE", f"{V1}/{{run_id}}"): Endpoint(
         "Managing runs", "Delete a run",
         "Deletes the run and all its files at once; this cannot be undone. Cancel a queued "
-        "or running run first.",
+        "or running run first; it can be deleted right after the cancel.",
         example={"message": "Run '7b0e5f2c-3d41-4a8e-9f61-2c8d0a4b5e17' deleted successfully"},
         params={"X-Owner-Token": OWNER_TOKEN},
         errors={403: ("No or wrong owner token, or an example run", "Example runs cannot be deleted."),

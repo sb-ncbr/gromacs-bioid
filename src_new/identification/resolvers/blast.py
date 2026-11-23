@@ -477,11 +477,12 @@ class BLASTResolver(IdentifierResolver):
 
             # v3.143 (C-16): a single BLAST subprocess must not run past the
             # stage deadline (timeout was a fixed config 300 s).
-            result = subprocess.run(
+            # 2026-11-23: ... nor past a cancel of the run (killed, RunCancelled).
+            from ...cancellation import run_subprocess
+            result = run_subprocess(
                 cmd,
                 input=self._sanitize_sequence(sequence),
                 text=True,
-                capture_output=True,
                 timeout=self._call_timeout(timeout_s),
             )
             if result.returncode != 0:

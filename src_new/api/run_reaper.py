@@ -94,6 +94,13 @@ def mark_worker_lost(results_path: Path, *, sweep_count: int,
     except Exception as exc:  # unreadable/corrupt — leave it, log only
         logger.warning("run_reaper: cannot load %s (%s)", results_path, exc)
         return False
+    # 2026-11-23: a run cancelled before its worker went away ends cancelled
+    # (never failed, never retried)
+    from .. import cancellation
+    if cancellation.is_cancelled(results_path.parent.name, results_path.parent):
+        rm.add_event("run_cancelled", detail="the worker went away after the cancel")
+        rm.finish_run("cancelled")
+        return True
     # A queue with automatic retries (retries.py) gives the run another
     # attempt under the same id instead of failing it.
     from .. import retries
