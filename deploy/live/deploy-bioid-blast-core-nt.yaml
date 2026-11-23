@@ -44,7 +44,7 @@ spec:
           value: '0'
         - name: TZ
           value: Europe/Prague
-        image: cerit.io/tomsko/bat3-validation-api@sha256:5a38eaa2ceca4e266bd3c67b8e468c3d12f1da15f3985a6daa386f0c04046d54
+        image: cerit.io/tomsko/bat3-validation-api@sha256:f7f554cd0d35700f56df36dfc59b19c3a9ee5e5f15a71ebbc7d7729d3e344a55
         imagePullPolicy: IfNotPresent
         livenessProbe:
           failureThreshold: 6

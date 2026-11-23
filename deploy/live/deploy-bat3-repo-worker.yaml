@@ -10,7 +10,7 @@ metadata:
   namespace: ceitec-biodata-ns
 spec:
   progressDeadlineSeconds: 600
-  replicas: 45
+  replicas: 12
   revisionHistoryLimit: 10
   selector:
     matchLabels:
@@ -19,6 +19,7 @@ spec:
     type: Recreate
   template:
     metadata:
+      annotations: {}
       labels:
         app: bat3-repo-worker
     spec:
@@ -53,7 +54,7 @@ spec:
         - name: BLASTDB_MEM_MAP
           value: '0'
         - name: BAT3_CODE_VERSION
-          value: git-110b19384
+          value: git-c1804a55a
         - name: BAT3_ADHOC_DIR
           value: /app/runs/_adhoc
         - name: BAT3_IDENTIFIERS_CACHE_DIR
@@ -69,7 +70,7 @@ spec:
           value: redis://bioid-cache-redis:6379/0
         - name: BAT3_RENDER_DISABLE
           value: '1'
-        image: cerit.io/tomsko/bat3-validation-api@sha256:d2750f50351607430daf246e20387dc268bebd3a5d5bae544c92994e124b2519
+        image: cerit.io/tomsko/bat3-validation-api@sha256:f7f554cd0d35700f56df36dfc59b19c3a9ee5e5f15a71ebbc7d7729d3e344a55
         imagePullPolicy: Always
         name: repo-worker
         resources:
