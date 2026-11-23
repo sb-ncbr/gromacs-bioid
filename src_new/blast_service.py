@@ -20,21 +20,43 @@ Env:
     BLAST_DB_PATH     the database as workers name it, e.g. /app/databases/nr/nr
     BLAST_LOCAL_DIR   the NVMe volume (default /nvme)
     BLAST_THREADS     threads per search (default 8)
-    BLAST_SLOTS       searches at a time (default 1; nr reads the whole volume
+    BLAST_SLOTS       BLAST processes at a time (default 1; nr reads the whole volume
                       per search, so more at once only share its bandwidth)
     BLAST_STAGE_MBPS  copy rate cap in MB/s (default 40)
     BLAST_FETCH_SNAPSHOT  download this NCBI AWS snapshot (blastdb_fetch) instead
                       of copying from NFS; served once NFS points to the same
                       release (database updates: both download in parallel)
     BLAST_FETCH_STREAMS   parallel downloads (default 8)
+    BLAST_BATCH_MAX   searches run as one BLAST process (default 16; 1 = off)
+    BLAST_BATCH_WAIT_S  how long a search on an idle service waits for others
+                      to join its batch (default 2)
+    BLAST_BATCH_SPREAD  auto|1|0 (default auto): spread waiting searches over
+                      free slots (1) or fill one batch first (0); auto = spread
+                      when the database fits in the pod's memory (page cache)
     PORT              (default 8080)
 
 GET /health: {db, release, source_release, state (staging|ready|error),
 staging {release, done_bytes, total_bytes, files_done, files_total},
-blast_version, running, waiting, searches, timeouts, failures, error}.
+blast_version, running, waiting, searches, timeouts, failures, error,
+abandoned, killed, processes, batches, batched, batch_mean, batch_max,
+batch_wait_s, batch_spread, slots}.
 POST /search {release, query, task, max_target_seqs, timeout_s}: 200
 {release, seconds, output: <-outfmt 15 report>}; 409 not ready or another
 release; 422 bad request; 504 out of time; 500 BLAST failed.
+
+2026-11-23: batches, and clients that leave. nt (1.1 TB) does not fit in the
+page cache, so every blastn search read the whole NVMe copy: 4 slots ran
+~8 searches an hour while 46 waited. Searches with the same release, task
+and max_target_seqs that wait together now run as one BLAST process with a
+multi-query FASTA (one read of the database for all), and each gets the
+report a search of its own would have returned (checked on small protein and
+nucleotide databases with BLAST 2.17: same hits, order, scores, statistics;
+only query_id Query_<n> is renamed back to Query_1). A query BLAST rejects
+or cannot score (a message other than "No hits found") is searched again on
+its own, so it gets BLAST's own answer (these return at once, without
+reading the database). A waiting or running search whose client closed the
+connection (its worker run was cancelled, or it gave up) is dropped and
+counted as abandoned; a BLAST process nobody waits for any more is killed.
 """
 from __future__ import annotations
 
@@ -42,14 +64,16 @@ import json
 import logging
 import os
 import re
+import select
 import shutil
+import socket
 import subprocess
 import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 log = logging.getLogger("blast_service")
 
@@ -60,19 +84,55 @@ MAX_QUERY = 100_000
 TASKS = {"blastp": {None, "blastp-short"}, "blastn": {None, "blastn-short"}}
 QUERY_RE = re.compile(r"^[A-Za-z*\-]+$")
 RECHECK_S = 60
+POLL_S = 2.0  # 2026-11-23: how often a waiting/running search checks its client
+NO_HITS = "No hits found"
+
+
+class _Search:
+    """One POST /search while it waits, runs and is answered (2026-11-23)."""
+
+    def __init__(self, release: str, query: str, task: Optional[str], max_targets: int,
+                 deadline: float, gone: Optional[Callable[[], bool]]) -> None:
+        self.release, self.query, self.task, self.max_targets = release, query, task, max_targets
+        self.deadline = deadline
+        self.gone = gone
+        self.arrived = time.time()
+        # same release, task and -max_target_seqs: one BLAST command line; a
+        # query without letters ("---") fails a whole multi-query run: alone
+        self.key: tuple = (release, task, max_targets) if re.search("[A-Za-z]", query) else (id(self),)
+        self.state = "waiting"  # running, done
+        self.result: tuple[int, dict[str, Any]] = (500, {"error": "no answer"})
+        self.done = threading.Event()
+
+    def client_gone(self) -> bool:
+        try:
+            return bool(self.gone and self.gone())
+        except Exception:
+            return False
 
 
 class Service:
     def __init__(self, db_path: str, local_dir: str, threads: int = 8, slots: int = 1,
-                 stage_mbps: float = 40.0, snapshot: Optional[str] = None, streams: int = 8) -> None:
+                 stage_mbps: float = 40.0, snapshot: Optional[str] = None, streams: int = 8,
+                 batch_max: int = 1, batch_wait_s: float = 0.0, batch_spread: str = "auto") -> None:
         from .blastdb_fetch import release_name
         self.db_path = db_path
         self.db_name = os.path.basename(db_path)
         self.local = Path(local_dir)
         self.threads = threads
         self.stage_bps = stage_mbps * 1e6
-        self.slots = threading.BoundedSemaphore(max(1, slots))
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()  # 2026-11-23: also self.cv's lock; _finish under _take
+        # 2026-11-23: waiting searches, taken in batches by up to `slots`
+        # runner threads (was a semaphore per search)
+        self.slots = max(1, slots)
+        self.batch_max = max(1, batch_max)
+        self.batch_wait_s = max(0.0, batch_wait_s)
+        self.batch_spread = batch_spread
+        self.cv = threading.Condition(self.lock)
+        self.pending: list[_Search] = []
+        self.runners = 0          # runner threads
+        self.busy = 0             # runner threads with a batch (slots in use)
+        self._spread: dict[str, bool] = {}
         self.release: Optional[str] = None
         # AWS snapshot to download ahead of the NFS switch (blastdb_fetch)
         self.snapshot = snapshot
@@ -80,7 +140,10 @@ class Service:
         self.streams = streams
         self.staging: dict[str, Any] = {}
         self.error = ""
-        self.counts = {"running": 0, "waiting": 0, "searches": 0, "timeouts": 0, "failures": 0}
+        self.counts = {"running": 0, "waiting": 0, "searches": 0, "timeouts": 0, "failures": 0,
+                       # 2026-11-23: clients that left, BLAST processes killed for
+                       # them, processes running, processes run and their searches
+                       "abandoned": 0, "killed": 0, "processes": 0, "batches": 0, "batched": 0}
         self.program = "blastp" if self._is_protein() else "blastn"
         self.blast_version = self._version()
         complete = [d.name for d in self._copies() if self._complete(d.name)]
@@ -136,6 +199,10 @@ class Service:
                     "source_release": source, "state": self.state(),
                     "staging": dict(self.staging), "blast_version": self.blast_version,
                     "program": self.program, "threads": self.threads, "error": self.error,
+                    "slots": self.slots, "batch_max": self.batch_max, "batch_wait_s": self.batch_wait_s,
+                    "batch_spread": bool(self.release and self.batch_max > 1 and self._spreads(self.release)),
+                    "batch_mean": round(self.counts["batched"] / self.counts["batches"], 2)
+                    if self.counts["batches"] else None,
                     **self.counts}
 
     # -- copying ----------------------------------------------------------------
@@ -242,7 +309,11 @@ class Service:
 
     # -- searching --------------------------------------------------------------
 
-    def search(self, req: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    def search(self, req: dict[str, Any],
+               gone: Optional[Callable[[], bool]] = None) -> tuple[int, dict[str, Any]]:
+        """Answer one search. `gone` tells whether the client closed the
+        connection (2026-11-23): then the search is dropped and 499 returned
+        (nothing is sent)."""
         release = self.release
         if not release or req.get("release") != release:
             return 409, {"error": f"serving {release}, asked for {req.get('release')}"}
@@ -259,57 +330,241 @@ class Service:
             return 422, {"error": f"task {task} is not one of {sorted(t for t in TASKS[self.program] if t)}"}
         if not 1 <= max_targets <= 5000 or not 0 < timeout_s <= MAX_TIMEOUT_S:
             return 422, {"error": "max_target_seqs 1-5000, timeout_s 1-43200"}
-        deadline = time.time() + timeout_s
-        with self.lock:
+        # 2026-11-23: queue the search for the runner threads; check the
+        # client and the deadline every POLL_S while it waits and runs
+        s = _Search(release, query, task, max_targets, time.time() + timeout_s, gone)
+        with self.cv:
+            self.pending.append(s)
             self.counts["waiting"] += 1
-        acquired = self.slots.acquire(timeout=timeout_s)
-        with self.lock:
-            self.counts["waiting"] -= 1
-        if not acquired:
-            with self.lock:
-                self.counts["timeouts"] += 1
-            return 504, {"error": "timed out waiting for a free slot"}
-        try:
-            return self._run(release, query, task, max_targets, deadline)
-        finally:
-            self.slots.release()
+            self._start_runners()
+            self.cv.notify_all()
+        while not s.done.wait(max(0.0, min(POLL_S, s.deadline - time.time()))):
+            if s.client_gone():
+                self._finish(s, 499, {"error": "client closed the connection"}, "abandoned")
+            elif time.time() >= s.deadline:
+                self._finish(s, 504, {"error": "timed out waiting for a free slot" if s.state == "waiting"
+                                      else "BLAST ran out of time"}, "timeouts")
+        return s.result
 
-    def _run(self, release: str, query: str, task: Optional[str], max_targets: int,
-             deadline: float) -> tuple[int, dict[str, Any]]:
-        fd, out = tempfile.mkstemp(suffix=".json")
-        os.close(fd)
-        cmd = [self.program, "-outfmt", "15", "-db", str(self.local / release / self.db_name),
-               "-out", out, "-num_threads", str(self.threads), "-max_target_seqs", str(max_targets)]
-        if task:
-            cmd += ["-task", task]
-        with self.lock:
-            self.counts["running"] += 1
-        started = time.time()
+    # -- 2026-11-23: batches ----------------------------------------------------
+
+    def _finish(self, s: _Search, code: int, body: dict[str, Any], count: Optional[str]) -> None:
+        """Answer a search once (the first answer wins)."""
+        with self.cv:
+            if s.state == "done":
+                return
+            if s.state == "waiting":
+                self.pending.remove(s)
+                self.counts["waiting"] -= 1
+            else:
+                self.counts["running"] -= 1
+            s.state, s.result = "done", (code, body)
+            if count:
+                self.counts[count] += 1
+            s.done.set()
+            self.cv.notify_all()
+
+    def _start_runners(self) -> None:
+        """A runner thread for waiting searches while a slot is free and no
+        runner is free to take them (under self.cv)."""
+        while self.pending and self.runners == self.busy and self.runners < self.slots:
+            self.runners += 1
+            threading.Thread(target=self._runner, daemon=True, name="blast-runner").start()
+
+    def _runner(self) -> None:
+        while True:
+            with self.cv:
+                batch = self._take()
+                if not batch:
+                    self.runners -= 1
+                    return
+                self.busy += 1
+                self._start_runners()
+            try:
+                self._run_batch(batch)
+            finally:
+                with self.cv:
+                    self.busy -= 1
+
+    def _take(self) -> list[_Search]:
+        """The next batch: the oldest waiting search and those waiting with
+        the same key (under self.cv). A search on an idle service waits up to
+        batch_wait_s from its arrival for others to join; one that already
+        waited for a slot does not wait again."""
+        while True:
+            for s in [s for s in self.pending if s.client_gone()]:
+                self._finish(s, 499, {"error": "client closed the connection"}, "abandoned")
+            if not self.pending:
+                return []
+            head = self.pending[0]
+            same = [s for s in self.pending if s.key == head.key]
+            left = head.arrived + self.batch_wait_s - time.time()
+            if self.batch_max == 1 or len(same) >= self.batch_max or left <= 0:
+                break
+            self.cv.wait(min(left, POLL_S))
+        take = min(self.batch_max, len(same))
+        if self._spreads(head.release):
+            # the database is in the page cache: searches are CPU-bound, so
+            # waiting searches go to all free slots rather than one batch
+            take = min(take, -(-len(same) // max(1, self.slots - self.busy)))
+        batch = same[:take]
+        for s in batch:
+            self.pending.remove(s)
+            s.state = "running"
+        self.counts["waiting"] -= len(batch)
+        self.counts["running"] += len(batch)
+        return batch
+
+    def _spreads(self, release: str) -> bool:
+        if self.batch_spread in ("0", "1"):
+            return self.batch_spread == "1"
+        if release not in self._spread:
+            try:
+                size = sum(p.stat().st_size for p in (self.local / release).iterdir() if p.is_file())
+            except OSError:
+                return False
+            self._spread[release] = size < _memory_limit()
+        return self._spread[release]
+
+    def _run_batch(self, batch: list[_Search]) -> None:
         try:
-            r = subprocess.run(cmd, input=query, text=True, capture_output=True,
-                               timeout=max(1.0, deadline - time.time()))
-            if r.returncode != 0:
-                with self.lock:
-                    self.counts["failures"] += 1
-                return 500, {"error": f"BLAST exit {r.returncode}: {(r.stderr or '').strip()[:500]}"}
+            answers = self._run(batch[0].release, batch)
+        except Exception as exc:
+            log.exception("BLAST batch of %d failed", len(batch))
+            answers = [(500, {"error": f"BLAST service: {exc}"})] * len(batch)
+        alone = []
+        for s, answer in zip(batch, answers):
+            if answer is None:
+                alone.append(s)
+            else:
+                self._finish(s, *answer, _COUNT.get(answer[0]))
+        for s in alone:
+            # BLAST rejected or could not score this query in the batch: its
+            # own answer (an error, or a message worded differently)
+            if s.state == "running":
+                answer = self._run(s.release, [s])[0] or (500, {"error": "no answer"})
+                self._finish(s, *answer, _COUNT.get(answer[0]))
+
+    def _run(self, release: str, batch: list[_Search]) -> list[Optional[tuple[int, dict[str, Any]]]]:
+        """Run one BLAST process for the batch: an answer per search, or None
+        for a search to run again on its own. One search: its query on stdin,
+        as before 2026-11-23; more: a FASTA with empty deflines (BLAST then
+        names and titles each query as it does a lone one, Query_<n>)."""
+        tmp = tempfile.mkdtemp(prefix="blast-")
+        out, err = os.path.join(tmp, "out.json"), os.path.join(tmp, "stderr")
+        with open(os.path.join(tmp, "query"), "w") as f:
+            f.write(batch[0].query if len(batch) == 1 else "".join(f">\n{s.query}\n" for s in batch))
+        first = batch[0]
+        cmd = [self.program, "-outfmt", "15", "-db", str(self.local / release / self.db_name),
+               "-out", out, "-num_threads", str(self.threads), "-max_target_seqs", str(first.max_targets)]
+        if first.task:
+            cmd += ["-task", first.task]
+        env = None
+        if len(batch) > 1 and "BATCH_SIZE" not in os.environ:
+            # all queries in one pass over the database (BLAST's default
+            # batch is 10,000 residues for blastp); results do not change
+            env = {**os.environ, "BATCH_SIZE": str(sum(len(s.query) + 1 for s in batch))}
+        with self.cv:
+            self.counts["processes"] += 1
+            self.counts["batches"] += 1
+            self.counts["batched"] += len(batch)
+        started = time.time()
+        deadline = max(s.deadline for s in batch)
+        try:
+            with open(os.path.join(tmp, "query")) as qf, open(err, "w") as ef:
+                proc = subprocess.Popen(cmd, stdin=qf, stdout=subprocess.DEVNULL, stderr=ef, env=env)
+            try:
+                while True:
+                    try:
+                        rc = proc.wait(timeout=max(0.1, min(POLL_S / 2, deadline - time.time())))
+                        break
+                    except subprocess.TimeoutExpired:
+                        with self.cv:
+                            wanted = any(s.state == "running" for s in batch)
+                        if not wanted or time.time() >= deadline:
+                            proc.kill()
+                            proc.wait()
+                            if not wanted:
+                                with self.cv:
+                                    self.counts["killed"] += 1
+                                log.info("killed BLAST for %d searches: their clients left", len(batch))
+                            return [(504, {"error": "BLAST ran out of time"})] * len(batch)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait()
+                with self.cv:
+                    self.counts["processes"] -= 1
+            if rc != 0:
+                with open(err) as f:
+                    stderr = f.read()
+                return [(500, {"error": f"BLAST exit {rc}: {stderr.strip()[:500]}"})] * len(batch)
             with open(out) as f:
                 report = json.load(f)
-            with self.lock:
-                self.counts["searches"] += 1
-            return 200, {"release": release, "seconds": round(time.time() - started, 1), "output": report}
-        except subprocess.TimeoutExpired:
-            with self.lock:
-                self.counts["timeouts"] += 1
-            return 504, {"error": "BLAST ran out of time"}
+            seconds = round(time.time() - started, 1)
+            if len(batch) > 1:
+                log.info("batch of %d searches (%s, max_target_seqs %d): %.0f s",
+                         len(batch), first.task or self.program, first.max_targets, seconds)
+            if len(batch) == 1:
+                return [(200, {"release": release, "seconds": seconds, "output": report})]
+            return [None if rep is None else (200, {"release": release, "seconds": seconds, "output": rep})
+                    for rep in _split(report, len(batch))]
         finally:
-            with self.lock:
-                self.counts["running"] -= 1
-            if os.path.exists(out):
-                os.unlink(out)
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+_COUNT = {200: "searches", 500: "failures", 504: "timeouts"}
+
+
+def _split(report: dict[str, Any], n: int) -> list[Optional[dict[str, Any]]]:
+    """A multi-query -outfmt 15 report as n single-query reports, each as
+    BLAST writes it for that query alone; None for a query BLAST could not
+    search (a message other than "No hits found": run it alone)."""
+    reports = report.get("BlastOutput2")
+    if not isinstance(reports, list) or len(reports) != n:
+        raise ValueError(f"{len(reports) if isinstance(reports, list) else 'no'} reports for {n} queries")
+    out: list[Optional[dict[str, Any]]] = []
+    for i, rep in enumerate(reports):
+        search = rep["report"]["results"]["search"]
+        if search.get("query_id") != f"Query_{i + 1}":
+            raise ValueError(f"report {i + 1} is for {search.get('query_id')}")
+        if search.get("message", NO_HITS) != NO_HITS:
+            out.append(None)
+            continue
+        search["query_id"] = "Query_1"
+        out.append(dict(report, BlastOutput2=[rep]))
+    return out
+
+
+def _memory_limit() -> int:
+    """The pod's memory limit (cgroup), else the machine's memory."""
+    for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            value = Path(path).read_text().strip()
+            if value.isdigit() and int(value) < 1 << 60:
+                return int(value)
+        except OSError:
+            pass
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (ValueError, OSError):
+        return 0
 
 
 def make_handler(service: Service) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
+        def setup(self) -> None:
+            super().setup()
+            # 2026-11-23: a worker whose pod vanished sends no FIN; keepalive
+            # probes find the dead connection within ~2 min (Linux)
+            try:
+                self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                for opt, value in (("TCP_KEEPIDLE", 60), ("TCP_KEEPINTVL", 10), ("TCP_KEEPCNT", 6)):
+                    if hasattr(socket, opt):
+                        self.connection.setsockopt(socket.IPPROTO_TCP, getattr(socket, opt), value)
+            except OSError:
+                pass
+
         def _send(self, code: int, body: dict[str, Any]) -> None:
             data = json.dumps(body).encode()
             self.send_response(code)
@@ -317,6 +572,23 @@ def make_handler(service: Service) -> type[BaseHTTPRequestHandler]:
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+
+        def _client_gone(self) -> bool:
+            """The client closed the connection (2026-11-23): the socket reads
+            as finished, or reports a hang-up or error."""
+            p = select.poll()
+            p.register(self.connection, select.POLLIN | select.POLLHUP | select.POLLERR)
+            for _, ev in p.poll(0):
+                if ev & (select.POLLHUP | select.POLLERR):
+                    return True
+                if ev & select.POLLIN:
+                    try:
+                        return self.connection.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT) == b""
+                    except BlockingIOError:
+                        return False
+                    except OSError:
+                        return True
+            return False
 
         def do_GET(self) -> None:
             if self.path == "/health":
@@ -334,8 +606,16 @@ def make_handler(service: Service) -> type[BaseHTTPRequestHandler]:
             except (ValueError, TypeError):
                 self._send(422, {"error": "body must be JSON"})
                 return
-            code, body = service.search(req if isinstance(req, dict) else {})
-            self._send(code, body)
+            code, body = service.search(req if isinstance(req, dict) else {}, gone=self._client_gone)
+            if code == 499:  # 2026-11-23: the client left; nobody to answer
+                self.close_connection = True
+                return
+            try:
+                self._send(code, body)
+            except (BrokenPipeError, ConnectionResetError):
+                self.close_connection = True
+                with service.lock:
+                    service.counts["abandoned"] += 1
 
         def log_message(self, fmt: str, *args: Any) -> None:
             if not (args and str(args[0]).startswith("GET /health")):
@@ -354,6 +634,9 @@ def main() -> None:
         stage_mbps=float(os.environ.get("BLAST_STAGE_MBPS", "40")),
         snapshot=os.environ.get("BLAST_FETCH_SNAPSHOT") or None,
         streams=int(os.environ.get("BLAST_FETCH_STREAMS", "8")),
+        batch_max=int(os.environ.get("BLAST_BATCH_MAX", "16")),
+        batch_wait_s=float(os.environ.get("BLAST_BATCH_WAIT_S", "2")),
+        batch_spread=os.environ.get("BLAST_BATCH_SPREAD", "auto"),
     )
     threading.Thread(target=service.keep_current, daemon=True, name="stage").start()
     server = ThreadingHTTPServer(("", int(os.environ.get("PORT", "8080"))), make_handler(service))
