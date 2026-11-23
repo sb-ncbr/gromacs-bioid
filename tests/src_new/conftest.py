@@ -42,3 +42,13 @@ def _no_traffic_recording(monkeypatch):
     GeoIP database is never downloaded; test_traffic.py turns recording on."""
     monkeypatch.setenv("BAT3_TRAFFIC", "0")
     monkeypatch.setenv("BAT3_GEOIP_REFRESH", "0")
+
+
+@pytest.fixture(autouse=True)
+def _clear_cancellation_cache():
+    """2026-11-23: cancellation.is_cancelled caches per run id (True for
+    good); tests reuse run ids, so no answer may leak into the next test."""
+    from src_new import cancellation
+    cancellation._cache.clear()
+    yield
+    cancellation._cache.clear()

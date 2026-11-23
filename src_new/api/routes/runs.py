@@ -609,8 +609,15 @@ async def delete_run(
     require_owner(pipeline, owner_token, "deleted")
     # A queued or running run's worker would write results.json again after
     # the delete and leave a half run behind (2026-11-17): cancel it first.
-    if pipeline.get("status") in ("queued", "running", "pending", "created", "retry_scheduled"):
+    # 2026-11-23: once cancelled it may be deleted even while its worker is
+    # still stopping (the status can read "running" for a few seconds); the
+    # worker then writes nothing more and removes its leftovers.
+    from src_new import cancellation
+    if pipeline.get("status") in ("queued", "running", "pending", "created", "retry_scheduled") \
+            and not cancellation.is_cancelled(run_id, run_dir, fresh=True):
         raise HTTPException(status_code=409, detail="This run is still queued or running: cancel it first, then delete it.")
+    # 2026-11-23: a worker still on this run stops (cancellation.py)
+    cancellation.request_cancel(run_id, run_dir)
     shutil.rmtree(run_dir)
     return {"message": f"Run '{run_id}' deleted successfully"}
 
@@ -947,6 +954,12 @@ async def cancel_run(
         results_manager._payload["pipeline"].setdefault("retry", {})["cancelled"] = True
         results_manager.finish_run("success")
         return CancelRunResponse(run_id=run_id, status="success")
+
+    # 2026-11-23: the threads pool cannot terminate a task (revoke below only
+    # drops a queued message): the running pipeline stops itself
+    # (cancellation.py).
+    from src_new import cancellation
+    cancellation.request_cancel(run_id, get_runs_dir() / run_id)
 
     # Get Celery task result and revoke if running/pending
     result = celery.AsyncResult(run_id)

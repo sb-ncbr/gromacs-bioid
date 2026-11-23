@@ -108,6 +108,12 @@ def plan(payload: dict[str, Any], why: str, runs_dir: Optional[Path] = None,
     "incomplete" or "worker_lost". Never raises."""
     try:
         pipeline = payload.get("pipeline") or {}
+        # 2026-11-23: a cancelled run is never retried (cancellation.py)
+        if pipeline.get("status") == "cancelled" or (pipeline.get("retry") or {}).get("cancelled"):
+            return None
+        from . import cancellation
+        if cancellation.is_cancelled(pipeline.get("run_id")):
+            return None
         lane = lane_of(pipeline)
         pol = policy(lane, runs_dir)
         if not pol["enabled"] or not pol.get(why):
@@ -164,6 +170,14 @@ def requeue(run_dir: Path, enqueue=None) -> bool:
     data = json.loads(results_path.read_text(encoding="utf-8"))
     pipeline = data.get("pipeline") or {}
     if pipeline.get("status") != STATUS:
+        return False
+    # 2026-11-23: cancelled after this attempt was scheduled: end it there
+    from . import cancellation
+    if cancellation.is_cancelled(run_dir.name, run_dir):
+        pipeline["status"] = "cancelled"
+        pipeline["retry"] = {**(pipeline.get("retry") or {}), "cancelled": True}
+        pipeline["finished_at"] = datetime.now(timezone.utc).isoformat()
+        _atomic_write(results_path, data)
         return False
     retry = pipeline.get("retry") or {}
     n = int(retry.get("attempt") or len(pipeline.get("attempts") or []) + 1)

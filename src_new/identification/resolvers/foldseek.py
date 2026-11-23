@@ -199,11 +199,13 @@ class Foldseek3DiResolver(IdentifierResolver):
                 logger.error(f"Foldseek createdb failed: {(createdb.stderr or '')[-300:]}")
                 return None
 
-            search = subprocess.run(
+            # 2026-11-23: killed when the run is cancelled (cancellation.py)
+            from ...cancellation import run_subprocess
+            search = run_subprocess(
                 [exe, "search", query_db, self._db_path, result_db, tmp_dir,
                  "--prefilter-mode", str(self.foldseek_config.prefilter_mode),
                  "--threads", str(self.foldseek_config.threads)],
-                capture_output=True, text=True,
+                text=True,
                 timeout=self.foldseek_config.search_timeout_s, cwd=tmp_dir,
             )
             if search.returncode != 0:
