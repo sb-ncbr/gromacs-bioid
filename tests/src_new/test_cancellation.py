@@ -164,12 +164,22 @@ def slow_service():
     """/search answers only after 60 s; records when a client hangs up."""
     hung_up = threading.Event()
 
+    def _hung_up(conn) -> bool:
+        """The client closed its end (an EOF is readable)."""
+        import select
+        import socket
+        try:
+            if not select.select([conn], [], [], 0)[0]:
+                return False
+            return conn.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT) == b""
+        except OSError:
+            return True
+
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
-            from src_new.blast_service import _client_gone
             self.rfile.read(int(self.headers.get("Content-Length") or 0))
             for _ in range(600):
-                if _client_gone(self.connection):
+                if _hung_up(self.connection):
                     hung_up.set()
                     return
                 time.sleep(0.1)
