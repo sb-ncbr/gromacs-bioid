@@ -111,6 +111,12 @@ if [ -n "$BACKEND" ]; then
     kubectl -n $NS set image deploy/bat3-repo-worker repo-worker=$IMG
     kubectl -n $NS set env deploy/bat3-repo-worker -c repo-worker BAT3_CODE_VERSION=git-$CODE
   fi
+  # Workers first, API last (2026-11-23): a new API may send messages only
+  # new workers understand (retries/requeues carry a dispatch id), while new
+  # workers accept everything an old API sends.
+  for d in bat3-ceitec-bat3-worker bat3-ui-worker ${REPO:+bat3-repo-worker}; do
+    kubectl -n $NS rollout status deploy/$d --timeout=1800s
+  done
   kubectl -n $NS set image deploy/bat3-ceitec-bat3-api api=$IMG
   kubectl -n $NS set env deploy/bat3-ceitec-bat3-api -c api BAT3_CODE_VERSION=git-$CODE
 fi
