@@ -36,7 +36,9 @@ spec:
         - name: BLAST_THREADS
           value: '8'
         - name: BLAST_SLOTS
-          value: '4'
+          value: '2'
+        - name: BLAST_BATCH_MAX
+          value: '64'
         - name: BLAST_STAGE_MBPS
           value: '40'
         - name: BLAST_FETCH_SNAPSHOT
@@ -45,7 +47,7 @@ spec:
           value: '0'
         - name: TZ
           value: Europe/Prague
-        image: cerit.io/tomsko/bat3-validation-api@sha256:f7f554cd0d35700f56df36dfc59b19c3a9ee5e5f15a71ebbc7d7729d3e344a55
+        image: cerit.io/tomsko/bat3-validation-api@sha256:e18fcf2d84aea7db0e0b46e8ed8afa8ec5de5f6f3720f82ef65ef20ef5675763
         imagePullPolicy: IfNotPresent
         livenessProbe:
           failureThreshold: 6

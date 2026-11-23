@@ -61,7 +61,7 @@ spec:
         - name: BLASTDB_MEM_MAP
           value: '0'
         - name: BAT3_CODE_VERSION
-          value: git-c1804a55a
+          value: git-29e85492e
         - name: BAT3_ADHOC_DIR
           value: /app/runs/_adhoc
         - name: BAT3_IDENTIFIERS_CACHE_DIR
@@ -73,7 +73,7 @@ spec:
               name: bioid-api-secrets
         - name: BAT3_SHARED_CACHE_URL
           value: redis://bioid-cache-redis:6379/0
-        image: cerit.io/tomsko/bat3-validation-api@sha256:f7f554cd0d35700f56df36dfc59b19c3a9ee5e5f15a71ebbc7d7729d3e344a55
+        image: cerit.io/tomsko/bat3-validation-api@sha256:e18fcf2d84aea7db0e0b46e8ed8afa8ec5de5f6f3720f82ef65ef20ef5675763
         imagePullPolicy: Always
         name: worker
         resources:
@@ -108,7 +108,7 @@ spec:
         - if [ -f /seed/resolver_cache.sqlite3 ]; then cp -n /seed/resolver_cache.sqlite3
           /app/cache/resolver_cache.sqlite3 || true; chmod 666 /app/cache/resolver_cache.sqlite3
           2>/dev/null || true; fi; true
-        image: cerit.io/tomsko/bat3-validation-api@sha256:f7f554cd0d35700f56df36dfc59b19c3a9ee5e5f15a71ebbc7d7729d3e344a55
+        image: cerit.io/tomsko/bat3-validation-api@sha256:e18fcf2d84aea7db0e0b46e8ed8afa8ec5de5f6f3720f82ef65ef20ef5675763
         imagePullPolicy: IfNotPresent
         name: cache-seed
         resources: {}
