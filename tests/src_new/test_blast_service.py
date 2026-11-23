@@ -159,7 +159,7 @@ def test_service_timeout_is_a_blast_timeout(server, blastp, tmp_path, monkeypatc
     from src_new.identification.base import IdentifierResolutionError
     s, url, db = server
     s.stage()
-    monkeypatch.setattr(s, "_run", lambda release, batch: [(504, {"error": "BLAST ran out of time"})] * len(batch))
+    monkeypatch.setattr(s, "_run", lambda release, batch, members=None: [(504, {"error": "BLAST ran out of time"})] * len(batch))
     r = _resolver(db, url, blastp)
     with pytest.raises(IdentifierResolutionError, match="BLAST timed out"):
         r._run_blast_local("MKVLAAGIVGLLLA", str(tmp_path))
@@ -464,11 +464,24 @@ def test_waiting_searches_run_as_one_batch_and_get_their_own_report(fake_batch):
         assert search["query_id"] == "Query_1" and search["hits"][0]["q"] == q
         assert len(body["output"]["BlastOutput2"]) == 1 and body["release"] == "nr-1"
     runs = logged()
-    assert len(runs) == 1 and sorted(runs[0]["queries"]) == sorted(queries)
-    assert runs[0]["batch_size"] == str(sum(len(q) + 1 for q in queries))  # one pass over the database
+    # 2026-11-23: the repeated query is searched once, both callers get its report
+    unique = sorted(set(queries))
+    assert len(runs) == 1 and sorted(runs[0]["queries"]) == unique
+    assert runs[0]["batch_size"] == str(sum(len(q) + 1 for q in unique))  # one pass over the database
+    assert answers[0][1]["output"] == answers[3][1]["output"]
     h = s.health()
-    assert h["batches"] == 1 and h["batched"] == 4 and h["batch_mean"] == 4.0
+    assert h["batches"] == 1 and h["batched"] == 3 and h["batch_mean"] == 3.0 and h["deduplicated"] == 1
     assert h["searches"] == 4 and h["running"] == h["waiting"] == h["processes"] == 0
+
+
+def test_identical_searches_run_once(fake_batch):
+    make, logged = fake_batch
+    s = make(batch_max=16, batch_wait_s=1.0)
+    answers = _together(s, [_req("MKVLAAG") for _ in range(5)])
+    assert [code for code, _ in answers] == [200] * 5
+    runs = logged()
+    assert len(runs) == 1 and runs[0]["queries"] == ["MKVLAAG"]
+    assert s.health()["deduplicated"] == 4 and s.health()["searches"] == 5
 
 
 def test_incompatible_searches_are_not_batched(fake_batch):

@@ -86,6 +86,23 @@ def skipped_deferred(results, segment: str, deferred_names, config: RunConfig) -
             if exact & set(_EXACT_SOURCES_FOR_DEFERRED.get(name, ()))}
 
 
+def _has_hits(results, segment: str, resolver: str) -> bool:
+    """Whether `resolver` (identity or similarity listing) found anything for
+    this segment."""
+    try:
+        block = results.get_data(f"identifiers/{segment}") or {}
+    except Exception:
+        return False
+    for gen_entries in block.values() if isinstance(block, dict) else ():
+        if not isinstance(gen_entries, dict):
+            continue
+        for name in (resolver, f"{resolver}@sim"):
+            entry = gen_entries.get(name)
+            if isinstance(entry, dict) and entry.get("hits"):
+                return True
+    return False
+
+
 def _enabled(config: RunConfig, name: str) -> bool:
     ids = config.identifiers
     return bool(getattr(ids, name, False) or getattr(ids, f"{name}_similarity", False))
@@ -275,8 +292,23 @@ def run_supplementary_pass(
                         deadline_epoch, budget_exceeded, _sifts if sifts_on else None)
     if deferred:
         names = [r.name for r in deferred]
-        for segment, errs in _sweep(results, items, deferred, config, signature_type_map,
-                                    working_directory, deadline_epoch, budget_exceeded,
-                                    skip=lambda seg: skipped_deferred(results, seg, names, config)).items():
-            errors.setdefault(segment, []).extend(errs)
+        # 2026-11-23: nt (1.1 TB, a ~30 min disk pass) only where core_nt, its
+        # curated 261 GB subset, found nothing: in 300 Deep runs nt never found
+        # anything core_nt missed. nt then sweeps after the rest.
+        nt_last = (bool(getattr(config.identifiers, "blast_nt_only_without_core_nt", True))
+                   and {"blast_nt", "blast_core_nt"} <= set(names))
+        sweeps = ([[r for r in deferred if r.name != "blast_nt"],
+                   [r for r in deferred if r.name == "blast_nt"]] if nt_last else [deferred])
+        for group in sweeps:
+            nt_sweep = nt_last and group[0].name == "blast_nt"
+
+            def skip(seg, nt_sweep=nt_sweep):
+                out = skipped_deferred(results, seg, names, config)
+                if nt_sweep and _has_hits(results, seg, "blast_core_nt"):
+                    out.add("blast_nt")
+                return out
+            for segment, errs in _sweep(results, items, group, config, signature_type_map,
+                                        working_directory, deadline_epoch, budget_exceeded,
+                                        skip=skip).items():
+                errors.setdefault(segment, []).extend(errs)
     return [{"fragment_name": name, "errors": errors[name]} for name, _s in items if name in errors]

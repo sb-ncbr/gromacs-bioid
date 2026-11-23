@@ -526,3 +526,48 @@ def test_skip_toggle_is_not_a_per_run_database_switch():
     from src_new.config.presets import TUNABLE
     assert "skip_deferred_on_exact" not in TUNABLE["identifiers"]
     assert RunConfig.from_ini_path(REPO / "config.ini").identifiers.skip_deferred_on_exact is True
+
+
+def test_nt_only_where_core_nt_found_nothing(tmp_path, monkeypatch):
+    """2026-11-23: nt (1.1 TB) runs after the other deferred databases and only
+    for a segment core_nt found nothing for."""
+    from src_new.identification import registry, supplementary
+    from src_new.identification.base import IdentifierResolver
+    calls = []
+
+    class Fake(IdentifierResolver):
+        accepted_signatures = ["residue_sequence_nucleic"]
+
+        def __init__(self, name):
+            super().__init__(RunConfig())
+            self.name = name
+
+        def _is_applicable(self, signature):
+            return True
+
+        def _resolve_identity(self, signature, wd):
+            calls.append((self.name, signature))
+            return []
+
+        def _resolve_similarity(self, signature, wd):
+            return []
+
+    monkeypatch.setattr(supplementary, "get_supplementary_resolvers", lambda c: [])
+    monkeypatch.setattr(registry, "get_deferred_resolvers",
+                        lambda c: [Fake("blast_nt"), Fake("blast_core_nt")])
+    results = ResultsManager(tmp_path / "r.json")
+    # A: core_nt found a similar sequence; B: nothing anywhere
+    results.set_data("identifiers/A/fasta_map_nucleic/blast_core_nt@sim", {
+        "hit_type": "similarity", "hits": ["XM_1"], "hits_metadata": {}})
+    items = [(seg, {"fasta_map_nucleic": f"SEQ{seg}"}) for seg in "AB"]
+    sig = {"fasta_map_nucleic": "residue_sequence_nucleic"}
+    cfg = RunConfig()
+    run_supplementary_pass(results, items, cfg, sig, str(tmp_path), None, lambda: False)
+    assert calls == [("blast_core_nt", "SEQA"), ("blast_core_nt", "SEQB"), ("blast_nt", "SEQB")]
+    assert "blast_nt" in results.get_data("identification/_meta/skipped_deferred/A")
+
+    calls.clear()
+    cfg.identifiers.blast_nt_only_without_core_nt = False
+    run_supplementary_pass(results, items, cfg, sig, str(tmp_path), None, lambda: False)
+    assert sorted(calls) == [("blast_core_nt", "SEQA"), ("blast_core_nt", "SEQB"),
+                             ("blast_nt", "SEQA"), ("blast_nt", "SEQB")]

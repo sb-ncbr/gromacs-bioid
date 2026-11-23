@@ -42,8 +42,11 @@ A deferred database is **skipped** for a molecule that a first-pass search
 already matched exactly (≥ 0.99 identity and coverage in PDB, Swiss-Prot or
 UniProt for nr; PDB nucleic for nt/core_nt): it would only re-find the same
 sequence as GenBank duplicates, at hours of reading nr over NFS
-(`[identifiers] skip_deferred_on_exact`, on). BLAST uses 2 threads per search
-for UI runs.
+(`[identifiers] skip_deferred_on_exact`, on). nt is searched last, and only
+for a molecule core_nt found nothing for: core_nt is NCBI's curated subset of
+nt, and in 300 Deep runs nt never found anything core_nt missed
+(`[identifiers] blast_nt_only_without_core_nt`, on). BLAST uses 2 threads per
+search for UI runs.
 
 ## Main databases (first pass)
 

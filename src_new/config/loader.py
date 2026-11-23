@@ -238,6 +238,9 @@ class IdentifiersConfig:
     # matched exactly (>= 0.99 identity and coverage): nr/nt/core_nt then only
     # re-find the same sequence. No effect when nothing is deferred.
     skip_deferred_on_exact: bool = True
+    # 2026-11-23: search nt only for a segment core_nt (its curated subset)
+    # found nothing for; nt then runs after the other deferred databases.
+    blast_nt_only_without_core_nt: bool = True
     # Local SQLite indexes (scripts/build_reference_indexes.py,
     # k8s/reference-indexes-job.yaml). A missing file = resolver inactive.
     sifts_db: str = "/app/databases/sifts/sifts.sqlite"

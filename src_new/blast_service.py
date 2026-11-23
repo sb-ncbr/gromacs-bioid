@@ -143,7 +143,8 @@ class Service:
         self.counts = {"running": 0, "waiting": 0, "searches": 0, "timeouts": 0, "failures": 0,
                        # 2026-11-23: clients that left, BLAST processes killed for
                        # them, processes running, processes run and their searches
-                       "abandoned": 0, "killed": 0, "processes": 0, "batches": 0, "batched": 0}
+                       "abandoned": 0, "killed": 0, "processes": 0, "batches": 0, "batched": 0,
+                       "deduplicated": 0}
         self.program = "blastp" if self._is_protein() else "blastn"
         self.blast_version = self._version()
         complete = [d.name for d in self._copies() if self._complete(d.name)]
@@ -427,29 +428,49 @@ class Service:
         return self._spread[release]
 
     def _run_batch(self, batch: list[_Search]) -> None:
+        # 2026-11-23: identical queries (copies of one molecule in different
+        # runs) are searched once; every one of them gets that answer
+        unique: list[_Search] = []
+        index: dict[str, int] = {}
+        for s in batch:
+            if s.query not in index:
+                index[s.query] = len(unique)
+                unique.append(s)
+        if len(unique) < len(batch):
+            with self.cv:
+                self.counts["deduplicated"] += len(batch) - len(unique)
         try:
-            answers = self._run(batch[0].release, batch)
+            answers = self._run(batch[0].release, unique, members=batch)
         except Exception as exc:
-            log.exception("BLAST batch of %d failed", len(batch))
-            answers = [(500, {"error": f"BLAST service: {exc}"})] * len(batch)
-        alone = []
-        for s, answer in zip(batch, answers):
+            log.exception("BLAST batch of %d failed", len(unique))
+            answers = [(500, {"error": f"BLAST service: {exc}"})] * len(unique)
+        alone: dict[int, list[_Search]] = {}
+        for s in batch:
+            answer = answers[index[s.query]]
             if answer is None:
-                alone.append(s)
+                alone.setdefault(index[s.query], []).append(s)
             else:
                 self._finish(s, *answer, _COUNT.get(answer[0]))
-        for s in alone:
+        for i, group in alone.items():
             # BLAST rejected or could not score this query in the batch: its
             # own answer (an error, or a message worded differently)
-            if s.state == "running":
-                answer = self._run(s.release, [s])[0] or (500, {"error": "no answer"})
-                self._finish(s, *answer, _COUNT.get(answer[0]))
+            waiting = [s for s in group if s.state == "running"]
+            if waiting:
+                answer = self._run(waiting[0].release, [unique[i]], members=waiting)[0] \
+                    or (500, {"error": "no answer"})
+                for s in waiting:
+                    self._finish(s, *answer, _COUNT.get(answer[0]))
 
-    def _run(self, release: str, batch: list[_Search]) -> list[Optional[tuple[int, dict[str, Any]]]]:
+    def _run(self, release: str, batch: list[_Search],
+             members: Optional[list[_Search]] = None) -> list[Optional[tuple[int, dict[str, Any]]]]:
         """Run one BLAST process for the batch: an answer per search, or None
         for a search to run again on its own. One search: its query on stdin,
         as before 2026-11-23; more: a FASTA with empty deflines (BLAST then
-        names and titles each query as it does a lone one, Query_<n>)."""
+        names and titles each query as it does a lone one, Query_<n>).
+        `members` are all the searches waiting on these queries (duplicates
+        included): BLAST runs while any of them waits, up to their latest
+        deadline."""
+        members = members or batch
         tmp = tempfile.mkdtemp(prefix="blast-")
         out, err = os.path.join(tmp, "out.json"), os.path.join(tmp, "stderr")
         with open(os.path.join(tmp, "query"), "w") as f:
@@ -469,7 +490,7 @@ class Service:
             self.counts["batches"] += 1
             self.counts["batched"] += len(batch)
         started = time.time()
-        deadline = max(s.deadline for s in batch)
+        deadline = max(s.deadline for s in members)
         try:
             with open(os.path.join(tmp, "query")) as qf, open(err, "w") as ef:
                 proc = subprocess.Popen(cmd, stdin=qf, stdout=subprocess.DEVNULL, stderr=ef, env=env)
@@ -480,7 +501,7 @@ class Service:
                         break
                     except subprocess.TimeoutExpired:
                         with self.cv:
-                            wanted = any(s.state == "running" for s in batch)
+                            wanted = any(s.state == "running" for s in members)
                         if not wanted or time.time() >= deadline:
                             proc.kill()
                             proc.wait()
