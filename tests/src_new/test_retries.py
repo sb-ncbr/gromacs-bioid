@@ -87,10 +87,11 @@ def test_schedule_then_requeue_keeps_the_run_id(runs_dir):
 
     sent = []
     assert retries.requeue(run, enqueue=lambda *a: sent.append(a))
-    assert sent == [("r1", str(run / "input"), str(run / "results.json"), str(run / "config.ini"),
-                     "validation.repo.celery")]
     fresh = json.loads((run / "results.json").read_text())
     p = fresh["pipeline"]
+    # 2026-11-23: the task carries the run's new dispatch
+    assert sent == [("r1", str(run / "input"), str(run / "results.json"), str(run / "config.ini"),
+                     "validation.repo.celery", p["dispatch"])]
     assert p["status"] == "queued" and p["run_id"] == "r1" and p["owner_token_sha256"] == "abc"
     assert p["queue"] == "repository" and "retry" not in p and "started_at" not in p
     assert [a["attempt"] for a in p["attempts"]] == [1]

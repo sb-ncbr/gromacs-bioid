@@ -144,7 +144,7 @@ Other keys:
 | `BAT3_RUNS_DIR`, `BAT3_ADHOC_DIR`, `BAT3_ADHOC_RETENTION_DAYS` | API, workers | run and RCSB-query directories |
 | `BAT3_CODE_VERSION` | API, workers | stamped into `pipeline.code_version` and `/capabilities` (`git-<sha>`, set by the release) |
 | `BAT3_EXAMPLE_RUNS`, `BAT3_TYPICAL_DURATION_MIN/MAX` | API | front-page examples, advertised run duration |
-| `BAT3_RUN_REAPER`, `BAT3_RUN_REAPER_INTERVAL_S` | API | zombie-run reaper |
+| `BAT3_RUN_REAPER`, `BAT3_RUN_REAPER_INTERVAL_S`, `BAT3_RUN_REAPER_FAST_INTERVAL_S` | API | zombie-run reaper (full sweep 300 s, stale-heartbeat check 60 s) |
 | `PIPELINE_RESUME_STAGES` | workers | `0` disables skipping stages that already succeeded |
 | `SPIN_DEBUG` | workers | `1` dumps thread stacks every 120 s (diagnostics; set on the UI workers) |
 | `VALIDATION_FILES_ROOT` | API | NFS root for `/files/validation-*` |

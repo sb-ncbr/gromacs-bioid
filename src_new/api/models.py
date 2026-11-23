@@ -150,6 +150,17 @@ class AttemptInfo(BaseModel):
     gaps: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class RestartInfo(BaseModel):
+    """2026-11-23: a time the run's worker shut down mid-run (redeploy,
+    scale-down) and the run was queued again under the same run id. Not an
+    attempt: it is not counted against the automatic retries."""
+
+    restart: int
+    reason: str = Field("worker_restart", description="worker_restart")
+    started_at: Optional[str] = Field(None, description="When the interrupted execution started (null: before it did)")
+    stopped_at: Optional[str] = Field(None, description="When it was stopped and the run queued again")
+
+
 class RunStatusResponse(BaseModel):
     """Full run status response."""
 
@@ -171,6 +182,9 @@ class RunStatusResponse(BaseModel):
     retry: Optional[RetryInfo] = Field(
         None, description="Set while the run waits for its next automatic attempt (status shows queued)")
     attempts: List[AttemptInfo] = Field(default_factory=list, description="Earlier automatic attempts")
+    restarts: List[RestartInfo] = Field(
+        default_factory=list,
+        description="Times the run's worker restarted mid-run and the run was queued again under the same id")
     rerun_of: Optional[str] = Field(None, description="Run this one re-runs")
     superseded_by: Optional[str] = Field(None, description="Newer run of the same input, by its owner")
 

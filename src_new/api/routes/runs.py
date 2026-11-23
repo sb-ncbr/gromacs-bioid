@@ -33,6 +33,7 @@ from ..models import (
     IncompleteItem,
     RetryInfo,
     AttemptInfo,
+    RestartInfo,
     TaskInfo,
     WarningItem,
     ErrorItem,
@@ -856,6 +857,9 @@ async def get_run_status(run_id: RunId, since: Optional[str] = None) -> RunStatu
                if pipeline_data.get("status") == retries.STATUS and pipeline_data.get("retry") else None),
         attempts=[AttemptInfo(**{k: a.get(k) for k in AttemptInfo.model_fields if k in a})
                   for a in pipeline_data.get("attempts") or [] if isinstance(a, dict)],
+        # 2026-11-23: worker restarts (retries.restart)
+        restarts=[RestartInfo(**{k: r.get(k) for k in RestartInfo.model_fields if k in r})
+                  for r in pipeline_data.get("restarts") or [] if isinstance(r, dict) and "restart" in r],
         rerun_of=pipeline_data.get("rerun_of"),
         superseded_by=pipeline_data.get("superseded_by"),
     )

@@ -58,9 +58,13 @@ the unprefixed routes below are reachable only inside the cluster.
 | `GET /files/adhoc/{name}` | temporary query structures for RCSB (below) |
 | `GET /files/validation-<eid>-<ts>/input/<name>` | campaign input files for RCSB (below) |
 
-The API also runs the zombie-run reaper (marks runs failed whose Celery task
-vanished; `BAT3_RUN_REAPER=0` disables, `BAT3_RUN_REAPER_INTERVAL_S`
-default 300) under a Redis leader lock.
+The API also runs the zombie-run reaper (a running run whose heartbeat is
+older than 3 min lost its worker: retried at once where the queue's automatic
+retries allow it, else failed; `BAT3_RUN_REAPER=0` disables,
+`BAT3_RUN_REAPER_INTERVAL_S` default 300 for the full sweep,
+`BAT3_RUN_REAPER_FAST_INTERVAL_S` default 60 for the stale-heartbeat check)
+under a Redis leader lock. Workers shutting down (SIGTERM) re-queue their
+running runs themselves under the same run id.
 
 ## The RCSB file-serving contract
 
