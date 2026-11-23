@@ -109,7 +109,9 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      terminationGracePeriodSeconds: 30
+      # 2026-11-23: a shutting-down worker stops its pipelines and re-queues
+      # their runs under the same run id (src_new/api/tasks.py), ~20 s at most
+      terminationGracePeriodSeconds: 60
       volumes:
       - name: runs-data
         persistentVolumeClaim:

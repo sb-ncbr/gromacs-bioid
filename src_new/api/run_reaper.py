@@ -32,6 +32,14 @@ Reaper semantics (bughunt BH-005, 2026-10-27):
   previous inspect-based two-miss rule.
 - Two-miss hysteresis absorbs transient inspection gaps (broker restart,
   inspect timeouts) without flapping runs to failed.
+- 2026-11-23: a lost worker's run is retried AT ONCE where the queue's
+  retry policy allows it (retries.plan; it counts as an attempt, so an
+  input that kills workers stops at max_attempts), else failed as before.
+  A heartbeat is stale after 3 min (the task thread touches it every 30 s,
+  independent of the pipeline child), and between full sweeps a fast sweep
+  of the main runs dir (FAST_INTERVAL_S, status read from the start of
+  results.json) looks only for running runs with a stale heartbeat. A
+  worker shut down normally re-queues its runs itself (api/tasks.py).
 - Sticky terminal: run_pipeline_task exits with "skipped_terminal" when
   the run already reached a terminal state, so an acks_late redelivery
   cannot flip a reaped/failed run back to running.
@@ -62,23 +70,42 @@ STATUS_TERMINAL = frozenset(
 )
 MISSES_TO_FAIL = 2
 DEFAULT_INTERVAL_S = 300
+# 2026-11-23: the stale-heartbeat check of the main runs dir runs this often
+# (a full sweep reads every results.json of both run roots: minutes)
+FAST_INTERVAL_S = 60
 RETENTION_INTERVAL_S = 3600
 RETENTION_STATUS_KEY = "bioid:retention:last"
 LEADER_LOCK_KEY = "bat3:run_reaper:leader"
 HEARTBEAT_NAME = "heartbeat"
-HEARTBEAT_STALE_S = 900.0  # 15 min without a touch -> zombie
+# 2026-11-23: was 900 s. The heartbeat is touched every 30 s by the task's
+# own thread (api/tasks.py), whatever the pipeline child is doing, and right
+# when the task starts: 3 min without a touch is a dead worker.
+HEARTBEAT_STALE_S = 180.0
 
 
-def read_run_status(results_path: Path) -> str | None:
-    """Read pipeline.status from a run's results.json (None if unreadable)."""
+def read_pipeline(results_path: Path) -> dict | None:
+    """The pipeline section of a run's results.json (None if unreadable)."""
     try:
         with open(results_path, encoding="utf-8") as f:
             payload = json.load(f)
     except Exception:
         return None
     pipeline = payload.get("pipeline") if isinstance(payload, dict) else None
+    return pipeline if isinstance(pipeline, dict) else {}
+
+
+def read_run_status(results_path: Path) -> str | None:
+    """Read pipeline.status from a run's results.json (None if unreadable)."""
+    pipeline = read_pipeline(results_path)
     status = (pipeline or {}).get("status")
     return status if isinstance(status, str) else None
+
+
+def _quick_status(results_path: Path) -> str | None:
+    """2026-11-23: pipeline.status from the start of results.json (where the
+    API and the executor write it), else from the whole file."""
+    from ..cancellation import _status_head
+    return _status_head(results_path) or read_run_status(results_path)
 
 
 def mark_worker_lost(results_path: Path, *, sweep_count: int,
@@ -102,7 +129,8 @@ def mark_worker_lost(results_path: Path, *, sweep_count: int,
         rm.finish_run("cancelled")
         return True
     # A queue with automatic retries (retries.py) gives the run another
-    # attempt under the same id instead of failing it.
+    # attempt under the same id instead of failing it (2026-11-23: due at
+    # once; the sweep re-queues it right away, _reap_stale).
     from .. import retries
     retry = retries.plan(rm._payload, "worker_lost")
     if retry:
@@ -129,6 +157,52 @@ def mark_worker_lost(results_path: Path, *, sweep_count: int,
         critical=True,
     )
     return True
+
+
+def _reap_stale(results_path: Path, hb_age: float, misses: dict[str, int],
+                summary: dict) -> None:
+    """A running run whose heartbeat is stale: its worker is gone. Retry it
+    at once where the queue allows (2026-11-23), else fail it."""
+    run_id = results_path.parent.name
+    if mark_worker_lost(
+        results_path,
+        sweep_count=misses.pop(run_id, 0) + 1,
+        cause=(
+            f"pipeline heartbeat stale for {hb_age:.0f} s "
+            f"(> {HEARTBEAT_STALE_S:.0f} s): the worker running it was lost. "
+            "Inputs preserved — retried automatically where the queue "
+            "allows it, otherwise rerun the run."
+        ),
+    ):
+        summary["zombies_failed"].append(run_id)
+        logger.error(
+            "run_reaper: run %s lost its worker (stale heartbeat, %.0f s)",
+            run_id, hb_age,
+        )
+        if read_run_status(results_path) == "retry_scheduled":
+            _requeue_if_due(results_path.parent, summary)
+
+
+def sweep_lost_workers(runs_dir: Path, misses: dict[str, int]) -> dict:
+    """2026-11-23: the fast sweep: only running runs of `runs_dir` with a
+    stale heartbeat (no inspect, no retries due, no other roots)."""
+    summary = {"scanned": 0, "zombies_failed": [], "errors": 0}
+    try:
+        run_dirs = list(runs_dir.iterdir())
+    except OSError as exc:
+        logger.warning("run_reaper: runs dir %s unreadable: %s", runs_dir, exc)
+        return summary
+    for run_dir in run_dirs:
+        if run_dir.name == ADHOC_DIR_NAME or run_dir.name.startswith("_"):
+            continue
+        results_path = run_dir / "results.json"
+        if _quick_status(results_path) not in STATUS_ZOMBIE_CANDIDATES:
+            continue
+        summary["scanned"] += 1
+        hb_age = heartbeat_age(results_path)
+        if hb_age is not None and hb_age > HEARTBEAT_STALE_S:
+            _reap_stale(results_path, hb_age, misses, summary)
+    return summary
 
 
 def _requeue_if_due(run_dir: Path, summary: dict) -> None:
@@ -303,21 +377,7 @@ def sweep(runs_dir: Path, live_task_ids: set[str], misses: dict[str, int]) -> di
             if hb_age <= HEARTBEAT_STALE_S:
                 misses.pop(run_id, None)
                 continue
-            if mark_worker_lost(
-                results_path,
-                sweep_count=misses.pop(run_id, 0) + 1,
-                cause=(
-                    f"pipeline heartbeat stale for {hb_age:.0f} s "
-                    f"(> {HEARTBEAT_STALE_S:.0f} s); marked failed by "
-                    "zombie-run reconciler. Inputs preserved — rerun the "
-                    "run to retry."
-                ),
-            ):
-                summary["zombies_failed"].append(run_id)
-                logger.error(
-                    "run_reaper: run %s marked failed (stale heartbeat, "
-                    "%.0f s)", run_id, hb_age,
-                )
+            _reap_stale(results_path, hb_age, misses, summary)
             continue
         # no heartbeat (legacy/transition): previous inspect-based rule
         if run_id in live_task_ids:
@@ -332,6 +392,8 @@ def sweep(runs_dir: Path, live_task_ids: set[str], misses: dict[str, int]) -> di
                     "run_reaper: run %s marked failed (worker_lost, %d sweeps)",
                     run_id, count,
                 )
+                if read_run_status(results_path) == "retry_scheduled":
+                    _requeue_if_due(run_dir, summary)
             misses.pop(run_id, None)
 
     # Forget candidates that vanished from disk entirely
@@ -359,20 +421,41 @@ def collect_live_task_ids(celery_app, timeout: float = 10.0) -> set[str]:
     return ids
 
 
+def _lead(redis_client, identity: str, px: int) -> bool:
+    """2026-11-23: take the leader lock, or keep it when this process holds
+    it (SET NX alone made the leader miss every other tick: its own key
+    outlived the interval)."""
+    if redis_client.set(LEADER_LOCK_KEY, identity, nx=True, px=px):
+        return True
+    holder = redis_client.get(LEADER_LOCK_KEY)
+    if holder is not None and (holder.decode() if isinstance(holder, bytes) else holder) == identity:
+        redis_client.pexpire(LEADER_LOCK_KEY, px)
+        return True
+    return False
+
+
 async def reaper_loop(celery_app, runs_dir: Path, redis_url: str,
-                      interval_s: int = DEFAULT_INTERVAL_S) -> None:
-    """Forever-loop driver. Redis leader lock: exactly one sweeper cluster-wide."""
+                      interval_s: int = DEFAULT_INTERVAL_S,
+                      fast_s: int = FAST_INTERVAL_S) -> None:
+    """Forever-loop driver. Redis leader lock: exactly one sweeper cluster-wide.
+    2026-11-23: a full sweep every `interval_s`, the fast stale-heartbeat
+    sweep (sweep_lost_workers) every `fast_s` in between."""
     redis_client = redis_lib.from_url(redis_url, socket_timeout=10)
     misses: dict[str, int] = {}
     last_retention = 0.0
+    last_full = None
+    tick = max(1, min(fast_s, interval_s))
     identity = f"{os.uname().nodename}:{os.getpid()}"
-    logger.info("run_reaper: started (interval=%ss, runs=%s)", interval_s, runs_dir)
+    logger.info("run_reaper: started (interval=%ss, fast=%ss, runs=%s)", interval_s, tick, runs_dir)
     while True:
         try:
-            got_lock = redis_client.set(
-                LEADER_LOCK_KEY, identity, nx=True, px=int(interval_s * 1.5 * 1000)
-            )
-            if got_lock:
+            got_lock = _lead(redis_client, identity, int(max(interval_s, tick) * 1.5 * 1000))
+            if got_lock and last_full is not None and time.monotonic() - last_full < interval_s:
+                summary = await asyncio.to_thread(sweep_lost_workers, runs_dir, misses)
+                if summary["zombies_failed"]:
+                    logger.error("run_reaper fast sweep: %s", summary)
+            elif got_lock:
+                last_full = time.monotonic()
                 live = await asyncio.to_thread(collect_live_task_ids, celery_app)
                 summary = await asyncio.to_thread(
                     sweep_all_dirs, runs_dir, live, misses)
@@ -404,7 +487,7 @@ async def reaper_loop(celery_app, runs_dir: Path, redis_url: str,
                         await asyncio.to_thread(traffic.refresh_geoip)
         except Exception as exc:
             logger.warning("run_reaper sweep failed: %s", exc)
-        await asyncio.sleep(interval_s)
+        await asyncio.sleep(tick)
 
 
 def start_reaper(celery_app, runs_dir: Path) -> asyncio.Task | None:
@@ -414,4 +497,5 @@ def start_reaper(celery_app, runs_dir: Path) -> asyncio.Task | None:
         return None
     redis_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
     interval = int(os.environ.get("BAT3_RUN_REAPER_INTERVAL_S", DEFAULT_INTERVAL_S))
-    return asyncio.create_task(reaper_loop(celery_app, runs_dir, redis_url, interval))
+    fast = int(os.environ.get("BAT3_RUN_REAPER_FAST_INTERVAL_S", FAST_INTERVAL_S))
+    return asyncio.create_task(reaper_loop(celery_app, runs_dir, redis_url, interval, fast))

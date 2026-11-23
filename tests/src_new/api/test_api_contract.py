@@ -80,6 +80,8 @@ REGISTERED_ADDITIONS: dict[str, dict[str, set[str]]] = {
     "automatic_retries": {"RunSummaryResponse": {"attempt"}, "RunStatusResponse": {"retry", "attempts"}},
     # 2026-11-21 (mdval audit item 7): partial runs (status stays success)
     "run_completeness": {"RunSummaryResponse": {"completeness", "partial_stages"}},
+    # 2026-11-23: runs re-queued under the same id when their worker restarted
+    "worker_restarts": {"RunStatusResponse": {"restarts"}},
 }
 
 _MODELS = {

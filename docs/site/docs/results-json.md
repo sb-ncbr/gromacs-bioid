@@ -32,6 +32,7 @@ the REST API also serves the parts separately (`/molecules`, `/verification`,
 |---|---|
 | `pipeline.status` | `queued`, `running`, `success`, `failed` or `cancelled`. Results are final only at `success`; check `pipeline.completeness` too. |
 | `pipeline.completeness`, `pipeline.partial_stages` | Written when the run succeeds (runs before 21 November 2026 lack them; the API works them out). `complete`; `partial`: a stage ran out of its time limit, `partial_stages` names it (e.g. `["identify_molecules"]`) and molecules handled after the limit may have fewer matches or none; or `incomplete`: database lookups failed for a reason another attempt can fix (server error, busy, unreachable, no answer in time). `status` stays `success` in all three. |
+| `pipeline.attempts`, `pipeline.restarts` | Earlier automatic attempts (`reason` `incomplete` or `worker_lost`; their files under `attempts/<n>/`) and the times the processing server restarted mid-run and the run was queued again under the same run id (`reason` `worker_restart`, not an attempt; what the interrupted run wrote under `restarts/<n>/`). Absent when there were none. |
 | `pipeline.input_kind` | What was uploaded, e.g. `pdb`, `gromacs_tpr`, `amber`. |
 | `pipeline.preset` | The preset the run was submitted with, if any. |
 | `pipeline.retention` | `{"policy": "default"}` (30 days after the run finished), `{"policy": "days", "days": N}` or `{"policy": "preserve"}`. |

@@ -19,6 +19,17 @@ A retried run keeps its run id, so clients need no extra logic:
    the same run id goes back on its lane's queue.
 3. The last attempt ends normally. Lookups that succeeded before come from
    the shared resolver cache, so only the failed ones are repeated.
+
+2026-11-23: worker restarts. A worker shutting down (redeploy, scale-down,
+eviction: SIGTERM) stops its pipelines and puts their runs back on their
+queue at once under the same run id (restart(); api/tasks.py). That is not an
+attempt: no policy, no limit, pipeline.restarts records it. A worker killed
+outright (OOM, node loss) is found by the reaper and retried at once
+(worker_lost, no delay; it counts as an attempt, so an input that kills
+workers stops after max_attempts). Every re-queue writes a new
+pipeline.dispatch and sends it with the task: a message older than the run's
+latest dispatch (the broker redelivers a hard-killed worker's message after
+its visibility timeout) ends as skipped_superseded.
 """
 from __future__ import annotations
 
@@ -41,7 +52,10 @@ DEFAULT_POLICY = {"enabled": False, "max_attempts": 3, "delay_minutes": 60,
 LIMITS = {"max_attempts": (1, 10), "delay_minutes": (1, 24 * 60)}
 #: pipeline fields a retry keeps (the rest is the attempt's own)
 KEEP = ("name", "run_id", "run_name", "preset", "creator_ip_hash", "owner_token_sha256",
-        "retention", "queue", "rerun_of", "superseded_by", "attempts")
+        "retention", "queue", "rerun_of", "superseded_by", "attempts", "restarts")
+# 2026-11-23: a worker restart re-queues a run in these states (restart())
+RESTARTABLE = ("queued", "running", "created", "pending")
+RESTART_REASON = "worker_restart"
 
 
 def celery_queue(lane: str) -> Optional[str]:
@@ -131,9 +145,11 @@ def plan(payload: dict[str, Any], why: str, runs_dir: Optional[Path] = None,
             if not gaps:
                 return None
         now = time.time() if now is None else now
+        # 2026-11-23: a lost worker is retried at once (the delay is for
+        # services that failed; the reaper re-queues it in the same sweep)
+        delay_s = 0 if why == "worker_lost" else pol["delay_minutes"] * 60
         return {"attempt": attempt, "max_attempts": pol["max_attempts"], "reason": why,
-                "gaps": gaps[:20], "at": now + pol["delay_minutes"] * 60,
-                "scheduled_at": now}
+                "gaps": gaps[:20], "at": now + delay_s, "scheduled_at": now}
     except Exception as exc:
         log.warning("retries: could not plan a retry (%s); finishing normally", exc)
         return None
@@ -161,11 +177,35 @@ def _atomic_write(path: Path, data: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def new_dispatch() -> str:
+    """2026-11-23: id of one sending of a run's task (pipeline.dispatch)."""
+    return os.urandom(8).hex()
+
+
+def _fresh_pipeline(pipeline: dict[str, Any], **update: Any) -> dict[str, Any]:
+    """The fields a re-queued run keeps, status second (the reaper reads it
+    from the start of the file)."""
+    fresh = {k: pipeline[k] for k in ("name",) if k in pipeline}
+    fresh["status"] = "queued"
+    fresh.update({k: pipeline[k] for k in KEEP if k in pipeline and k != "name"})
+    fresh.update(update)
+    return fresh
+
+
+def _archive(run_dir: Path, archive: Path) -> None:
+    """Keep what an interrupted attempt wrote: results.json and the logs."""
+    archive.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(run_dir / "results.json", archive / "results.json")
+    for name in ("results.log", "results.debug.log"):
+        if (run_dir / name).exists():
+            shutil.move(str(run_dir / name), str(archive / name))
+
+
 def requeue(run_dir: Path, enqueue=None) -> bool:
     """Start the next attempt of a due run. True when re-queued.
 
-    `enqueue(run_id, input_dir, results_path, config_path, queue)` sends the
-    Celery task (default: run_pipeline_task.apply_async)."""
+    `enqueue(run_id, input_dir, results_path, config_path, queue, dispatch)`
+    sends the Celery task (default: run_pipeline_task.apply_async)."""
     results_path = run_dir / "results.json"
     data = json.loads(results_path.read_text(encoding="utf-8"))
     pipeline = data.get("pipeline") or {}
@@ -181,30 +221,24 @@ def requeue(run_dir: Path, enqueue=None) -> bool:
         return False
     retry = pipeline.get("retry") or {}
     n = int(retry.get("attempt") or len(pipeline.get("attempts") or []) + 1)
-    archive = run_dir / "attempts" / str(n)
-    archive.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(results_path, archive / "results.json")
-    for name in ("results.log", "results.debug.log"):
-        if (run_dir / name).exists():
-            shutil.move(str(run_dir / name), str(archive / name))
+    _archive(run_dir, run_dir / "attempts" / str(n))
 
     attempts = list(pipeline.get("attempts") or [])
     attempts.append({"attempt": n, "reason": retry.get("reason"), "gaps": retry.get("gaps") or [],
                      "started_at": pipeline.get("started_at"),
                      "finished_at": pipeline.get("attempt_finished_at"),
                      "results": f"attempts/{n}/results.json"})
-    fresh_pipeline = {k: pipeline[k] for k in KEEP if k in pipeline}
-    fresh_pipeline.update({"status": "queued", "attempts": attempts,
-                           "requeued_at": datetime.now(timezone.utc).isoformat()})
-    fresh = {"created_at": data.get("created_at"), "pipeline": fresh_pipeline}
+    now = datetime.now(timezone.utc).isoformat()
+    dispatch = new_dispatch()
+    fresh_pipeline = _fresh_pipeline(pipeline, attempts=attempts, requeued_at=now, dispatch=dispatch)
+    fresh = {"created_at": data.get("created_at"), "pipeline": fresh_pipeline,
+             "events": [{"kind": "retry_queued", "timestamp": now, "level": "warning",
+                         "message": f"attempt {n} ended ({retry.get('reason')}); "
+                                    f"attempt {n + 1} queued under the same run id"}]}
     _atomic_write(results_path, fresh)
 
-    config_path = run_dir / "config.ini"
-    send = enqueue or _enqueue
     try:
-        send(run_dir.name, str(run_dir / "input"), str(results_path),
-             str(config_path) if config_path.exists() else None,
-             celery_queue(lane_of(fresh_pipeline)))
+        send_task(run_dir, dispatch, enqueue)
     except Exception:
         # put it back: the next sweep tries again
         data["pipeline"]["retry"] = {**retry, "at": time.time() + 60}
@@ -213,13 +247,80 @@ def requeue(run_dir: Path, enqueue=None) -> bool:
     return True
 
 
+def restart(run_dir: Path, why: str = RESTART_REASON, detail: str = "") -> Optional[str]:
+    """2026-11-23: put a run whose worker is going away back in the queue
+    under the same run id, at once and without counting an attempt (no
+    policy, no limit). What the interrupted execution wrote moves to
+    restarts/<k>/. Returns the new pipeline.dispatch (the caller then sends
+    the task with send_task), or None when the run is not to be re-queued:
+    finished, waiting for a retry, cancelled or deleted. Raises when
+    results.json cannot be read or written."""
+    from . import cancellation
+    results_path = run_dir / "results.json"
+    if cancellation.is_cancelled(run_dir.name, run_dir, fresh=True):
+        return None
+    data = json.loads(results_path.read_text(encoding="utf-8"))
+    pipeline = data.get("pipeline") or {}
+    if pipeline.get("status") not in RESTARTABLE:
+        return None
+    now = datetime.now(timezone.utc).isoformat()
+    restarts = list(pipeline.get("restarts") or [])
+    k = len(restarts) + 1
+    entry = {"restart": k, "reason": why, "started_at": pipeline.get("started_at"),
+             "stopped_at": now}
+    if pipeline.get("status") == "running":
+        _archive(run_dir, run_dir / "restarts" / str(k))
+        entry["results"] = f"restarts/{k}/results.json"
+    restarts.append(entry)
+    dispatch = new_dispatch()
+    fresh = {"created_at": data.get("created_at"),
+             "pipeline": _fresh_pipeline(pipeline, restarts=restarts, requeued_at=now,
+                                         dispatch=dispatch),
+             "events": [{"kind": why, "timestamp": now, "level": "warning",
+                         "message": detail or "the worker running this run restarted; "
+                                              "the run was queued again under the same run id"}]}
+    _atomic_write(results_path, fresh)
+    return dispatch
+
+
+def set_dispatch(run_dir: Path, dispatch: Optional[str]) -> None:
+    """2026-11-23: make `dispatch` the run's current one again (the task of a
+    restart could not be sent: the message being handed back stays valid)."""
+    results_path = run_dir / "results.json"
+    data = json.loads(results_path.read_text(encoding="utf-8"))
+    pipeline = data.setdefault("pipeline", {})
+    if dispatch:
+        pipeline["dispatch"] = dispatch
+    else:
+        pipeline.pop("dispatch", None)
+    _atomic_write(results_path, data)
+
+
+def send_task(run_dir: Path, dispatch: Optional[str], enqueue=None,
+              queue: Optional[str] = None) -> None:
+    """Send the run's Celery task to its lane's queue, or to `queue` (a
+    worker: the queue its message came from, as workers do not know the web
+    lane's queue name). 2026-11-23: with the run's current dispatch."""
+    results_path = run_dir / "results.json"
+    if not queue:
+        pipeline = json.loads(results_path.read_text(encoding="utf-8")).get("pipeline") or {}
+        queue = celery_queue(lane_of(pipeline))
+    config_path = run_dir / "config.ini"
+    (enqueue or _enqueue)(run_dir.name, str(run_dir / "input"), str(results_path),
+                          str(config_path) if config_path.exists() else None,
+                          queue, dispatch)
+
+
 def _enqueue(run_id: str, input_dir: str, results_path: str, config_path: Optional[str],
-             queue: Optional[str]) -> None:
+             queue: Optional[str], dispatch: Optional[str] = None) -> None:
     from .api.tasks import run_pipeline_task
+    kwargs = {"run_id": run_id, "input_dir": input_dir, "results_path": results_path,
+              "config_path": config_path}
+    if dispatch:
+        kwargs["dispatch"] = dispatch  # 2026-11-23: stale messages end skipped_superseded
     run_pipeline_task.apply_async(
         task_id=run_id,
-        kwargs={"run_id": run_id, "input_dir": input_dir, "results_path": results_path,
-                "config_path": config_path},
+        kwargs=kwargs,
         **({"queue": queue} if queue else {}),
     )
 

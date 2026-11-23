@@ -163,7 +163,7 @@ The trypsin run, shortened:
  "critical_errors": [],
  "incomplete": [],
  "retention": {"policy": "preserve", "days": null, "expires_at": null, "example": true, "owner_choices": []},
- "queue": "web", "retry": null, "attempts": [], "rerun_of": null, "superseded_by": null}
+ "queue": "web", "retry": null, "attempts": [], "restarts": [], "rerun_of": null, "superseded_by": null}
 ```
 
 - `pipeline.status` goes `queued` → `running` → `success`, `failed` or
@@ -201,6 +201,15 @@ says when (`at`) and why. A run whose only gaps are time limits
 (`completeness: partial`, `incomplete` listing only `time limit (…)`) is not
 retried automatically: under the same limit it would most likely run out of
 time again.
+
+A run whose processing server restarts (an update, a scale-down) is queued
+again at once under the same run id and starts over: `status` goes back to
+`queued`, then `running`, `restarts` lists each such restart and an event of
+kind `worker_restart` says so. Nothing needs to be resubmitted, and it is not
+counted as an attempt. On the `repository` queue a server that stopped
+without warning (out of memory, a lost machine) is noticed within a few
+minutes and the run is retried at once as its next attempt (`attempts`,
+reason `worker_lost`).
 
 ## Reading the results
 

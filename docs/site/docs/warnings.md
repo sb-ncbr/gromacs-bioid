@@ -254,9 +254,13 @@ included, or upload a .pdb of the first frame.
 ### worker_lost
 
 **What happened:** the processing server stopped unexpectedly. This was a
-problem on our side, not with your files.
+problem on our side, not with your files. On the repository queue the run is
+retried automatically under the same run id, up to its attempt limit. (A
+server restarted on purpose, e.g. for an update, puts its runs back in the
+queue by itself: they show a `worker_restart` event, not this error.)
 
-**What to do:** rerun. If it happens twice, contact us with the run id.
+**What to do:** rerun if the run ended `failed`. If it happens twice, contact
+us with the run id.
 
 ### timeout
 
