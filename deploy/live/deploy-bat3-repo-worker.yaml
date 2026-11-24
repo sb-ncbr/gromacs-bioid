@@ -10,7 +10,7 @@ metadata:
   namespace: ceitec-biodata-ns
 spec:
   progressDeadlineSeconds: 600
-  replicas: 12
+  replicas: 16
   revisionHistoryLimit: 10
   selector:
     matchLabels:
