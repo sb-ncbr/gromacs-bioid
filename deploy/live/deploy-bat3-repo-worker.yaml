@@ -54,7 +54,7 @@ spec:
         - name: BLASTDB_MEM_MAP
           value: '0'
         - name: BAT3_CODE_VERSION
-          value: git-29e85492e
+          value: git-62db7a929
         - name: BAT3_ADHOC_DIR
           value: /app/runs/_adhoc
         - name: BAT3_IDENTIFIERS_CACHE_DIR
@@ -70,16 +70,16 @@ spec:
           value: redis://bioid-cache-redis:6379/0
         - name: BAT3_RENDER_DISABLE
           value: '1'
-        image: cerit.io/tomsko/bat3-validation-api@sha256:e18fcf2d84aea7db0e0b46e8ed8afa8ec5de5f6f3720f82ef65ef20ef5675763
+        image: cerit.io/tomsko/bat3-validation-api@sha256:92cfc0b9f7a075b12d888634a45036a334d5395a1906f120bcf58bc58bc95db8
         imagePullPolicy: Always
         name: repo-worker
         resources:
           limits:
             cpu: '4'
-            memory: 10Gi
+            memory: 16Gi
           requests:
             cpu: '2'
-            memory: 6Gi
+            memory: 8Gi
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

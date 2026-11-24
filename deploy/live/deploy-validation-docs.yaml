@@ -27,7 +27,7 @@ spec:
         app: validation-docs
     spec:
       containers:
-      - image: cerit.io/tomsko/bat3-docs:v3.144-docs13
+      - image: cerit.io/tomsko/bat3-docs:v3.144-docs14
         imagePullPolicy: IfNotPresent
         livenessProbe:
           failureThreshold: 3
