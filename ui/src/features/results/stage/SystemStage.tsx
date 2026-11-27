@@ -9,6 +9,7 @@ import { Card } from "@e-infra/design-system";
 import type { Molecule, RunStatus } from "../viewmodel";
 import { KIND_LABELS } from "../viewmodel";
 import { counts } from "../list/moleculeList";
+import { InfoTip } from "../../../components/InfoTip";
 
 /** Selection id for the whole system (never a real segment id: MDposit
  * runs have a segment literally named "SYSTEM"). */
@@ -47,8 +48,8 @@ export function SystemStage({ molecules, runStatus, canvas }: SystemStageProps) 
           <p className="text-[11.5px] font-bold uppercase tracking-wider text-(--vm-muted)">
             Whole system · {molecules.length.toLocaleString()} molecules · {atoms.toLocaleString()} atoms
           </p>
-          <h2 id="stage-title" className="mt-1 text-xl font-bold text-(--vm-fg)">
-            Whole system
+          <h2 id="stage-title" className="mt-1 flex items-center gap-1 text-xl font-bold text-(--vm-fg)">
+            Whole system <InfoTip topic="wholeSystem" />
           </h2>
           <p className="mt-1 text-sm text-(--vm-fg-2)">{compositionLine(molecules)}</p>
           {finished && (

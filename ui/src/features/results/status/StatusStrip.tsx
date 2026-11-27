@@ -10,6 +10,7 @@
 import { useState, type ComponentType } from "react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger, Tooltip, TooltipContent, TooltipTrigger, cn } from "@e-infra/design-system";
 import { Check, ChevronDown, CircleX, Info, Link2, Loader2, TriangleAlert } from "lucide-react";
+import { InfoTip } from "../../../components/InfoTip";
 import type { Molecule, Note, RunStatus, Stage } from "../viewmodel";
 import {
   AFFECTS_VISIBLE,
@@ -147,6 +148,7 @@ export function StatusStrip({ runStatus, progress, elapsedS, notes, hiddenNoteCo
               {runStatus === "running" && <Loader2 size={15} aria-hidden className="shrink-0 motion-safe:animate-spin text-(--vm-info)" />}
               {runStatus === "failed" && <CircleX size={15} aria-hidden className="shrink-0" />}
               {left}
+              <InfoTip topic="runProgress" side="bottom" />
               {finished && timings && (
                 <button
                   type="button"

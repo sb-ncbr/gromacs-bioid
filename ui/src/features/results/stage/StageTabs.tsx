@@ -36,6 +36,7 @@ import {
   moleculeNotes,
 } from "./stageModel";
 import { UnidentifiedPanel } from "./UnidentifiedPanel";
+import { HeadLabel, InfoTip } from "../../../components/InfoTip";
 
 export type StageTab = "matches" | "descriptor" | "notes";
 
@@ -121,7 +122,7 @@ function MatchesTab({ molecule: m }: { molecule: Molecule }) {
   if (m.result?.state === "coarse_grained") {
     return (
       <div className="px-5 py-4">
-        <h3 className="text-sm font-semibold">Coarse-grained model</h3>
+        <h3 className="flex items-center gap-1 text-sm font-semibold">Coarse-grained model <InfoTip topic="coarseGrained" /></h3>
         <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm text-(--vm-fg-2)">
           {COARSE_GRAINED_POINTS.map((p) => (
             <li key={p}>{p}</li>
@@ -135,7 +136,7 @@ function MatchesTab({ molecule: m }: { molecule: Molecule }) {
     return (
       <div className="px-5 py-4">
         <UnidentifiedPanel molecule={m} />
-        <h3 className="text-sm font-semibold">What you can do</h3>
+        <h3 className="flex items-center gap-1 text-sm font-semibold">What you can do <InfoTip topic="notIdentified" /></h3>
         <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm text-(--vm-fg-2)">
           {NOT_IDENTIFIED_POINTS.map((p) => (
             <li key={p}>{p}</li>
@@ -154,10 +155,10 @@ function MatchesTab({ molecule: m }: { molecule: Molecule }) {
         <Table>
           <TableHeader>
             <TableRow className="bg-(--vm-surface-2)">
-              <TableHead>Entry</TableHead>
-              <TableHead>What it is</TableHead>
-              <TableHead>Match to your molecule</TableHead>
-              <TableHead className="text-right">Confidence</TableHead>
+              <TableHead><HeadLabel topic="entry">Entry</HeadLabel></TableHead>
+              <TableHead><HeadLabel topic="whatItIs">What it is</HeadLabel></TableHead>
+              <TableHead><HeadLabel topic="matchToMolecule">Match to your molecule</HeadLabel></TableHead>
+              <TableHead className="text-right"><HeadLabel topic="confidence">Confidence</HeadLabel></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -209,10 +210,13 @@ function RejectedToggle({
 }) {
   return (
     <div className={inline ? "contents" : "mt-3"}>
-      <button type="button" onClick={onToggle} className="inline-flex items-center gap-1 text-(--vm-accent) hover:underline" aria-expanded={open}>
-        Rejected candidates ({n})
-        <ChevronDown size={14} aria-hidden className={cn("transition-transform", open && "rotate-180")} />
-      </button>
+      <span className="inline-flex items-center gap-1">
+        <button type="button" onClick={onToggle} className="inline-flex items-center gap-1 text-(--vm-accent) hover:underline" aria-expanded={open}>
+          Rejected candidates ({n})
+          <ChevronDown size={14} aria-hidden className={cn("transition-transform", open && "rotate-180")} />
+        </button>
+        <InfoTip topic="rejected" />
+      </span>
       {open && (
         <ul className="mt-2 basis-full space-y-1 rounded-md bg-(--vm-surface-2) p-3 text-sm" style={inline ? { width: "100%" } : undefined}>
           {rejected.map((r, i) => (
@@ -256,9 +260,10 @@ function DescriptorTab({ molecule: m }: { molecule: Molecule }) {
       <div className="px-5 py-4">
         {chains.map((c) => (
           <div key={c.label || "seq"} className="mb-3">
-            <p className="text-sm text-(--vm-muted)">
+            <p className="flex items-center gap-1 text-sm text-(--vm-muted)">
               {c.label ? `Chain ${c.label}: ` : ""}
               {c.sequence.length.toLocaleString()} residues, as read from your files
+              <InfoTip topic="sequence" />
             </p>
             <pre className="mt-2 max-h-[9.5rem] overflow-auto rounded-md border border-(--vm-line) bg-(--vm-surface-2) p-3 font-mono text-[13px] leading-6 whitespace-pre-wrap break-all">
               {c.sequence}
@@ -280,6 +285,9 @@ function DescriptorTab({ molecule: m }: { molecule: Molecule }) {
   if (rows.length === 0) return <p className="px-5 py-4 text-sm text-(--vm-muted)">No chemistry description was recorded for this molecule.</p>;
   return (
     <dl className="px-5 py-4">
+      <p className="mb-1 flex items-center gap-1 text-sm text-(--vm-muted)">
+        As worked out from your simulation <InfoTip topic="chemistry" />
+      </p>
       {rows.map((r) => (
         <div key={r.label} className="flex items-baseline gap-3 py-1">
           <dt className="w-32 shrink-0 text-xs uppercase tracking-wide text-(--vm-muted)">{r.label}</dt>

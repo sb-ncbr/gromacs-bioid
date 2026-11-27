@@ -8,6 +8,8 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger, cn } from "@e-infra/design-system";
 import { ChevronDown } from "lucide-react";
+import { InfoTip } from "../../components/InfoTip";
+import type { HelpKey } from "../../lib/help";
 import type { RunStatusResponse, RunSummaryWithTitle, LoadingInfoResponse } from "./hooks";
 import type { TechnicalEntry } from "./viewmodel";
 import TaskBar from "./TaskBar";
@@ -20,6 +22,13 @@ import VerificationTab from "./VerificationTab";
 
 export const FOLD_SUBTITLE =
   "How your files were read, step timings, molecule descriptions, every search and candidate, raw messages, logs and settings";
+
+/** Info button per section (lib/help.ts). */
+const ENTRY_HELP: Record<string, HelpKey> = {
+  signatures: "signatures",
+  searches: "resolver",
+  candidates: "verified",
+};
 
 export interface TechnicalFoldProps {
   entries: TechnicalEntry[];
@@ -130,7 +139,10 @@ export const TechnicalFold = forwardRef<TechnicalFoldHandle, TechnicalFoldProps>
         <ChevronDown size={16} aria-hidden className={cn("shrink-0 text-(--vm-muted) transition-transform", open && "rotate-180")} />
       </CollapsibleTrigger>
       <CollapsibleContent className="border-t border-(--vm-line) px-4 pb-4">
-        <div className="flex flex-wrap gap-1 pt-3" role="tablist" aria-label="Technical detail sections">
+        <p className="flex items-center gap-1 pt-3 text-xs text-(--vm-muted)">
+          What these sections show <InfoTip topic="technical" />
+        </p>
+        <div className="flex flex-wrap gap-1 pt-2" role="tablist" aria-label="Technical detail sections">
           {entries.map((e) => (
             <button
               key={e.key}
@@ -151,7 +163,10 @@ export const TechnicalFold = forwardRef<TechnicalFoldHandle, TechnicalFoldProps>
         </div>
         {activeKey && (
           <div className="mt-3">
-            <p className="mb-2 text-xs text-(--vm-muted)">{entries.find((e) => e.key === activeKey)?.desc}</p>
+            <p className="mb-2 flex items-center gap-1 text-xs text-(--vm-muted)">
+              {entries.find((e) => e.key === activeKey)?.desc}
+              {ENTRY_HELP[activeKey] && <InfoTip topic={ENTRY_HELP[activeKey]} />}
+            </p>
             {render(activeKey)}
           </div>
         )}

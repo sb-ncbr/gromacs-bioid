@@ -59,7 +59,7 @@ export default function Dropzone({ files, onFilesAdded, onRemove }: DropzoneProp
           Browse files
         </Button>
         <p className="text-xs text-text-muted">
-          GROMACS · AMBER · CHARMM/NAMD · LAMMPS · PDB/mmCIF — or .zip / .tar bundles
+          GROMACS · AMBER · CHARMM/NAMD · Desmond · LAMMPS · PDB/mmCIF — or .zip / .tar bundles
         </p>
       </div>
 

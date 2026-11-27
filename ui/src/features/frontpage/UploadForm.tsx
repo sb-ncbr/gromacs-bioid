@@ -40,6 +40,7 @@ import {
 } from "./config";
 import { api, apiErrorMessage, endpoints } from "../../lib/api/client";
 import { rememberOwnerToken } from "../../lib/ownerTokens";
+import { InfoTip } from "../../components/InfoTip";
 
 interface RunCreateResponse {
   run_id: string;
@@ -143,9 +144,10 @@ export default function UploadForm() {
         <ul className="list-disc space-y-1 pl-5 text-sm text-text-muted">
           <li><strong>GROMACS</strong>: <code className="text-text">.tpr</code>, or <code className="text-text">.top</code> + its <code className="text-text">.itp</code> includes, plus <code className="text-text">.gro</code> coordinates</li>
           <li><strong>AMBER</strong>: <code className="text-text">.prmtop</code>/<code className="text-text">.parm7</code> + <code className="text-text">.rst7</code>/<code className="text-text">.inpcrd</code>/<code className="text-text">.nc</code>/<code className="text-text">.mdcrd</code> coordinates</li>
-          <li><strong>CHARMM / NAMD</strong>: <code className="text-text">.psf</code> + <code className="text-text">.pdb</code>/<code className="text-text">.crd</code> coordinates (a <code className="text-text">.dcd</code> works as the starting frame)</li>
+          <li><strong>CHARMM / NAMD</strong>: <code className="text-text">.psf</code> + <code className="text-text">.pdb</code>/<code className="text-text">.crd</code>/<code className="text-text">.coor</code> coordinates (or the first frame of a <code className="text-text">.dcd</code>)</li>
+          <li><strong>Desmond</strong>: a <code className="text-text">.cms</code> system file</li>
           <li><strong>LAMMPS</strong>: a single <code className="text-text">.data</code> file</li>
-          <li><strong>Structures</strong>: <code className="text-text">.pdb</code> / <code className="text-text">.cif</code></li>
+          <li><strong>Structures</strong>: <code className="text-text">.pdb</code> / <code className="text-text">.cif</code>, or a <code className="text-text">.gro</code> alone</li>
           <li><strong>Bundles</strong>: <code className="text-text">.zip</code> / <code className="text-text">.tar</code> / <code className="text-text">.tar.gz</code></li>
         </ul>
 
@@ -173,6 +175,7 @@ export default function UploadForm() {
           <span className="flex items-center gap-2 text-sm text-text-muted">
             <Settings2 className="h-4 w-4" />
             Advanced configuration
+            <InfoTip topic="settings" />
           </span>
           <div className="flex items-center gap-3">
             <span className="text-xs text-text-muted">

@@ -19,12 +19,17 @@ On the front page, drop your files into **Annotation request** (or use
 
 | Engine | Files |
 |---|---|
-| GROMACS | `.tpr`, or `.top` with its `.itp` includes, plus `.gro` coordinates |
-| AMBER | `.prmtop`/`.parm7` plus `.rst7`/`.inpcrd`/`.nc`/`.mdcrd` coordinates |
-| CHARMM / NAMD | `.psf` plus `.pdb`/`.crd` coordinates (a `.dcd` works as the starting frame) |
+| GROMACS | `.tpr`, or `.top` with its `.itp` includes, plus `.gro` coordinates (or the first frame of a `.xtc`/`.trr`/`.dcd`) |
+| AMBER | `.prmtop`/`.parm7` plus `.rst7`/`.inpcrd`/`.nc`/`.mdcrd` coordinates (or the first frame of a `.dcd`/`.trr`/`.xtc`) |
+| CHARMM / NAMD | `.psf` plus `.pdb`/`.crd`/`.coor` coordinates (or the first frame of a `.dcd`/`.xtc`/`.trr`/`.nc`) |
+| Desmond | a `.cms` (or `.mae`) system file |
 | LAMMPS | a single `.data` file |
-| Structures | `.pdb` / `.cif` |
+| Structures | `.pdb` / `.cif`, or a `.gro` alone |
 | Bundles | `.zip` / `.tar` / `.tar.gz` of the above |
+
+A topology without coordinates is accepted too: the molecules are identified
+from the topology (sequences, chemistry), but structure searches and
+stereochemistry are skipped, and the run says so.
 
 Each file may be up to 128 MiB, and one submission up to 128 MiB in total.
 BioID analyses the starting structure, so
@@ -68,26 +73,123 @@ Below the presets you can change individual settings:
 Settings that belong to the deployment (database locations, programs,
 service addresses, parallelism) cannot be changed per run.
 
-## Reading the results
+## Reading the results {#reading-the-results}
 
-The run page lists the molecules found. For each one it shows the best
-identification, its database entries (with links), and a **confidence**
-from 0 to 100. The confidence combines three terms: how strongly the
-databases agree on the match, how closely the molecule matches the entry
-(sequence identity and coverage, fingerprint similarity or structural
-TM-score), and how complete the database record is. **Verified** means the
-candidate was re-fetched from its database and checked against the molecule.
+The run page lists the molecules found on the left and shows the selected
+molecule (or the whole system) on the right: its best identification, the
+database entries that match it, and how sure BioID is about each.
+
+### Molecules {#molecules}
+
+BioID splits the simulated system into molecules from the bonds in your
+files. Identical copies (500 waters, 12 copies of one lipid) are one row with
+a copy count. Each molecule has a **kind** — protein, nucleic acid, lipid,
+small molecule, ion, water or other — from its residues and composition, and
+the list can be grouped by kind or by how well the molecule was identified.
+
+### Confidence {#confidence}
+
+How sure BioID is that a database entry is the molecule in your simulation,
+from 0 to 100. It combines three measured terms:
+
+- **agreement** — how many independent database searches proposed the entry
+  (one exact search gives 50, two give 75; it never reaches 100 by itself);
+- **match** — how closely the entry matches your molecule: sequence identity
+  × coverage, structural TM-score or chemical-skeleton similarity;
+- **annotation** — how complete the database record is.
+
+The weights are 40 / 40 / 20 by default. A term that could not be measured is
+left out rather than counted as zero. The labels are **High** (80–100,
+reliable), **Medium** (50–79, worth a quick check) and **Low** (under 50, a
+lead, not an answer). **Exact** marks single-atom ions matched by element and
+water matched by rule. The formula is on
+[Identification & verification](identifiers.md#stage-3-verification).
+
+### Verified matches {#verified}
+
+Only **verified** entries are shown as identifications. BioID fetches each
+candidate's record again (sequence, structure or chemistry) and compares it
+with your molecule. A chemical needs a skeleton-fingerprint similarity of at
+least 0.7; a protein, nucleic acid or structure needs a real similarity
+measurement, or an exact claim from the database search itself. Candidates
+that fail are kept as **rejected candidates** with the reason.
+
+### The matches table {#matches-table}
+
+- **Entry** — the database and its identifier, linked to the record.
+- **What it is** — the record's name (and organism, when known).
+- **Match to your molecule** — what the comparison found: the sequence
+  identity, *same structure* (identical chemistry), *similar skeleton (N %)*
+  for a chemical analogue, *same element* for an ion, or *same structure
+  (stereo not compared)* for a fold match from Foldseek or AlphaFind.
+- **Confidence** — as [above](#confidence).
+
+**Related entries** counts entries that describe the same molecule in
+another database (a PDB entry and its UniProt accession).
+
+### Rejected candidates {#rejected}
+
+Candidates a search proposed that did not survive verification, with the
+reason: sequence identity too low, structure or skeleton does not match,
+different formula or element, or the record could not be checked. They are
+leads for your own judgement, not identifications.
+
+### Molecules that are not identified {#not-identified}
+
+No database entry passed verification. Common reasons: a designed or
+modified molecule that no database holds, a residue name or topology that
+does not describe the molecule, a fragment too short to search, or a search
+cut by its time limit (the run then says *Finished: partial*).
+
+### Coarse-grained and bead models {#coarse-grained}
 
 **Coarse-grained** systems (Martini and similar) model several atoms as one
 bead, so BioID has no atoms to check against a database structure. Their
 molecules read *Coarse-grained (Martini POPE)*: the name comes from the
-residue name only and was not checked. Protein chains are the exception: a
-coarse-grained chain keeps its residue names, so its sequence can still be
-searched and verified.
+residue name only and was not checked. A protein represented by beads
+(coarse-grained, or Cα atoms only) is **described** in the results download
+(`data.descriptions` in the JSON): its residue sequence and the best
+structure and sequence search hits, as leads, never as verified
+identifications.
+
+### Sequence and chemistry {#descriptions}
+
+What BioID searched with, read from your files. Proteins and nucleic acids
+have their sequence per chain (copy or download it as FASTA). Small
+molecules, lipids and glycans have a formula, SMILES and InChIKey: the bond
+orders and charges are worked out from the simulated structure, implicit
+hydrogens of united-atom force fields are added back, and stereochemistry is
+taken from the 3D coordinates. See
+[Identification & verification](identifiers.md#stage-1-signatures).
+
+### Run progress {#run-progress}
+
+A run goes through six steps: **Read files** (the topology and coordinates
+are loaded and repaired: missing elements and bonds, molecules split by the
+periodic box made whole), **Find molecules**, **Describe molecules** (the
+sequences and chemistry above), **Search databases**, **Check matches**
+(verification) and **Prepare downloads**. Each search step has a time limit;
+when one is reached the run still finishes, marked *partial*. Messages with a
+code are explained under [Warnings and errors](warnings.md).
+
+### Technical details {#technical-details}
+
+The *Technical details* fold below the results shows everything behind them:
+
+- **Your files and how they were read** — the files, and each loading
+  strategy tried with its outcome.
+- **Molecule descriptions** — every signature generated for the molecule.
+- **Database searches** — every search (*resolver*) and its raw hits:
+  *Hit type* is *identity* (the search claims an exact match) or
+  *similarity* (a ranked near neighbour); *Score* is the search's own 0–100
+  score; BLAST hits also carry the *E-value* (lower is better), *Bit score*,
+  *Identity %* and *Coverage %* of the alignment.
+- **All candidates with scores** — every candidate the verification checked,
+  verified or rejected, with its similarity and confidence.
+- **All messages with codes** and **Logs and settings used**.
 
 The buttons in the run header download the identifications as CSV or the
-full results as JSON; the *Technical details* fold shows the signatures,
-every database hit and the run log.
+full results as JSON ([what is in the JSON](results-json.md)).
 
 ## REST API
 

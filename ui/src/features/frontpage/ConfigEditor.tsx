@@ -20,6 +20,8 @@ import {
   type RunConfig,
   type WeightTriple,
 } from "./config";
+import { InfoTip } from "../../components/InfoTip";
+import { CONFIG_SECTION_DOCS, DATABASE_GROUP_DOCS, docsHref } from "../../lib/help";
 
 /** Live effective-weights hint for the verification section (v3.142 Phase 3).
  * Non-blocking: mirrors backend normalize_weights so the user sees the exact
@@ -117,7 +119,20 @@ function IdentifiersTable({
         <table key={group} className="w-full text-sm">
           <thead>
             <tr className="text-xs text-text-muted">
-              <th className="pb-1 text-left font-semibold uppercase tracking-wide">{group}</th>
+              <th className="pb-1 text-left font-semibold uppercase tracking-wide">
+                <span className="inline-flex items-center gap-1">
+                  {group}
+                  {DATABASE_GROUP_DOCS[group] && (
+                    <InfoTip
+                      entry={{
+                        title: `${group} databases`,
+                        body: "Exact: the database is searched for identical entries. Similar: also for similar ones (homologues, analogues, similar folds), which finds more but is slower.",
+                        docs: DATABASE_GROUP_DOCS[group],
+                      }}
+                    />
+                  )}
+                </span>
+              </th>
               <th className="w-20 pb-1 text-center font-normal">Exact</th>
               <th className="w-20 pb-1 text-center font-normal">Similar</th>
             </tr>
@@ -179,6 +194,16 @@ export default function ConfigEditor({ config, onChange }: ConfigEditorProps) {
             </span>
           </AccordionTrigger>
           <AccordionContent>
+            {CONFIG_SECTION_DOCS[sectionName] && (
+              <a
+                href={docsHref(CONFIG_SECTION_DOCS[sectionName])}
+                target="_blank"
+                rel="noreferrer"
+                className="mb-2 inline-block text-xs text-primary underline-offset-2 hover:underline"
+              >
+                About these settings in the documentation<span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            )}
             {sectionName === "identifiers" ? (
               <IdentifiersTable
                 section={sectionData}
@@ -191,17 +216,23 @@ export default function ConfigEditor({ config, onChange }: ConfigEditorProps) {
                   const help = FIELD_HELP[`${sectionName}.${fieldName}`];
                   if (typeof v === "boolean") {
                     return (
-                      <Label
-                        key={fieldName}
-                        className="flex cursor-pointer items-center justify-between gap-3 text-sm"
-                        title={help}
-                      >
-                        <span className="text-text-muted">{label}</span>
+                      // the help used to be a hover-only title; an info
+                      // button (outside the label) reaches keyboard and touch
+                      <div key={fieldName} className="flex items-center justify-between gap-3 text-sm">
+                        <span className="flex items-center gap-1">
+                          <Label htmlFor={`cfg-${sectionName}-${fieldName}`} className="cursor-pointer text-text-muted">
+                            {label}
+                          </Label>
+                          {help && (
+                            <InfoTip entry={{ title: label, body: help, docs: CONFIG_SECTION_DOCS[sectionName] }} />
+                          )}
+                        </span>
                         <Switch
+                          id={`cfg-${sectionName}-${fieldName}`}
                           checked={v}
                           onCheckedChange={(c) => setField(sectionName, fieldName, c)}
                         />
-                      </Label>
+                      </div>
                     );
                   }
                   if (typeof v === "number") {

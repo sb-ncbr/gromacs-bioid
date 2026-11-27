@@ -17,6 +17,9 @@ plugins:
   - search
 markdown_extensions:
   - admonition
+  # explicit heading ids ({#confidence}): the web application's info
+  # buttons link to them, so they must not change with the wording
+  - attr_list
   - tables
   - fenced_code
   - toc:

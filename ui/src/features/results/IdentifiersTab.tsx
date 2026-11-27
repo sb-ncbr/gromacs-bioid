@@ -21,6 +21,8 @@ import { Info } from "lucide-react";
 import { cn } from "@e-infra/design-system";
 import type { components } from "../../lib/api/types";
 import { resolveHitUrl } from "./utils";
+import { HeadLabel } from "../../components/InfoTip";
+import type { HelpKey } from "../../lib/help";
 
 type IdentifierHit = components["schemas"]["IdentifierHit"];
 type IdentifiersResponse = components["schemas"]["IdentifiersResponse"];
@@ -33,12 +35,12 @@ interface IdentifiersTabProps {
   identifiers: IdentifiersResponse | null;
 }
 
-const METRIC_KEYS: { key: keyof IdentifierHit; label: string }[] = [
-  { key: "score", label: "Score" },
-  { key: "evalue", label: "E-value" },
-  { key: "bit_score", label: "Bit Score" },
-  { key: "identity_percent", label: "Identity %" },
-  { key: "coverage_percent", label: "Coverage %" },
+const METRIC_KEYS: { key: keyof IdentifierHit; label: string; help: HelpKey }[] = [
+  { key: "score", label: "Score", help: "score" },
+  { key: "evalue", label: "E-value", help: "evalue" },
+  { key: "bit_score", label: "Bit Score", help: "bitScore" },
+  { key: "identity_percent", label: "Identity %", help: "identityPct" },
+  { key: "coverage_percent", label: "Coverage %", help: "coveragePct" },
 ];
 
 function formatMetric(value: number | null | undefined): string {
@@ -173,12 +175,12 @@ const IdentifiersTab: React.FC<IdentifiersTabProps> = ({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Identifier</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Hit Type</TableHead>
-                    <TableHead>Resolver</TableHead>
+                    <TableHead><HeadLabel topic="entry">Identifier</HeadLabel></TableHead>
+                    <TableHead><HeadLabel topic="identifierType">Type</HeadLabel></TableHead>
+                    <TableHead><HeadLabel topic="hitType">Hit Type</HeadLabel></TableHead>
+                    <TableHead><HeadLabel topic="resolver">Resolver</HeadLabel></TableHead>
                     {visibleMetrics.map((m) => (
-                      <TableHead key={m.key as string}>{m.label}</TableHead>
+                      <TableHead key={m.key as string}><HeadLabel topic={m.help}>{m.label}</HeadLabel></TableHead>
                     ))}
                   </TableRow>
                 </TableHeader>

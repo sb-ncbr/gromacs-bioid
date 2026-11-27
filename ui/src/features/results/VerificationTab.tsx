@@ -32,6 +32,7 @@ import {
   type VerifiedHit,
 } from "./utils";
 import type { VerificationResponse } from "./hooks";
+import { HeadLabel } from "../../components/InfoTip";
 
 interface VerificationTabProps {
   segment: string;
@@ -104,12 +105,12 @@ const VerificationTab: React.FC<VerificationTabProps> = ({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-24">Verified</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Identifier</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Similarity</TableHead>
-                    <TableHead className="w-40">Confidence</TableHead>
+                    <TableHead className="w-28"><HeadLabel topic="verified">Verified</HeadLabel></TableHead>
+                    <TableHead><HeadLabel topic="whatItIs">Name</HeadLabel></TableHead>
+                    <TableHead><HeadLabel topic="entry">Identifier</HeadLabel></TableHead>
+                    <TableHead><HeadLabel topic="identifierType">Type</HeadLabel></TableHead>
+                    <TableHead><HeadLabel topic="similarity">Similarity</HeadLabel></TableHead>
+                    <TableHead className="w-40"><HeadLabel topic="confidence">Confidence</HeadLabel></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

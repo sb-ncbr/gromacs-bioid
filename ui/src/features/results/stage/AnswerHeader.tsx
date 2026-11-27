@@ -8,6 +8,7 @@ import type { Molecule, RunStatus } from "../viewmodel";
 import { CONFIDENCE_ICONS, CONFIDENCE_COLOR } from "../list";
 import { badgeOf, bestLine, eyebrow, headline, sameAs, type Badge as BadgeModel } from "./stageModel";
 import { ReportDialog } from "./ReportDialog";
+import { InfoTip } from "../../../components/InfoTip";
 
 export interface AnswerHeaderProps {
   molecule: Molecule;
@@ -125,8 +126,9 @@ export function AnswerHeader({ molecule, molecules, runStatus, onSelect }: Answe
           )}
         </div>
       </div>
-      <div className="self-start sm:shrink-0">
+      <div className="flex items-center gap-1 self-start sm:shrink-0">
         <ConfBadge badge={badge} />
+        {resolved && <InfoTip topic="confidence" side="left" />}
       </div>
     </div>
   );

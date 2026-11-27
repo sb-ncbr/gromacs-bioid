@@ -1,6 +1,7 @@
 import { Scale, SlidersHorizontal, Target, Telescope, Zap, type LucideIcon } from "lucide-react";
 import { cn } from "@e-infra/design-system";
 import type { RunPreset } from "./config";
+import { InfoTip } from "../../components/InfoTip";
 
 const ICONS: Record<string, LucideIcon> = {
   scale: Scale,
@@ -25,6 +26,9 @@ export default function PresetPicker({
   const current = presets.find((p) => p.id === active);
   return (
     <div className="flex flex-col gap-2">
+      <p className="flex items-center gap-1 text-sm font-semibold text-text-heading">
+        Presets <InfoTip topic="presets" />
+      </p>
       <div role="radiogroup" aria-label="Presets" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {presets.map((p) => {
           const Icon = ICONS[p.icon] ?? SlidersHorizontal;

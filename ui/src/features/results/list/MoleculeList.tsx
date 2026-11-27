@@ -39,6 +39,7 @@ import {
 } from "./moleculeList";
 import { CONFIDENCE_COLOR, CONFIDENCE_ICONS, type IconKey } from "./icons";
 import { DistributionBar } from "./DistributionBar";
+import { InfoTip } from "../../../components/InfoTip";
 
 export type GroupBy = "kind" | "identification";
 
@@ -278,7 +279,9 @@ export function MoleculeList({
   return (
     <Card className="flex min-h-0 flex-col">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <h2 className="text-base font-semibold leading-none text-(--vm-fg)">{stats}</h2>
+        <h2 className="flex items-center gap-1 text-base font-semibold leading-none text-(--vm-fg)">
+          {stats} <InfoTip topic="molecules" side="right" />
+        </h2>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm" className="gap-1 text-xs text-(--vm-muted)">
