@@ -74,19 +74,45 @@ def norm_ident(ident_type, value):
     return v
 
 
+# S7_VERIFIED_ONLY=1 (2026-11-07, paper Methods): score only hits that passed
+# verification (is_verified true), in the order BioID reports them. Each
+# segment's stored list is already verified-first and fidelity-sorted
+# (verification.manager._fidelity_order_hits), so the verified rows are its
+# prefix; segments are interleaved by that per-segment rank (ties: higher
+# confidence, then identifier). Default (unset) keeps the historical
+# behaviour: every stored row, rejected ones included, re-sorted by _fid_key.
+VERIFIED_ONLY = os.environ.get("S7_VERIFIED_ONLY") == "1"
+
+
+def all_rows_count(doc):
+    """Rows stored under verification/<seg>/verified_hits, rejected included
+    (the historical S7 frame: an entry is scored when this is non-zero)."""
+    ver = (doc.get("data") or {}).get("verification") or {}
+    return sum(len([h for h in (seg or {}).get("verified_hits") or [] if isinstance(h, dict)])
+               for name, seg in ver.items()
+               if not str(name).startswith("_") and isinstance(seg, dict))
+
+
 def verified_hits(doc):
     out = []
     ver = (doc.get("data") or {}).get("verification") or {}
-    for seg in ver.values():
+    for seg_name, seg in ver.items():
+        # g1 results carry a "_meta" bookkeeping entry next to the segments
+        if str(seg_name).startswith("_") or not isinstance(seg, dict):
+            continue
+        rank = 0
         for h in (seg or {}).get("verified_hits") or []:
             if isinstance(h, dict):
+                if VERIFIED_ONLY and not h.get("is_verified"):
+                    continue
+                rank += 1
                 try:
                     conf = float(h.get("final_confidence") or 0.0)
                 except Exception:
                     conf = 0.0
                 out.append((h.get("ident_type"), h.get("identifier"), conf,
                             h.get("skeleton_sim"), h.get("skeleton_method"),
-                            h.get("is_verified")))
+                            h.get("is_verified"), seg_name, rank))
     _CH = ("PUBCHEM", "INCHI")
 
     def _fid_key(x):
@@ -96,7 +122,10 @@ def verified_hits(doc):
         if is_ch:
             return (0, 0 if x[5] else 1, -s, -conf, str(ident), str(t))
         return (1, 0, 0.0, -conf, str(ident), str(t))
-    out.sort(key=_fid_key)
+    if VERIFIED_ONLY:
+        out.sort(key=lambda x: (x[7], -x[2], str(x[1]), str(x[0])))
+    else:
+        out.sort(key=_fid_key)
     return out
 
 
@@ -190,7 +219,7 @@ def sql_section(con):
 
 def attempted_any(by_sig):
     for info in (by_sig or {}).values():
-        if (info or {}).get("attempted"):
+        if isinstance(info, dict) and info.get("attempted"):
             return True
     return False
 
@@ -262,13 +291,18 @@ def scan_entry(eid, root, pattern):
     data = doc.get("data") or {}
     ids = data.get("identifiers") or {}
     ver = data.get("verification") or {}
-    molecules = len(ids) or len(ver)
+    molecules = (len([k for k in ids if not str(k).startswith("_")])
+                 or len([k for k in ver if not str(k).startswith("_")]))
     resolvers_attempted = collections.Counter()
     sig_attempts = collections.Counter()
     mol_identified = mol_verified = 0
     for mol, by_sig in ids.items():
+        if str(mol).startswith("_") or not isinstance(by_sig, dict):
+            continue
         for sig_type, info in (by_sig or {}).items():
-            attempted = (info or {}).get("attempted") or []
+            if not isinstance(info, dict):
+                continue
+            attempted = info.get("attempted") or []
             if attempted:
                 sig_attempts[sig_type] += 1
                 for r in attempted:
@@ -291,7 +325,7 @@ def scan_entry(eid, root, pattern):
         "molecules": molecules, "mol_identified": mol_identified,
         "mol_verified": mol_verified,
         "resolvers": resolvers_attempted, "sig_attempts": sig_attempts,
-        "hits": verified_hits(doc), "warnings": warns, "ion_elements": _ion_elements_of(doc),
+        "hits": verified_hits(doc), "n_rows_all": all_rows_count(doc), "warnings": warns, "ion_elements": _ion_elements_of(doc),
         "critical": len(doc.get("critical_errors") or []),
         "dl_resolvers": sorted(dl) if dl else [],
         "status_pipeline": (doc.get("pipeline") or {}).get("status"),
@@ -320,6 +354,10 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
     except FileNotFoundError:
         ids = []
     ids.sort()
+    shard = os.environ.get("S7_SHARD")  # "i/n": this process scores ids[i::n]
+    if shard:
+        si, sn = (int(x) for x in shard.split("/"))
+        ids = ids[si::sn]
     if sample:
         ids = ids[:: max(1, len(ids) // sample)][:sample]
 
@@ -344,6 +382,10 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
     }
     agg_sim_attempt = collections.defaultdict(lambda: {"total": 0, "attempted": 0, "no_family": 0})
 
+    # S7_DUMP=<path>: one JSON row per scored annotation (diagnostics only;
+    # does not change any aggregate)
+    dump_path = os.environ.get("S7_DUMP")
+    dump = open(dump_path, "w") if dump_path else None
     t0 = time.time()
     with ThreadPoolExecutor(max_workers=threads) as ex:
         futs = {ex.submit(scan_entry, eid, root, pattern): eid for eid in ids}
@@ -394,7 +436,9 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
                     agg["gate_verified_chem"] += 1
                     agg["gate_verified_chem_hits"] += sum(1 for h in r["hits"] if len(h) > 5 and h[4] and h[5])
 
-                if sim_engine is not None and r["hits"]:
+                # frame: entries with any stored row (unchanged by S7_VERIFIED_ONLY,
+                # so both modes score the same annotations)
+                if sim_engine is not None and r["n_rows_all"]:
                     annotations = [(t, v) for t, vals in gt_map.items() for v in vals]
                     best_by_k = {k: 0.0 for k in KSET}
                     for t, v in annotations:
@@ -418,6 +462,9 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
                                 else:
                                     agg_sim_attempt["ion"]["no_family"] += 1
                                 sim_agg["per_type"]["ion"].append(rec)
+                                if dump:
+                                    dump.write(json.dumps({"eid": eid, "t": "ion", "v": v,
+                                        "attempted": att_ion, "el_present": ion_present_el}) + "\n")
                                 for k in KSET:
                                     best_by_k[k] = max(best_by_k[k], rec[k])
                                 continue
@@ -434,14 +481,23 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
                         else:
                             agg_sim_attempt[t]["no_family"] += 1
                         row = {}
+                        top = []
                         for idx, (ht, hid, _conf, *_g) in enumerate(fhits, 1):
                             s = sim_engine.sim(t, v, ht, hid)
+                            if dump and idx <= 10:
+                                top.append([_g[3] if len(_g) > 3 else None, ht, hid,
+                                            round(_conf, 2), None if s is None else round(s, 3)])
                             for k in KSET:
                                 if idx <= k:
                                     row[k] = max(row.get(k, 0.0), s)
                         rec = {k: row.get(k, 0.0) for k in KSET}
                         rec["_attempted"] = attempted
                         sim_agg["per_type"][t].append(rec)
+                        if dump:
+                            dump.write(json.dumps({"eid": eid, "t": t, "v": v, "attempted": attempted,
+                                "n_hits": len(r["hits"]), "n_fam": len(fhits),
+                                "sim": {k: round(rec[k], 3) for k in KSET},
+                                "top": top}) + "\n")
                         for k in KSET:
                             best_by_k[k] = max(best_by_k[k], rec[k])
                     sim_agg["any_n"] += 1
@@ -449,6 +505,8 @@ def full_section(con, root, sample, threads, pattern, sim_engine):
                         if best_by_k[k] >= SIM_VALIDATED:
                             sim_agg["any"][k] += 1
 
+    if dump:
+        dump.close()
     out = {"scanned_entries": agg["scanned"], "read_errors": agg["read_errors"],
            "not_live_skipped": agg["not_live_skipped"],
            "gt_covered_scanned": agg["gt_covered"],

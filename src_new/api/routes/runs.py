@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, Form, Header, HTTPException, Request, UploadFile, Query
+from fastapi import APIRouter, Body, File, Form, Header, HTTPException, Request, UploadFile, Query
 from fastapi.responses import PlainTextResponse
 import csv
 import io
@@ -168,6 +168,31 @@ def _requester_ip(request: Request) -> Optional[str]:
     return hops[0]
 
 
+def _campaign_input_dir(rel: str) -> Path:
+    """A repository-campaign input directory, confined to
+    BAT3_CAMPAIGN_INPUT_ROOT (symlinks resolved before the check)."""
+    root = Path(os.environ.get("BAT3_CAMPAIGN_INPUT_ROOT", "/data/validation")).resolve()
+    rel_path = Path(rel)
+    if rel_path.is_absolute() or ".." in rel_path.parts or not rel_path.parts:
+        raise HTTPException(status_code=422, detail="campaign_input must be a relative path")
+    src = (root / rel_path).resolve()
+    if not src.is_relative_to(root) or not src.is_dir():
+        raise HTTPException(status_code=422, detail=f"No campaign input directory {rel!r}")
+    if not any(p.is_file() for p in src.iterdir()):
+        raise HTTPException(status_code=422, detail=f"Campaign input {rel!r} has no files")
+    return src
+
+
+def _link_campaign_input(src: Path, input_dir: Path) -> None:
+    """Link the campaign files into the run's own input directory: they are
+    read in place, while anything the run writes (unpacked archives) stays
+    in the run directory, and deleting the run removes only the links."""
+    for entry in sorted(src.iterdir()):
+        if entry.name.startswith(".") or not entry.is_file():
+            continue
+        (input_dir / entry.name).symlink_to(entry)
+
+
 def load_results_json(run_id: str) -> Dict[str, Any]:
     """Load results.json for a given run_id."""
     results_path = safe_run_dir(get_runs_dir(), run_id) / "results.json"
@@ -254,7 +279,7 @@ def _input_check(input_dir: Path) -> tuple[Optional[str], Optional[str]]:
 @router.post("", response_model=RunCreateResponse)
 async def create_run(
     request: Request,
-    files: List[UploadFile],
+    files: Optional[List[UploadFile]] = File(None),
     config_file: Optional[UploadFile] = None,
     config_json: Optional[str] = Form(None),
     run_id: Optional[str] = None,
@@ -262,6 +287,7 @@ async def create_run(
     preset: Optional[str] = Form(None),
     retention: Optional[str] = Form(None),
     queue: Optional[str] = Form(None),
+    campaign_input: Optional[str] = Form(None),
     queue_token: Optional[str] = Header(None, alias="X-Queue-Token"),
 ) -> RunCreateResponse:
     """
@@ -272,6 +298,11 @@ async def create_run(
 
     ``queue``: "web" (default) or "repository" (campaigns: own workers and
     automatic retries; needs the X-Queue-Token header, issued on the admin page).
+
+    ``campaign_input`` (repository queue only): instead of uploads, a
+    directory relative to BAT3_CAMPAIGN_INPUT_ROOT (/data/validation), e.g.
+    ``1234/input``; its files are linked into the run's input directory and
+    read in place, as the g1 campaign did.
     
     The pipeline runs in the background via Celery. Returns immediately with run status.
     """
@@ -282,6 +313,16 @@ async def create_run(
         raise HTTPException(status_code=422, detail=f"Unknown queue {lane!r}: web or repository")
     if lane != "web" and not queue_tokens.check(get_runs_dir(), lane, queue_token):
         raise HTTPException(status_code=403, detail=f"The {lane} queue needs a valid X-Queue-Token header.")
+    files = [f for f in (files or []) if f is not None]
+    campaign_src = None
+    if campaign_input:
+        if lane != "repository":
+            raise HTTPException(status_code=403, detail="campaign_input needs the repository queue.")
+        if files:
+            raise HTTPException(status_code=422, detail="Give either files or campaign_input, not both.")
+        campaign_src = _campaign_input_dir(campaign_input)
+    elif not files:
+        raise HTTPException(status_code=422, detail="No files uploaded")
 
     # Generate run_id if not provided. A client-chosen id becomes a directory
     # name under the runs dir: no separators, no "..".
@@ -341,7 +382,7 @@ async def create_run(
                 detail=f"File '{name}' exceeds 128 MiB limit"
             )
         sanitised[name] = file
-    if not sanitised:
+    if not sanitised and campaign_src is None:
         raise HTTPException(
             status_code=422,
             detail="No files with usable names were uploaded"
@@ -392,6 +433,9 @@ async def create_run(
     # Create run directory structure (after validation)
     input_dir.mkdir(parents=True, exist_ok=True)
     
+    if campaign_src is not None:
+        _link_campaign_input(campaign_src, input_dir)
+
     # Save uploaded files to input directory
     saved_files = {}
     for name, file in sanitised.items():

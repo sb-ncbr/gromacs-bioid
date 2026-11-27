@@ -1,0 +1,64 @@
+# g2 validation rerun (docs/campaign_rerun.md): one BioID repository-queue
+# run per g1 entry, inputs read in place, results copied back as
+# /data/validation/<entry>/results-g2.json. Resumable: delete and re-apply the
+# Job to continue (state in /data/validation/rerun-g2/state.json).
+#
+# Before applying:
+#   1. the release that contains scripts/campaign_rerun.py and the API's
+#      campaign_input is deployed; put its image digest below;
+#   2. kubectl -n ceitec-biodata-ns create secret generic bioid-campaign-queue-token \
+#        --from-literal=token=<the repository queue token>
+#      (the existing one: issuing a new token on the admin page replaces it);
+#   3. smoke first: args "--limit", "20"; then remove the limit.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bioid-campaign-rerun-g2
+  namespace: ceitec-biodata-ns
+  labels:
+    app: bioid-campaign-rerun
+spec:
+  backoffLimit: 20
+  template:
+    metadata:
+      labels:
+        app: bioid-campaign-rerun
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: rerun
+        image: cerit.io/tomsko/bat3-validation-api@sha256:REPLACE_WITH_RELEASE_DIGEST
+        command: ["python3", "/app/scripts/campaign_rerun.py"]
+        args: ["--arm", "g2", "--reference", "results-g1.json", "--max-in-flight", "32"]
+        env:
+        - name: BIOID_API
+          value: http://bat3-ceitec-bat3-api:8000
+        - name: BAT3_RUNS_DIR
+          value: /app/runs
+        - name: VALIDATION_DATA_ROOT
+          value: /data/validation
+        - name: BIOID_QUEUE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: bioid-campaign-queue-token
+              key: token
+        - name: TZ
+          value: Europe/Prague
+        resources:
+          requests: {cpu: 100m, memory: 256Mi}
+          limits: {cpu: "1", memory: 1Gi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: {drop: [ALL]}
+          runAsUser: 1000
+        volumeMounts:
+        - {mountPath: /app/runs, name: runs-data, readOnly: true}
+        - {mountPath: /data/validation, name: validation-data}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      volumes:
+      - name: runs-data
+        persistentVolumeClaim: {claimName: bat3-runs-data-ceitec}
+      - name: validation-data
+        persistentVolumeClaim: {claimName: validation-data-ceitec}
