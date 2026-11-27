@@ -13,6 +13,7 @@ class InputKind(str, Enum):
     LAMMPS = "lammps"
     PDB = "pdb"
     MMCIF = "mmcif"
+    DESMOND = "desmond"  # dm1 audit (L6): Desmond/Maestro .cms/.mae
 
 
 @dataclass

@@ -6,9 +6,8 @@
 # Before applying:
 #   1. the release that contains scripts/campaign_rerun.py and the API's
 #      campaign_input is deployed; put its image digest below;
-#   2. kubectl -n ceitec-biodata-ns create secret generic bioid-campaign-queue-token \
-#        --from-literal=token=<the repository queue token>
-#      (the existing one: issuing a new token on the admin page replaces it);
+#   2. the repository queue token is mdval's own secret (mdval-bioid-queue):
+#      one token per lane, and issuing a new one on the admin page replaces it;
 #   3. smoke first: args "--limit", "20"; then remove the limit.
 apiVersion: batch/v1
 kind: Job
@@ -40,7 +39,7 @@ spec:
         - name: BIOID_QUEUE_TOKEN
           valueFrom:
             secretKeyRef:
-              name: bioid-campaign-queue-token
+              name: mdval-bioid-queue
               key: token
         - name: TZ
           value: Europe/Prague

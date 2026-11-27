@@ -418,9 +418,14 @@ def guess_bonds_union(u, vdwradii, fudge_factor: float, logger=logging,
     Returns the final bond count (0 only when truly nothing could be made).
     """
     from MDAnalysis.core.topologyattrs import Bonds
+    from .coordinates import coordinates_absent
     existing: set[tuple[int, int]] = set()
     if hasattr(u.atoms, 'bonds') and len(u.atoms.bonds):
         existing = {tuple(sorted((int(a), int(b)))) for a, b in u.atoms.bonds.indices}
+    if coordinates_absent(u):
+        return len(existing)  # dm1 audit (L2): no geometry to guess from
+    from .coordinates import periodic_box
+    box = periodic_box(u)  # dm1 audit (L7): .gro-only loads, minimum image
     try:
         if hasattr(u.atoms, 'bonds'):
             u.del_TopologyAttr('bonds')
@@ -430,6 +435,7 @@ def guess_bonds_union(u, vdwradii, fudge_factor: float, logger=logging,
             vdwradii=vdwradii,
             fudge_factor=fudge_factor,
             lower_bound=0.1,
+            **({"box": box} if box is not None else {}),
         )
     except Exception as exc:
         # restore authored bonds on any guesser failure

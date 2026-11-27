@@ -43,7 +43,7 @@ OWNER_HEADER = "X-Owner-Token"
 ALLOWED_SUFFIXES = (
     ".tpr", ".gro", ".top", ".itp", ".trr", ".xtc", ".ndx", ".mdp",
     ".prmtop", ".parm7", ".nc", ".rst7", ".inpcrd", ".restrt", ".mdcrd",
-    ".psf", ".pdb", ".ent", ".crd", ".dcd", ".coor", ".prm", ".rtf", ".str", ".inp",
+    ".psf", ".pdb", ".ent", ".crd", ".dcd", ".coor", ".cms", ".mae", ".prm", ".rtf", ".str", ".inp",
     ".data", ".lmp", ".cif", ".mmcif", ".xyz",
     ".json", ".yaml", ".yml", ".ini",
     ".zip", ".tar", ".tar.gz", ".tgz",

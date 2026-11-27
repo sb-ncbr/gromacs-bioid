@@ -1,7 +1,7 @@
 /**
  * File-type helpers for the frontpage upload flow.
  * Engine matrix (2026-10 loading-strategy widening): keep in sync with
- * src_new loader — GROMACS, AMBER, CHARMM/NAMD, LAMMPS, PDB, mmCIF.
+ * src_new loader — GROMACS, AMBER, CHARMM/NAMD, LAMMPS, Desmond, PDB, mmCIF.
  */
 
 /** Accepted extensions, used for the UI hint. */
@@ -11,7 +11,9 @@ export const ACCEPTED_EXTENSIONS = [
   // AMBER
   "prmtop", "parm7", "nc", "rst7", "inpcrd", "restrt", "mdcrd",
   // CHARMM / NAMD
-  "psf", "pdb", "ent", "crd", "dcd",
+  "psf", "pdb", "ent", "crd", "dcd", "coor",
+  // Desmond / Maestro
+  "cms", "mae",
   // auxiliaries the server accepts with a simulation (index, run, CHARMM
   // parameter / stream files): dropping a whole folder should not drop them
   "ndx", "mdp", "prm", "rtf", "str", "inp",
@@ -28,7 +30,7 @@ export const ACCEPT_MAP: Record<string, string[]> = {
   "application/octet-stream": [
     ".tpr", ".gro", ".top", ".itp", ".trr", ".xtc",
     ".prmtop", ".parm7", ".nc", ".rst7", ".inpcrd", ".restrt", ".mdcrd",
-    ".psf", ".pdb", ".ent", ".crd", ".dcd",
+    ".psf", ".pdb", ".ent", ".crd", ".dcd", ".coor", ".cms", ".mae",
     ".ndx", ".mdp", ".prm", ".rtf", ".str", ".inp",
     ".data", ".cif",
   ],
@@ -63,13 +65,15 @@ export function inputHints(names: string[]): string[] {
   // an archive's contents are unpacked and checked by the server
   if (has("zip", "tar", "tar.gz", "tgz")) return [];
   const hints: string[] = [];
-  const coords = has("gro", "pdb", "cif", "crd", "rst7", "inpcrd", "restrt", "nc", "mdcrd", "dcd", "xtc", "trr");
+  const coords = has("gro", "pdb", "cif", "crd", "rst7", "inpcrd", "restrt", "nc", "mdcrd", "dcd", "xtc", "trr", "coor");
   if (has("top") && !has("tpr") && !coords) hints.push("A .top needs coordinates: add the .gro.");
   if (has("itp") && !has("top", "tpr")) hints.push(".itp files are includes: add the .top that includes them, or the .tpr.");
-  if (has("prmtop", "parm7") && !has("rst7", "inpcrd", "restrt", "nc", "mdcrd", "pdb")) hints.push("An AMBER topology needs coordinates: add the .rst7 or .inpcrd.");
-  if (has("psf") && !has("pdb", "crd", "dcd")) hints.push("A .psf needs coordinates: add the .pdb, .crd or .dcd.");
+  if (has("prmtop", "parm7") && !has("rst7", "inpcrd", "restrt", "nc", "mdcrd", "pdb", "dcd", "trr", "xtc"))
+    hints.push("An AMBER topology alone has no coordinates: BioID identifies molecules from it, but structure searches are skipped. Add the .rst7 or .inpcrd.");
+  if (has("psf") && !has("pdb", "crd", "dcd", "coor", "xtc", "trr", "nc"))
+    hints.push("A .psf alone has no coordinates: BioID identifies molecules from it, but structure searches are skipped. Add the .pdb, .crd, .coor or .dcd.");
   if (has("rst7", "inpcrd", "restrt", "mdcrd", "nc") && !has("prmtop", "parm7")) hints.push("AMBER coordinates need their topology: add the .prmtop.");
-  if (has("xtc", "trr") && !has("tpr", "top", "gro", "pdb")) hints.push("A trajectory alone has no topology: add the .tpr (or .top and .gro).");
+  if (has("xtc", "trr") && !has("tpr", "top", "gro", "pdb", "psf", "prmtop", "parm7")) hints.push("A trajectory alone has no topology: add the .tpr (or .top and .gro).");
   if (has("gro") && !has("top", "itp", "tpr"))
     hints.push("A .gro alone has no topology: BioID will guess molecules and bonds, so identification will likely be incomplete. Add the .top (and .itp) or the .tpr.");
   return hints;

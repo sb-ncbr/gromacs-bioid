@@ -86,9 +86,9 @@ class TestCharmmDiscovery:
         assert decision.input_kind == InputKind.CHARMM
         assert decision.selected_strategy == "PSF_DCD"
 
-    def test_psf_only_decision_warns_and_missing_topology_fails(self, tmp_path: Path):
-        """psf with no coordinate source: CHARMM decision + warning; strategies
-        all fail validation -> load_simulation returns honest failure."""
+    def test_psf_only_decision_warns_and_loads_topology_only(self, tmp_path: Path):
+        """psf with no coordinate source: CHARMM decision + warning; it loads
+        from the topology alone (dm1 audit L2: was an honest failure)."""
         d = tmp_path / "psf_only"
         d.mkdir()
         shutil.copy(PSF_PDB_DIR / "system.psf", d / "system.psf")
@@ -96,8 +96,8 @@ class TestCharmmDiscovery:
         assert decision.input_kind == InputKind.CHARMM
         assert decision.selected_strategy == "PSF_ONLY"
         assert "charmm_psf_without_coordinate_source" in decision.warnings
-        assert not result.success
-        assert len(result.attempts) == 0 or all(a.status == "failed" for a in result.attempts)
+        assert result.success
+        assert [a.strategy.value for a in result.attempts if a.status == "success"] == ["topology_only"]
 
 
 class TestSuffixTableRoles:

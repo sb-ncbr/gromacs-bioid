@@ -21,12 +21,8 @@ The scoring scripts run unchanged on that file name.
 2. **E2E checks** on the deployed build: the canary entries (water + duplicate ions,
    modified RNA, AMBER prmtop H rename, DOG membrane, NMA‑capped ACE2, mmCIF‑heavy
    ligands). Compare them with g1.
-3. **Token secret**: use the *existing* repository token. Issuing a new one on the
+3. **Token secret**: the Job reads mdval's `mdval-bioid-queue` secret (the existing repository token). Issuing a new one on the
    admin page replaces mdval's.
-   ```
-   kubectl -n ceitec-biodata-ns create secret generic bioid-campaign-queue-token \
-     --from-literal=token=<repository queue token>
-   ```
 4. **Dry run**: set the Job args to `--dry-run`. The log must show 15133 entries.
 5. **Smoke**: run with `--limit 20`. Check that 20 `results-g2.json` files appeared and
    look sane against `results-g1.json` (stages, top hits).

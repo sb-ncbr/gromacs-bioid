@@ -374,11 +374,23 @@ class ResultsManager:
         self._payload["critical_errors"].append(error)
         self._save()
     
+    #: dm1 audit (I3): log records are persisted at most this often. Each one
+    #: used to rewrite results.json synchronously; 28k per-chain warnings on an
+    #: 11 MB payload kept identify_molecules "running" for 2.5 h past every
+    #: stage deadline (zenodo/240735, 3604139, 3634884). Status changes,
+    #: progress and artifacts still save at once, and carry pending events.
+    _LOG_EVENT_SAVE_INTERVAL_S = 5.0
+
     def add_event(self, kind: str, **kwargs) -> None:
         """Add a structured event to the events list."""
         event = {"kind": kind, "timestamp": _now_iso()}
         event.update(kwargs)
         self._payload["events"].append(event)
+        if kind == "log":
+            with self._save_lock:
+                if time.monotonic() - self._last_save_mono < self._LOG_EVENT_SAVE_INTERVAL_S:
+                    self._save_dirty = True
+                    return
         self._save()
     
     def record_progress(self, step_id: str, label: str, value: Any) -> None:

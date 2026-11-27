@@ -35,6 +35,13 @@ describe("what the server accepts (2026-11-17)", () => {
   it("warns, but does not stop, a .gro without a topology", () => {
     expect(inputHints(["conf.gro"])[0]).toContain("likely be incomplete");
     expect(inputHints(["conf.gro", "topol.top"])).toEqual([]);
-    expect(inputHints(["s.psf", "s.cif"])[0]).toContain("A .psf needs coordinates");
+    expect(inputHints(["s.psf", "s.cif"])[0]).toContain("A .psf alone has no coordinates");
+  });
+  it("knows the dm1-audit pairings and formats (2026-11-27)", () => {
+    for (const n of ["s.coor", "sys.cms", "sys.mae"]) expect(isAccepted(n)).toBe(true);
+    expect(inputHints(["s.psf", "s.coor"])).toEqual([]);
+    expect(inputHints(["s.psf", "s.xtc"])).toEqual([]);
+    expect(inputHints(["s.prmtop", "s.dcd"])).toEqual([]);
+    expect(inputHints(["s.prmtop"])[0]).toContain("structure searches are skipped");
   });
 });

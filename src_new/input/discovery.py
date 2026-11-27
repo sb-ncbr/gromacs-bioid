@@ -52,6 +52,9 @@ _CANONICAL_SUFFIX_TABLE: dict[str, tuple[str, str]] = {
     # B3 (BH-014 rest): .ent IS PDB-format content (X03) — load as PDB.
     ".ent": ("PDB", "structure"),
     ".cif": ("MMCIF", "structure"),
+    # dm1 audit (L6): Desmond/Maestro system (topology + coordinates)
+    ".cms": ("DESMOND_CMS", "topology"),
+    ".mae": ("DESMOND_CMS", "topology"),
     # engine-neutral trajectories (.xtc pairs with gromacs OR amber prmtop;
     # the old duplicated dict let AMBER_XTC silently overwrite GROMACS_XTC)
     ".xtc": ("XTC", "trajectory"),
@@ -86,6 +89,8 @@ def discover_input_kind(dir_path: Path) -> InputKind | None:
 
     if ".prmtop" in extensions:
         return InputKind.AMBER
+    if extensions & {".cms", ".mae"}:
+        return InputKind.DESMOND
     _COORD = {".nc", ".rst7", ".inpcrd", ".restrt", ".xtc", ".dcd", ".mdcrd", ".pdb"}
     if ".parm7" in extensions and extensions & _COORD:  # A-16: any coordinate, not only .nc
         return InputKind.AMBER
@@ -338,6 +343,16 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             warnings=warnings,
         )
 
+    # dm1 audit (L6): a Desmond system file holds topology and coordinates
+    if exts & {".cms", ".mae"}:
+        cms = sorted((f.path for f in bundle.files if f.path.suffix.lower() in (".cms", ".mae")),
+                     key=lambda p: (p.suffix.lower() != ".cms", -p.stat().st_size if p.exists() else 0))
+        return LoadDecision(
+            input_kind=InputKind.DESMOND,
+            selected_strategy="DESMOND_CMS",
+            topology_files=cms[:1],
+        )
+
     # 6. .pdb -> "PDB_SINGLE", PDB; .ent carries the same format (B3, X03)
     if ".pdb" in exts or ".ent" in exts:
         pdb_files = [f.path for f in bundle.files
@@ -359,6 +374,18 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             topology_files=cif_files[:1],
         )
     
+    # dm1 audit (L2): a topology without any coordinate file (.prmtop/.parm7,
+    # .top/.itp; a lone .psf is decided above as CHARMM PSF_ONLY)
+    for ext, kind in ((".prmtop", InputKind.AMBER), (".parm7", InputKind.AMBER),
+                      (".top", InputKind.GROMACS), (".itp", InputKind.GROMACS)):
+        if ext in exts:
+            return LoadDecision(
+                input_kind=kind,
+                selected_strategy="TOPOLOGY_ONLY",
+                topology_files=[f.path for f in bundle.files if f.path.suffix.lower() == ext][:1],
+                warnings=["topology_without_coordinates"],
+            )
+
     # Fallback: input_kind=None, strategy="UNKNOWN", confidence=0.0, warnings=["No recognized input files found"]
     return LoadDecision(
         input_kind=None,

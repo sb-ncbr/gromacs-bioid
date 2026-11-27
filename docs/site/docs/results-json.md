@@ -154,6 +154,22 @@ _meta.weights_effective    [0.4, 0.4, 0.2]   # after normalisation to sum 1
 
 `class_sizes` counts the verified candidates per `equivalence_class_id`.
 
+## `data.descriptions` — bead models
+
+A protein represented by beads (coarse-grained, or CA atoms only) has no
+atomistic chemistry, so it cannot be verified the way an all-atom molecule is.
+It is **described** instead (since 27 November 2026): one record per such
+segment with `state: "described"`, `representation` (`coarse-grained` or
+`CA-only`), `residues`, `atoms_per_residue`, `sequence` (one-letter, from the
+residue names) and `leads` — the best structure and sequence search hits
+(`identifier`, `score`, `resolver`), always `verified: false`. A description
+is not an identification. Absent when the run has no bead-model protein.
+
+A run whose deposit has a topology but no coordinates has
+`data.loading.coordinates_absent: true` (warning `topology_without_coordinates`):
+sequences and chemistry come from the topology, structure searches,
+stereochemistry and pictures are skipped.
+
 ## Other sections
 
 | Key | Meaning |

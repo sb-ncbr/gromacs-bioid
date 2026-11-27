@@ -98,6 +98,10 @@ class PbcRepair:
             selection=self.loader_config.unwrap_selection,
         )
 
+        from .coordinates import coordinates_absent
+        if coordinates_absent(self.u):
+            return report  # dm1 audit (L2): placeholder coordinates
+
         # Capture box dimensions
         if hasattr(self.u, 'dimensions') and self.u.dimensions is not None:
             report.box_dimensions = list(self.u.dimensions)

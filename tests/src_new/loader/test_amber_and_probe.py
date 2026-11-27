@@ -93,13 +93,16 @@ class TestAmberDiscovery:
         assert dec.input_kind == InputKind.AMBER
         assert dec.selected_strategy == "PRMTOP_MDCRD"
 
-    def test_prmtop_only_is_honest_unknown(self, tmp_path: Path):
+    def test_prmtop_only_is_topology_only(self, tmp_path: Path):
+        # dm1 audit (L2): was UNKNOWN; now loaded from the topology alone,
+        # and the missing coordinates are stated
         d = tmp_path / "prmtop_only"
         d.mkdir()
         shutil.copy(RST7_DIR / "system.prmtop", d / "system.prmtop")
         dec = select_best_file_combination(inspect_directory(d))
-        assert dec.input_kind is None
-        assert dec.selected_strategy == "UNKNOWN"
+        assert dec.input_kind == InputKind.AMBER
+        assert dec.selected_strategy == "TOPOLOGY_ONLY"
+        assert "topology_without_coordinates" in dec.warnings
 
 
 class TestAmberStrategyWiring:
@@ -153,7 +156,8 @@ class TestAmberLoading:
 
 class TestProbeIntegration:
     def test_mismatched_psf_dcd_rejected_atoms(self, tmp_path: Path):
-        """psf(36) vs dcd(30) -> attempt rejected with both counts, no load."""
+        """psf(36) vs dcd(30) -> attempt rejected with both counts; the run
+        then loads from the topology alone (dm1 audit L2), saying so."""
         dep = tmp_path / "baddep"
         dep.mkdir()
         shutil.copy(PSF_PDB_DIR / "system.psf", dep / "system.psf")
@@ -163,7 +167,8 @@ class TestProbeIntegration:
         bundle = inspect_directory(dep)
         dec = select_best_file_combination(bundle)
         result = load_simulation(dec, bundle, RunConfig(), ResultsManager(tmp_path / "r.json"))
-        assert not result.success
+        assert result.success and result.final_strategy == LoadStrategy.TOPOLOGY_ONLY
+        assert any(w.startswith("topology_without_coordinates") for w in result.warnings)
         codes = [a.error_code for a in result.attempts]
         assert "rejected_atoms" in codes
         rej = next(a for a in result.attempts if a.error_code == "rejected_atoms")

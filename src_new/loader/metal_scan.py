@@ -148,8 +148,9 @@ def scan_metals(
             resnames = [str(r) for r in atoms.resnames]
         except Exception:
             resnames = [""] * n_atoms
+        from .coordinates import coordinates_absent
         try:
-            positions = atoms.positions
+            positions = None if coordinates_absent(atoms) else atoms.positions
         except Exception:
             positions = None
         if positions is None:

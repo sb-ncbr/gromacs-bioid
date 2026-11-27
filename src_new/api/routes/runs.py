@@ -266,14 +266,19 @@ def _input_check(input_dir: Path) -> tuple[Optional[str], Optional[str]]:
         return None, ("Only coordinates without a topology (.gro): BioID will guess molecules and bonds, "
                       "so identification will likely be incomplete. Upload the .top (and .itp) or .tpr "
                       "with it for reliable results.")
+    if usable and all(s == LoadStrategy.TOPOLOGY_ONLY for s in usable):
+        # dm1 audit (L2): accepted, the missing coordinates stated
+        return None, ("Only a topology without coordinates: BioID identifies the molecules from the "
+                      "topology (sequences, chemistry), but structure searches and stereochemistry are "
+                      "skipped. Upload the coordinates (.gro, .pdb, .rst7, .crd, ...) with it for full results.")
     if usable:
         return None, None
     names = sorted(p.name for p in input_dir.iterdir())
     return ("BioID could not find a complete simulation in these files ("
             + ", ".join(names[:10]) + (", …" if len(names) > 10 else "") + "). "
             "Upload a topology together with coordinates, e.g. .tpr (+ .gro), .gro + .top (+ .itp), "
-            ".prmtop + .inpcrd/.rst7/.nc, .psf + .pdb/.crd/.dcd, a LAMMPS .data file, "
-            "or a single .pdb, .gro or .cif (also inside a .zip or .tar.gz)."), None
+            ".prmtop + .inpcrd/.rst7/.nc/.dcd, .psf + .pdb/.crd/.dcd/.coor/.xtc, a LAMMPS .data file, "
+            "a Desmond .cms, or a single .pdb, .gro or .cif (also inside a .zip or .tar.gz)."), None
 
 
 @router.post("", response_model=RunCreateResponse)

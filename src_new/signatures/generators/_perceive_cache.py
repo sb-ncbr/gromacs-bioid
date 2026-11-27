@@ -1142,6 +1142,9 @@ def assign_stereo_from_3d(mol, fragment) -> None:
     """
     import numpy as np
     from rdkit import Chem as _Chem
+    from ...loader.coordinates import coordinates_absent
+    if coordinates_absent(fragment):
+        return  # dm1 audit (L2): no geometry, stereo stays unspecified
     try:
         n_heavy = fragment.n_atoms
         if mol.GetNumAtoms() < n_heavy:

@@ -34,6 +34,12 @@ class LoadStrategy(str, Enum):
     # dm1 audit (L9): an AMBER topology MDAnalysis refuses (CHARMM-to-AMBER
     # "chamber" files) read by ParmEd, with the deposit's own coordinates
     AMBER_PARMED = "amber_parmed"
+    # dm1 audit (L2): a topology deposited without any coordinates (.itp,
+    # .psf, .prmtop only); sequences and chemistry come from the topology,
+    # coordinate-based signatures and stereo are skipped
+    TOPOLOGY_ONLY = "topology_only"
+    # dm1 audit (L6): Desmond/Maestro .cms/.mae (own reader)
+    DESMOND_CMS = "desmond_cms"
     GROMACS_TPR_GRO = "gromacs_tpr_gro"
     GROMACS_TOP_GRO = "gromacs_top_gro"
     GROMACS_ITP_GRO = "gromacs_itp_gro"
@@ -164,6 +170,58 @@ def _matching_pair(bundle, selected: dict, topo_key: str, traj_key: str):
             return topo, traj
     return None
 
+
+def _sniff_coordinate_format(path: Path) -> str | None:
+    """dm1 audit (L10): the format a coordinate file's CONTENT has when its
+    suffix says otherwise: NetCDF/HDF5 ("NCDF") or PDB text ("PDB"); None
+    when nothing is recognised (the suffix decides, as before)."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(8192)
+    except OSError:
+        return None
+    if head[:3] == b"CDF" or head[:4] == b"\x89HDF":
+        return "NCDF"
+    if b"\0" not in head:
+        lines = head.decode("latin-1").splitlines()[:60]
+        if sum(ln.startswith(("ATOM  ", "HETATM")) for ln in lines) >= 3:
+            return "PDB"
+    return None
+
+
+def _amber_netcdf_universe(topology: Path, nc: Path) -> Universe:
+    """AMBER topology + NetCDF coordinates. MDAnalysis reads AMBER NetCDF
+    trajectories only; an AMBER NetCDF *restart* (Conventions AMBERRESTART,
+    e.g. min2.rst.nc of figshare/29716145) has the same coordinates
+    variable without a frame axis and is read here directly (dm1 audit L10)."""
+    try:
+        return Universe(str(topology), str(nc), topology_format="PRMTOP", format="NCDF")
+    except (TypeError, ValueError) as exc:  # MDAnalysis raises TypeError on the convention
+        if "AMBER" not in str(exc):
+            raise
+        import numpy as np
+        from scipy.io import netcdf_file
+        with netcdf_file(str(nc), "r", mmap=False) as f:
+            conv = f.Conventions.decode() if isinstance(f.Conventions, bytes) else str(f.Conventions)
+            if "AMBERRESTART" not in conv:
+                raise
+            xyz = np.array(f.variables["coordinates"].data, dtype=np.float32)
+            box = None
+            if "cell_lengths" in f.variables and "cell_angles" in f.variables:
+                box = np.concatenate([f.variables["cell_lengths"].data,
+                                      f.variables["cell_angles"].data]).astype(np.float32)
+        u = Universe(str(topology), topology_format="PRMTOP")
+        if xyz.reshape(-1, 3).shape[0] != u.atoms.n_atoms:
+            raise _GateFailure("atom_count_mismatch",
+                               f"{nc.name}: {xyz.reshape(-1, 3).shape[0]} atoms, topology {u.atoms.n_atoms}")
+        u.load_new(xyz.reshape(1, -1, 3), format="memory")
+        if box is not None:
+            u.dimensions = box
+        return u
+
+
+#: dm1 audit (L2): topology files that can stand alone, best first
+_TOPOLOGY_ONLY_ORDER = ("psf", "prmtop", "parm7", "top", "itp")
 
 #: dm1 audit (L9): coordinate sources for a ParmEd-read AMBER topology, in
 #: preference order (MDAnalysis format; None = inferred from the suffix)
@@ -622,6 +680,20 @@ def validate_for_strategy(bundle: InputBundle, strategy: LoadStrategy) -> FileVa
                 warnings.append(f"multiple_{coord_ext}_files")
                 selected_files[coord_ext] = sorted(coord_files, key=lambda p: p.name)[0]
 
+        case LoadStrategy.DESMOND_CMS:
+            cms = _get_files_by_ext(bundle, ".cms") + _get_files_by_ext(bundle, ".mae")
+            if not cms:
+                errors.append("No .cms/.mae file found")
+            else:
+                selected_files["cms"] = max(cms, key=lambda p: p.stat().st_size if p.exists() else 0)
+
+        case LoadStrategy.TOPOLOGY_ONLY:
+            topo = [f for key in _TOPOLOGY_ONLY_ORDER for f in _get_files_by_ext(bundle, f".{key}")]
+            if not topo:
+                errors.append("No topology file found")
+            else:
+                selected_files["topology"] = topo[0]
+
         case LoadStrategy.AMBER_PARMED:
             topo_files = _get_files_by_ext(bundle, ".prmtop") + _get_files_by_ext(bundle, ".parm7")
             coords = [(ext, f) for ext, _fmt in _PARMED_COORDINATES
@@ -838,6 +910,8 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
             base_strategies = [LoadStrategy.PDB]
         else:
             base_strategies = [LoadStrategy.PDB]
+    elif input_kind == InputKind.DESMOND:
+        base_strategies = [LoadStrategy.DESMOND_CMS]
     elif input_kind == InputKind.MMCIF:
         if strategy == "MMCIF_SINGLE":
             base_strategies = [LoadStrategy.MMCIF_GEMMI]
@@ -882,6 +956,11 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
     # step 4 of the ladder keeps that floor but records topology_ignored.
     if input_kind == InputKind.AMBER:
         base_strategies.append(LoadStrategy.PDB)
+
+    # dm1 audit (L2): the topology alone, as the very last rung of the
+    # engine ladders (only when nothing with coordinates loaded)
+    if input_kind in (InputKind.GROMACS, InputKind.AMBER, InputKind.CHARMM):
+        base_strategies.append(LoadStrategy.TOPOLOGY_ONLY)
 
     # For GROMACS, AMBER and CHARMM, filter to only include strategies that
     # have validation ok=True (files may be absent; fallbacks try alternates)
@@ -1007,12 +1086,16 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
             )
         case LoadStrategy.GROMACS_GRO:
             # A-07 (red-team 3.3): names/resids from the .gro; bonds guessed
-            # downstream by topology repair (element-based after 3.2).
-            return Universe(str(files["gro"]))
+            # downstream by topology repair (element-based after 3.2), under
+            # the periodic box (dm1 audit L7: the dm1 v5 coordinates tier).
+            from .coordinates import mark_periodic_bond_guess
+            u = Universe(str(files["gro"]))
+            mark_periodic_bond_guess(u)
+            return u
         case LoadStrategy.AMBER_PRMTOP_NC:
-            return Universe(str(files["prmtop"]), str(files["nc"]))
+            return _amber_netcdf_universe(files["prmtop"], files["nc"])
         case LoadStrategy.AMBER_PARM7_NC:
-            return Universe(str(files["parm7"]), str(files["nc"]))
+            return _amber_netcdf_universe(files["parm7"], files["nc"])
         case LoadStrategy.AMBER_PRMTOP_XTC:
             return Universe(str(files["prmtop"]), str(files["xtc"]))
         case LoadStrategy.AMBER_PARM7_XTC:
@@ -1058,12 +1141,12 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
                 str(files["parm7"]), str(files["rst7"]),
                 topology_format="PRMTOP", format="RESTRT",
             )
-        case LoadStrategy.AMBER_PRMTOP_MDCRD:
-            u = Universe(str(files["prmtop"]), str(files["mdcrd"]), topology_format="PRMTOP")
-            _ = u.trajectory[0]
-            return u
-        case LoadStrategy.AMBER_PARM7_MDCRD:
-            u = Universe(str(files["parm7"]), str(files["mdcrd"]), topology_format="PRMTOP")
+        case LoadStrategy.AMBER_PRMTOP_MDCRD | LoadStrategy.AMBER_PARM7_MDCRD:
+            topo = files["prmtop" if strategy == LoadStrategy.AMBER_PRMTOP_MDCRD else "parm7"]
+            if _sniff_coordinate_format(files["mdcrd"]) == "NCDF":
+                # dm1 audit (L10): a NetCDF trajectory deposited as .mdcrd
+                return _amber_netcdf_universe(topo, files["mdcrd"])
+            u = Universe(str(topo), str(files["mdcrd"]), topology_format="PRMTOP")
             _ = u.trajectory[0]
             return u
         case LoadStrategy.GROMACS_TPR_TRR:
@@ -1110,6 +1193,15 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
             return Universe(str(pdb_path), in_memory=True)
         case LoadStrategy.MMCIF_GEMMI:
             return _load_mmcif_via_gemmi(files["cif"])
+        case LoadStrategy.DESMOND_CMS:
+            from .desmond_cms import cms_universe
+            return cms_universe(files["cms"])
+        case LoadStrategy.TOPOLOGY_ONLY:
+            from .coordinates import mark_coordinates_absent
+            topo = files["topology"]
+            u = Universe(str(topo), **_TOPOLOGY_PARSE_KWARGS.get(topo.suffix.lower().lstrip("."), {}))
+            mark_coordinates_absent(u)
+            return u
         case LoadStrategy.AMBER_PARMED:
             coord = files["coordinates"]
             fmt = dict(_PARMED_COORDINATES)[coord.suffix.lower()]
@@ -1124,6 +1216,8 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
             # dm1 audit (L4/L5): frame 0 of another engine's trajectory;
             # not in_memory (trajectories can be GB-scale)
             topo_key, traj_key, fmt = _CROSS_ENGINE_PAIRS[strategy]
+            # dm1 audit (L10): a .coor that is PDB text (CHARMM/NAMD tools write both)
+            fmt = _sniff_coordinate_format(files[traj_key]) or fmt
             u = Universe(str(files[topo_key]), str(files[traj_key]), format=fmt,
                          **_TOPOLOGY_PARSE_KWARGS.get(topo_key, {}))
             _ = u.trajectory[0]
@@ -1704,10 +1798,20 @@ def load_simulation(
 
             # Universal coordinate-scale guard (geometry-only detection; heals
             # nm/angstrom collapse for any strategy, codes per severity).
-            scale_report = run_scale_guard(universe, strategy, validation.selected_files)
-            results.set_data("loading/scale_correction", scale_report.to_dict())
-            if scale_report.warning_message:
-                all_warnings.append(scale_report.warning_message)
+            scale_report = None
+            if strategy == LoadStrategy.TOPOLOGY_ONLY:
+                # dm1 audit (L2): placeholder coordinates, nothing to scale
+                results.set_data("loading/coordinates_absent", True)
+                all_warnings.append(
+                    "topology_without_coordinates: no coordinate file could be used with the "
+                    "topology (none in the input, or none matching its atoms); sequences and "
+                    "chemistry come from the topology, structure searches and stereochemistry "
+                    "are skipped")
+            else:
+                scale_report = run_scale_guard(universe, strategy, validation.selected_files)
+                results.set_data("loading/scale_correction", scale_report.to_dict())
+                if scale_report.warning_message:
+                    all_warnings.append(scale_report.warning_message)
 
             # Success!
             attempt.status = "success"
@@ -1759,7 +1863,7 @@ def load_simulation(
                 final_strategy=strategy,
                 attempts=attempts,
                 warnings=all_warnings,
-                scale_report=scale_report.to_dict(),
+                scale_report=scale_report.to_dict() if scale_report is not None else None,
             )
             
         except _GateFailure as gate:

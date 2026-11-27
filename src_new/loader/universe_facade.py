@@ -297,7 +297,10 @@ class LoadedUniverse:
             flags[SegmentProperty.HAS_MASSES.value] = False
         
         # HAS_POSITIONS
-        flags[SegmentProperty.HAS_POSITIONS.value] = hasattr(selected.atoms, 'positions')
+        # dm1 audit (L2): placeholder coordinates of a topology-only load are not positions
+        from .coordinates import coordinates_absent
+        flags[SegmentProperty.HAS_POSITIONS.value] = (
+            hasattr(selected.atoms, 'positions') and not coordinates_absent(selected))
         
         # HAS_NAMES
         if hasattr(selected.atoms, 'names'):

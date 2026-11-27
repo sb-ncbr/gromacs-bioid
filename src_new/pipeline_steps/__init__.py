@@ -1709,6 +1709,16 @@ def _export_results(context):
     output_dir = context.output_directory
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # dm1 audit (I5): bead-model proteins are described (sequence + leads)
+    try:
+        from ..results.descriptions import describe_bead_proteins
+        described = describe_bead_proteins(facade, {
+            k: context.results.get_data(k) for k in ("repair", "fragments", "identifiers")})
+        if described:
+            context.record_data("descriptions", described)
+    except Exception as exc:
+        logger.warning(f"bead-model description failed: {exc}")
+
     # W3.2 item 2 (A6 corpus blocker): all results writes in ONE deferred
     # window. F14 (2952 segments) burned 5675 s here — export_segment_mmcif
     # does set_data + add_artifact per segment (2 synchronous full-payload
@@ -1775,6 +1785,9 @@ def _render_png(context):
         # 2026-11-21 (mdval audit item 8c): switched off for the deployment
         # (repository workers); a choice, not a problem, so no warning.
         return StepResult(summary={"rendered": 0, "reason": "disabled"})
+    if context.results.get_data("loading/coordinates_absent"):
+        # dm1 audit (L2): a topology-only load has no structure to draw
+        return StepResult(summary={"rendered": 0, "reason": "no_coordinates"})
 
     facade = context.get_value("facade")
     if not facade:
