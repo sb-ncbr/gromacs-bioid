@@ -340,9 +340,7 @@ class TestSolventStrippedTrajectory:
             "system.psf": self.SRC / "system.psf",
             "traj.dcd": _dcd_from_positions(pos, tmp_path / "traj.dcd")})
         res, results = _load(tmp_path, d)
-        assert not res.success
-        summary = results.get_data("loading/failure_summary")
-        assert summary["reason"] == "atom_count_mismatch", summary
+        _trajectory_rejected_topology_only(res, results)
 
     def test_count_matching_no_subset_still_fails(self, tmp_path):
         u = self._full()
@@ -351,9 +349,19 @@ class TestSolventStrippedTrajectory:
             "traj.dcd": _dcd_from_positions(u.atoms.positions[:20],
                                             tmp_path / "traj.dcd")})
         res, results = _load(tmp_path, d)
-        assert not res.success
-        assert results.get_data("loading/failure_summary")["reason"] == \
-            "atom_count_mismatch"
+        _trajectory_rejected_topology_only(res, results)
+
+
+def _trajectory_rejected_topology_only(res, results):
+    """dm1 audit (L2): the trajectory is still rejected (no silent
+    mis-load), and the run then loads from the topology alone, coordinates
+    marked absent (was: a failed run with reason atom_count_mismatch)."""
+    assert res.success and res.final_strategy.value == "topology_only"
+    assert results.get_data("loading/coordinates_absent") is True
+    assert not any(a.status == "success" and a.strategy.value == "charmm_psf_dcd"
+                   for a in res.attempts)
+    assert any(a.status == "failed" and a.strategy.value == "charmm_psf_dcd"
+               for a in res.attempts)
 
 
 class TestBlankAmberAtomTypes:

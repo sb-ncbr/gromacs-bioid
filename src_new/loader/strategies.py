@@ -1762,7 +1762,11 @@ def load_simulation(
                     all_warnings.append(
                         f"trajectory_ignored: {probe.error_message}")
                     if (probe.n_atoms_source or 0) < (probe.n_atoms_topology or 0):
-                        queue.append((strategy, True))
+                        # dm1 audit (L2): ahead of the topology-only rung,
+                        # which stays the very last resort
+                        last = next((i for i in range(qi, len(queue))
+                                     if queue[i][0] == LoadStrategy.TOPOLOGY_ONLY), len(queue))
+                        queue.insert(last, (strategy, True))
                     _record_attempts(results, attempts)
                     continue
                 if probe.error_code == "probe_failed":
