@@ -253,6 +253,25 @@ class TestStructureAloneFiTail:
         warnings_ = results.get_data("loading/warnings")
         assert any("topology_ignored" in w for w in warnings_), warnings_
 
+    def test_unreadable_tpr_and_broken_top_fall_to_gro_alone(self, tmp_path):
+        """dm2 zenodo/1230170: an unreadable .tpr and a .top whose
+        force-field #include is missing; the .gro alone still loads (as the
+        .top ladders already do) instead of the coordinate-free last resort."""
+        d = tmp_path / "input"
+        d.mkdir()
+        (d / "topol.tpr").write_bytes(b"\x00not a tpr file\x00" * 8)
+        (d / "popc.top").write_text('#include "ffgmx.itp"\n[ system ]\nt\n')
+        (d / "confout.gro").write_text(
+            "t\n    4\n    1ALA      N    1   1.110   0.613   1.000\n"
+            "    1ALA     CA    2   1.256   0.630   1.000\n"
+            "    1ALA      C    3   1.300   0.770   1.000\n"
+            "    1ALA      O    4   1.240   0.870   1.000\n"
+            "   3.00000   3.00000   3.00000\n")
+        res, results = _load(tmp_path, d)
+        assert res.success, [a.error_message for a in res.attempts]
+        assert res.final_strategy.value == "gromacs_gro"
+        assert not results.get_data("loading/coordinates_absent")
+
     def test_broken_psf_falls_to_flat_pdb(self, tmp_path):
         """CHARMM pair: an unparseable .psf next to a loadable .pdb must
         degrade to flat PDB with topology_ignored (same tail as AMBER)."""

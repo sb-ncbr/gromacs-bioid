@@ -752,6 +752,7 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_TPR_TRR,
                 LoadStrategy.GROMACS_TOP_PDB,   # A8: topology + structure
                 LoadStrategy.GROMACS_ITP_PDB,   # A8: topology + structure
+                LoadStrategy.GROMACS_GRO,  # dm2: topology-free tail, as A-07
             ]
         elif strategy == "TPR_GRO":
             base_strategies = [
@@ -762,6 +763,7 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.GROMACS_TPR_TRR,
                 LoadStrategy.GROMACS_TOP_PDB,   # A8: topology + structure
                 LoadStrategy.GROMACS_ITP_PDB,   # A8: topology + structure
+                LoadStrategy.GROMACS_GRO,  # dm2: topology-free tail, as A-07
             ]
         elif strategy == "TOP_PDB":
             # A8 (BH-016): {top, pdb} without .gro — topology + structure
