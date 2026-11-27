@@ -26,7 +26,7 @@ import psycopg2
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://validation:validation-password-change-me@validation-postgres:5432/bat3_validation",
+    "postgresql://validation@validation-postgres:5432/bat3_validation",
 )
 DATA_ROOT = os.environ.get("VALIDATION_DATA_ROOT", "/data/validation")
 KSET = (1, 5, 10)
@@ -136,13 +136,19 @@ def sql_section(con):
     out["entries_with_gt"] = cur.fetchone()[0]
     cur.execute("SELECT status, count(*) FROM batch_runs GROUP BY 1 ORDER BY 1")
     out["batches"] = dict(cur.fetchall())
+    # GitHub #34: ordered, mutually exclusive classes (first match wins) —
+    # '%timeout%' used to count every stale_timeout row a second time, so the
+    # taxonomy summed above the failed-row count. The sum is checked below.
     fails = {}
+    earlier: list[str] = []
     for cls, pattern in FAIL_CLASSES:
         cur.execute("SELECT count(*), min(entry_id)::text FROM validation_queue "
-                    "WHERE status='failed' AND last_error LIKE %s", (pattern,))
+                    "WHERE status='failed' AND last_error LIKE %s "
+                    "AND NOT (last_error LIKE ANY(%s))", (pattern, earlier))
         n, sample = cur.fetchone()
         if n:
             fails[cls] = {"count": n, "example_entry": sample}
+        earlier.append(pattern)
     cur.execute("""SELECT count(*) FROM validation_queue
                    WHERE status='failed' AND last_error IS NOT NULL
                    AND NOT (last_error LIKE ANY(%s))""",
@@ -150,7 +156,21 @@ def sql_section(con):
     other = cur.fetchone()[0]
     if other:
         fails["other"] = {"count": other, "example_entry": None}
+    cur.execute("SELECT count(*) FROM validation_queue WHERE status='failed' AND last_error IS NULL")
+    no_error = cur.fetchone()[0]
+    if no_error:
+        fails["no-error-text"] = {"count": no_error, "example_entry": None}
+    cur.execute("SELECT count(*) FROM validation_queue WHERE status='failed'")
+    failed_total = cur.fetchone()[0]
     out["failure_taxonomy"] = fails
+    out["failure_taxonomy_check"] = {
+        "failed_rows": failed_total,
+        "taxonomy_sum": sum(v["count"] for v in fails.values()),
+    }
+    if out["failure_taxonomy_check"]["taxonomy_sum"] != failed_total:
+        print(f"WARNING: failure taxonomy sums to "
+              f"{out['failure_taxonomy_check']['taxonomy_sum']}, failed rows {failed_total}",
+              file=sys.stderr)
     for label, hours in (("1h", 1), ("6h", 6), ("24h", 24)):
         cur.execute("SELECT count(*) FROM validation_queue WHERE status='completed' "
                     "AND completed_at > now() - interval %s", (f"{hours} hours",))

@@ -26,7 +26,7 @@ import psycopg2  # noqa: E402
 
 DB = os.environ.get(
     "DATABASE_URL",
-    "postgresql://validation:validation-password-change-me@validation-postgres:5432/bat3_validation",
+    "postgresql://validation@validation-postgres:5432/bat3_validation",
 )
 CHEM = ("PUBCHEM", "INCHI")
 FAM_DEPTH = 50

@@ -48,7 +48,7 @@ spec:
 
 ```bash
 kubectl create secret generic validation-db-secret -n ceitec-biodata-ns \
-  --from-literal=url='postgresql://user:pass@host:5432/db'
+  --from-literal=url='postgresql://user@host:5432/db'
 
 kubectl create secret generic validation-s3-secret -n ceitec-biodata-ns \
   --from-literal=access-key='KEY' --from-literal=secret-key='SECRET'

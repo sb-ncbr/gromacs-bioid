@@ -37,13 +37,13 @@ env:
 
 ```python
 # Format
-postgresql://username:password@host:port/database
+postgresql://username@host:port/database
 
 # Example
-postgresql://mdfind_user:SECRET@mdfind-postgres:5432/mdfind
+postgresql://mdfind_user@mdfind-postgres:5432/mdfind
 
 # With SSL (production)
-postgresql://user:pass@host:5432/db?sslmode=require
+postgresql://user@host:5432/db?sslmode=require
 ```
 
 ## SQLAlchemy Setup
@@ -111,7 +111,7 @@ print('Connected!')
 kubectl port-forward -n ceitec-biodata-ns svc/mdfind-postgres 5432:5432
 
 # Connect
-psql postgresql://mdfind_user:SECRET@localhost:5432/mdfind
+psql postgresql://mdfind_user@localhost:5432/mdfind
 ```
 
 ## Credential Rotation

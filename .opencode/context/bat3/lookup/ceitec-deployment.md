@@ -32,7 +32,7 @@ NOTE (v3.139): backend now @371cfc94 with the universal scale guard + render/geo
 - `/data/validation/<id>/{input/,results.json}` = old layout; `entries/ <id>` + `results/<id>` = Aug-13 layout
 - `/data/validation/config_shared.ini` = tuned config (nr/core_nt/nt OFF, pdbaa/swissprot ON, per-pod resolver cache)
 - `/data/validation/offline_hit_k.py` = deployed scorer (repo copy: `bat3_validation/scripts/offline_hit_k.py`)
-- DB: `postgresql://validation:***@validation-postgres:5432/bat3_validation` (rotate creds; currently default `validation-password-change-me`)
+- DB: `postgresql://validation@validation-postgres:5432/bat3_validation` (rotate creds; currently default `validation-password-change-me`)
 
 ## Gotchas
 - Ownership on NFS: dirs/files split root/1000/65534 with 0600 — analysis needs the matching pod

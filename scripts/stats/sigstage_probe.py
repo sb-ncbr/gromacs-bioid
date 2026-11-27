@@ -687,7 +687,7 @@ def load_gt_postgres():
     import psycopg2
     db_url = os.environ.get(
         "DATABASE_URL",
-        "postgresql://validation:validation-password-change-me@validation-postgres:5432/bat3_validation")
+        "postgresql://validation@validation-postgres:5432/bat3_validation")
     con = psycopg2.connect(db_url)
     cur = con.cursor()
     cur.execute("SELECT entry_id, signature_type, signature_value FROM ground_truth_signatures")

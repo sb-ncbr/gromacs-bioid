@@ -10,7 +10,7 @@ import sqlalchemy as sa
 ROOT = "/data/validation"
 OUT = f"{ROOT}/n1_w8_flip.json"
 
-eng = sa.create_engine("postgresql://validation:validation-password-change-me@validation-postgres:5432/bat3_validation")
+eng = sa.create_engine("postgresql://validation@validation-postgres:5432/bat3_validation")
 with eng.connect() as c:
     done = [r[0] for r in c.execute(sa.text(
         "SELECT entry_id FROM validation_queue WHERE batch_id='nucleic-fix-wave-1' AND status='completed'"))]

@@ -65,7 +65,7 @@ spec:
 ## Critical Environment Variables
 
 ```bash
-DATABASE_URL=postgresql://user:pass@mdfind-postgres:5432/mdfind
+DATABASE_URL=postgresql://user@mdfind-postgres:5432/mdfind
 REDIS_URL=redis://mdfind-redis:6379/0
 S3_BUCKET=mdfind-simulations
 S3_ENDPOINT=https://s3.cerit-sc.cz

@@ -13,7 +13,7 @@ Complete Kubernetes manifests for MDFind harness engine deployment in CERIT-SC c
 
 ```bash
 kubectl create secret generic mdfind-db-secret -n $NS \
-  --from-literal=url='postgresql://user:pass@host:5432/mdfind'
+  --from-literal=url='postgresql://user@host:5432/mdfind'
 
 kubectl create secret generic mdfind-s3-secret -n $NS \
   --from-literal=access-key='KEY' --from-literal=secret-key='SECRET'

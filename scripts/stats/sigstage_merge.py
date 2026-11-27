@@ -171,7 +171,7 @@ def gt_entry_ids_from_pg():
     import psycopg2
     url = os.environ.get(
         "DATABASE_URL",
-        "postgresql://validation:validation-password-change-me@"
+        "postgresql://validation@"
         "validation-postgres:5432/bat3_validation")
     con = psycopg2.connect(url)
     try:

@@ -18,7 +18,7 @@ from datetime import datetime
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://validation:validation-password-change-me@validation-postgres:5432/bat3_validation",
+    "postgresql://validation@validation-postgres:5432/bat3_validation",
 )
 KSET = (1, 5, 10)
 

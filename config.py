@@ -4,7 +4,7 @@ import os
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://validation:validation-password-change-me@validation-postgres.ceitec-biodata-ns.svc.cluster.local:5432/bat3_validation"
+    "postgresql://validation@validation-postgres.ceitec-biodata-ns.svc.cluster.local:5432/bat3_validation"
 )
 CELERY_BROKER_URL = os.getenv(
     "CELERY_BROKER_URL",

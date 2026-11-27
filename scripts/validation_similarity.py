@@ -165,11 +165,15 @@ def _inchikey_cid(ik):
                         _get(f"{PUG}/compound/inchikey/{ik}/cids/JSON", "json")["IdentifierList"]["CID"][0])
 
 
-_CHEMSPIDER_KEY = os.environ.get("CHEMSPIDER_API_KEY", "MoJ1UDD4JE1I5QEb4wLEF1ZiNVrWiSl717c8ue7q")
+# GitHub #33: environment only — no source fallback (the old literal key
+# is public in git history and must be considered revoked).
+_CHEMSPIDER_KEY = os.environ.get("CHEMSPIDER_API_KEY", "")
 
 
 def _inchikey_chemspider(ik):
     """InChIKey -> SMILES via ChemSpider (key-depleting; use AFTER cactus/pug)."""
+    if not _CHEMSPIDER_KEY:
+        raise LookupError("chemspider disabled (CHEMSPIDER_API_KEY unset)")
     try:
         f = requests.post(
             "https://api.rsc.org/compounds/v1/filter/inchikey",
@@ -368,8 +372,19 @@ def norm_accession(hit_type, ident):
 
 
 class SimEngine:
-    def __init__(self, budget=400):
+    def __init__(self, budget=400, revalidate_zeros=None):
         self.pairs = {}
+        # GitHub #36: cached exact 0.0 values carry no provenance (a pre-F-7
+        # failure looks like a computed zero). With revalidation on
+        # (SIM_REVALIDATE_ZEROS=1) every cached zero this engine READS is
+        # recomputed once; a success is appended (later lines win on load),
+        # a failure leaves the cached value as it was. Back up pairs.jsonl first.
+        if revalidate_zeros is None:
+            revalidate_zeros = os.environ.get("SIM_REVALIDATE_ZEROS", "") == "1"
+        self.revalidate_zeros = bool(revalidate_zeros)
+        self._revalidated = set()
+        self.zeros_revalidated = 0
+        self.zeros_changed = 0
         self.new_pairs = 0
         self.budget = budget
         self.unmapped = 0
@@ -426,8 +441,12 @@ class SimEngine:
             return 1.0
         key = f"{ka}|{kb}" if ka <= kb else f"{kb}|{ka}"
         hit = self.pairs.get(key)
-        if hit is not None:
+        legacy_zero = (hit == 0.0 and self.revalidate_zeros
+                       and key not in self._revalidated)
+        if hit is not None and not legacy_zero:
             return hit
+        if legacy_zero:
+            self._revalidated.add(key)
         neg = self._negmemo.get(key)
         if neg is not None:
             return neg  # A1.1: this engine run already failed this pair;
@@ -445,6 +464,8 @@ class SimEngine:
             self._attempted.add(key)
             self.new_pairs += 1
         if self.new_pairs > self.budget:
+            if legacy_zero:
+                return hit  # out of budget: the cached value stands
             self.errors += 1
             return 0.0
         sim = 0.0
@@ -474,6 +495,11 @@ class SimEngine:
             return 0.0  # transient for this run; fresh instances retry
         # Reached only on successful resolution -- genuinely computed zeros
         # included, which DO cache (rerun cost control).
+        if legacy_zero:
+            self.zeros_revalidated += 1
+            if sim == 0.0:
+                return sim  # confirmed: nothing to rewrite
+            self.zeros_changed += 1
         self.pairs[key] = sim
         self._save_pair(key, sim)
         return sim

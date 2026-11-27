@@ -28,7 +28,7 @@ kubectl get pods -n ceitec-biodata-ns -l app=mdfind
 
 # Database connection test
 kubectl port-forward -n ceitec-biodata-ns svc/mdfind-postgres 5432:5432
-psql postgresql://user:pass@localhost:5432/mdfind
+psql postgresql://user@localhost:5432/mdfind
 
 # Logs
 kubectl logs -n ceitec-biodata-ns -l app=mdfind-api --tail=50
