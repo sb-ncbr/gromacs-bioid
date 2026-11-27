@@ -66,8 +66,12 @@ def compute_uniqueness_key(instance: MoleculeInstance) -> str:
             parts.append(f"formula:{fp.formula_hash}")
         return "|".join(parts)
     else:
+        # GitHub #38: the residue-name sequence joins the composition key —
+        # composition alone merged different molecules into one catalog
+        # entry (ACGU vs UGCA strands, two C2H6O ligands, TIP3 vs SPC).
         fp = create_fingerprint(instance)
-        return fp.to_key()
+        resnames_str = ",".join(str(r).strip() for r in instance.resnames) if instance.resnames else ""
+        return f"{fp.to_key()}|resnames:{resnames_str}"
 
 
 def collapse_to_unique_instances(instances: list[MoleculeInstance]) -> dict[str, MoleculeInstance]:

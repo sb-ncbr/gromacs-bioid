@@ -122,6 +122,49 @@ ALL_ATOM_SHORTHAND.update({
     "CDL": "CL", "CDL1": "CL", "CDL2": "CL",
 })
 
+# GitHub #16: neutral glycerolipids (diacyl-/triacylglycerols, cholesteryl
+# ester); NMRlipids 718 evidence: AMBER Lipid17 DOG = 1,2-dioleoyl-sn-glycerol.
+# Several names are also PDB CCD codes (DOG 2-deoxyglucose, DMG
+# dimethylglycine, DPG 2,3-diphosphoglycerate, SOG octyl thioglucoside, TRIS)
+# or other force-field residues (CHARMM36 TRIP is tricosanoic acid), so a name
+# only counts when the atoms ARE the named species: carbon and oxygen counts
+# exactly those of the shorthand, no P/N/S (neutral_glycerolipid_shorthand).
+# Kept out of ALL_ATOM_SHORTHAND / instances.LIPID_RESNAMES.
+NEUTRAL_GLYCEROLIPID_SHORTHAND: dict[str, str] = {
+    "DOG": _gpl("DG", _C18_1, _C18_1), "DOGL": _gpl("DG", _C18_1, _C18_1),
+    "POG": _gpl("DG", _C16, _C18_1), "POGL": _gpl("DG", _C16, _C18_1),
+    "DPG": _gpl("DG", _C16, _C16), "DPGL": _gpl("DG", _C16, _C16),
+    "SOG": _gpl("DG", _C18, _C18_1), "SOGL": _gpl("DG", _C18, _C18_1),
+    "SAG": _gpl("DG", _C18, _C20_4), "SAGL": _gpl("DG", _C18, _C20_4),
+    "PLG": _gpl("DG", _C16, _C18_2), "SLG": _gpl("DG", _C18, _C18_2),
+    "DLIG": _gpl("DG", _C18_2, _C18_2), "DMG": _gpl("DG", _C14, _C14),
+    "DSG": _gpl("DG", _C18, _C18), "DLG": _gpl("DG", _C12, _C12),
+    "PDG": _gpl("DG", _C16, _C22_6),
+    "TRIO": f"TG({_C18_1}/{_C18_1}/{_C18_1})", "TOG": f"TG({_C18_1}/{_C18_1}/{_C18_1})",
+    "TRIP": f"TG({_C16}/{_C16}/{_C16})", "TRIS": f"TG({_C18}/{_C18}/{_C18})",
+    "TRIL": f"TG({_C18_2}/{_C18_2}/{_C18_2})",
+    "CHOLE": "CE 18:1",
+}
+# backbone carbons / oxygens per class: glycerol C3 + one ester O pair per
+# chain + free OH (DG 5 O, TG 6 O); cholesterol C27 + one ester (2 O)
+_NEUTRAL_CLASS_ATOMS = {"DG": (3, 5), "TG": (3, 6), "CE": (27, 2)}
+
+
+def neutral_glycerolipid_shorthand(resname: str, composition: dict) -> str | None:
+    """The shorthand of a neutral glycerolipid residue name, only when the
+    element counts are exactly those of that species (GitHub #16)."""
+    shorthand = NEUTRAL_GLYCEROLIPID_SHORTHAND.get(str(resname).strip().upper())
+    if shorthand is None or any(composition.get(e, 0) for e in ("P", "N", "S")):
+        return None
+    cls = shorthand.split("(", 1)[0].split(" ", 1)[0]
+    base_c, oxygens = _NEUTRAL_CLASS_ATOMS[cls]
+    chains = (shorthand.split("(", 1)[1].rsplit(")", 1)[0].split("/")
+              if "(" in shorthand else [shorthand.split(" ", 1)[1]])
+    carbons = base_c + sum(int(c.split(":", 1)[0]) for c in chains)
+    if composition.get("C", 0) != carbons or composition.get("O", 0) != oxygens:
+        return None
+    return shorthand
+
 # CHARMM36 lipids of maps.json without a shorthand here (ether lipids and
 # pyrophosphates: no LIPID MAPS species query BioID can trust). Typed lipid;
 # name_maps still identifies them.

@@ -9,7 +9,8 @@ from MDAnalysis import AtomGroup
 from ...config.loader import SignaturesConfig
 from ...molecules.instances import MoleculeInstance, MoleculeType
 from ...loader.universe_facade import LoadedUniverse
-from ...molecules.lipid_names import LIPID21_HEADS, LIPID21_TAIL_CHAINS
+from ...molecules.lipid_names import (
+    LIPID21_HEADS, LIPID21_TAIL_CHAINS, neutral_glycerolipid_shorthand)
 from ..forcefield_maps import LIPID_FORCEFIELD_MAPS
 from ..base import SignatureGenerator
 
@@ -81,6 +82,11 @@ class LipidShorthandGenerator(SignatureGenerator):
             resname = resnames[0].upper()
             if resname in ff_maps:
                 return ff_maps[resname]
+            # GitHub #16: DAG/TAG/CE names, only for the exact species
+            composition, _n = LoadedUniverse._real_composition(fragment.atoms)
+            neutral = neutral_glycerolipid_shorthand(resname, composition)
+            if neutral:
+                return neutral
         elif len(resnames) > 1:
             # Multiple residues - check if all map to same shorthand
             shorthands = set()

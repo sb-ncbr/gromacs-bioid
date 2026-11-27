@@ -200,7 +200,7 @@ def scan_metals(
                     rec = _context_record(
                         i, atoms, elements, resnames, heavy, all_pos,
                         tree, labels[i], coordination_cutoff,
-                        resids_arr=resids_arr, segids_arr=segids_arr)
+                        resids_arr=resids_arr, segids_arr=segids_arr, box=box)
                     atom_records.append(rec)
 
     payload["atoms"] = atom_records
@@ -214,7 +214,7 @@ def scan_metals(
 
 
 def _context_record(i, atoms, elements, resnames, heavy, positions, tree,
-                    label, cutoff, resids_arr=None, segids_arr=None):
+                    label, cutoff, resids_arr=None, segids_arr=None, box=None):
     rec = {
         "element": label,
         "resname": resnames[i],
@@ -244,7 +244,12 @@ def _context_record(i, atoms, elements, resnames, heavy, positions, tree,
         src = heavy[j]
         if src == i:
             continue
-        d = float(np.linalg.norm(pt - positions[src]))
+        delta = pt - positions[src]
+        if box is not None:
+            # GitHub #43: minimum-image distance — the periodic tree found the
+            # partner across the face, the plain norm reported the far image
+            delta = delta - box * np.round(delta / box)
+        d = float(np.linalg.norm(delta))
         if d < 0.01:
             continue  # self / coincident
         rn = resnames[src]

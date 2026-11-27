@@ -628,6 +628,8 @@ class TestA17A18Guards:
         partners = rec.get("partners") or []
         assert partners, f"A-18: non-periodic tree missed coordination across box face: {rec}"
         assert rec.get("coordination") == "bound"
+        # GitHub #43: the persisted distance is the minimum-image one
+        assert partners[0]["distance_A"] == 0.3, partners
 
     def test_metal_protein_table_covers_charmm_amber_variants(self):
         from src_new.loader.metal_scan import _residue_kind

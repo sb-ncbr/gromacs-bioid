@@ -113,6 +113,7 @@ class AlphaFindStructResolver(IdentifierResolver):
             return results
         except Exception as exc:
             logger.warning(f"AlphaFind structure resolution failed: {exc}")
+            self._last_error = f"alphafind_failed: {exc}"  # GitHub #39
             return []
         finally:
             if os.path.exists(pdb_path):
@@ -141,6 +142,7 @@ class AlphaFindStructResolver(IdentifierResolver):
             return results
         except Exception as exc:
             logger.warning(f"AlphaFind structure resolution failed: {exc}")
+            self._last_error = f"alphafind_failed: {exc}"  # GitHub #39
             return []
         finally:
             if os.path.exists(pdb_path):
@@ -310,6 +312,9 @@ class AlphaFindStructResolver(IdentifierResolver):
         response = self._alphafind_fetch_response(pdb_path)
         
         if response is None or 'results' not in response:
+            # GitHub #39: every None above is a failed search (transport,
+            # API error, poll budget/deadline) — an error, not zero hits
+            self._last_error = "alphafind_unavailable"
             return []
 
         results: list[tuple[str, float]] = []

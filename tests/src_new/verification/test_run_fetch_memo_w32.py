@@ -185,3 +185,32 @@ def test_concurrent_runs_no_cross_reads_clear_is_scoped():
     assert deltas[("a", "cross")] == 1, "thread a must not read thread b's K2"
     assert deltas[("a", "after_clear")] == 0, "b's clear must not wipe a's memo"
     assert deltas[("b", "after_clear")] == 1, "b's own memo was cleared by its clear()"
+
+
+def test_gh44_pool_threads_of_one_run_share_the_memo():
+    """GitHub #44: 8 identical items on 4 pool threads fetch ONCE (the
+    thread-local memo fetched once per pool thread)."""
+    import threading
+    import time
+    from src_new.executor.parallel import run_with_thread_pool
+
+    class F(SignatureFetcher):
+        def __init__(self):
+            self.calls = 0
+            self._lock = threading.Lock()
+
+        def supports(self, ident_type):
+            return True
+
+        @memoized_fetch
+        def fetch(self, identifier, ident_type):
+            with self._lock:
+                self.calls += 1
+            time.sleep(0.05)  # keep the other threads waiting on the cold key
+            return "SEQ"
+
+    f = F()
+    clear_run_memo()
+    out = run_with_thread_pool(4, lambda _i: f.fetch("P69905", "UNIPROT_ID"), list(range(8)))
+    assert out == ["SEQ"] * 8
+    assert f.calls == 1

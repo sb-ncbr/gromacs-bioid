@@ -44,6 +44,7 @@ from .lipid_names import (  # noqa: E402  (pure data module)
     MARTINI_LIPID_NAMES as _MARTINI_LIPID_NAMES,
     OTHER_ALL_ATOM_LIPIDS as _OTHER_ALL_ATOM_LIPIDS,
 )
+
 LIPID_RESNAMES: frozenset[str] = frozenset({
     # phosphatidylcholines/-ethanolamines/-serines/-glycerols
     "POPC", "DOPC", "DPPC", "DMPC", "DLPC",

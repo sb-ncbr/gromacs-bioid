@@ -41,7 +41,7 @@ PROC_TTL_S = 60
 # Latency bins (s, upper bounds); a time above the last one counts as "inf".
 LAT_BINS = (0.1, 0.3, 1, 3, 10, 30, 100, 300, 1000, 3600, 43200)
 #: outcomes that are not calls to the service (answered from a cache)
-CACHE_OUTCOMES = frozenset({"cache_shared", "cache_local"})
+CACHE_OUTCOMES = frozenset({"cache_shared", "cache_local", "cache_run"})
 
 _lock = threading.Lock()
 _pending: Counter = Counter()      # (bucket, field) -> n

@@ -945,6 +945,27 @@ def _generate_signatures(context):
 
 # --- W3 A7 (BH-046): content-key grouping for identification --------------
 
+#: GitHub #13: PubChem water (H2O). Heavy-water segments get it too: the
+#: D2O record (CID 24602) carries isotope-labelled H, whose skeleton
+#: fingerprint never matches the MD molecule's — it could not verify.
+WATER_PUBCHEM_CID = "962"
+
+
+def _write_local_water_hit(results, fragment_name: str, generated: dict) -> None:
+    """GitHub #13: the identification record of a water segment, written
+    without any resolver call (same shape as resolution_manager.resolve)."""
+    signature = generated.get("smiles") or "O"
+    base = f"identifiers/{fragment_name}/smiles"
+    results.set_data(f"{base}/water_local", {
+        "signature": signature,
+        "hit_type": "identity",
+        "hits": [WATER_PUBCHEM_CID],
+        "ident_type": "PUBCHEM_CID",
+        "signature_type": "smiles",
+    })
+    results.set_data(f"{base}/attempted", ["water_local"])
+
+
 def _identify_group_key(fragment_name: str, generated: dict):
     """Group key for identical-segment identification (W3 A7).
 
@@ -1090,6 +1111,16 @@ def _record_resolver_errors(context, fragment_name: str, errors) -> None:
 
 def _identify_molecules(context):
     """Identify molecules from generated signatures with optional parallelism."""
+    # GitHub #14/#18: the stage's chemical-query memo lives for this stage only
+    from ..identification.base import clear_run_query_memo, end_run_query_memo
+    clear_run_query_memo()
+    try:
+        return _identify_molecules_stage(context)
+    finally:
+        end_run_query_memo()
+
+
+def _identify_molecules_stage(context):
     from ..signatures.registry import get_signature_type_map
     from ..executor.parallel import run_with_thread_pool
     from ..identification.cache_manager import reset_cache_stats
@@ -1122,7 +1153,9 @@ def _identify_molecules(context):
             generated = fragment_data.get('generated', {})
             if isinstance(generated, dict):
                 for gen_name in generated.keys():
-                    if gen_name not in sig_type_map:
+                    # GitHub #20: per-chain keys ('fasta_map_protein[A]') map
+                    # through their base generator name
+                    if _base_generator_name(gen_name) not in sig_type_map:
                         logger.warning(f"Signature type map missing entry for '{gen_name}'")
     
     # Build work items:
@@ -1163,6 +1196,23 @@ def _identify_molecules(context):
     # resolved per-copy in a projected 17 h). Group by content key, keep
     # the representative; members inherit after resolution.
     group_reps, member_to_rep, rep_to_group = _group_segments(items_fragments)
+    # GitHub #13: water is never sent to the resolvers. The A7 skip only
+    # applied when member_to_rep was non-empty, so water was resolved in full
+    # (137 candidates) in all-unique systems and DROPPED ("not identified")
+    # whenever any two other segments were duplicates. Every water segment
+    # now gets one local identity hit, verified by the water_triatomic rule.
+    water_segments = [fn for fn, gen in items_fragments
+                      if _identify_group_key(fn, gen) is None]
+    if water_segments:
+        _water_set = set(water_segments)
+        items_parallel = [it for it in items_parallel if it[0] not in _water_set]
+        items_serial = [it for it in items_serial if it[0] not in _water_set]
+        generated_by_name = dict(items_fragments)
+        with _deferred_writes(context.results):
+            for fn in water_segments:
+                _write_local_water_hit(context.results, fn, generated_by_name[fn])
+        if not items_parallel:
+            return StepResult(summary={"identified": True})
     if member_to_rep:
         logger.info(
             "identify_molecules: %d segments -> %d resolution groups",

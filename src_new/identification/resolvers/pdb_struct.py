@@ -109,6 +109,10 @@ class PDBStructResolver(IdentifierResolver):
             return results
         except Exception as exc:
             logger.warning(f"PDB structure resolution failed: {exc}")
+            # GitHub #39: a failed search is an error, not zero hits (a
+            # per-chain split keeps the other chains' hits, uncached)
+            self._last_error = f"structure_search_failed: {exc}"
+            self._uncacheable = True
             return []
         finally:
             if os.path.exists(pdb_path):
@@ -179,6 +183,10 @@ class PDBStructResolver(IdentifierResolver):
             return results
         except Exception as exc:
             logger.warning(f"PDB structure resolution failed: {exc}")
+            # GitHub #39: a failed search is an error, not zero hits (a
+            # per-chain split keeps the other chains' hits, uncached)
+            self._last_error = f"structure_search_failed: {exc}"
+            self._uncacheable = True
             return []
         finally:
             if os.path.exists(pdb_path):

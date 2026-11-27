@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import MDAnalysis
+import numpy as np
 from MDAnalysis import Universe
 
 from ..config.loader import RunConfig
@@ -1175,6 +1176,40 @@ def _stripped_trajectory_universe(strategy, top_path, traj_path):
         f"subset of the topology (tried {[c for c, _ in candidates] or 'none'})")
 
 
+#: GitHub #12: an X-H bond in the structure coordinates (Angstrom); 4.5 u
+#: admits hydrogen-mass-repartitioned topologies (H up to ~4 u).
+_XH_BOND_RANGE = (0.8, 1.3)
+_MAX_H_MASS = 4.5
+
+
+def _hydrogen_rename(universe, u_str, i: int) -> bool:
+    """GitHub #12: atom i is a hydrogen that the structure file only names
+    differently (prmtop 'H2' vs mdtoolbelt PDB 'H1' in MRA): both names are
+    hydrogen names in the same residue, and the coordinates the load attaches
+    put it at X-H bond length from every topology bond partner — a misplaced
+    hydrogen (swapped onto another heavy atom) still fails."""
+    a, b = universe.atoms[i], u_str.atoms[i]
+    if not (_normalise_atom_name(a.name).startswith("H")
+            and _normalise_atom_name(b.name).startswith("H")):
+        return False
+    if str(a.resname).strip().upper() != str(b.resname).strip().upper():
+        return False
+    try:
+        if float(a.mass) >= _MAX_H_MASS:
+            return False
+        partners = [bond.partner(a) for bond in a.bonds]
+    except Exception:
+        return False
+    if not partners:
+        return False
+    lo, hi = _XH_BOND_RANGE
+    for p in partners:
+        d = float(np.linalg.norm(a.position - p.position))
+        if not lo <= d <= hi:
+            return False
+    return True
+
+
 def _check_topology_structure_names(universe, pdb_path) -> None:
     """W3.1 item 10 (A8): per-index atom-name check (H-name
     normalised) for topology+structure loads — the prmtop/pdb atom
@@ -1190,7 +1225,7 @@ def _check_topology_structure_names(universe, pdb_path) -> None:
         return
     for i, (a, b) in enumerate(
             zip(universe.atoms.names, u_str.atoms.names)):
-        if not _atom_names_match(a, b):
+        if not _atom_names_match(a, b) and not _hydrogen_rename(universe, u_str, i):
             raise _GateFailure(
                 "structure_name_mismatch",
                 f"topology/structure atom order mismatch at index {i}: "

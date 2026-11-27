@@ -149,14 +149,22 @@ class StructureVerificationWorker(VerificationWorker):
             return None
 
         try:
+            # GitHub #17: parse both structures ONCE for the TM-score and the
+            # sequence-proxy fallback (each re-parsed both and warned twice).
+            traces = (self._extract_ca_chains(signature),
+                      self._extract_ca_chains(canonical_signature))
+            if not traces[0] or not traces[1]:
+                logger.warning("Could not extract CA chains for structure verification")
+                return None
+
             # Try primary method: TM-score via tmtools
             if _TMTOOLS_AVAILABLE:
-                score = self._verify_with_tmscore(signature, canonical_signature)
+                score = self._verify_with_tmscore(signature, canonical_signature, traces)
                 if score is not None:
                     return score
 
             # Fallback: sequence-based comparison
-            return self._verify_with_sequence_proxy(signature, canonical_signature)
+            return self._verify_with_sequence_proxy(signature, canonical_signature, traces)
 
         except Exception as e:
             logger.warning(f"Structure verification failed: {e}")
@@ -178,7 +186,8 @@ class StructureVerificationWorker(VerificationWorker):
     def _verify_with_tmscore(
         self,
         signature: str,
-        canonical_signature: str
+        canonical_signature: str,
+        traces: tuple | None = None,
     ) -> VerificationScore | None:
         """Verify using TM-score via tmtools.
 
@@ -190,8 +199,9 @@ class StructureVerificationWorker(VerificationWorker):
         Returns:
             VerificationScore with tm_score metric, or None on failure.
         """
-        query_traces = self._extract_ca_chains(signature)
-        canonical_traces = self._extract_ca_chains(canonical_signature)
+        query_traces, canonical_traces = traces or (
+            self._extract_ca_chains(signature),
+            self._extract_ca_chains(canonical_signature))
         if not query_traces or not canonical_traces:
             logger.warning("Could not extract CA chains for TM-score")
             return None
@@ -252,7 +262,8 @@ class StructureVerificationWorker(VerificationWorker):
     def _verify_with_sequence_proxy(
         self,
         signature: str,
-        canonical_signature: str
+        canonical_signature: str,
+        traces: tuple | None = None,
     ) -> VerificationScore | None:
         """Verify using sequence alignment as a proxy for structural similarity.
 
@@ -266,8 +277,9 @@ class StructureVerificationWorker(VerificationWorker):
             VerificationScore with structure_sequence_proxy metric, or None.
         """
         try:
-            query_traces = self._extract_ca_chains(signature)
-            canonical_traces = self._extract_ca_chains(canonical_signature)
+            query_traces, canonical_traces = traces or (
+                self._extract_ca_chains(signature),
+                self._extract_ca_chains(canonical_signature))
             if not query_traces or not canonical_traces:
                 logger.warning("Could not extract sequences for proxy comparison")
                 return None

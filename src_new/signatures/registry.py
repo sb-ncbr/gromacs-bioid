@@ -75,6 +75,7 @@ def get_default_generators(config: SignaturesConfig) -> list[SignatureGenerator]
         MapFastaGeneratorNucleotide,
         ResnameFastaGeneratorProtein,
         ResnameFastaGeneratorNucleotide,
+        ParentBaseFastaGeneratorNucleotide,
     )
     from .generators.pdb import (
         PDBGeneratorSanitizeProtein,
@@ -122,6 +123,8 @@ def get_default_generators(config: SignaturesConfig) -> list[SignatureGenerator]
     generators.append(MapFastaGeneratorNucleotide(config))
     generators.append(ResnameFastaGeneratorProtein(config))
     generators.append(ResnameFastaGeneratorNucleotide(config))
+    if getattr(config, "fasta_parent_nucleic", True):
+        generators.append(ParentBaseFastaGeneratorNucleotide(config))
     
     # B-12 (red-team 4.8): sanitized and not-sanitized pdb variants are
     # byte-identical whenever verification parses OK — emit each kind once

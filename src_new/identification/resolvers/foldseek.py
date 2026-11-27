@@ -145,18 +145,18 @@ class Foldseek3DiResolver(IdentifierResolver):
             return []
 
         if mode == "remote":
-            return self._remote_search(signature) or []
+            return self._remote_or_error(signature)
 
         # mode == "local" (default): local search with remote fallback
         if not self._binary_available:
             logger.warning("Foldseek binary unavailable; falling back to remote mode")
-            return self._remote_search(signature) or []
+            return self._remote_or_error(signature)
         if not self._local_db_present():
             logger.warning(
                 "Foldseek local DB missing at '%s'; falling back to remote mode",
                 self._db_path,
             )
-            return self._remote_search(signature) or []
+            return self._remote_or_error(signature)
 
         try:
             results = self._local_search(signature, working_directory)
@@ -166,7 +166,15 @@ class Foldseek3DiResolver(IdentifierResolver):
 
         if results is None:
             logger.warning("Foldseek local search failed; falling back to remote mode")
-            return self._remote_search(signature) or []
+            return self._remote_or_error(signature)
+        return results
+
+    def _remote_or_error(self, signature: str) -> list[tuple[str, float]]:
+        """GitHub #39: a failed remote search (None) is an error, not zero hits."""
+        results = self._remote_search(signature)
+        if results is None:
+            self._last_error = "foldseek_remote_failed"
+            return []
         return results
 
     # ------------------------------------------------------------------ #
@@ -391,6 +399,7 @@ class FoldseekPDBResolver(Foldseek3DiResolver):
             return self._local_search(signature, working_directory) or []
         except Exception as exc:  # a resolver must never kill a run
             logger.warning(f"Foldseek PDB search raised: {exc}")
+            self._last_error = f"foldseek_pdb_failed: {exc}"  # GitHub #39
             return []
 
     def _parse_m8(self, m8_path: str) -> list[tuple[str, float]]:

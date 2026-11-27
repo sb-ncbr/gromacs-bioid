@@ -20,6 +20,7 @@ CANONICAL_SIGNATURE_TYPES: dict[str, str] = {
     "fasta_map_nucleic": "residue_sequence_nucleotide",
     "fasta_resname_protein": "residue_sequence_protein",
     "fasta_resname_nucleic": "residue_sequence_nucleotide",
+    "fasta_parent_nucleic": "residue_sequence_nucleotide",
     "pdb_protein": "pdb_protein",
     "pdb_not_sanitized_protein": "pdb_protein",
     "pdb_backbone_protein": "pdb_protein",

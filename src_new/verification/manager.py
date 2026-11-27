@@ -1431,13 +1431,18 @@ class VerificationManager:
             or 25000
         )
         if len(chem_groups) > max_cands:
-            logger.warning(
-                f"structure rerank skipped for segment {segment}: "
+            # GitHub #14: measure the first max_cands in consensus order
+            # instead of skipping the whole segment (every phospholipid hit
+            # this with 25k-52k pubchem_struct@sim candidates). The unmeasured
+            # tail sorts below the measured candidates in consensus order,
+            # like a mirror miss.
+            logger.info(
+                f"structure rerank for segment {segment}: "
                 f"{len(chem_groups)} chemical candidates > cap {max_cands}; "
-                f"keeping consensus order"
+                f"measuring the first {max_cands} in consensus order"
             )
-            stats["reason"] = "too_many_candidates"
-            return sorted_groups, {}, {}, stats
+            stats["truncated_from"] = len(chem_groups)
+            chem_groups = chem_groups[:max_cands]
 
         import time as _time
         t0 = _time.time()

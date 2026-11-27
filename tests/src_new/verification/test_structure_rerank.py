@@ -163,13 +163,17 @@ class TestManagerRerank:
         out, _sk, _t2, _st = mgr._maybe_structure_rerank(results, "B", groups, 3, lambda: False)
         assert out == groups
 
-    def test_candidate_cap_falls_back_to_legacy(self):
-        fetcher = _StubFetcher({f"J{i}": BENZENE for i in range(4)} | {"962": BENZENE})
+    def test_candidate_cap_measures_first_slice(self):
+        """GitHub #14: over the cap, the first max_cands (consensus order)
+        are measured and reranked; the tail stays below them, unmeasured."""
+        fetcher = _StubFetcher({"J0": HEXANE, "G1": BENZENE, "J1": HEXANE, "T": BENZENE})
         mgr, results = _manager_with(_hex(BENZENE), fetcher, max_cands=3)
-        groups = self._groups(4)
-        out, _sk, _t2, _st = mgr._maybe_structure_rerank(results, "B", groups, 3, lambda: False)
-        assert out == groups
-        assert fetcher.calls == []
+        groups = [_group("J0", "PUBCHEM_CID", 100.0), _group("G1", "PUBCHEM_CID", 90.0),
+                  _group("J1", "PUBCHEM_CID", 80.0), _group("T", "PUBCHEM_CID", 50.0)]
+        out, skel, _t2, st = mgr._maybe_structure_rerank(results, "B", groups, 2, lambda: False)
+        assert [g[0][0] for g in out] == ["G1", "J0", "J1", "T"]
+        assert ("T", "PUBCHEM_CID") not in skel
+        assert st["truncated_from"] == 4 and st["reason"] == "ok"
 
     def test_budget_exceeded_falls_back_to_legacy(self):
         fetcher = _StubFetcher({"962": BENZENE, **{f"J{i}": HEXANE for i in range(4)}})

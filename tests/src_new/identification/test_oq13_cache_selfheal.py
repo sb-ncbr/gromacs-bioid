@@ -101,3 +101,18 @@ def test_similarity_resolution_survives_broken_cache_table(tmp_path: Path) -> No
     resolver = _DummyResolver(_config(tmp_path))
     out = resolver.resolve("sig-4", as_similarity=True, cache=cache)
     assert out == [("DUMMY-HIT", 100.0)]
+
+
+def test_gh45_integrity_probe_once_per_process(tmp_path, monkeypatch):
+    """GitHub #45: one quick_check per cache file per process, not one per
+    ResolverCache (every parallel fragment builds its own)."""
+    import sqlite3
+    from src_new.identification import cache_manager as cm
+    path = str(tmp_path / "c.sqlite3")
+    sqlite3.connect(path).close()
+    calls = []
+    real = cm._quarantine_if_corrupt
+    monkeypatch.setattr(cm, "_quarantine_if_corrupt", lambda p: (calls.append(p), real(p)))
+    for _ in range(3):
+        cm._quarantine_once(path)
+    assert calls == [path]

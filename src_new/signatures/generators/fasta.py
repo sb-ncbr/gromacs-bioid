@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import logging
 from collections import deque
 from typing import Callable
@@ -206,8 +207,70 @@ class ResnameFastaGeneratorNucleotide(SignatureGenerator):
         return _emit_chains(chains)
 
 
+class ParentBaseFastaGeneratorNucleotide(SignatureGenerator):
+    """GitHub #9: the nucleic sequence with modified nucleotides written as
+    their parent base (PSU -> U, 5MC -> C, OMG -> G, bonded AMBER MRA -> A).
+
+    An ADDITIONAL search signature on top of fasta_map_nucleic /
+    fasta_resname_nucleic (which keep 'X'): emitted only when it differs
+    from the sequence those generators produce, so unmodified nucleic acids
+    get nothing new. Same chain builders, same applicability.
+    """
+
+    name = "fasta_parent_nucleic"
+    signature_type = "residue_sequence_nucleotide"
+
+    def __init__(self, config: SignaturesConfig) -> None:
+        super().__init__(config)
+
+    def _is_applicable(
+        self,
+        instance: MoleculeInstance,
+        fragment: AtomGroup,
+        facade: LoadedUniverse,
+    ) -> bool:
+        segment_name = fragment.segids[0] if len(fragment.segids) > 0 else ""
+        props = facade.get_segment_properties(segment_name)
+        if not props.flags.get(SegmentProperty.IS_NUCLEIC.value, False):
+            return False
+        # a modified residue the plain generators write as X/N
+        names = {str(rn).strip().upper() for rn in fragment.residues.resnames}
+        modified = {n for n in names & (set(MODIFIED_NUCLEOTIDE_PARENTS) | set(_BONDED_ONLY_PARENTS))
+                    if resname_to_one_letter(n) in ("X", "N")}
+        if not modified:
+            return False
+        return bool(modified & set(MODIFIED_NUCLEOTIDE_PARENTS)) or _has_enough_bonds(fragment)
+
+    def _chains(self, fragment: AtomGroup, facade: LoadedUniverse):
+        segment_name = fragment.segids[0] if len(fragment.segids) > 0 else ""
+        props = facade.get_segment_properties(segment_name)
+        multi_atom = props.flags.get(SegmentProperty.HAS_MULTI_ATOM_RESIDUES.value, False)
+        if multi_atom and _nucleic_map_applicable(fragment):
+            return fragment_to_protseq_map_based_chains(fragment, self.config, anchor=None)
+        return fragment_to_protseq_resname_based_chains(fragment)
+
+    def _generate(
+        self,
+        instance: MoleculeInstance,
+        fragment: AtomGroup,
+        facade: LoadedUniverse,
+    ):
+        plain = _emit_chains(self._chains(fragment, facade))
+        token = _PARENT_BASES.set(True)
+        try:
+            parent = _emit_chains(self._chains(fragment, facade))
+        finally:
+            _PARENT_BASES.reset(token)
+        if isinstance(parent, dict) and isinstance(plain, dict):
+            # per-chain emission: only the chains whose sequence changed
+            changed = {lab: seq for lab, seq in parent.items() if plain.get(lab) != seq}
+            return changed or None
+        return parent if parent != plain else None
+
+
 # v3.143 (B-09): terminal caps that must never enter a sequence string.
-_PEPTIDE_CAPS = frozenset({"ACE", "NME", "NH2", "FOR", "ACY", "NHE"})
+# GitHub #19: NMA = N-methylamide C-cap (Desmond/OPLS spelling of AMBER NME).
+_PEPTIDE_CAPS = frozenset({"ACE", "NME", "NMA", "NH2", "FOR", "ACY", "NHE"})
 
 # wave-2 item 6d (GitHub #3): phosphorylated nucleotide caps — the
 # 5'-terminal GTP/GDP/GMP or ATP/ADP/AMP that crystallographic deposits
@@ -251,6 +314,55 @@ def _apply_phospho_nucleotide_caps(fragment: AtomGroup, codes: dict) -> None:
         for cap, nb in ((ra, rb), (rb, ra)):
             if cap in caps and _is_nucleic_resname(resname_by_resindex.get(nb, "")):
                 codes[cap] = caps[cap]
+
+
+# GitHub #9: modified nucleotides -> parent base (CCD mon_nstd_parent_comp_id)
+# for the fasta_parent_nucleic signature only; every other generator keeps
+# 'X' (sanitized to N for BLAST). Codes without a documented parent (5AA,
+# P5P, 6AH) are left out.
+MODIFIED_NUCLEOTIDE_PARENTS = {
+    "PSU": "U", "H2U": "U", "5MU": "U", "4SU": "U", "5BU": "U", "OMU": "U",
+    "UR3": "U",
+    "5MC": "C", "OMC": "C", "CBV": "C",
+    "OMG": "G", "1MG": "G", "2MG": "G", "7MG": "G", "M2G": "G",
+    "2MA": "A", "6MA": "A", "1MA": "A", "A2M": "A",
+}
+# AMBER modified-RNA names that are also CCD ligand codes (RAP = rapamycin):
+# parent base only when bonded to a nucleic residue (like the phospho caps).
+_BONDED_ONLY_PARENTS = {"MRA": "A", "RAP": "A"}
+
+_PARENT_BASES = contextvars.ContextVar("fasta_parent_bases", default=False)
+
+
+def _apply_modified_parent_bases(fragment: AtomGroup, codes: dict) -> None:
+    """GitHub #9: inside fasta_parent_nucleic, X-coded modified nucleotides
+    get their parent base letter."""
+    if not _PARENT_BASES.get():
+        return
+    resname_by_resindex = {int(res.resindex): str(res.resname).strip().upper()
+                           for res in fragment.residues}
+    bonded_only = {}
+    for ri, rn in resname_by_resindex.items():
+        if ri not in codes or codes[ri] not in ("X", "N"):
+            continue
+        if rn in MODIFIED_NUCLEOTIDE_PARENTS:
+            codes[ri] = MODIFIED_NUCLEOTIDE_PARENTS[rn]
+        elif rn in _BONDED_ONLY_PARENTS:
+            bonded_only[ri] = _BONDED_ONLY_PARENTS[rn]
+    if not bonded_only or not hasattr(fragment, "bonds") or not hasattr(fragment.bonds, "indices"):
+        return
+    resindices = fragment.atoms.resindices
+    pos_of = {int(a): i for i, a in enumerate(fragment.atoms.indices)}
+    for a, b in fragment.bonds.indices:
+        pa, pb = pos_of.get(int(a)), pos_of.get(int(b))
+        if pa is None or pb is None:
+            continue
+        ra, rb = int(resindices[pa]), int(resindices[pb])
+        if ra == rb:
+            continue
+        for res, nb in ((ra, rb), (rb, ra)):
+            if res in bonded_only and _is_nucleic_resname(resname_by_resindex.get(nb, "")):
+                codes[res] = bonded_only.pop(res)
 
 
 def resname_to_one_letter(resname: str) -> str:
@@ -459,6 +571,7 @@ def fragment_to_protseq_resname_based_chains(fragment: AtomGroup) -> list:
         }
         # wave-2 item 6d: bonded phosphorylated caps -> base
         _apply_phospho_nucleotide_caps(fragment, codes)
+        _apply_modified_parent_bases(fragment, codes)
         nxt, prev = _backbone_link_maps(
             fragment.atoms.names, fragment.atoms.resindices,
             fragment.bonds.indices, codes,
@@ -536,6 +649,7 @@ def fragment_to_protseq_resname_based(fragment: AtomGroup) -> str:
         }
         # wave-2 item 6d: bonded phosphorylated caps -> base
         _apply_phospho_nucleotide_caps(fragment, codes)
+        _apply_modified_parent_bases(fragment, codes)
         residue_atom_resnames = [codes[int(ri)] for _, _, ri in residue_data]
         
         return "".join(residue_atom_resnames)
@@ -712,6 +826,7 @@ def _fragment_extract_residues(
             res_i += 1
     # wave-2 item 6d: bonded phosphorylated caps -> base (map-based paths)
     _apply_phospho_nucleotide_caps(fragment, residue_indices_to_code)
+    _apply_modified_parent_bases(fragment, residue_indices_to_code)
     return residue_indices_to_code, residue_indices_to_index
 
 

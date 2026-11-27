@@ -53,7 +53,11 @@ class CompoundVerificationWorker(VerificationWorker):
         if canonical_signature is None:
             return None
         
-        # Convert to RDKit molecules
+        # Convert to RDKit molecules. GitHub #15: a selfies signature is
+        # decoded first (it went to MolFromSmiles raw: 682 parse warnings in
+        # 3 membrane runs, and selfies-only hits never got a worker score).
+        from ...identification.resolvers._smiles_query import query_smiles
+        signature = query_smiles(signature, signature_type)
         try:
             mol_sim = Chem.MolFromSmiles(signature)
             mol_canon = Chem.MolFromSmiles(canonical_signature)

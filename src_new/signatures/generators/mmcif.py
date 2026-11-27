@@ -16,6 +16,25 @@ from ..base import SignatureGenerator
 logger = logging.getLogger("base")
 
 
+#: GitHub #17: _atom_site columns of the fallback writer, in row order.
+#: The original ten columns keep their positions (identification/resolvers/
+#: mmcif.py reads the residue name as the 4th token).
+_ATOM_SITE_COLUMNS = (
+    "group_PDB", "id", "label_atom_id", "label_comp_id", "label_asym_id",
+    "label_seq_id", "Cartn_x", "Cartn_y", "Cartn_z", "type_symbol",
+    "label_alt_id", "pdbx_PDB_ins_code", "occupancy", "B_iso_or_equiv",
+    "auth_seq_id", "auth_comp_id", "auth_asym_id", "auth_atom_id",
+    "pdbx_PDB_model_num",
+)
+
+
+def _cif_value(value) -> str:
+    """One whitespace-free CIF token; '?' for an empty value (an empty field
+    used to shift every later column of the row)."""
+    text = "".join(str(value).split())
+    return text or "?"
+
+
 class MmCifGenerator(SignatureGenerator):
     """mmCIF string generator."""
     
@@ -61,16 +80,10 @@ class MmCifGenerator(SignatureGenerator):
         """Generate mmCIF directly from atom attributes when write() is unavailable."""
         lines = ["data_mock", ""]
         lines.append("loop_")
-        lines.append("_atom_site.group_PDB")
-        lines.append("_atom_site.id")
-        lines.append("_atom_site.label_atom_id")
-        lines.append("_atom_site.label_comp_id")
-        lines.append("_atom_site.label_asym_id")
-        lines.append("_atom_site.label_seq_id")
-        lines.append("_atom_site.Cartn_x")
-        lines.append("_atom_site.Cartn_y")
-        lines.append("_atom_site.Cartn_z")
-        lines.append("_atom_site.type_symbol")
+        # GitHub #17: the full PDBx column set. Without label_alt_id and
+        # pdbx_PDB_model_num gemmi read the loop as 0 models / 0 atoms, so
+        # every mmcif-routed hit failed TM-score verification.
+        lines.extend(f"_atom_site.{c}" for c in _ATOM_SITE_COLUMNS)
         
         # B-07 (red-team 4.3): fragment.atoms.<attr> materializes an N-length
         # array per access; hoisting once turns the writer loop from O(N^2)
@@ -89,7 +102,12 @@ class MmCifGenerator(SignatureGenerator):
             pos = _positions[i] if _positions is not None and i < len(_positions) else [0.0, 0.0, 0.0]
             element = _elements[i] if _elements is not None and i < len(_elements) else ""
             
-            lines.append(f"ATOM {i+1} {atom_name} {resname} {segid} {resid} {pos[0]:.3f} {pos[1]:.3f} {pos[2]:.3f} {element}")
+            name, comp, asym = _cif_value(atom_name), _cif_value(resname), _cif_value(segid)
+            seq = _cif_value(resid)
+            lines.append(
+                f"ATOM {i+1} {name} {comp} {asym} {seq} "
+                f"{pos[0]:.3f} {pos[1]:.3f} {pos[2]:.3f} {_cif_value(element)} "
+                f". ? 1.00 0.00 {seq} {comp} {asym} {name} 1")
         lines.append("#")
         
         mmcif_content = "\n".join(lines)

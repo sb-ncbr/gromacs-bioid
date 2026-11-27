@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import functools
 import threading
 from abc import ABC, abstractmethod
@@ -20,36 +21,59 @@ from .models import VerificationScore, AnnotationQuality
 # per (fetcher class, ident type, identifier) for the lifetime of one run;
 # clear_run_memo() is called at each verify_results stage start.
 #
-# c13 corpus fix (F1b): the memo is THREAD-LOCAL, not a module global. Celery
-# runs one task per worker thread and the verify stage spawns a fresh pool
-# per run (executor.parallel.run_with_thread_pool), so a thread-local dict
-# is per-run by construction: concurrent runs in one process neither read
-# each other's memo nor wipe it via clear(). Negative results ARE cached,
+# c13 corpus fix (F1b): the memo is not a module global. Celery
+# runs one task per worker thread, so concurrent runs in one process neither
+# read each other's memo nor wipe it via clear(). Negative results ARE cached,
 # but only definitive ones: callers raise TransientFetchError for 5xx/
 # timeouts, which propagates past run_memo_put below (never cached).
 # ---------------------------------------------------------------------------
 
-_RUN_MEMO_LOCAL = threading.local()
+# GitHub #44: the memo is RUN-scoped through a context variable instead of
+# thread-local. clear_run_memo() (verify_results start) installs a fresh memo
+# in the run's context; run_with_thread_pool runs every item in a copy of
+# that context, so the run's pool threads share ONE memo (thread-local gave
+# each pool thread its own: a cold key was fetched once per thread). Other
+# runs (other Celery threads) have their own context, so they stay isolated.
+# A per-key lock makes concurrent cold fetches of one key wait for the first.
 
 
-def _run_memo_dict() -> dict:
-    d = getattr(_RUN_MEMO_LOCAL, "d", None)
-    if d is None:
-        d = {}
-        _RUN_MEMO_LOCAL.d = d
-    return d
+class _RunMemo:
+    __slots__ = ("values", "lock", "key_locks")
+
+    def __init__(self) -> None:
+        self.values: dict = {}
+        self.lock = threading.Lock()
+        self.key_locks: dict = {}
+
+    def key_lock(self, key: tuple) -> threading.Lock:
+        with self.lock:
+            lock = self.key_locks.get(key)
+            if lock is None:
+                lock = self.key_locks[key] = threading.Lock()
+            return lock
+
+
+_RUN_MEMO: contextvars.ContextVar = contextvars.ContextVar("verification_run_memo", default=None)
+
+
+def _run_memo() -> _RunMemo:
+    memo = _RUN_MEMO.get()
+    if memo is None:
+        memo = _RunMemo()
+        _RUN_MEMO.set(memo)
+    return memo
 
 
 def run_memo_get(key: tuple) -> object:
-    return _run_memo_dict().get(key, _MEMO_MISS)
+    return _run_memo().values.get(key, _MEMO_MISS)
 
 
 def run_memo_put(key: tuple, value: str | None) -> None:
-    _run_memo_dict()[key] = value
+    _run_memo().values[key] = value
 
 
 def clear_run_memo() -> None:
-    _run_memo_dict().clear()
+    _RUN_MEMO.set(_RunMemo())
 
 
 class TransientFetchError(Exception):
@@ -70,12 +94,17 @@ def memoized_fetch(fetch_method):
     def wrapper(self, identifier, ident_type):
         key = (type(self).__name__, (ident_type or "").upper(),
                str(identifier).strip())
-        hit = run_memo_get(key)
+        memo = _run_memo()
+        hit = memo.values.get(key, _MEMO_MISS)
         if hit is not _MEMO_MISS:
             return hit
-        value = fetch_method(self, identifier, ident_type)
-        run_memo_put(key, value)
-        return value
+        with memo.key_lock(key):
+            hit = memo.values.get(key, _MEMO_MISS)
+            if hit is not _MEMO_MISS:
+                return hit
+            value = fetch_method(self, identifier, ident_type)
+            memo.values[key] = value
+            return value
 
     return wrapper
 

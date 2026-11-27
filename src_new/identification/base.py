@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import contextvars
+import copy
 import logging
+import re
 import sqlite3
 import time
 from abc import ABC, abstractmethod
@@ -51,6 +54,37 @@ def _count(resolver, similarity: bool, outcome: str, seconds: float | None = Non
         service_stats.record(_service(resolver, similarity), outcome, seconds)
     except Exception:
         pass
+
+
+# GitHub #14/#18: run-scoped memo of chemical queries. smiles,
+# smiles_not_sanitized and selfies of one molecule used to send the SAME query
+# to PubChem/ChEMBL/IDSM up to three times (the decoded selfies differs only
+# in '[C@H1]'/'[O-1]' tokens, so the resolver caches, keyed by the signature,
+# never matched). Keyed by the exact query string after that token
+# normalization only — a different query (e.g. a kekulized aromatic) still
+# runs, so results are unchanged. clear_run_query_memo() at identify start;
+# pool threads share it through the copied context.
+_RUN_QUERIES: contextvars.ContextVar = contextvars.ContextVar("identify_run_queries", default=None)
+_SMILES_ONLY = frozenset({"smiles", "selfies"})
+
+
+def clear_run_query_memo() -> None:
+    """Start a run's memo (identify stage); resolve() outside a run — API
+    lookups on long-lived threads — never memoizes."""
+    _RUN_QUERIES.set({})
+
+
+def end_run_query_memo() -> None:
+    _RUN_QUERIES.set(None)
+
+
+def _normalized_smiles_query(query: str) -> str:
+    """'[C@H1]' -> '[C@H]', '[O-1]' -> '[O-]', '[NH1+1]' -> '[NH+]'."""
+    def atom(m):
+        t = re.sub(r"H1(?=\D|$)", "H", m.group(1))
+        t = re.sub(r"([+-])1$", r"\1", t)
+        return "[" + t + "]"
+    return re.sub(r"\[([^\[\]]+)\]", atom, query)
 
 
 class IdentifierResolutionError(Exception):
@@ -163,6 +197,18 @@ class IdentifierResolver(ABC):
         
         return self._is_applicable(signature)
     
+    def _run_query_key(self, signature: str, signature_type: str | None,
+                       as_similarity: bool):
+        """GitHub #14/#18: the run-memo key of a SMILES-query resolver (only
+        resolvers that accept nothing but smiles/selfies), else None."""
+        if not self.accepted_signatures or not set(self.accepted_signatures) <= _SMILES_ONLY:
+            return None
+        if not isinstance(signature, str) or not signature:
+            return None
+        from .resolvers._smiles_query import query_smiles
+        query = _normalized_smiles_query(query_smiles(signature, signature_type))
+        return (self.cache_name(), bool(as_similarity), query)
+
     def resolve(
         self, 
         signature: str, 
@@ -192,6 +238,17 @@ class IdentifierResolver(ABC):
         # set by a resolver whose answer is a stopgap (e.g. PubChem down)
         self._uncacheable = False
         
+        run_memo = _RUN_QUERIES.get()
+        run_key = (self._run_query_key(signature, signature_type, as_similarity)
+                   if run_memo is not None else None)
+        if run_key is not None:
+            hit = run_memo.get(run_key)
+            if hit is not None:
+                result, metadata = hit
+                self._last_resolution_metadata = copy.deepcopy(metadata)
+                _count(self, as_similarity, "cache_run")
+                return list(result)
+
         # Shared cache (between worker pods, shared_cache.py) first: it keeps
         # the hits metadata the local cache drops. Off unless configured;
         # consulted only where local caching is on (cache is not None).
@@ -239,6 +296,10 @@ class IdentifierResolver(ABC):
                 else:
                     result = self._resolve_identity(signature, working_directory)
             _count(self, as_similarity, _outcome(result, self._last_error), time.monotonic() - t0)
+            if (run_key is not None and result is not None and self._last_error is None
+                    and not self._uncacheable):
+                run_memo[run_key] = (list(result),
+                                           copy.deepcopy(self._last_resolution_metadata))
             
             # Store in cache (best effort; cache corruption must not fail
             # an otherwise successful live resolution, OQ-13)

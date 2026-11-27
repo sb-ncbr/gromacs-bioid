@@ -90,6 +90,7 @@ class SignaturesConfig:
     fasta_map_nucleic: bool = True
     fasta_resname_protein: bool = True
     fasta_resname_nucleic: bool = True
+    fasta_parent_nucleic: bool = True  # GitHub #9
     pdb_protein: bool = True
     pdb_nucleic: bool = True
     pdb_not_sanitized_protein: bool = True

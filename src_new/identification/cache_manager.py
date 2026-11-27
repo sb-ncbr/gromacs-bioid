@@ -16,6 +16,28 @@ from ..config.loader import RunConfig
 logger = logging.getLogger("identifier")
 
 
+# GitHub #45: one integrity probe per process per cache file. Every parallel
+# identification item builds its own ResolverCache, so each fragment re-ran
+# PRAGMA quick_check over the whole (growing) file. Keyed by inode: a file
+# quarantined and recreated is probed again. Corruption that appears later
+# in place degrades to cache misses (read/write guards in resolve()).
+_CHECKED_CACHES: set[tuple[str, int]] = set()
+_CHECKED_LOCK = threading.Lock()
+
+
+def _quarantine_once(cache_path: str) -> None:
+    try:
+        key = (os.path.abspath(cache_path), os.stat(cache_path).st_ino)
+    except OSError:
+        return  # missing: created empty by the caller, nothing to probe
+    with _CHECKED_LOCK:
+        if key in _CHECKED_CACHES:
+            return
+        _quarantine_if_corrupt(cache_path)
+        if os.path.exists(cache_path):
+            _CHECKED_CACHES.add(key)
+
+
 def _quarantine_if_corrupt(cache_path: str) -> None:
     """OQ-13 (2026-10-06): integrity-probe an existing cache; corrupt -> quarantine + recreate.
 
@@ -216,7 +238,7 @@ class ResolverCache:
             cache_file: str = self._config.identifiers_cache.file
             self._cache_path = os.path.join(cache_directory, cache_file)
 
-            _quarantine_if_corrupt(self._cache_path)
+            _quarantine_once(self._cache_path)
             create_empty_cache_if_not_exists(self._cache_path)
             self._conn = sqlite3.connect(self._cache_path, timeout=30.0)
             # Enable WAL mode for better concurrent access.

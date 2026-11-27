@@ -30,6 +30,13 @@ logger = logging.getLogger(__name__)
 MAX_ALIGN_MATRIX_CELLS = 25_000_000
 
 _NUC_ALPHABET = frozenset("ACGTUNX")
+# GitHub #10: IUPAC ambiguity codes, aligned as N when the caller states the
+# sequences are nucleotides (never used by the heuristic below: most of these
+# letters are amino acids too).
+_NUC_AMBIGUITY = frozenset("RYSWKMBDHV")
+# BLOSUM62's alphabet; anything else (U selenocysteine, O pyrrolysine, J)
+# made PairwiseAligner raise, so the hit lost its score.
+_AA_ALPHABET = frozenset("ARNDCQEGHILKMFPSTWYVBZX*")
 
 
 def _make_aligner(nucleotide: bool) -> PairwiseAligner:
@@ -57,7 +64,20 @@ def _is_nucleotide(seq: str) -> bool:
     return bool(seq) and set(seq.upper()) <= _NUC_ALPHABET
 
 
-def local_identity_coverage(query: str, reference: str) -> tuple[float, float] | None:
+def _nucleotide_text(seq: str) -> str | None:
+    """Upper-case nucleotide text with ambiguity codes as N, or None when the
+    sequence is not nucleotide (e.g. a protein entity of a mixed PDB entry)."""
+    seq = seq.upper()
+    out = "".join("N" if c in _NUC_AMBIGUITY else c for c in seq)
+    return out if set(out) <= _NUC_ALPHABET else None
+
+
+def _protein_text(seq: str) -> str:
+    return "".join(c if c in _AA_ALPHABET else "X" for c in seq)
+
+
+def local_identity_coverage(query: str, reference: str,
+                            is_nucleotide: bool | None = None) -> tuple[float, float] | None:
     """Local-align `query` against `reference`.
 
     Returns:
@@ -66,6 +86,11 @@ def local_identity_coverage(query: str, reference: str) -> tuple[float, float] |
           query_coverage = aligned query residues / len(query),
         or None on any failure (empty input, oversized DP matrix, no
         alignment, zero aligned columns).
+
+    is_nucleotide (GitHub #10): True = the caller's signature is a
+    nucleotide sequence; when the query is nucleotide text, a non-nucleotide
+    reference (protein entity) is not comparable (None, no protein-matrix
+    fallback). Otherwise the alphabet heuristic decides, as before.
     """
     if not query or not reference:
         return None
@@ -75,8 +100,19 @@ def local_identity_coverage(query: str, reference: str) -> tuple[float, float] |
             f"({len(query)} x {len(reference)})"
         )
         return None
+    nt_query = _nucleotide_text(query) if is_nucleotide else None
+    if nt_query is not None:
+        reference = _nucleotide_text(reference)
+        if reference is None:
+            logger.debug("Local alignment skipped: nucleotide query, non-nucleotide reference")
+            return None
+        query, aligner = nt_query, _ALIGNER_NT
+    elif _is_nucleotide(query) and _is_nucleotide(reference):
+        aligner = _ALIGNER_NT
+    else:
+        query, reference = _protein_text(query), _protein_text(reference)
+        aligner = _ALIGNER_AA
     try:
-        aligner = _ALIGNER_NT if _is_nucleotide(query) and _is_nucleotide(reference) else _ALIGNER_AA
         # first optimal alignment only — never len()/materialize (see the
         # combinatorial-explosion note in the sequence worker history)
         aln = next(iter(aligner.align(query, reference)), None)

@@ -43,7 +43,8 @@ class SequenceVerificationWorker(VerificationWorker):
     # 25M cells covers all sane protein/PDB entity pairs (5k x 5k).
     MAX_ALIGN_MATRIX_CELLS = 25_000_000
 
-    def _compute_alignment_score(self, signature: str, canonical_signature: str) -> VerificationScore | None:
+    def _compute_alignment_score(self, signature: str, canonical_signature: str,
+                                 is_nucleotide: bool | None = None) -> VerificationScore | None:
         """Compute alignment score between query and canonical sequence.
 
         Red-team batch-4 (D-01): local BLOSUM62 alignment via the shared
@@ -68,7 +69,7 @@ class SequenceVerificationWorker(VerificationWorker):
                 )
                 return None
 
-            out = local_identity_coverage(signature, canonical_signature)
+            out = local_identity_coverage(signature, canonical_signature, is_nucleotide)
             if out is None:
                 return None
             identity, coverage = out
@@ -111,7 +112,8 @@ class SequenceVerificationWorker(VerificationWorker):
         )
         best: VerificationScore | None = None
         for variant in variants:
-            score = self._compute_alignment_score(variant, canonical_signature)
+            score = self._compute_alignment_score(
+                variant, canonical_signature, is_nucleotide=True if try_revcomp else None)
             if score is not None and (
                 best is None or score.normalized_score > best.normalized_score
             ):

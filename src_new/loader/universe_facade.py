@@ -22,7 +22,8 @@ from ..molecules.instances import (
     MoleculeInstance,
     MoleculeType,
 )
-from ..molecules.lipid_names import LIPID21_HEADS, LIPID21_TAILS, MARTINI_SHORTHAND
+from ..molecules.lipid_names import (
+    LIPID21_HEADS, LIPID21_TAILS, MARTINI_SHORTHAND, neutral_glycerolipid_shorthand)
 from ..molecules.nucleic_acid import (
     has_cross_residue_phosphodiester,
     normalize_nucleic_resname,
@@ -1178,6 +1179,12 @@ class LoadedUniverse:
         # phosphate ion, and a C2H5 fragment of a PBC-broken POPC got the
         # whole lipid's shorthand.
         if resnames & LIPID_RESNAMES and (not composition or composition.get("C", 0) >= 10):
+            return MoleculeType.LIPID
+        # GitHub #16: DAG/TAG/cholesteryl-ester names, only when the atoms
+        # are exactly the named species (DOG is also CCD 2-deoxyglucose,
+        # CHARMM TRIP tricosanoic acid) — never a bare-name verdict.
+        if (len(resnames) == 1
+                and neutral_glycerolipid_shorthand(next(iter(resnames)), composition)):
             return MoleculeType.LIPID
         # 2026-11-21 (mdval audit item 4): AMBER Lipid14/17/21 split one lipid
         # into a head residue and tail residues (PC + PA + OL)

@@ -81,6 +81,7 @@ searched with:
 | Generator | Value |
 |---|---|
 | `fasta_map_protein`, `fasta_resname_protein`, `fasta_map_nucleic`, `fasta_resname_nucleic` | Sequence (one-letter). A generator can emit one sequence per chain as `generator[label]`. |
+| `fasta_parent_nucleic` | The nucleic sequence with modified nucleotides written as their parent base (PSU as U, 5MC as C); present only when the molecule has modified nucleotides. The other nucleic sequences write them as X. |
 | `smiles`, `smiles_not_sanitized`, `inchi_key`, `selfies`, `fingerprint`, `morgan_fingerprint`, `skeleton_fp` | Chemical descriptions of small molecules. |
 | `molecular_formula`, `molecular_formula_heavy` | Formula with / without hydrogens. |
 | `pdb_*`, `mmcif`, `topology_less_pdb`, `ca_only_pdb` | Structure (as file text) for structure search. |

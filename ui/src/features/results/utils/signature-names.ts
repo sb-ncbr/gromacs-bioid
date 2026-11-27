@@ -13,6 +13,7 @@ const HUMAN_NAMES: Record<string, string> = {
   fasta_resname_protein: "Protein FASTA (residue names)",
   fasta_map_nucleic: "Nucleic FASTA (sequence-mapped)",
   fasta_resname_nucleic: "Nucleic FASTA (residue names)",
+  fasta_parent_nucleic: "Nucleic FASTA (modified bases as parent)",
   pdb_protein: "PDB structure (protein)",
   pdb_nucleic: "PDB structure (nucleic)",
   pdb_backbone_protein: "PDB backbone trace (protein)",
