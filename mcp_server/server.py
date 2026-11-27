@@ -91,7 +91,8 @@ def _fail(e: Exception) -> ToolError:
 
 def _client_ip(ctx: Optional[Context]) -> Optional[str]:
     """X-Forwarded-For to pass on, so the API records the real requester
-    (the API keeps the first hop) rather than this pod."""
+    rather than this pod (the API walks the chain from its trusted proxy
+    end, GitHub #24: this pod and the ingress are cluster addresses)."""
     try:
         request = ctx.request_context.request if ctx is not None else None
     except (ValueError, AttributeError):

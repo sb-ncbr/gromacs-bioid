@@ -14,6 +14,9 @@ from src_new.api.main import app
 from src_new.api.routes.runs import _rerun_name
 from src_new.api.security import ip_hash
 
+# GitHub #24: requests arrive through the ingress (a trusted cluster proxy)
+INGRESS_PEER = ("10.42.0.10", 50000)
+
 
 @pytest.fixture
 def runs_dir(tmp_path, monkeypatch):
@@ -29,8 +32,8 @@ def runs_dir(tmp_path, monkeypatch):
 
 
 def test_rerun_records_requester_ip_and_shows_as_mine(runs_dir):
-    client = TestClient(app)
-    hdr = {"X-Forwarded-For": "203.0.113.7, 10.0.0.1"}
+    client = TestClient(app, client=INGRESS_PEER)
+    hdr = {"X-Forwarded-For": "203.0.113.7, 10.42.0.1"}
     r = client.post("/api/v1/runs/old-run/rerun", headers=hdr)
     assert r.status_code == 200
     new_id = r.json()["run_id"]

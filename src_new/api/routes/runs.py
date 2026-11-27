@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 import errno
+import functools
+import ipaddress
 import time
 
 import re
@@ -113,21 +115,57 @@ def get_runs_dir() -> Path:
     return Path(os.environ.get("BAT3_RUNS_DIR", "./runs"))
 
 
+#: GitHub #24: proxies whose X-Forwarded-For entries are believed — the
+#: cluster's pod (ingress controller, MCP server) and service ranges and
+#: loopback. BAT3_TRUSTED_PROXIES (comma-separated CIDRs) overrides.
+_DEFAULT_TRUSTED_PROXIES = "10.42.0.0/16,10.43.0.0/16,127.0.0.0/8,::1/128"
+
+
+@functools.lru_cache(maxsize=4)
+def _trusted_networks(spec: str):
+    nets = []
+    for part in spec.split(","):
+        part = part.strip()
+        if part:
+            try:
+                nets.append(ipaddress.ip_network(part, strict=False))
+            except ValueError:
+                logger.warning("BAT3_TRUSTED_PROXIES: ignoring %r", part)
+    return tuple(nets)
+
+
+def _is_trusted_proxy(addr: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    nets = _trusted_networks(os.environ.get("BAT3_TRUSTED_PROXIES", _DEFAULT_TRUSTED_PROXIES))
+    return any(ip.version == n.version and ip in n for n in nets)
+
+
 def _requester_ip(request: Request) -> Optional[str]:
     """Return the requester's IP address.
 
-    Uses the first (left-most, i.e. originating) hop of the X-Forwarded-For
-    header when present, falling back to the direct client host. Returns
+    GitHub #24: X-Forwarded-For is believed only as far as trusted proxies
+    wrote it. The chain (header hops + the direct peer) is walked from the
+    right; the first address that is not a trusted proxy is the requester. A
+    client-supplied left-most value (any string) no longer picks the identity
+    behind submission limits, attribution and the admin login throttle. An
+    untrusted direct peer is the requester regardless of the header; a chain
+    of trusted hops only (an in-cluster client) gives its origin. Returns
     ``None`` when no client information is available.
     """
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        first_hop = xff.split(",")[0].strip()
-        if first_hop:
-            return first_hop
-    if request.client and request.client.host:
-        return request.client.host
-    return None
+    peer = request.client.host if request.client and request.client.host else None
+    if peer is None:
+        return None
+    if not _is_trusted_proxy(peer):
+        return peer
+    xff = request.headers.get("x-forwarded-for") or ""
+    hops = [h.strip() for h in xff.split(",") if h.strip()] + [peer]
+    for hop in reversed(hops):
+        if not _is_trusted_proxy(hop):
+            return hop
+    return hops[0]
 
 
 def load_results_json(run_id: str) -> Dict[str, Any]:

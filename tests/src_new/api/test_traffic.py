@@ -11,6 +11,9 @@ from fastapi.testclient import TestClient
 from src_new.api import security, traffic
 from src_new.api.main import app
 
+# GitHub #24: requests arrive through the ingress (a trusted cluster proxy)
+INGRESS_PEER = ("10.42.0.10", 50000)
+
 NOW = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
 GEO = {"198.51.100.1": {"country": "CZ", "country_name": "Czechia", "city": "Brno", "lat": 49.2, "lon": 16.6},
        "198.51.100.2": {"country": "DE", "country_name": "Germany", "city": "Berlin", "lat": 52.5, "lon": 13.4}}
@@ -83,7 +86,7 @@ def test_polling_is_not_recorded():
 
 def test_middleware_and_beacon(runs, monkeypatch):
     monkeypatch.setattr("src_new.api.routes.runs.run_pipeline_task.apply_async", lambda *a, **k: None)
-    c = TestClient(app)
+    c = TestClient(app, client=INGRESS_PEER)
     h = {"X-Forwarded-For": "198.51.100.1", "X-BioID-Client": "web"}
     c.get("/api/v1/runs/nope/verification", headers=h)
     c.get("/api/v1/runs/nope/status", headers=h)  # 404: recorded
@@ -111,7 +114,7 @@ def test_admin_traffic_endpoint(runs, monkeypatch):
     from src_new.api import admin
     monkeypatch.setenv("BAT3_ADMIN_PASSWORD", "pw")
     admin._cache.clear()
-    c = TestClient(app)
+    c = TestClient(app, client=INGRESS_PEER)
     tok = c.post("/api/v1/admin/login", json={"password": "pw"}).json()["token"]
     rec("pageview", route="/", minutes_ago=1)
     traffic.flush()

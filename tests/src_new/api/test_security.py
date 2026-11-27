@@ -10,6 +10,9 @@ from fastapi.testclient import TestClient
 from src_new.api import security
 from src_new.api.main import app
 
+# GitHub #24: requests arrive through the ingress (a trusted cluster proxy)
+INGRESS_PEER = ("10.42.0.10", 50000)
+
 PDB = b"ATOM      1  N   ALA A   1      10.000  10.000  10.000  1.00  0.00           N\nEND\n"
 ALICE = {"X-Forwarded-For": "198.51.100.1"}
 BOB = {"X-Forwarded-For": "198.51.100.2"}
@@ -42,7 +45,7 @@ def runs(tmp_path: Path, monkeypatch):
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    return TestClient(app, client=INGRESS_PEER)
 
 
 def submit(client, headers=ALICE, **files):
