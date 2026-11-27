@@ -12,9 +12,7 @@ import {
 } from '@mui/material';
 
 import ValidationQueue from './ValidationQueue';
-import ValidationWorkers from './ValidationWorkers';
 import ValidationBatches from './ValidationBatches';
-import ValidationFailureAnalysis from './ValidationFailureAnalysis';
 import ValidationActivityLog from './ValidationActivityLog';
 import StatsCards from '../Components/Validation/StatsCards';
 import ProgressBar from '../Components/Validation/ProgressBar';
@@ -40,14 +38,15 @@ function TabPanel(props: TabPanelProps) {
   );
 }
 
+// GitHub #25/#28: read-only views; the worker-pool and failure-analysis
+// tabs (scale/restart, unbounded in-process analysis) are removed.
 const tabLabels = [
   'Overview',
   'Queue',
-  'Workers',
   'Batches',
-  'Failure Analysis',
   'Activity Log',
 ];
+const tabPaths = ['', '/queue', '/batches', '/activity-log'];
 
 export default function ValidationDashboard() {
   const navigate = useNavigate();
@@ -56,19 +55,14 @@ export default function ValidationDashboard() {
 
   useEffect(() => {
     const path = window.location.pathname;
-    if (path.includes('/queue')) setValue(1);
-    else if (path.includes('/workers')) setValue(2);
-    else if (path.includes('/batches')) setValue(3);
-    else if (path.includes('/failure-analysis')) setValue(4);
-    else if (path.includes('/activity-log')) setValue(5);
-    else setValue(0);
+    const tab = tabPaths.findIndex((p, i) => i > 0 && path.includes(p));
+    setValue(tab > 0 ? tab : 0);
     setLoading(false);
   }, []);
 
   const handleChange = (_: React.SyntheticEvent, newValue: number) => {
     setValue(newValue);
-    const paths = ['', '/queue', '/workers', '/batches', '/failure-analysis', '/activity-log'];
-    navigate(`/validation${paths[newValue]}`, { replace: true });
+    navigate(`/validation${tabPaths[newValue]}`, { replace: true });
   };
 
   if (loading) {
@@ -86,7 +80,7 @@ export default function ValidationDashboard() {
           Validation Dashboard
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          Monitor and manage validation runs, queue, workers, and analytics
+          Validation campaign status (read-only)
         </Typography>
       </Box>
 
@@ -124,15 +118,9 @@ export default function ValidationDashboard() {
           <ValidationQueue />
         </TabPanel>
         <TabPanel value={value} index={2}>
-          <ValidationWorkers />
-        </TabPanel>
-        <TabPanel value={value} index={3}>
           <ValidationBatches />
         </TabPanel>
-        <TabPanel value={value} index={4}>
-          <ValidationFailureAnalysis />
-        </TabPanel>
-        <TabPanel value={value} index={5}>
+        <TabPanel value={value} index={3}>
           <ValidationActivityLog />
         </TabPanel>
       </Paper>

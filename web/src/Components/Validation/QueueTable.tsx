@@ -215,7 +215,7 @@ export default function QueueTable({ onBulkAction }: QueueTableProps) {
               </IconButton>
             </Tooltip>
 
-            {selected.length > 0 && (
+            {onBulkAction && selected.length > 0 && (
               <Box display="flex" gap={1}>
                 <Button size="small" variant="outlined" onClick={handleRetrySelected}>
                   Retry ({selected.length})

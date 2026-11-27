@@ -10,7 +10,6 @@ import {
   Alert,
   Divider,
   Chip,
-  Button,
 } from '@mui/material';
 import QueueTable from '../Components/Validation/QueueTable';
 
@@ -51,50 +50,6 @@ export default function ValidationQueue() {
       setError(err.message);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleBulkAction = async (action: string, selectedIds: number[]) => {
-    try {
-      const response = await fetch('/api/validation/queue/bulk-action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, queue_item_ids: selectedIds }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        alert(`"${action.replace(/_/g, ' ').toUpperCase()}": ${result.affected || result.deleted || 0} items affected`);
-      } else {
-        alert(`"${action.replace(/_/g, ' ').toUpperCase()}" failed: ${result.error}`);
-      }
-      
-      await fetchQueueStatus();
-    } catch (err: any) {
-      setError(err.message);
-      alert(`Error: ${err.message}`);
-    }
-  };
-  
-  const handleProcessorAction = async (action: string) => {
-    try {
-      const response = await fetch(`/api/validation/queue/${action}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      
-      const result = await response.json();
-      alert(result.success ? result.message : result.error);
-      fetchQueueStatus();
-    } catch (err: any) {
-      alert(`Error: ${err.message}`);
     }
   };
 
@@ -213,98 +168,10 @@ export default function ValidationQueue() {
         </Grid>
       </Grid>
 
-      {/* Queue Actions */}
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Grid container spacing={2}>
-          <Grid item>
-            <Button 
-              variant="contained" 
-              color="primary"
-              onClick={() => handleBulkAction('queue_all_pending', [])}
-            >
-              Queue All Pending
-            </Button>
-          </Grid>
-          <Grid item>
-            <Button 
-              variant="contained" 
-              color="error"
-              onClick={() => handleBulkAction('queue_all_failed', [])}
-            >
-              Queue All Failed
-            </Button>
-          </Grid>
-          <Grid item>
-            <Button 
-              variant="outlined"
-              onClick={() => handleBulkAction('clear_completed', [])}
-            >
-              Clear Completed
-            </Button>
-          </Grid>
-          <Grid item>
-            <Button 
-              variant="outlined"
-              color="warning"
-              onClick={() => handleBulkAction('clear_all', [])}
-            >
-              Clear ALL
-            </Button>
-          </Grid>
-        </Grid>
-        
-        {/* Processor Control */}
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 3, mb: 1 }}>
-          <Typography variant="h6">
-            Processor Control
-          </Typography>
-          <Chip 
-            label={data?.queue?.processing > 0 ? '🟢 RUNNING' : data?.queue?.queued > 0 ? '🟡 QUEUED' : '🔴 IDLE'}
-            color={data?.queue?.processing > 0 ? 'success' : data?.queue?.queued > 0 ? 'warning' : 'default'}
-            size="small"
-          />
-        </Box>
-        <Grid container spacing={2}>
-          <Grid item>
-            <Button 
-              variant="contained" 
-              color="success"
-              onClick={() => handleProcessorAction('start-processing')}
-            >
-              ▶ Start
-            </Button>
-          </Grid>
-          <Grid item>
-            <Button 
-              variant="outlined" 
-              color="warning"
-              onClick={() => handleProcessorAction('pause-processing')}
-            >
-              ⏸ Pause
-            </Button>
-          </Grid>
-          <Grid item>
-            <Button 
-              variant="outlined"
-              onClick={() => handleProcessorAction('resume-processing')}
-            >
-              ▶️ Resume
-            </Button>
-          </Grid>
-          <Grid item>
-            <Button 
-              variant="outlined"
-              color="error"
-              onClick={() => handleProcessorAction('stop-processing')}
-            >
-              ⏹ Stop
-            </Button>
-          </Grid>
-        </Grid>
-      </Paper>
-
+      {/* GitHub #25: read-only view — campaigns run through the BioID
+          repository queue; the queue/processor controls are gone. */}
       {/* Queue Table */}
-      <QueueTable onBulkAction={handleBulkAction} />
+      <QueueTable />
 
       <Paper sx={{ p: 3, mt: 3 }}>
         <Typography variant="h6" fontWeight="600" gutterBottom>

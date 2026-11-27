@@ -4,15 +4,9 @@ import { CssBaseline, createTheme } from '@mui/material';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './Components/Layout';
 import AnnotationResults from './Pages/AnnotationResults';
-import FailureAnalysis from './Pages/FailureAnalysis';
 
 // Validation Dashboard pages
 import ValidationDashboard from './Pages/ValidationDashboard';
-import ValidationQueue from './Pages/ValidationQueue';
-import ValidationWorkers from './Pages/ValidationWorkers';
-import ValidationBatches from './Pages/ValidationBatches';
-import ValidationFailureAnalysis from './Pages/ValidationFailureAnalysis';
-import ValidationActivityLog from './Pages/ValidationActivityLog';
 
 function App() {
   const theme = createTheme({
@@ -64,15 +58,12 @@ function App() {
             
             {/* Old routes - kept for backwards compatibility */}
             <Route path='results/:session' element={<AnnotationResults />} />
-            <Route path='failure-analysis' element={<FailureAnalysis />} />
             
             {/* Validation Dashboard Routes - main app */}
             <Route path='validation' element={<ValidationDashboard />} >
               <Route index element={<ValidationDashboard />} />
               <Route path='queue' element={<ValidationDashboard />} />
-              <Route path='workers' element={<ValidationDashboard />} />
               <Route path='batches' element={<ValidationDashboard />} />
-              <Route path='failure-analysis' element={<ValidationDashboard />} />
               <Route path='activity-log' element={<ValidationDashboard />} />
             </Route>
           </Route>

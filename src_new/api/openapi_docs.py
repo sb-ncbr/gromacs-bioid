@@ -1,8 +1,9 @@
 """The published API reference: /docs (Swagger) and /openapi.json (2026-11-19).
 
 Only the public /api/v1 routes are published (the BioID host routes /api,
-/files and /health here; the root-level duplicates, the campaign control
-plane and the UI helpers stay callable in-cluster). Each published route gets
+/files and /health here; the root-level router duplicates and UI helpers
+stay callable in-cluster; the campaign control plane is gone, GitHub #29).
+Each published route gets
 from ENDPOINTS below a user-facing summary and description, descriptions of
 its parameters, the errors it answers with, and a response example: a real
 answer of this server for the trypsin example run, captured by

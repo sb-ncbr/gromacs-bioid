@@ -86,29 +86,6 @@ export default function ValidationBatches() {
     return Math.round(((batch.completed_entries + batch.failed_entries) / batch.total_entries) * 100);
   };
 
-  const handleCancelBatch = async (batchId: string) => {
-    if (!window.confirm(`Cancel batch ${batchId}? This will cancel all associated queue items.`)) {
-      return;
-    }
-    
-    try {
-      const response = await fetch(`/batch-runs/${batchId}/cancel`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      
-      const result = await response.json();
-      alert(result.success ? `Batch cancelled: ${result.message}` : `Failed: ${result.error}`);
-      fetchBatches();
-    } catch (err: any) {
-      alert(`Error: ${err.message}`);
-    }
-  };
-  
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '—';
     return new Date(dateStr).toLocaleString('cs-CZ', {
