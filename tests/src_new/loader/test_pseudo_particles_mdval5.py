@@ -362,3 +362,18 @@ def test_no_notice_for_plain_four_site_water():
     assert report.pseudo_particles == 3 and _only_water_sites(u, report)
     drude = _drude_system()
     assert not _only_water_sites(drude, TopologyRepair(drude, RunConfig()).run())
+
+
+def test_water_site_check_without_residue_names():
+    # dm2 figshare/29447471: a LAMMPS data file (no resnames) with massless
+    # particles crashed repair_topology; the note is kept instead
+    from src_new.pipeline_steps import _only_water_sites
+    u = Universe.empty(4, n_residues=1, atom_resindex=[0] * 4, trajectory=True)
+    u.add_TopologyAttr("resids", [1])
+    u.add_TopologyAttr("segids", ["SYSTEM"])
+    u.add_TopologyAttr("masses", [15.9994, 1.008, 1.008, 0.0])
+    u.load_new(np.array([[(0, 0, 0), (0.96, 0, 0), (-0.24, 0.93, 0), (0.1, 0.1, 0)]],
+                        dtype=np.float32), format="memory")
+    report = TopologyRepair(u, RunConfig()).run()
+    assert report.pseudo_particles == 1
+    assert not _only_water_sites(u, report)

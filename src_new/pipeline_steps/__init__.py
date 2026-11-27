@@ -352,6 +352,10 @@ def _only_water_sites(universe, report) -> bool:
         return False
     waters = WATER_RESNAMES | _PSEUDO_WATER_RESNAMES
     atoms = universe.atoms[list(idx)]
+    # LAMMPS data files carry no residue names or atom names: nothing says
+    # the sites are water, so the note stays.
+    if not (hasattr(atoms, "resnames") and hasattr(atoms, "names")):
+        return False
     return all(str(r).upper() in waters for r in atoms.resnames) and not any(
         str(n).upper().startswith("D") for n in atoms.names)
 
