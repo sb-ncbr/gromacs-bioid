@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import datetime
+import importlib.util
 import logging
 import os
+import shutil
+import subprocess
 import tempfile
 import traceback
 from dataclasses import dataclass, field
@@ -25,6 +28,12 @@ logger = logging.getLogger("base")
 
 class LoadStrategy(str, Enum):
     GROMACS_TPR = "gromacs_tpr"
+    # dm1 audit (L1): a .tpr MDAnalysis cannot read (unsupported version,
+    # parse error) converted by GROMACS itself (gmx editconf -conect)
+    GROMACS_TPR_GMX = "gromacs_tpr_gmx"
+    # dm1 audit (L9): an AMBER topology MDAnalysis refuses (CHARMM-to-AMBER
+    # "chamber" files) read by ParmEd, with the deposit's own coordinates
+    AMBER_PARMED = "amber_parmed"
     GROMACS_TPR_GRO = "gromacs_tpr_gro"
     GROMACS_TOP_GRO = "gromacs_top_gro"
     GROMACS_ITP_GRO = "gromacs_itp_gro"
@@ -49,6 +58,17 @@ class LoadStrategy(str, Enum):
     GROMACS_TOP_XTC = "gromacs_top_xtc"
     GROMACS_ITP_XTC = "gromacs_itp_xtc"
     GROMACS_GRO = "gromacs_gro"  # A-07 (3.3): topology-free GRO fallback
+    # dm1 audit (L4/L5): a topology with a trajectory of another engine's
+    # format (frame 0), done outside BioID in dm1 (plan v8 frame-0 rewrite)
+    CHARMM_PSF_XTC = "charmm_psf_xtc"
+    CHARMM_PSF_TRR = "charmm_psf_trr"
+    CHARMM_PSF_NC = "charmm_psf_nc"
+    CHARMM_PSF_COOR = "charmm_psf_coor"  # NAMD binary coordinates
+    AMBER_PRMTOP_DCD = "amber_prmtop_dcd"
+    AMBER_PRMTOP_TRR = "amber_prmtop_trr"
+    GROMACS_TOP_TRR = "gromacs_top_trr"
+    GROMACS_TOP_DCD = "gromacs_top_dcd"
+    GROMACS_ITP_TRR = "gromacs_itp_trr"
     LAMMPS_DATA = "lammps_data"
     PDB = "pdb"
     MMCIF_GEMMI = "mmcif_gemmi"
@@ -95,6 +115,116 @@ _PROBE_PAIRS: dict["LoadStrategy", tuple[str, str]] = {
     LoadStrategy.GROMACS_TOP_XTC: ("top", "xtc"),
     LoadStrategy.GROMACS_ITP_XTC: ("itp", "xtc"),
 }
+
+# dm1 audit (L4/L5): cross-engine topology + trajectory pairings
+# (strategy -> (topology key, trajectory key, MDAnalysis trajectory format))
+_CROSS_ENGINE_PAIRS: dict["LoadStrategy", tuple[str, str, str]] = {
+    LoadStrategy.CHARMM_PSF_XTC: ("psf", "xtc", "XTC"),
+    LoadStrategy.CHARMM_PSF_TRR: ("psf", "trr", "TRR"),
+    LoadStrategy.CHARMM_PSF_NC: ("psf", "nc", "NCDF"),
+    LoadStrategy.CHARMM_PSF_COOR: ("psf", "coor", "NAMDBIN"),
+    LoadStrategy.AMBER_PRMTOP_DCD: ("prmtop", "dcd", "DCD"),
+    LoadStrategy.AMBER_PRMTOP_TRR: ("prmtop", "trr", "TRR"),
+    LoadStrategy.GROMACS_TOP_TRR: ("top", "trr", "TRR"),
+    LoadStrategy.GROMACS_TOP_DCD: ("top", "dcd", "DCD"),
+    LoadStrategy.GROMACS_ITP_TRR: ("itp", "trr", "TRR"),
+}
+_PROBE_PAIRS.update({s: (t, j) for s, (t, j, _f) in _CROSS_ENGINE_PAIRS.items()
+                     if j != "coor"})  # NAMD binary: checked by the build
+
+
+def _matching_pair(bundle, selected: dict, topo_key: str, traj_key: str):
+    """dm1 audit (L3): the closest-named topology/trajectory pair of the
+    bundle whose atom counts agree, when the selected pair's do not; None
+    when the selected pair matches, the bundle has no alternative, or no
+    alternative matches (the caller then probes and reports as before)."""
+    topologies = _get_files_by_ext(bundle, f".{topo_key}")
+    trajectories = _get_files_by_ext(bundle, f".{traj_key}")
+    if len(topologies) * len(trajectories) <= 1:
+        return None
+    counts: dict = {}
+
+    def n_atoms(path):
+        if path not in counts:
+            counts[path] = _topology_n_atoms(_prmtop_with_atom_types(path) or path, topo_key) \
+                if topo_key in ("prmtop", "parm7") else _topology_n_atoms(path, topo_key)
+        return counts[path]
+
+    current = (selected.get(topo_key), selected.get(traj_key))
+    n = n_atoms(current[0]) if current[0] is not None else None
+    if n is not None and match_atoms(n, current[1]).ok:
+        return None
+    for topo, traj in _ranked_pairs(topologies, trajectories):
+        if (topo, traj) == current:
+            continue
+        n = n_atoms(topo)
+        if n is not None and match_atoms(n, traj).ok:
+            if topo_key in ("prmtop", "parm7"):
+                topo = _prmtop_with_atom_types(topo) or topo
+            return topo, traj
+    return None
+
+
+#: dm1 audit (L9): coordinate sources for a ParmEd-read AMBER topology, in
+#: preference order (MDAnalysis format; None = inferred from the suffix)
+_PARMED_COORDINATES = ((".rst7", "RESTRT"), (".inpcrd", "RESTRT"), (".restrt", "RESTRT"),
+                       (".nc", "NCDF"), (".mdcrd", "TRJ"), (".xtc", None), (".dcd", None),
+                       (".pdb", None))
+
+
+def _amber_topology_as_psf(prmtop: Path) -> Path:
+    """dm1 audit (L9): ParmEd reads chamber (CHARMM force field in AMBER
+    format) topologies, which MDAnalysis refuses; the topology is written as
+    a private PSF (atoms, residues, bonds, masses, charges in the same atom
+    order, so the deposit's coordinate files still apply)."""
+    import parmed
+    out = Path(tempfile.mkdtemp(prefix="bat3_parmed_")) / (prmtop.stem + ".psf")
+    try:
+        parmed.amber.LoadParm(str(prmtop)).save(str(out), format="psf")
+    except Exception as exc:
+        raise _GateFailure("parmed_conversion_failed",
+                           f"ParmEd could not read {prmtop.name}: {exc}") from exc
+    return out
+
+
+_GMX = os.environ.get("BAT3_GMX", "gmx")
+_GMX_TIMEOUT_S = 600
+
+
+def _tpr_to_pdb_with_gmx(tpr: Path) -> Path:
+    """dm1 audit (L1): GROMACS writes the run input as PDB with CONECT
+    records of every topology bond (coordinates, names, residues, chains;
+    masses and charges are not carried). The PDB sits next to a private
+    temporary copy, never in the deposit's input directory."""
+    out_dir = Path(tempfile.mkdtemp(prefix="bat3_gmx_"))
+    out = out_dir / (tpr.stem + ".pdb")
+    proc = subprocess.run(
+        [_GMX, "-quiet", "editconf", "-f", str(tpr), "-o", str(out), "-conect"],
+        capture_output=True, text=True, timeout=_GMX_TIMEOUT_S, input="0\n")
+    if proc.returncode != 0 or not out.is_file() or out.stat().st_size == 0:
+        tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-3:]
+        raise _GateFailure("gmx_conversion_failed",
+                           f"gmx editconf could not read {tpr.name}: {' | '.join(tail)}")
+    return out
+
+
+def _stem_affinity(a: Path, b: Path) -> int:
+    """Shared leading characters of two file stems (case-insensitive)."""
+    x, y = a.stem.lower(), b.stem.lower()
+    n = 0
+    while n < min(len(x), len(y)) and x[n] == y[n]:
+        n += 1
+    return n
+
+
+def _ranked_pairs(topologies: list[Path], trajectories: list[Path], limit: int = 8):
+    """dm1 audit (L3): topology/trajectory pairs, closest file stems first.
+    Deposits holding several systems were paired alphabetically
+    (BrafDimer.prmtop + BrafMonomer.nc, Cx46.psf + Cx50.dcd, P1 + P10)."""
+    pairs = [(t, j) for t in topologies for j in trajectories]
+    pairs.sort(key=lambda tj: (-_stem_affinity(*tj), tj[0].name, tj[1].name))
+    return pairs[:limit]
+
 
 # standalone topology parse per _PROBE_PAIRS key (atom-count probe and the
 # solvent-stripped trajectory retry); MDAnalysis maps a bare .top to the
@@ -492,6 +622,41 @@ def validate_for_strategy(bundle: InputBundle, strategy: LoadStrategy) -> FileVa
                 warnings.append(f"multiple_{coord_ext}_files")
                 selected_files[coord_ext] = sorted(coord_files, key=lambda p: p.name)[0]
 
+        case LoadStrategy.AMBER_PARMED:
+            topo_files = _get_files_by_ext(bundle, ".prmtop") + _get_files_by_ext(bundle, ".parm7")
+            coords = [(ext, f) for ext, _fmt in _PARMED_COORDINATES
+                      for f in _get_files_by_ext(bundle, ext)]
+            if not topo_files:
+                errors.append("No .prmtop/.parm7 files found")
+            elif not coords:
+                errors.append("No coordinate file for the AMBER topology")
+            elif importlib.util.find_spec("parmed") is None:
+                errors.append("parmed not installed")
+            else:
+                topo, coord = _ranked_pairs(topo_files, [f for _e, f in coords])[0]
+                selected_files["prmtop"], selected_files["coordinates"] = topo, coord
+
+        case LoadStrategy.GROMACS_TPR_GMX:
+            tpr_files = _get_files_by_ext(bundle, ".tpr")
+            if not tpr_files:
+                errors.append("No .tpr files found")
+            elif shutil.which(_GMX) is None:
+                errors.append(f"{_GMX} (GROMACS) not installed")
+            else:
+                selected_files["tpr"] = sorted(tpr_files, key=lambda p: p.name)[0]
+
+        case _ if strategy in _CROSS_ENGINE_PAIRS:
+            topo_key, traj_key, _fmt = _CROSS_ENGINE_PAIRS[strategy]
+            topo_files = _get_files_by_ext(bundle, f".{topo_key}")
+            traj_files = _get_files_by_ext(bundle, f".{traj_key}")
+            if not topo_files:
+                errors.append(f"No .{topo_key} files found")
+            if not traj_files:
+                errors.append(f"No .{traj_key} files found")
+            if topo_files and traj_files:
+                selected_files[topo_key], selected_files[traj_key] = \
+                    _ranked_pairs(topo_files, traj_files)[0]
+
         case _:
             errors.append(f"Unknown strategy: {strategy}")
 
@@ -557,6 +722,9 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                                LoadStrategy.GROMACS_ITP_XTC]
             if strategy == "ITP_XTC":
                 base_strategies.reverse()
+        elif strategy == "TOP_TRAJ":  # dm1 audit (L4): .top/.itp + .trr/.dcd
+            base_strategies = [LoadStrategy.GROMACS_TOP_TRR, LoadStrategy.GROMACS_TOP_DCD,
+                               LoadStrategy.GROMACS_ITP_TRR]
         elif strategy == "ITP_GRO":
             base_strategies = [
                 LoadStrategy.GROMACS_ITP_GRO,
@@ -631,6 +799,8 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
                 LoadStrategy.AMBER_PRMTOP_MDCRD,
                 LoadStrategy.AMBER_PRMTOP_PDB,
             ]
+        elif strategy == "PRMTOP_TRAJ":  # dm1 audit (L4): .prmtop + .dcd/.trr
+            base_strategies = [LoadStrategy.AMBER_PRMTOP_DCD, LoadStrategy.AMBER_PRMTOP_TRR]
         else:  # PRMTOP_NC / PRMTOP_XTC (existing decisions, order preserved)
             base_strategies = [
                 LoadStrategy.AMBER_PRMTOP_XTC,
@@ -655,6 +825,10 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
             base_strategies = [LoadStrategy.CHARMM_PSF_DCD, LoadStrategy.CHARMM_PSF_PDB, LoadStrategy.CHARMM_PSF_CRD]
         else:  # PSF_PDB (and PSF_ONLY honest-failure path)
             base_strategies = [LoadStrategy.CHARMM_PSF_PDB, LoadStrategy.CHARMM_PSF_CRD, LoadStrategy.CHARMM_PSF_DCD]
+        # dm1 audit (L4/L5): a .psf with another engine's trajectory or a
+        # NAMD binary .coor (validation prunes the absent ones)
+        base_strategies += [LoadStrategy.CHARMM_PSF_COOR, LoadStrategy.CHARMM_PSF_XTC,
+                            LoadStrategy.CHARMM_PSF_TRR, LoadStrategy.CHARMM_PSF_NC]
         # A8 follow-up (user condition): same structure-file-alone tail as
         # AMBER — a PSF that cannot parse must not sink a deposit whose
         # .pdb loads fine; the topology_ignored warning records the reason.
@@ -693,6 +867,15 @@ def get_fallback_strategies(decision: LoadDecision, bundle: InputBundle) -> list
             LoadStrategy.PDB,
             LoadStrategy.MMCIF_GEMMI,
         ]
+
+    # dm1 audit (L1): GROMACS' own reader right after MDAnalysis' .tpr parse
+    if LoadStrategy.GROMACS_TPR in base_strategies and LoadStrategy.GROMACS_TPR_GMX not in base_strategies:
+        base_strategies.insert(base_strategies.index(LoadStrategy.GROMACS_TPR) + 1,
+                               LoadStrategy.GROMACS_TPR_GMX)
+
+    # dm1 audit (L9): ParmEd as the last AMBER topology reader
+    if input_kind == InputKind.AMBER:
+        base_strategies.append(LoadStrategy.AMBER_PARMED)
 
     # A8 (BH-016): AMBER families keep a flat-PDB last resort — the
     # pre-A8 deposit path was flat PDB and silently lost the topology;
@@ -927,6 +1110,24 @@ def load_with_strategy(strategy: LoadStrategy, files: dict[str, Path], config: R
             return Universe(str(pdb_path), in_memory=True)
         case LoadStrategy.MMCIF_GEMMI:
             return _load_mmcif_via_gemmi(files["cif"])
+        case LoadStrategy.AMBER_PARMED:
+            coord = files["coordinates"]
+            fmt = dict(_PARMED_COORDINATES)[coord.suffix.lower()]
+            u = Universe(str(_amber_topology_as_psf(files["prmtop"])), str(coord),
+                         **({"format": fmt} if fmt else {}))
+            _ = u.trajectory[0]
+            return u
+        case LoadStrategy.GROMACS_TPR_GMX:
+            return load_with_strategy(LoadStrategy.PDB, {"pdb": _tpr_to_pdb_with_gmx(files["tpr"])},
+                                      config)
+        case _ if strategy in _CROSS_ENGINE_PAIRS:
+            # dm1 audit (L4/L5): frame 0 of another engine's trajectory;
+            # not in_memory (trajectories can be GB-scale)
+            topo_key, traj_key, fmt = _CROSS_ENGINE_PAIRS[strategy]
+            u = Universe(str(files[topo_key]), str(files[traj_key]), format=fmt,
+                         **_TOPOLOGY_PARSE_KWARGS.get(topo_key, {}))
+            _ = u.trajectory[0]
+            return u
         case _:
             raise ValueError(f"Unknown strategy: {strategy}")
 
@@ -1447,6 +1648,12 @@ def load_simulation(
         # expensive Universe build; mdpc 'rejected_atoms' semantics)
         if strategy in _PROBE_PAIRS and not stripped:
             topo_key, traj_key = _PROBE_PAIRS[strategy]
+            # dm1 audit (L3): with several topologies/trajectories in the
+            # bundle, a mismatched pair falls on to the next-closest one
+            _matched = _matching_pair(bundle, validation.selected_files, topo_key, traj_key)
+            if _matched is not None:
+                validation.selected_files[topo_key], validation.selected_files[traj_key] = _matched
+                attempt.used_files = [str(f) for f in validation.selected_files.values()]
             topo_atoms = _topology_n_atoms(validation.selected_files[topo_key], topo_key)
             if topo_atoms is not None:
                 probe = match_atoms(topo_atoms, validation.selected_files[traj_key])

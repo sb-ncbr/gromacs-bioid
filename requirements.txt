@@ -36,3 +36,4 @@ requests-cache==1.3.3
 cattrs==26.2.1
 url-normalize==3.1.0
 easydict==1.14
+parmed==4.3.0

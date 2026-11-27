@@ -36,6 +36,7 @@ _CANONICAL_SUFFIX_TABLE: dict[str, tuple[str, str]] = {
     ".psf": ("CHARMM_PSF", "topology"),
     ".crd": ("CHARMM_CRD", "coordinate"),
     ".dcd": ("CHARMM_DCD", "trajectory"),
+    ".coor": ("NAMD_COOR", "coordinate"),  # dm1 audit (L5): NAMD binary
     # AMBER
     ".prmtop": ("AMBER_PRMTOP", "topology"),
     ".parm7": ("AMBER_PARM7", "topology"),
@@ -228,6 +229,17 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             topology_files=topo[:1],
         )
 
+    # 4c. dm1 audit (L4): .top/.itp + .trr/.dcd with no structure file
+    if (".top" in exts or ".itp" in exts) and (".trr" in exts or ".dcd" in exts) \
+            and ".tpr" not in exts:
+        topo = [f.path for f in bundle.files
+                if f.path.suffix.lower() == (".top" if ".top" in exts else ".itp")]
+        return LoadDecision(
+            input_kind=InputKind.GROMACS,
+            selected_strategy="TOP_TRAJ",
+            topology_files=topo[:1],
+        )
+
     # 5. .prmtop + .nc or .parm7 + .nc -> "PRMTOP_NC", AMBER
     
     # 5b. .prmtop + .xtc or .parm7 + .xtc -> "PRMTOP_XTC", AMBER
@@ -277,6 +289,15 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             topology_files=[prmtop_files[0]] if prmtop_files else [],
         )
     
+    # dm1 audit (L4): .prmtop + .dcd/.trr (no AMBER coordinate source above)
+    if ".prmtop" in exts and (".dcd" in exts or ".trr" in exts):
+        prmtop_files = [f.path for f in bundle.files if f.path.suffix.lower() == ".prmtop"]
+        return LoadDecision(
+            input_kind=InputKind.AMBER,
+            selected_strategy="PRMTOP_TRAJ",
+            topology_files=prmtop_files[:1],
+        )
+
     # 5b. .data -> LAMMPS (topology + coordinates in one file)
     # A-16 (red-team 3.3): SNIFF the content first — a stray "energies.data"
     # (or any non-LAMMPS table) must not hijack the decision away from a real
@@ -303,6 +324,10 @@ def select_best_file_combination(bundle: InputBundle) -> LoadDecision:
             coord_strategy = "PSF_CRD"
         elif ".dcd" in exts:
             coord_strategy = "PSF_DCD"
+        elif exts & {".coor", ".xtc", ".trr", ".nc"}:
+            # dm1 audit (L4/L5): NAMD binary coordinates or another engine's
+            # trajectory; the CHARMM ladder carries those pairings
+            coord_strategy = "PSF_TRAJ"
         else:
             coord_strategy = "PSF_ONLY"
             warnings.append("charmm_psf_without_coordinate_source")

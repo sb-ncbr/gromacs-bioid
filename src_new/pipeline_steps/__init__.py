@@ -628,6 +628,37 @@ def _smallest_segments_first(segments: list, props: dict) -> list:
     return sorted(segments, key=size)
 
 
+#: dm1 audit (I2): share of the verify budget kept for proteins and nucleic
+#: acids. Small segments still go first (b33), but dozens of them (one per
+#: broken lipid copy: zenodo/14060756, 63 MEMB fragments) used up the whole
+#: budget and the protein (P46095 at 100% identity) was never verified.
+POLYMER_VERIFY_RESERVE = 0.4
+_POLYMER_TYPES = frozenset({"protein", "nucleic"})
+
+
+def _with_polymer_reserve(items: list, segments_summary, deadline, clock=time.time):
+    """Yield verify items smallest-first, but switch to the polymer segments
+    once only POLYMER_VERIFY_RESERVE of the time left at the start remains;
+    the remaining non-polymer segments follow if time is left. Without a
+    deadline or without polymers: the given order."""
+    types = {e.get("segment"): e.get("type") for e in (segments_summary or [])
+             if isinstance(e, dict)}
+    polymers = [it for it in items if types.get(it[0]) in _POLYMER_TYPES]
+    if deadline is None or not polymers:
+        yield from items
+        return
+    others = [it for it in items if types.get(it[0]) not in _POLYMER_TYPES]
+    reserve_until = deadline - POLYMER_VERIFY_RESERVE * max(0.0, deadline - clock())
+    deferred = []
+    for i, it in enumerate(others):
+        if clock() >= reserve_until:
+            deferred = others[i:]
+            break
+        yield it
+    yield from polymers
+    yield from deferred
+
+
 def _tiny_segments_first(reps: list) -> list:
     """b31: tiny segments (ions, waters: <= 3 atoms, generated in moments)
     go first, so one heavy segment that spends the stage budget on bond-
@@ -1569,7 +1600,7 @@ def _verify_results(context):
     else:
         # Run serially using same worker function
         results = []
-        for item in items:
+        for item in _with_polymer_reserve(items, segments_summary, deadline):
             if _budget_exceeded(context):
                 budget_hit = True
                 logger.warning(f"verify_results: stage time budget exceeded at segment {item[0]}; partial output")

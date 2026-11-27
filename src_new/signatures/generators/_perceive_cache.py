@@ -1074,12 +1074,20 @@ def _h_deficiency(fragment):
         els = [str(e).title() for e in fragment.atoms.elements]
     except Exception:
         return None
-    if not els or any(e == "H" for e in els):
+    if not els:
         return None
+    # dm1 audit (I1): united-atom lipids keep their POLAR hydrogens explicit
+    # (Berger/GROMOS/OPLS-UA: NH3+, OH) while CH2/CH3 are united atoms. "Any
+    # explicit H = all-atom" left those carbons without H and bond perception
+    # invented triple bonds and charges (POPE -> [C-]#CC#C..., C39H3NO8P).
+    # With explicit H present, only the per-atom mass residuals decide: an
+    # all-atom system (nominal or HMR-lightened heavy masses) has none and
+    # stays untouched.
+    mixed = any(e == "H" for e in els)
     try:
         masses = fragment.atoms.masses
     except Exception:
-        return {}
+        return None if mixed else {}
     counts = {}
     for pos, (e, m) in enumerate(zip(els, masses)):
         nominal = _NOMINAL_MASSES.get(e)
@@ -1102,6 +1110,8 @@ def _h_deficiency(fragment):
         counts[pos] = h
     if counts:
         return counts
+    if mixed:
+        return None
     heavy = [e for e in els if e in _NOMINAL_MASSES and e != "H"]
     return {} if heavy else None
 

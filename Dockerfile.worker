@@ -8,8 +8,9 @@ FROM python:3.11-slim
 # backends).
 RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential libvips ncbi-blast+ media-types curl ca-certificates \
-        libgl1 libegl1 libglib2.0-0 && \
-    rm -rf /var/lib/apt/lists/*
+        libgl1 libegl1 libglib2.0-0 gromacs && \
+    rm -rf /var/lib/apt/lists/* && \
+    gmx --version >/dev/null  # dm1 audit (L1): .tpr fallback reader (gmx editconf -conect)
 
 WORKDIR /app
 ENV PYTHONPATH=/app
