@@ -26,7 +26,7 @@ spec:
       restartPolicy: OnFailure
       containers:
       - name: rerun
-        image: cerit.io/tomsko/bat3-validation-api@sha256:REPLACE_WITH_RELEASE_DIGEST
+        image: cerit.io/tomsko/bat3-validation-api@sha256:55b505a6ffb298a9b2dbf99608d0e4bcb39a10fae65ef57896dfd5357379967c
         command: ["python3", "/app/scripts/campaign_rerun.py"]
         args: ["--arm", "g2", "--reference", "results-g1.json", "--max-in-flight", "32"]
         env:
